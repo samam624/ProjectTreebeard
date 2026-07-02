@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e141b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MSV2 Plants">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="app-icon.svg">
+  <title>MSV2 Plants</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e141b;
+      --ink: #f5f7fa;
+      --muted: #8fa3ad;
+      --panel: #17212b;
+      --panel-2: #1d2a35;
+      --line: rgba(255,255,255,.11);
+      --field: #101923;
+      --accent: #20c997;
+      --accent-dark: #87e8cd;
+      --warn: #ffb020;
+      --danger: #ff5a5f;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px clamp(14px, 4vw, 32px) 12px; background: rgba(14,20,27,.94); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; backdrop-filter: blur(12px); }
+    h1 { margin: 0; font-size: 24px; line-height: 1; }
+    h2 { margin: 0 0 10px; font-size: 18px; }
+    h3 { margin: 0; font-size: 16px; }
+    p { margin: 6px 0 0; color: var(--muted); }
+    main { width: min(1080px, 100%); margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 42px; }
+    .topline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
+    .pill { display: inline-flex; min-height: 28px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+    .toolbar { display: flex; gap: 8px; align-items: center; }
+    .grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .panel, .receiver, .summary-cell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    .panel { padding: 14px; }
+    label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
+    input { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--field); color: var(--ink); font: inherit; }
+    button { min-height: 38px; border: 1px solid transparent; border-radius: 6px; padding: 8px 12px; background: var(--accent); color: #06231a; font: inherit; font-weight: 750; cursor: pointer; }
+    button.secondary { background: transparent; color: var(--muted); border-color: var(--line); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    .row button { flex: 1; }
+    .notice { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel-2); color: var(--muted); }
+    .notice.error { border-color: rgba(255,90,95,.55); background: rgba(255,90,95,.11); color: var(--danger); }
+    .notice.ok { border-color: rgba(32,201,151,.45); background: rgba(32,201,151,.11); color: var(--accent-dark); }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+    .summary-cell { padding: 12px; }
+    .summary-label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .summary-value { font-size: 22px; font-weight: 800; line-height: 1; }
+    .receiver { padding: 14px; margin-bottom: 14px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .display-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    .plant { min-height: 176px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel); position: relative; overflow: hidden; }
+    .plant-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; min-height: 68px; margin-bottom: 8px; }
+    .plant-title { min-width: 0; }
+    .plant-name { margin: 0; font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plant-art { width: 58px; height: 58px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 5px 8px rgba(0,0,0,.25)); animation: plant-breathe 1.2s steps(2, end) infinite; }
+    @keyframes plant-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .metric { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+    .metric span:first-child { color: var(--muted); }
+    .bar { height: 9px; border-radius: 999px; background: #0a1015; border: 1px solid rgba(255,255,255,.08); overflow: hidden; margin: 6px 0 8px; }
+    .bar span { display: block; height: 100%; width: var(--pct); background: var(--accent); }
+    .bar.warn span { background: var(--warn); }
+    .bar.danger span { background: var(--danger); }
+    .ok { color: var(--accent); }
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    .empty { border: 1px dashed var(--line); border-radius: 8px; padding: 22px; background: var(--panel); }
+    code { background: #101923; border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; color: var(--accent-dark); }
+    @media (max-width: 760px) {
+      header { align-items: flex-start; flex-direction: column; padding-top: max(18px, env(safe-area-inset-top)); }
+      .toolbar { width: 100%; }
+      .toolbar button { flex: 1; }
+      .grid { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .display-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      main { padding-bottom: max(42px, env(safe-area-inset-bottom)); }
+    }
+    @media (max-width: 420px) {
+      .display-board { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>MSV2 Plants</h1>
+      <div class="topline">
+        <span id="linkPill" class="pill">Checking household link</span>
+        <span id="claimPill" class="pill" hidden>Pairing details ready</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button type="button" class="secondary" id="refreshButton">Refresh</button>
+      <button type="button" class="secondary" id="forgetButton">Forget</button>
+    </div>
+  </header>
+  <main>
+    <div class="grid">
+      <section class="panel" id="connectPanel">
+        <h2>Connect Household</h2>
+        <p>Scan the receiver QR code or enter the pairing details from the ESP32 app. This phone will stay connected.</p>
+        <label for="receiverIdInput">Receiver ID</label>
+        <input id="receiverIdInput" autocomplete="off" placeholder="MSV2...">
+        <label for="claimCodeInput">Claim code</label>
+        <input id="claimCodeInput" autocomplete="off" placeholder="ABCD-1234">
+        <label for="householdInput">Household name</label>
+        <input id="householdInput" autocomplete="organization" value="My Plants">
+        <div class="row">
+          <button type="button" id="connectButton">Connect</button>
+        </div>
+        <div class="notice" id="connectNotice">No account needed. The private household key is stored in this browser.</div>
+      </section>
+      <section>
+        <div id="summary"></div>
+        <div id="receivers" class="empty">
+          <h2>No household connected</h2>
+          <p>Connect with the receiver QR code to show cloud plant data here.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const API_BASE = "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-dashboard";
+    const SHARE_TOKEN_KEY = "msv2.householdShareToken";
+    const params = new URLSearchParams(window.location.search);
+    const state = { shareToken: localStorage.getItem(SHARE_TOKEN_KEY) || "", snapshots: [] };
+
+    const byId = (id) => document.getElementById(id);
+    const setNotice = (text, type = "") => {
+      const node = byId("connectNotice");
+      node.textContent = text;
+      node.className = "notice" + (type ? " " + type : "");
+    };
+    const escapeHtml = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+
+    function applyPairingParams() {
+      const receiverId = params.get("receiverId") || params.get("rid") || "";
+      const claimCode = params.get("claimCode") || params.get("code") || "";
+      if (receiverId) byId("receiverIdInput").value = receiverId;
+      if (claimCode) byId("claimCodeInput").value = claimCode;
+      byId("claimPill").hidden = !(receiverId && claimCode);
+    }
+
+    function renderLinkState() {
+      const connected = Boolean(state.shareToken);
+      byId("linkPill").textContent = connected ? "Household connected" : "No household link";
+      byId("forgetButton").disabled = !state.shareToken;
+      byId("connectPanel").hidden = connected;
+    }
+
+    async function connectHousehold() {
+      const receiverId = byId("receiverIdInput").value.trim();
+      const claimCode = byId("claimCodeInput").value.trim();
+      const householdName = byId("householdInput").value.trim() || "My Plants";
+      setNotice("Connecting household...");
+      const response = await fetch(API_BASE + "/api/share-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiverId, claimCode, householdName }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok || !body.share?.share_token) {
+        setNotice(body.error || "Could not connect household.", "error");
+        return;
+      }
+      state.shareToken = body.share.share_token;
+      localStorage.setItem(SHARE_TOKEN_KEY, state.shareToken);
+      setNotice("Household connected on this phone.", "ok");
+      renderLinkState();
+      await loadSnapshots();
+    }
+
+    async function loadSnapshots() {
+      renderLinkState();
+      if (!state.shareToken) {
+        byId("summary").innerHTML = "";
+        byId("receivers").className = "empty";
+        byId("receivers").innerHTML = "<h2>No household connected</h2><p>Connect with the receiver QR code to show cloud plant data here.</p>";
+        return;
+      }
+      const response = await fetch(API_BASE + "/api/share-snapshots", {
+        headers: { "Authorization": "Bearer " + state.shareToken },
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) {
+        state.shareToken = "";
+        localStorage.removeItem(SHARE_TOKEN_KEY);
+        renderLinkState();
+        byId("receivers").className = "empty";
+        byId("receivers").innerHTML = "<h2>Could not load plants</h2><p>" + escapeHtml(body.error || "Unknown error") + "</p>";
+        setNotice("Household link expired or could not be loaded. Connect again with the receiver QR code.", "error");
+        return;
+      }
+      state.snapshots = body.snapshots || [];
+      renderDashboard();
+    }
+
+    function forgetHousehold() {
+      state.shareToken = "";
+      state.snapshots = [];
+      localStorage.removeItem(SHARE_TOKEN_KEY);
+      setNotice("Household link removed from this phone.");
+      loadSnapshots();
+    }
+
+    function renderDashboard() {
+      const rows = state.snapshots;
+      byId("summary").innerHTML = renderSummary(rows);
+      byId("receivers").className = rows.length ? "" : "empty";
+      byId("receivers").innerHTML = rows.length
+        ? rows.map(renderReceiver).join("")
+        : "<h2>No snapshots yet</h2><p>The receiver is connected. Waiting for its next cloud upload.</p>";
+    }
+
+    function renderSummary(rows) {
+      let plantCount = 0;
+      let dryCount = 0;
+      let lowBatteryCount = 0;
+      for (const row of rows) {
+        const cards = cardsBySensor(row.snapshot?.config?.cards || []);
+        for (const plant of row.snapshot?.plants || []) {
+          plantCount += 1;
+          const card = cards.get(plant.sensor || 0);
+          const pct = percent(plant.moisture, card?.moisture?.dry ?? 350, card?.moisture?.wet ?? 800);
+          if (pct != null && pct < 25) dryCount += 1;
+          if (typeof plant.batteryPercent === "number" && plant.batteryPercent < 20) lowBatteryCount += 1;
+        }
+      }
+      return '<section class="summary" aria-label="Garden summary">' +
+        summaryCell("Receivers", rows.length) +
+        summaryCell("Plants", plantCount) +
+        summaryCell("Dry", dryCount, dryCount ? "danger" : "ok") +
+        summaryCell("Low Battery", lowBatteryCount, lowBatteryCount ? "danger" : "ok") +
+      '</section>';
+    }
+
+    function summaryCell(label, value, className = "") {
+      return '<div class="summary-cell"><span class="summary-label">' + escapeHtml(label) + '</span><span class="summary-value ' + escapeHtml(className) + '">' + escapeHtml(value) + '</span></div>';
+    }
+
+    function renderReceiver(row) {
+      const snapshot = row.snapshot || {};
+      const config = snapshot.config || {};
+      const title = config.title || row.household_name || "MSV2 Plants";
+      const readings = snapshot.plants || [];
+      const cards = cardsBySensor(config.cards || []);
+      const plants = readings.length ? readings.map((plant) => renderPlant(plant, cards.get(plant.sensor || 0))).join("") : "<p>No plant readings in this snapshot.</p>";
+      return '<section class="receiver"><h2>' + escapeHtml(title) + '</h2><div class="meta">' +
+        '<span>Household: ' + escapeHtml(row.household_name || "My Plants") + '</span>' +
+        '<span>Receiver: <code>' + escapeHtml(row.receiver_id) + '</code></span>' +
+        '<span>Config v' + escapeHtml(config.version ?? row.config_version ?? "--") + '</span>' +
+        '<span>Cloud: ' + escapeHtml(formatDate(row.received_at)) + '</span>' +
+        '</div><div class="display-board">' + plants + '</div></section>';
+    }
+
+    function renderPlant(plant, config) {
+      const name = config?.plant || "Probe " + (plant.sensor ?? "--");
+      const pct = percent(plant.moisture, config?.moisture?.dry ?? 350, config?.moisture?.wet ?? 800);
+      const moistureClass = healthClass(pct);
+      const battery = plant.batteryPercent;
+      const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
+      const art = config?.art || "sprout_pot";
+      return '<article class="plant"><div class="plant-head"><div class="plant-title"><h3 class="plant-name">' + escapeHtml(name) + '</h3><div class="meta">Probe ' + escapeHtml(plant.sensor ?? "--") + '</div></div><img class="plant-art" src="' + escapeHtml(artSrc(art)) + '" alt=""></div>' +
+        metric("Moisture", String(plant.moisture ?? "--") + " raw / " + String(pct ?? "--") + "%", moistureClass) +
+        bar(pct, moistureClass) +
+        metric("Battery", battery == null ? "--" : String(battery) + "%", batteryClass) +
+        metric("RSSI", String(plant.rssi ?? "--") + " dBm") +
+        metric("Age", String(plant.ageMs ?? "--") + " ms") +
+        metric("Packets", String(plant.received ?? "--") + " rx / " + String(plant.missedTotal ?? "--") + " missed") +
+        '</article>';
+    }
+
+    function cardsBySensor(cards) {
+      const result = new Map();
+      for (const card of cards) if (typeof card.sensor === "number") result.set(card.sensor, card);
+      return result;
+    }
+
+    function artSrc(key) {
+      const safe = String(key || "sprout_pot").replace(/[^a-z0-9_]/g, "");
+      const known = ["cactus_cluster", "cup_plant", "monstera", "spindly", "sprout_pot", "wide_planter"];
+      return "assets/plant_gifs/" + (known.includes(safe) ? safe : "sprout_pot") + ".gif";
+    }
+
+    function percent(value, dry, wet) {
+      if (typeof value !== "number" || wet === dry) return null;
+      return Math.max(0, Math.min(100, Math.round(((value - dry) * 100) / (wet - dry))));
+    }
+
+    function healthClass(pct) {
+      if (pct == null) return "";
+      if (pct < 25) return "danger";
+      if (pct < 50) return "warn";
+      return "ok";
+    }
+
+    function bar(pct, className) {
+      return '<div class="bar ' + escapeHtml(className) + '" style="--pct:' + String(pct ?? 0) + '%"><span></span></div>';
+    }
+
+    function metric(label, value, className = "") {
+      return '<div class="metric"><span>' + escapeHtml(label) + '</span><span class="' + escapeHtml(className) + '">' + escapeHtml(value) + '</span></div>';
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString();
+    }
+
+    byId("connectButton").addEventListener("click", connectHousehold);
+    byId("refreshButton").addEventListener("click", loadSnapshots);
+    byId("forgetButton").addEventListener("click", forgetHousehold);
+
+    applyPairingParams();
+    renderLinkState();
+    loadSnapshots();
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+    window.setInterval(loadSnapshots, 30000);
+  </script>
+</body>
+</html>

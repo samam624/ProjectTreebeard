@@ -1,0 +1,12 @@
+arduino/MSV2_ESP32_Display_Runtime/WiFiCredentials.h
+.venv/
+__pycache__/
+*.py[cod]
+*.csv
+packet_test*.csv
+.netlify/
+web/*.zip
+node_modules/
+supabase/.temp/
+supabase/.branches/
+supabase/.env

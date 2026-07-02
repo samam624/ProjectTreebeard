@@ -1,0 +1,10 @@
+from PIL import Image, ImageSequence
+import numpy as np
+from pathlib import Path
+
+# Drop this script next to your GIF and change this name.
+src = Path("download.gif")
+
+# This is a simplified copy of the generator used to create plant_sprites.h.
+# It crops the four quadrants, removes pure-white background, scales to 50%,
+# and writes RGB565 arrays with magenta as the transparent key.

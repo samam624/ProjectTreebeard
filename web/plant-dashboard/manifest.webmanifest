@@ -1,0 +1,17 @@
+{
+  "name": "MSV2 Plants",
+  "short_name": "MSV2",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0e141b",
+  "theme_color": "#0e141b",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

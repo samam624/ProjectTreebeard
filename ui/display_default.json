@@ -1,0 +1,102 @@
+{
+  "_meta": {
+    "schema": 1,
+    "version": 1,
+    "updatedMs": 0,
+    "updatedBy": "repo-default"
+  },
+  "title": "Plant Status Center",
+  "staleSeconds": 90,
+  "rotation": 1,
+  "theme": {
+    "background": "#0E141B",
+    "surface": "#17212B",
+    "text": "#F5F7FA",
+    "muted": "#8FA3AD",
+    "accent": "#20C997",
+    "warning": "#FFB020",
+    "danger": "#FF5A5F"
+  },
+  "layout": {
+    "type": "grid",
+    "orientation": "landscape",
+    "columns": 4,
+    "rows": 2,
+    "gap": 6,
+    "padding": 6
+  },
+  "cards": [
+    {
+      "sensor": 1,
+      "plant": "Basil",
+      "art": "monstera",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 2,
+      "plant": "Mint",
+      "art": "spindly",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 3,
+      "plant": "Thyme",
+      "art": "wide_planter",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 4,
+      "plant": "Sage",
+      "art": "sprout_pot",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 5,
+      "plant": "Rosemary",
+      "art": "wide_planter",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 6,
+      "plant": "Oregano",
+      "art": "cup_plant",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 7,
+      "plant": "Parsley",
+      "art": "sprout_pot",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    },
+    {
+      "sensor": 8,
+      "plant": "Cilantro",
+      "art": "cactus_cluster",
+      "moisture": {
+        "dry": 350,
+        "wet": 800
+      }
+    }
+  ]
+}

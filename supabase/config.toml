@@ -1,0 +1,13 @@
+project_id = "lyemomfpzkawqecpfufm"
+
+[functions.receiver-snapshot]
+verify_jwt = false
+
+[functions.plant-dashboard]
+verify_jwt = false
+
+[functions.claim-receiver]
+verify_jwt = false
+
+[functions.receiver-bootstrap]
+verify_jwt = false
