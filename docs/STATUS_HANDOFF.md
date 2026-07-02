@@ -82,7 +82,7 @@ Date: 2026-07-02
 - Important: Supabase Edge Functions returned HTML as `text/plain` with `Content-Security-Policy: default-src 'none'; sandbox`, so the browser app must be hosted as a static page elsewhere. Edge Functions should stay API-only.
 - `plant-dashboard` root now returns an API-only JSON note instead of raw HTML.
 - Static app package exists at `web/msv2-plant-dashboard-static.zip`.
-- Netlify CLI did not deploy cleanly from this shell; use Netlify Drop for the fastest hosted URL.
+- Netlify production deploy is live at `https://msv2-plant-dashboard-samam624-924.netlify.app`.
 - Receiver bootstrap scaffold exists so future firmware can register itself after WiFi setup and receive a per-device upload token.
 - ESP32 firmware now has first-pass cloud auto-bootstrap:
   - calls `receiver-bootstrap` after station WiFi is connected

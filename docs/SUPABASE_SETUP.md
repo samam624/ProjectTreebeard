@@ -285,7 +285,7 @@ Invoke-RestMethod http://BOARD_IP/claim | ConvertTo-Json -Depth 5
 The future QR code should open:
 
 ```text
-https://YOUR_STATIC_APP_HOST/?receiverId=MSV2...&claimCode=ABCD-1234
+https://msv2-plant-dashboard-samam624-924.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234
 ```
 
 Chosen static app host:
@@ -296,6 +296,18 @@ Supabase remains the backend. Netlify only hosts the installable phone web app f
 
 ```text
 web/plant-dashboard/
+```
+
+Current live app:
+
+```text
+https://msv2-plant-dashboard-samam624-924.netlify.app
+```
+
+Netlify project admin:
+
+```text
+https://app.netlify.com/projects/msv2-plant-dashboard-samam624-924
 ```
 
 The static app can be hosted anywhere because the Supabase APIs send permissive CORS headers.

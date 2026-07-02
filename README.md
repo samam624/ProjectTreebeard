@@ -12,6 +12,12 @@ The installable phone web app is a static Netlify app in:
 web/plant-dashboard/
 ```
 
+Live app:
+
+```text
+https://msv2-plant-dashboard-samam624-924.netlify.app
+```
+
 Supabase still handles receiver bootstrap, snapshot storage, and the dashboard APIs.
 
 ## Fast ESP32 Display Update Loop
