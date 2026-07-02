@@ -1,4 +1,4 @@
-const MSV2_CACHE = "msv2-cloud-app-v1";
+const MSV2_CACHE = "msv2-cloud-app-v2";
 const MSV2_ASSETS = [
   "/",
   "/index.html",

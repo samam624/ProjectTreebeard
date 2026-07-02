@@ -369,7 +369,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           <button type="button" class="ghost" id="copyReceiverIdButton">Copy ID</button>
           <button type="button" class="primary" id="copyClaimCodeButton">Copy Code</button>
         </div>
-        <div class="notice" id="claimNotice">This code is local for now. It will become the app/cloud pairing code later.</div>
+        <div class="network-actions">
+          <button type="button" class="ghost" id="copyClaimUrlButton">Copy App Link</button>
+          <button type="button" class="primary" id="openClaimUrlButton">Open App</button>
+        </div>
+        <div class="notice" id="claimNotice">Use the app link for one-scan household setup. The phone stores the household link after pairing.</div>
       </section>
       <section class="network-card">
         <div class="editor-head">
@@ -526,6 +530,9 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       $("receiverIdText").textContent = claimInfo.receiverId || "--";
       $("claimCodeText").textContent = claimInfo.claimCode || "--";
       $("claimStatusText").textContent = `${claimInfo.networkMode || "local"} / ${claimInfo.ip || "--"}`;
+      $("claimNotice").textContent = claimInfo.claimUrl
+        ? "Hosted app link is ready for this receiver."
+        : "Receiver ID and claim code are ready.";
     }
 
     async function loadCloud() {
@@ -827,6 +834,10 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     $("claimRefreshButton").addEventListener("click", loadClaim);
     $("copyReceiverIdButton").addEventListener("click", () => copyText(claimInfo?.receiverId, "Receiver ID copied."));
     $("copyClaimCodeButton").addEventListener("click", () => copyText(claimInfo?.claimCode, "Claim code copied."));
+    $("copyClaimUrlButton").addEventListener("click", () => copyText(claimInfo?.claimUrl, "Hosted app link copied."));
+    $("openClaimUrlButton").addEventListener("click", () => {
+      if (claimInfo?.claimUrl) window.location.href = claimInfo.claimUrl;
+    });
     $("cloudRefreshButton").addEventListener("click", loadCloud);
     $("cloudSaveButton").addEventListener("click", saveCloud);
     $("cloudResetButton").addEventListener("click", resetCloud);

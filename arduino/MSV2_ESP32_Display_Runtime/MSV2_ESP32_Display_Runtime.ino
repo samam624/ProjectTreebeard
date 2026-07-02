@@ -158,6 +158,10 @@ const char LOCAL_CONFIG_SOURCE[] = "receiver-local";
 #define MSV2_CLOUD_BOOTSTRAP_URL "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-bootstrap"
 #endif
 
+#ifndef MSV2_HOSTED_APP_URL
+#define MSV2_HOSTED_APP_URL "https://msv2-plant-dashboard-samam624-924.netlify.app/"
+#endif
+
 const char UI_PATH[] = "/ui.json";
 const char WIFI_CONFIG_PATH[] = "/wifi.json";
 const char DEVICE_CONFIG_PATH[] = "/device.json";
@@ -583,7 +587,7 @@ bool loadDeviceIdentity()
 
 String claimInfoJson()
 {
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
   doc["name"] = "MSV2 Display";
@@ -596,6 +600,14 @@ String claimInfoJson()
   doc["ip"] = "0.0.0.0";
 #endif
   doc["claimPath"] = "/claim";
+  doc["appUrl"] = MSV2_HOSTED_APP_URL;
+  String claimUrl = MSV2_HOSTED_APP_URL;
+  claimUrl += "?receiverId=";
+  claimUrl += receiverId;
+  claimUrl += "&claimCode=";
+  claimUrl += receiverClaimCode;
+  claimUrl += "&autoConnect=1";
+  doc["claimUrl"] = claimUrl;
 
   String output;
   serializeJson(doc, output);

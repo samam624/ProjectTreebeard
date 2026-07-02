@@ -154,6 +154,18 @@
       byId("claimPill").hidden = !(receiverId && claimCode);
     }
 
+    function hasPairingParams() {
+      return Boolean(
+        (params.get("receiverId") || params.get("rid")) &&
+        (params.get("claimCode") || params.get("code"))
+      );
+    }
+
+    function shouldAutoConnect() {
+      const value = (params.get("autoConnect") || params.get("connect") || "").toLowerCase();
+      return hasPairingParams() && (value === "1" || value === "true" || value === "yes");
+    }
+
     function renderLinkState() {
       const connected = Boolean(state.shareToken);
       byId("linkPill").textContent = connected ? "Household connected" : "No household link";
@@ -326,7 +338,13 @@
 
     applyPairingParams();
     renderLinkState();
-    loadSnapshots();
+    if (!state.shareToken && shouldAutoConnect()) {
+      connectHousehold().catch(() => {
+        setNotice("Could not auto-connect from the QR link. Tap Connect to try again.", "error");
+      });
+    } else {
+      loadSnapshots();
+    }
     if ("serviceWorker" in navigator && location.protocol === "https:") {
       navigator.serviceWorker.register("sw.js").catch(() => {});
     }

@@ -285,8 +285,10 @@ Invoke-RestMethod http://BOARD_IP/claim | ConvertTo-Json -Depth 5
 The future QR code should open:
 
 ```text
-https://msv2-plant-dashboard-samam624-924.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234
+https://msv2-plant-dashboard-samam624-924.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234&autoConnect=1
 ```
+
+The receiver `/claim` endpoint now returns this as `claimUrl`. The hosted app reads `receiverId`, `claimCode`, and `autoConnect=1`; on first open it creates the household share token and stores it in the phone browser. After that, reopening the app goes straight to the dashboard.
 
 Chosen static app host:
 
