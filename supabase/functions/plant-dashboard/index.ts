@@ -69,6 +69,7 @@ Deno.serve(async (request) => {
     if (path.endsWith("/app-icon.svg")) return response(appIconSvg(), "image/svg+xml");
     if (path.endsWith("/api/share-claim")) return await shareClaimApi(request);
     if (path.endsWith("/api/share-snapshots")) return await shareSnapshotsApi(request);
+    if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
 
     return jsonResponse({
@@ -78,6 +79,7 @@ Deno.serve(async (request) => {
       endpoints: {
         shareClaim: "/functions/v1/plant-dashboard/api/share-claim",
         shareSnapshots: "/functions/v1/plant-dashboard/api/share-snapshots",
+        shareConfig: "/functions/v1/plant-dashboard/api/share-config",
       },
     });
   } catch (error) {
@@ -126,6 +128,45 @@ async function shareSnapshotsApi(request: Request): Promise<Response> {
   }
 
   return jsonResponse({ ok: true, snapshots: (data ?? []) as SnapshotRow[] });
+}
+
+async function shareConfigApi(request: Request): Promise<Response> {
+  const shareToken = bearerToken(request);
+  if (!shareToken) {
+    return jsonResponse({ ok: false, error: "share token required" }, 401);
+  }
+
+  if (request.method === "GET") {
+    const { data, error } = await serviceClient().rpc("msv2_read_share_receiver_configs", {
+      p_share_token: shareToken,
+    });
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 401);
+    }
+    return jsonResponse({ ok: true, configs: data ?? [] });
+  }
+
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
+  }
+
+  const body = await request.json();
+  const receiverId = String(body.receiverId ?? "").trim();
+  const config = body.config;
+  if (!receiverId || !config || typeof config !== "object") {
+    return jsonResponse({ ok: false, error: "receiverId and config required" }, 400);
+  }
+
+  const { data, error } = await serviceClient().rpc("msv2_upsert_share_receiver_config", {
+    p_share_token: shareToken,
+    p_receiver_id: receiverId,
+    p_config: config,
+  });
+  if (error) {
+    return jsonResponse({ ok: false, error: error.message }, 400);
+  }
+
+  return jsonResponse({ ok: true, config: Array.isArray(data) ? data[0] : data });
 }
 
 async function userSnapshotsApi(request: Request): Promise<Response> {

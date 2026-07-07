@@ -15,7 +15,7 @@ web/plant-dashboard/
 Live app:
 
 ```text
-https://msv2-plant-dashboard-samam624-924.netlify.app
+https://msv2-plants.netlify.app
 ```
 
 Supabase still handles receiver bootstrap, snapshot storage, and the dashboard APIs.
@@ -61,11 +61,17 @@ Use [WiFiCredentials.example.h](arduino/MSV2_ESP32_Display_Runtime/WiFiCredentia
 
 `WiFiCredentials.h` is ignored by git. It is now only a fallback/default credential source. For friend/family setup, flash generic firmware and configure WiFi from the phone app instead.
 
-On boot, the ESP32 first tries WiFi credentials saved in LittleFS by the phone app, then falls back to `WiFiCredentials.h` if present. If it cannot connect within 15 seconds, it starts its own setup access point:
+On boot, the ESP32 first checks whether local-only mode was saved from the phone app. If local-only mode is off, it tries WiFi credentials saved in LittleFS by the phone app, then falls back to `WiFiCredentials.h` if present. While it is trying home WiFi, the TFT says which network it is joining. If it cannot connect within 15 seconds, it switches to first-time setup mode and the TFT shows plain setup instructions:
 
 - SSID: `MSV2-Display`
-- Password: `moisture`
+- Password: none; it is an open setup network
 - Board URL: `http://192.168.4.1`
+
+Phones that support captive portals should automatically open the setup app after joining `MSV2-Display`. If the phone only says "No Internet" and does not open a page, open Safari/Chrome and type `192.168.4.1`.
+
+The first-time setup page also has a `Use without home WiFi` checkbox. If that is saved, the receiver remembers local-only mode, keeps broadcasting `MSV2-Display`, and shows the plant dashboard without joining a home network. To join home WiFi later, connect your phone to `MSV2-Display`, open `http://192.168.4.1/app`, uncheck local-only mode, enter the home WiFi name/password, and tap `Save & Reboot`.
+
+If the receiver has saved home WiFi credentials and cannot reconnect on boot, it reboots and retries the saved network twice before falling back to setup mode. This helps with slow routers and brief home-network outages without trapping users forever.
 
 Edit [ui/display_default.json](ui/display_default.json), then push without reflashing:
 
@@ -126,14 +132,15 @@ The ESP32 also serves a web app manifest, service worker, and icon. After openin
 After flashing generic receiver firmware:
 
 1. Power on the receiver.
-2. If it is not already on home WiFi, connect your phone to the `MSV2-Display` WiFi network.
-3. Open `http://192.168.4.1/app`.
-4. Go to `Setup > Receiver WiFi`.
-5. Enter the home WiFi name/password.
-6. Tap `Save & Reboot`.
-7. Reconnect your phone to home WiFi and open the new receiver IP shown on the display/Serial Monitor.
+2. If it is not already on home WiFi, connect your phone to the open `MSV2-Display` WiFi network. No setup-network password is needed.
+3. Wait for the setup page to appear. If it does not, open `http://192.168.4.1/app`.
+4. Go to `Setup > Receiver WiFi` if the page did not open there already.
+5. Either enter the home WiFi name/password, or check `Use without home WiFi` to keep the receiver local-only.
+6. Tap `Save & Reboot` or `Use Local Only`.
+7. If you entered home WiFi, reconnect your phone to home WiFi. If you chose local-only, stay on `MSV2-Display` when you want to edit the receiver.
+8. The receiver screen should leave setup mode and show the plant dashboard.
 
-The app writes credentials to `LittleFS` at `/wifi.json` through the `/wifi` endpoint. Use `Forget WiFi` to clear saved credentials and reboot back into setup mode.
+The app writes WiFi/local-only settings to `LittleFS` at `/wifi.json` through the `/wifi` endpoint. Use `Forget WiFi` to clear saved settings and reboot back into setup mode.
 
 ### Receiver Pairing
 
@@ -160,18 +167,11 @@ The display UI JSON now carries a `_meta` object:
 
 Every time the receiver accepts a new `/ui` update, it increments `_meta.version`, stamps `updatedMs`, and sets `updatedBy` to `receiver-local`. The phone app shows this under `Setup` as `Config v...`. This is the local foundation for later cloud sync, where the app/cloud can compare versions before overwriting a plant setup.
 
-### Optional Cloud Settings
+### Automatic Cloud Status
 
-The receiver can store future cloud relay settings in `LittleFS` at `/cloud.json`, managed from `Setup > Cloud Sync` or the `/cloud` endpoint.
+After the receiver joins home WiFi, current firmware bootstraps itself with the hosted Supabase backend using its stored `receiverId` and private `receiverSecret`. The backend returns a per-device snapshot upload URL/token, and the receiver stores those private values in `LittleFS` at `/cloud.json`.
 
-Stored fields:
-
-- `enabled`: whether cloud sync should upload receiver snapshots.
-- `uploadUrl`: future HTTPS snapshot upload URL.
-- `syncIntervalSeconds`: future upload interval, clamped from 60 seconds to 24 hours.
-- `apiToken`: stored privately on the receiver; the app only shows whether one exists.
-
-When `enabled` is true, the receiver uploads the `/snapshot` payload to `uploadUrl` on the configured interval while connected to station WiFi. The `/cloud` response and phone app show last attempt time, last success time, last HTTP status, and last error. Leave cloud sync disabled for local-only use.
+The ESP32 phone app now shows `Setup > Cloud Status` as a read-only status/debug panel. It reports automatic bootstrap, snapshot upload, and cloud config-pull status from `GET /cloud`; it no longer asks users to paste upload URLs or API tokens during normal setup.
 
 The snapshot also includes the display's plant setup summary (`config.title` and `config.cards[]`) so a cloud app can show plant names, art keys, and moisture calibration without separately reaching back into the local receiver.
 
@@ -209,13 +209,13 @@ Relay one receiver snapshot into the mock cloud from your PC:
 python scripts\relay_snapshot_once.py --receiver http://BOARD_IP_FROM_SERIAL --cloud http://127.0.0.1:8088
 ```
 
-To test the receiver-side uploader itself, set the Cloud Sync upload URL in the phone app to the mock server's receiver endpoint:
+To test the receiver-side uploader itself against the local mock server, use `POST /cloud` directly with the mock receiver endpoint:
 
 ```text
 http://PC_LAN_IP:8088/api/v1/receivers/RECEIVER_ID_FROM_APP/snapshot
 ```
 
-Then enable Cloud Sync and save. The app's Cloud Sync panel and `GET /cloud` show the last upload attempt, success, HTTP status, and error.
+The app's Cloud Status panel and `GET /cloud` show the last upload attempt, success, HTTP status, and error. For normal hosted use, prefer the automatic Supabase bootstrap path instead of manual `/cloud` edits.
 
 ## Probe Power Strategy
 
@@ -284,6 +284,8 @@ Live-editable JSON values:
 
 Each card shows the plant name, an animated pixel-art plant, a moisture health bar, and a battery health bar. Battery appears when the probe advertisement includes the optional battery percent byte; older probe firmware still works but shows `--%`. The included sprite choices can be swapped from JSON without reflashing, but adding new bitmap assets still requires regenerating `plant_sprites.h` and flashing the display firmware once.
 
+The ESP32 local setup app automatically recalculates `layout.columns` and `layout.rows` when plants are added or deleted. Current defaults are 6 plants as `3x2`, 7 plants as `4x2` with the bottom row centered, and 8 plants as `4x2`.
+
 ## Plant Art Pipeline
 
 Original plant GIFs live in:
@@ -350,6 +352,8 @@ Those two lines identify the last subsystem touched before the panic.
 ## Flashing Without The IDE
 
 The Arduino IDE bundles `arduino-cli`, and this repo includes PowerShell wrappers that use that bundled executable.
+
+Codex/project-specific flashing notes live in [ESP32 Display Flashing Notes](docs/ESP32_DISPLAY_FLASHING.md). The display receiver usually flashes on `COM13`.
 
 Compile or upload the ESP32 display runtime:
 

@@ -13,7 +13,7 @@
 
   The board starts an access point named MSV2-Display by default:
     SSID:     MSV2-Display
-    password: moisture
+    password: none
     updater:  http://192.168.4.1/ui
     status:   http://192.168.4.1/data
 *********************************************************************/
@@ -32,7 +32,11 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-07-01 packet-loss-stats"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-07-05 reboot-screen-fix"
+
+#ifndef MSV2_FORCE_WIFI_SETUP
+#define MSV2_FORCE_WIFI_SETUP 0
+#endif
 
 #include <Arduino.h>
 
@@ -133,6 +137,7 @@ void loop()
 #if MSV2_ENABLE_WIFI
 #include <LittleFS.h>
 #include "MobileAppPage.h"
+#include <DNSServer.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -143,7 +148,7 @@ void loop()
 #endif
 
 const char AP_SSID[] = "MSV2-Display";
-const char AP_PASSWORD[] = "moisture";
+const char AP_PASSWORD[] = "";
 const char LOCAL_CONFIG_SOURCE[] = "receiver-local";
 
 #ifndef WIFI_SSID
@@ -159,24 +164,31 @@ const char LOCAL_CONFIG_SOURCE[] = "receiver-local";
 #endif
 
 #ifndef MSV2_HOSTED_APP_URL
-#define MSV2_HOSTED_APP_URL "https://msv2-plant-dashboard-samam624-924.netlify.app/"
+#define MSV2_HOSTED_APP_URL "https://msv2-plants.netlify.app/"
 #endif
 
 const char UI_PATH[] = "/ui.json";
 const char WIFI_CONFIG_PATH[] = "/wifi.json";
+const char FORCE_WIFI_SETUP_UNLOCK_PATH[] = "/wifi-setup-unlock-v2.flag";
+const char WIFI_RETRY_STATE_PATH[] = "/wifi-retry.json";
 const char DEVICE_CONFIG_PATH[] = "/device.json";
 const char CLOUD_CONFIG_PATH[] = "/cloud.json";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
-const uint32_t BLE_SCAN_SECONDS = 10;
-const uint32_t BLE_SCAN_IDLE_MS = 1;
+const uint32_t BLE_SCAN_SECONDS = 3;
+const uint32_t BLE_SCAN_IDLE_MS = 250;
 const uint32_t DEFAULT_STALE_SECONDS = 90;
 const uint8_t BATTERY_UNKNOWN = 255;
 const uint8_t MAX_ART_SLOTS = 16;
 const uint32_t SENSOR_RENDER_INTERVAL_MS = 10000;
 const uint32_t CLOUD_BOOTSTRAP_FIRST_TRY_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_RETRY_MS = 300000;
+const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
+const uint32_t CLOUD_SYNC_SOON_MS = 5000;
+const uint32_t CLOUD_SYNC_SOON_THROTTLE_MS = 15000;
+const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 30000;
+const uint8_t WIFI_CONNECT_REBOOT_RETRIES = 2;
 
 struct SensorReading
 {
@@ -211,6 +223,7 @@ Arduino_GFX* gfxPtr = nullptr;
 #endif
 #if MSV2_ENABLE_WIFI
 WebServer* serverPtr = nullptr;
+DNSServer* dnsServerPtr = nullptr;
 #endif
 #if MSV2_ENABLE_BLE
 BLEScan* bleScan = nullptr;
@@ -221,6 +234,7 @@ SensorReading sensors[MAX_SENSOR_ID + 1];
 struct PlantArtSlot
 {
   bool enabled = false;
+  bool artEnabled = true;
   uint16_t sensorId = 0;
   char art[24] = "sprout_pot";
   int x = 0;
@@ -241,6 +255,12 @@ struct PlantArtSlot
   uint32_t nextFrameMs = 0;
 };
 
+struct DashboardGrid
+{
+  int columns = 4;
+  int rows = 2;
+};
+
 PlantArtSlot artSlots[MAX_ART_SLOTS];
 uint8_t artSlotCount = 0;
 
@@ -249,14 +269,18 @@ uint8_t artSlotCount = 0;
 #endif
 #if MSV2_ENABLE_WIFI
 #define server (*serverPtr)
+#define dnsServer (*dnsServerPtr)
 #endif
 
 bool displayDirty = true;
 volatile bool sensorDataDirty = false;
+bool wifiSetupScreenDrawn = false;
 uint32_t lastSensorRenderMs = 0;
 uint32_t staleSeconds = DEFAULT_STALE_SECONDS;
 RTC_DATA_ATTR char lastCheckpoint[48] = "fresh boot";
 bool wifiStationConnected = false;
+bool wifiLocalOnly = false;
+bool wifiSetupPortalActive = false;
 bool storedWifiLoaded = false;
 char configuredWifiSsid[64] = "";
 char configuredWifiPassword[96] = "";
@@ -269,12 +293,18 @@ char uiUpdatedBy[24] = "unknown";
 bool cloudEnabled = false;
 char cloudUploadUrl[160] = "";
 char cloudApiToken[80] = "";
-uint32_t cloudSyncIntervalSeconds = 900;
+uint32_t cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
 uint32_t nextCloudSyncMs = 0;
+uint32_t lastCloudSyncSoonMs = 0;
 uint32_t cloudLastAttemptMs = 0;
 uint32_t cloudLastSuccessMs = 0;
 int cloudLastHttpStatus = 0;
 char cloudLastError[96] = "";
+uint32_t nextCloudConfigPullMs = 0;
+uint32_t cloudConfigLastAttemptMs = 0;
+uint32_t cloudConfigLastSuccessMs = 0;
+int cloudConfigLastHttpStatus = 0;
+char cloudConfigLastError[96] = "";
 uint32_t nextCloudBootstrapMs = 0;
 uint32_t cloudBootstrapLastAttemptMs = 0;
 uint32_t cloudBootstrapLastSuccessMs = 0;
@@ -290,6 +320,13 @@ const uint8_t ART_FRAME_STEP = 1;
 
 #if MSV2_ENABLE_WIFI
 IPAddress currentIpAddress();
+const char* currentNetworkMode();
+#endif
+#if MSV2_ENABLE_DISPLAY
+void renderWifiConnectingScreen(const char* ssid, const char* source);
+void renderWifiSetupScreen(const char* reason);
+void renderWifiSavedScreen();
+void renderWifiRetryScreen(const char* ssid, uint8_t attempt, uint8_t maxAttempts);
 #endif
 
 const char* resetReasonName(esp_reset_reason_t reason)
@@ -465,6 +502,27 @@ String readUiJson()
   return json;
 }
 
+void scheduleCloudSyncSoon(bool force = false)
+{
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0')
+  {
+    return;
+  }
+
+  const uint32_t now = millis();
+  if (!force && lastCloudSyncSoonMs != 0 && (uint32_t)(now - lastCloudSyncSoonMs) < CLOUD_SYNC_SOON_THROTTLE_MS)
+  {
+    return;
+  }
+
+  lastCloudSyncSoonMs = now;
+  const uint32_t targetMs = now + CLOUD_SYNC_SOON_MS;
+  if (nextCloudSyncMs == 0 || (int32_t)(nextCloudSyncMs - targetMs) > 0)
+  {
+    nextCloudSyncMs = targetMs;
+  }
+}
+
 bool writeUiJson(const String& body)
 {
   DynamicJsonDocument validation(12288);
@@ -495,6 +553,7 @@ bool writeUiJson(const String& body)
   staleSeconds = validation["staleSeconds"] | DEFAULT_STALE_SECONDS;
   cacheUiMetadata(validation["_meta"]);
   displayDirty = true;
+  scheduleCloudSyncSoon(true);
   return true;
 }
 
@@ -593,8 +652,9 @@ String claimInfoJson()
   doc["name"] = "MSV2 Display";
   doc["build"] = MSV2_BUILD_TAG;
 #if MSV2_ENABLE_WIFI
-  doc["networkMode"] = wifiStationConnected ? "station" : "access-point";
+  doc["networkMode"] = currentNetworkMode();
   doc["ip"] = currentIpAddress().toString();
+  doc["localOnly"] = wifiLocalOnly;
 #else
   doc["networkMode"] = "offline";
   doc["ip"] = "0.0.0.0";
@@ -602,11 +662,11 @@ String claimInfoJson()
   doc["claimPath"] = "/claim";
   doc["appUrl"] = MSV2_HOSTED_APP_URL;
   String claimUrl = MSV2_HOSTED_APP_URL;
-  claimUrl += "?receiverId=";
+  claimUrl += "?rid=";
   claimUrl += receiverId;
-  claimUrl += "&claimCode=";
+  claimUrl += "&code=";
   claimUrl += receiverClaimCode;
-  claimUrl += "&autoConnect=1";
+  claimUrl += "&connect=1";
   doc["claimUrl"] = claimUrl;
 
   String output;
@@ -617,6 +677,7 @@ String claimInfoJson()
 bool loadStoredWifiConfig()
 {
   storedWifiLoaded = false;
+  wifiLocalOnly = false;
   configuredWifiSsid[0] = '\0';
   configuredWifiPassword[0] = '\0';
 
@@ -641,9 +702,10 @@ bool loadStoredWifiConfig()
 
   const char* ssid = doc["ssid"] | "";
   const char* password = doc["password"] | "";
+  wifiLocalOnly = doc["localOnly"] | false;
   if (ssid == nullptr || ssid[0] == '\0')
   {
-    return false;
+    return wifiLocalOnly;
   }
 
   strlcpy(configuredWifiSsid, ssid, sizeof(configuredWifiSsid));
@@ -652,17 +714,69 @@ bool loadStoredWifiConfig()
   return true;
 }
 
+void clearWifiRetryState()
+{
+  if (LittleFS.exists(WIFI_RETRY_STATE_PATH))
+  {
+    LittleFS.remove(WIFI_RETRY_STATE_PATH);
+  }
+}
+
+uint8_t loadWifiRetryCount()
+{
+  if (!LittleFS.exists(WIFI_RETRY_STATE_PATH))
+  {
+    return 0;
+  }
+
+  File file = LittleFS.open(WIFI_RETRY_STATE_PATH, "r");
+  if (!file)
+  {
+    return 0;
+  }
+
+  StaticJsonDocument<96> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error)
+  {
+    return 0;
+  }
+  return (uint8_t)constrain((int)(doc["count"] | 0), 0, 10);
+}
+
+void saveWifiRetryCount(uint8_t count)
+{
+  StaticJsonDocument<96> doc;
+  doc["count"] = count;
+  doc["updatedMs"] = millis();
+
+  File file = LittleFS.open(WIFI_RETRY_STATE_PATH, "w");
+  if (!file)
+  {
+    return;
+  }
+
+  serializeJson(doc, file);
+  file.close();
+}
+
 bool loadCloudConfig()
 {
   cloudEnabled = false;
   cloudUploadUrl[0] = '\0';
   cloudApiToken[0] = '\0';
-  cloudSyncIntervalSeconds = 900;
+  cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
   nextCloudSyncMs = 0;
   cloudLastAttemptMs = 0;
   cloudLastSuccessMs = 0;
   cloudLastHttpStatus = 0;
   cloudLastError[0] = '\0';
+  nextCloudConfigPullMs = 0;
+  cloudConfigLastAttemptMs = 0;
+  cloudConfigLastSuccessMs = 0;
+  cloudConfigLastHttpStatus = 0;
+  cloudConfigLastError[0] = '\0';
   nextCloudBootstrapMs = 0;
   cloudBootstrapLastAttemptMs = 0;
   cloudBootstrapLastSuccessMs = 0;
@@ -691,8 +805,9 @@ bool loadCloudConfig()
   cloudEnabled = doc["enabled"] | false;
   strlcpy(cloudUploadUrl, doc["uploadUrl"] | "", sizeof(cloudUploadUrl));
   strlcpy(cloudApiToken, doc["apiToken"] | "", sizeof(cloudApiToken));
-  cloudSyncIntervalSeconds = constrain((uint32_t)(doc["syncIntervalSeconds"] | 900), 60UL, 86400UL);
+  cloudSyncIntervalSeconds = constrain((uint32_t)(doc["syncIntervalSeconds"] | CLOUD_SYNC_DEFAULT_SECONDS), 60UL, 86400UL);
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
+  nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
   return true;
 }
 
@@ -711,6 +826,12 @@ String cloudConfigJson()
   upload["lastHttpStatus"] = cloudLastHttpStatus;
   upload["lastError"] = cloudLastError;
   upload["nextAttemptMs"] = cloudEnabled ? nextCloudSyncMs : 0;
+  JsonObject configPull = doc.createNestedObject("configPull");
+  configPull["lastAttemptMs"] = cloudConfigLastAttemptMs;
+  configPull["lastSuccessMs"] = cloudConfigLastSuccessMs;
+  configPull["lastHttpStatus"] = cloudConfigLastHttpStatus;
+  configPull["lastError"] = cloudConfigLastError;
+  configPull["nextAttemptMs"] = cloudEnabled ? nextCloudConfigPullMs : 0;
   JsonObject bootstrap = doc.createNestedObject("bootstrap");
   bootstrap["configured"] = strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0;
   bootstrap["url"] = MSV2_CLOUD_BOOTSTRAP_URL;
@@ -788,6 +909,7 @@ bool writeCloudConfigJson(const String& body)
   }
   cloudSyncIntervalSeconds = syncIntervalSeconds;
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
+  nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
   cloudLastError[0] = '\0';
 
   if (!persistCloudConfig())
@@ -809,12 +931,17 @@ bool resetCloudConfig()
   cloudEnabled = false;
   cloudUploadUrl[0] = '\0';
   cloudApiToken[0] = '\0';
-  cloudSyncIntervalSeconds = 900;
+  cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
   nextCloudSyncMs = 0;
   cloudLastAttemptMs = 0;
   cloudLastSuccessMs = 0;
   cloudLastHttpStatus = 0;
   cloudLastError[0] = '\0';
+  nextCloudConfigPullMs = 0;
+  cloudConfigLastAttemptMs = 0;
+  cloudConfigLastSuccessMs = 0;
+  cloudConfigLastHttpStatus = 0;
+  cloudConfigLastError[0] = '\0';
   nextCloudBootstrapMs = millis() + CLOUD_BOOTSTRAP_FIRST_TRY_MS;
   server.send(200, "application/json", "{\"ok\":true}");
   return true;
@@ -823,11 +950,15 @@ bool resetCloudConfig()
 String wifiStatusJson()
 {
   StaticJsonDocument<512> doc;
-  doc["networkMode"] = wifiStationConnected ? "station" : "access-point";
+  doc["networkMode"] = currentNetworkMode();
   doc["ip"] = currentIpAddress().toString();
   doc["setupSsid"] = AP_SSID;
+  doc["setupPassword"] = AP_PASSWORD;
+  doc["setupUrl"] = "http://192.168.4.1/app";
   doc["hasStoredCredentials"] = storedWifiLoaded;
   doc["configuredSsid"] = configuredWifiSsid;
+  doc["localOnly"] = wifiLocalOnly;
+  doc["setupPortalActive"] = wifiSetupPortalActive;
 #if MSV2_ENABLE_WIFI
   doc["connectedSsid"] = wifiStationConnected ? WiFi.SSID() : "";
   doc["rssi"] = wifiStationConnected ? WiFi.RSSI() : 0;
@@ -853,12 +984,13 @@ bool writeWifiConfigJson(const String& body)
 
   const char* ssid = doc["ssid"] | "";
   const char* password = doc["password"] | "";
-  if (ssid == nullptr || ssid[0] == '\0')
+  bool localOnly = doc["localOnly"] | false;
+  if (!localOnly && (ssid == nullptr || ssid[0] == '\0'))
   {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"ssid required\"}");
     return false;
   }
-  if (strlen(ssid) >= sizeof(configuredWifiSsid))
+  if (ssid != nullptr && strlen(ssid) >= sizeof(configuredWifiSsid))
   {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"ssid too long\"}");
     return false;
@@ -870,8 +1002,13 @@ bool writeWifiConfigJson(const String& body)
   }
 
   StaticJsonDocument<512> stored;
-  stored["ssid"] = ssid;
-  stored["password"] = password == nullptr ? "" : password;
+  stored["localOnly"] = localOnly;
+  const bool hasSsid = ssid != nullptr && ssid[0] != '\0';
+  const bool preserveExistingPassword = hasSsid && storedWifiLoaded && strcmp(ssid, configuredWifiSsid) == 0 && (password == nullptr || password[0] == '\0');
+  char passwordToSave[sizeof(configuredWifiPassword)];
+  strlcpy(passwordToSave, preserveExistingPassword ? configuredWifiPassword : (password == nullptr ? "" : password), sizeof(passwordToSave));
+  stored["ssid"] = hasSsid ? ssid : "";
+  stored["password"] = passwordToSave;
 
   File file = LittleFS.open(WIFI_CONFIG_PATH, "w");
   if (!file)
@@ -882,10 +1019,22 @@ bool writeWifiConfigJson(const String& body)
   serializeJson(stored, file);
   file.close();
 
-  strlcpy(configuredWifiSsid, ssid, sizeof(configuredWifiSsid));
-  strlcpy(configuredWifiPassword, password == nullptr ? "" : password, sizeof(configuredWifiPassword));
-  storedWifiLoaded = true;
+  wifiLocalOnly = localOnly;
+  strlcpy(configuredWifiSsid, hasSsid ? ssid : "", sizeof(configuredWifiSsid));
+  strlcpy(configuredWifiPassword, passwordToSave, sizeof(configuredWifiPassword));
+  storedWifiLoaded = hasSsid;
+  clearWifiRetryState();
+  if (MSV2_FORCE_WIFI_SETUP != 0)
+  {
+    File unlockFile = LittleFS.open(FORCE_WIFI_SETUP_UNLOCK_PATH, "w");
+    if (unlockFile)
+    {
+      unlockFile.print("1");
+      unlockFile.close();
+    }
+  }
   pendingRestartMs = millis() + 900;
+  renderWifiSavedScreen();
   server.send(200, "application/json", "{\"ok\":true,\"restart\":true}");
   return true;
 }
@@ -896,10 +1045,18 @@ bool forgetWifiConfig()
   {
     LittleFS.remove(WIFI_CONFIG_PATH);
   }
+  wifiLocalOnly = false;
+  wifiSetupPortalActive = true;
   storedWifiLoaded = false;
   configuredWifiSsid[0] = '\0';
   configuredWifiPassword[0] = '\0';
+  if (LittleFS.exists(FORCE_WIFI_SETUP_UNLOCK_PATH))
+  {
+    LittleFS.remove(FORCE_WIFI_SETUP_UNLOCK_PATH);
+  }
+  clearWifiRetryState();
   pendingRestartMs = millis() + 900;
+  renderWifiSavedScreen();
   server.send(200, "application/json", "{\"ok\":true,\"restart\":true}");
   return true;
 }
@@ -944,6 +1101,44 @@ bool layoutWantsLandscape(JsonObject layout)
 {
   const char* orientation = layout["orientation"] | "landscape";
   return strcmp(orientation, "portrait") != 0;
+}
+
+DashboardGrid gridForCardCount(size_t count)
+{
+  size_t total = count == 0 ? 1 : count;
+  if (total == 1)
+  {
+    return {1, 1};
+  }
+  if (total == 2)
+  {
+    return {2, 1};
+  }
+  if (total == 3)
+  {
+    return {3, 1};
+  }
+  if (total == 4)
+  {
+    return {2, 2};
+  }
+  if (total <= 6)
+  {
+    return {3, 2};
+  }
+  if (total <= 8)
+  {
+    return {4, 2};
+  }
+  if (total == 9)
+  {
+    return {3, 3};
+  }
+  if (total <= 12)
+  {
+    return {4, 3};
+  }
+  return {4, 4};
 }
 
 const char* firstString(JsonObject object, const char* key)
@@ -1034,27 +1229,22 @@ const PlantSprite* spriteForArt(const char* art)
 
 void drawPlantSpriteScaled(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t frame)
 {
-  uint8_t scaleDiv = 2;
-  while (scaleDiv < 5 && ((sprite.w / scaleDiv) > maxW || (sprite.h / scaleDiv) > maxH))
-  {
-    scaleDiv++;
-  }
-
-  const int drawW = sprite.w / scaleDiv;
-  const int drawH = sprite.h / scaleDiv;
-  const int startX = centerX - drawW / 2;
-  const int startY = topY + max(0, (maxH - drawH) / 2);
+  uint8_t scaleMul = 1;
+  uint8_t scaleDiv = 1;
+  int drawW = 0;
+  int drawH = 0;
+  int startX = 0;
+  int startY = 0;
+  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, startX, startY);
   const uint8_t pose = pgm_read_byte(&sprite.sequence[frame % sprite.frameCount]);
   const uint16_t* bitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[pose]);
 
   tft.startWrite();
   for (int yy = 0; yy < drawH; yy++)
   {
-    const int sourceY = yy * scaleDiv;
     for (int xx = 0; xx < drawW; xx++)
     {
-      const int sourceX = xx * scaleDiv;
-      const uint16_t c = pgm_read_word(&bitmap[sourceY * sprite.w + sourceX]);
+      const uint16_t c = spriteScaledPixel(sprite, bitmap, scaleMul, scaleDiv, xx, yy);
       if (c != PLANT_TRANSPARENT)
       {
         tft.writePixel(startX + xx, startY + yy, c);
@@ -1064,35 +1254,41 @@ void drawPlantSpriteScaled(const PlantSprite& sprite, int centerX, int topY, int
   tft.endWrite();
 }
 
-void spriteDrawGeometry(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t& scaleDiv, int& drawW, int& drawH, int& startX, int& startY)
+void spriteDrawGeometry(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t& scaleMul, uint8_t& scaleDiv, int& drawW, int& drawH, int& startX, int& startY)
 {
-  scaleDiv = 2;
-  while (scaleDiv < 5 && ((sprite.w / scaleDiv) > maxW || (sprite.h / scaleDiv) > maxH))
+  scaleMul = 1;
+  scaleDiv = 1;
+  while (scaleMul < 3 && (sprite.w * (scaleMul + 1)) <= maxW && (sprite.h * (scaleMul + 1)) <= maxH)
+  {
+    scaleMul++;
+  }
+  while (scaleMul == 1 && scaleDiv < 5 && ((sprite.w / scaleDiv) > maxW || (sprite.h / scaleDiv) > maxH))
   {
     scaleDiv++;
   }
 
-  drawW = sprite.w / scaleDiv;
-  drawH = sprite.h / scaleDiv;
+  drawW = (sprite.w * scaleMul) / scaleDiv;
+  drawH = (sprite.h * scaleMul) / scaleDiv;
   startX = centerX - drawW / 2;
   startY = topY + max(0, (maxH - drawH) / 2);
 }
 
-uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, uint8_t scaleDiv, int x, int y)
+uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, uint8_t scaleMul, uint8_t scaleDiv, int x, int y)
 {
-  const int sourceX = x * scaleDiv;
-  const int sourceY = y * scaleDiv;
+  const int sourceX = (x * scaleDiv) / scaleMul;
+  const int sourceY = (y * scaleDiv) / scaleMul;
   return pgm_read_word(&bitmap[sourceY * sprite.w + sourceX]);
 }
 
 void drawPlantSpriteDiffScaled(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t oldFrame, uint8_t newFrame, uint16_t backgroundColor)
 {
-  uint8_t scaleDiv = 2;
+  uint8_t scaleMul = 1;
+  uint8_t scaleDiv = 1;
   int drawW = 0;
   int drawH = 0;
   int startX = 0;
   int startY = 0;
-  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleDiv, drawW, drawH, startX, startY);
+  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, startX, startY);
 
   const uint8_t oldPose = pgm_read_byte(&sprite.sequence[oldFrame % sprite.frameCount]);
   const uint8_t newPose = pgm_read_byte(&sprite.sequence[newFrame % sprite.frameCount]);
@@ -1109,8 +1305,8 @@ void drawPlantSpriteDiffScaled(const PlantSprite& sprite, int centerX, int topY,
   {
     for (int xx = 0; xx < drawW; xx++)
     {
-      const uint16_t oldColor = spriteScaledPixel(sprite, oldBitmap, scaleDiv, xx, yy);
-      const uint16_t newColor = spriteScaledPixel(sprite, newBitmap, scaleDiv, xx, yy);
+      const uint16_t oldColor = spriteScaledPixel(sprite, oldBitmap, scaleMul, scaleDiv, xx, yy);
+      const uint16_t newColor = spriteScaledPixel(sprite, newBitmap, scaleMul, scaleDiv, xx, yy);
       if (oldColor == newColor)
       {
         continue;
@@ -1168,10 +1364,12 @@ void drawPlantArt(int x, int y, int maxW, int maxH, const char* art, uint16_t co
 
 void drawPlantArtInCard(int x, int y, int w, int h, const char* art, uint16_t color, uint16_t surfaceColor, uint8_t frame)
 {
-  const int artX = x + 7;
-  const int artY = y + 24;
-  const int artW = w - 14;
-  const int artH = max(24, h - 91);
+  const bool compact = h < 76;
+  const int inset = compact ? 5 : 7;
+  const int artX = x + inset;
+  const int artY = y + (compact ? 15 : 24);
+  const int artW = w - inset * 2;
+  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
 
   tft.fillRect(artX, artY, artW, artH, surfaceColor);
   drawPlantArt(x + w / 2, artY, artW, artH, art, color, surfaceColor, frame);
@@ -1179,10 +1377,12 @@ void drawPlantArtInCard(int x, int y, int w, int h, const char* art, uint16_t co
 
 void drawPlantArtDiffInCard(int x, int y, int w, int h, const char* art, uint16_t color, uint16_t surfaceColor, uint8_t oldFrame, uint8_t newFrame)
 {
-  const int artX = x + 7;
-  const int artY = y + 24;
-  const int artW = w - 14;
-  const int artH = max(24, h - 91);
+  const bool compact = h < 76;
+  const int inset = compact ? 5 : 7;
+  const int artX = x + inset;
+  const int artY = y + (compact ? 15 : 24);
+  const int artW = w - inset * 2;
+  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
   const PlantSprite* sprite = spriteForArt(art);
 
   if (sprite != nullptr)
@@ -1201,6 +1401,7 @@ void cachePlantArtSlot(
   int w,
   int h,
   JsonObject card,
+  bool artEnabled,
   uint16_t backgroundColor,
   uint16_t surfaceColor,
   uint16_t textColor,
@@ -1217,6 +1418,7 @@ void cachePlantArtSlot(
 
   PlantArtSlot& slot = artSlots[artSlotCount++];
   slot.enabled = true;
+  slot.artEnabled = artEnabled;
   slot.sensorId = card["sensor"] | 0;
   strlcpy(slot.art, card["art"] | "sprout_pot", sizeof(slot.art));
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
@@ -1238,12 +1440,55 @@ void cachePlantArtSlot(
   slot.nextFrameMs = millis() + random(0, ART_FRAME_INTERVAL_MS + ART_FRAME_JITTER_MS + 1);
 }
 
+void drawCompactCardMetrics(
+  int x,
+  int y,
+  int w,
+  int h,
+  const char* moistureText,
+  const char* batteryText,
+  uint8_t moisturePct,
+  uint8_t batteryPct,
+  uint16_t moistureColor,
+  uint16_t batteryColor,
+  uint16_t mutedColor,
+  uint16_t surfaceColor,
+  uint16_t backgroundColor
+)
+{
+  int moistY = y + max(18, h - 43);
+  int moistBarY = moistY + 13;
+  int battY = moistBarY + 8;
+  int battBarY = battY + 13;
+  if (battBarY + 5 > y + h - 4)
+  {
+    int shift = battBarY + 5 - (y + h - 4);
+    moistY -= shift;
+    moistBarY -= shift;
+    battY -= shift;
+    battBarY -= shift;
+  }
+  moistY = max(y + 17, moistY);
+  moistBarY = max(moistY + 11, moistBarY);
+  battY = max(moistBarY + 6, battY);
+  battBarY = max(battY + 11, battBarY);
+
+  tft.fillRect(x + 5, moistY - 1, w - 10, min(h - (moistY - y) - 3, 46), surfaceColor);
+  drawTextLeft("Moist", x + 5, moistY, 1, mutedColor, surfaceColor);
+  drawTextRight(moistureText, x + w - 5, moistY, 1, moistureColor, surfaceColor);
+  drawBar(x + 5, moistBarY, w - 10, 5, moisturePct, moistureColor, backgroundColor);
+  drawTextLeft("Batt", x + 5, battY, 1, mutedColor, surfaceColor);
+  drawTextRight(batteryText, x + w - 5, battY, 1, batteryColor, surfaceColor);
+  drawBar(x + 5, battBarY, w - 10, 5, batteryPct, batteryColor, backgroundColor);
+}
+
 void drawPlantCard(
   int x,
   int y,
   int w,
   int h,
   JsonObject card,
+  bool showArt,
   uint16_t backgroundColor,
   uint16_t surfaceColor,
   uint16_t textColor,
@@ -1302,8 +1547,6 @@ void drawPlantCard(
     snprintf(batteryText, sizeof(batteryText), "%u%%", batteryPct);
   }
 
-  drawPlantArtInCard(x, y, w, h, art, stale ? mutedColor : accentColor, surfaceColor, 0);
-
   char moistureText[8];
   if (stale)
   {
@@ -1312,6 +1555,17 @@ void drawPlantCard(
   else
   {
     snprintf(moistureText, sizeof(moistureText), "%u", reading->moisture);
+  }
+
+  if (h < 76)
+  {
+    drawCompactCardMetrics(x, y, w, h, moistureText, batteryText, moisturePct, batteryPct, moistureColor, batteryColor, mutedColor, surfaceColor, backgroundColor);
+    return;
+  }
+
+  if (showArt)
+  {
+    drawPlantArtInCard(x, y, w, h, art, stale ? mutedColor : accentColor, surfaceColor, 0);
   }
 
   drawTextLeft("Moist", x + 7, y + h - 62, 1, mutedColor, surfaceColor);
@@ -1357,6 +1611,12 @@ void drawPlantCardDataOnly(const PlantArtSlot& slot)
   else
   {
     snprintf(batteryText, sizeof(batteryText), "%u%%", batteryPct);
+  }
+
+  if (h < 76)
+  {
+    drawCompactCardMetrics(x, y, w, h, moistureText, batteryText, moisturePct, batteryPct, moistureColor, batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    return;
   }
 
   tft.fillRect(x + 7, y + h - 63, w - 14, 26, slot.surfaceColor);
@@ -1418,6 +1678,95 @@ void drawLegacyRow(
   (void)mutedColor;
 }
 
+void drawSetupStep(int y, const char* number, const char* text, uint16_t textColor, uint16_t mutedColor, uint16_t backgroundColor)
+{
+  tft.fillRoundRect(16, y - 2, 22, 22, 11, mutedColor);
+  drawTextCenter(number, 27, y + 4, 1, backgroundColor, mutedColor);
+  drawTextLeft(text, 48, y + 3, 1, textColor, backgroundColor);
+}
+
+void renderWifiConnectingScreen(const char* ssid, const char* source)
+{
+#if !MSV2_ENABLE_DISPLAY
+  (void)ssid;
+  (void)source;
+  return;
+#else
+  applyDisplayRotation(1, true);
+  tft.fillScreen(TFT_BLACK);
+  drawTextLeft("MSV2 Plants", 16, 16, 2, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("Connecting to home WiFi...", 16, 48, 1, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("Network", 16, 84, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft(ssid == nullptr || ssid[0] == '\0' ? "(none)" : ssid, 92, 84, 1, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("Source", 16, 106, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft(source == nullptr ? "saved setup" : source, 92, 106, 1, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("If this takes too long, setup help will appear here.", 16, 146, 1, TFT_DARKGREY, TFT_BLACK);
+#endif
+}
+
+void renderWifiSetupScreen(const char* reason)
+{
+#if !MSV2_ENABLE_DISPLAY
+  (void)reason;
+  return;
+#else
+  artSlotCount = 0;
+  sensorDataDirty = false;
+  displayDirty = false;
+  wifiSetupScreenDrawn = true;
+  applyDisplayRotation(1, true);
+  tft.fillScreen(TFT_BLACK);
+  drawTextLeft("WiFi Setup", 16, 14, 2, TFT_WHITE, TFT_BLACK);
+  drawTextLeft(reason == nullptr || reason[0] == '\0' ? "Ready for first-time setup" : reason, 16, 43, 1, TFT_ORANGE, TFT_BLACK);
+
+  drawSetupStep(78, "1", "On your phone, open WiFi settings.", TFT_WHITE, TFT_GREEN, TFT_BLACK);
+  drawSetupStep(110, "2", "Join network: MSV2-Display", TFT_WHITE, TFT_GREEN, TFT_BLACK);
+  drawSetupStep(142, "3", "No password needed", TFT_WHITE, TFT_GREEN, TFT_BLACK);
+  drawSetupStep(174, "4", "Choose home WiFi or local-only mode.", TFT_WHITE, TFT_GREEN, TFT_BLACK);
+
+  drawTextLeft("If no page appears, open Safari/Chrome and type:", 16, 216, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("192.168.4.1", 16, 238, 2, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("Then tap Setup > Receiver WiFi.", 16, 268, 1, TFT_WHITE, TFT_BLACK);
+#endif
+}
+
+void renderWifiSavedScreen()
+{
+#if !MSV2_ENABLE_DISPLAY
+  return;
+#else
+  artSlotCount = 0;
+  sensorDataDirty = false;
+  displayDirty = false;
+  applyDisplayRotation(1, true);
+  tft.fillScreen(TFT_BLACK);
+  drawTextLeft("Settings Saved", 16, 16, 2, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("The receiver is restarting now.", 16, 54, 1, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("After restart, this screen will show your plant dashboard.", 16, 86, 1, TFT_DARKGREY, TFT_BLACK);
+#endif
+}
+
+void renderWifiRetryScreen(const char* ssid, uint8_t attempt, uint8_t maxAttempts)
+{
+#if !MSV2_ENABLE_DISPLAY
+  (void)ssid;
+  (void)attempt;
+  (void)maxAttempts;
+  return;
+#else
+  applyDisplayRotation(1, true);
+  tft.fillScreen(TFT_BLACK);
+  drawTextLeft("WiFi Retry", 16, 16, 2, TFT_ORANGE, TFT_BLACK);
+  drawTextLeft("Could not reach your home WiFi yet.", 16, 54, 1, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("Network", 16, 88, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft(ssid == nullptr || ssid[0] == '\0' ? "(saved network)" : ssid, 92, 88, 1, TFT_WHITE, TFT_BLACK);
+  char retryText[32];
+  snprintf(retryText, sizeof(retryText), "Retry %u of %u", attempt, maxAttempts);
+  drawTextLeft(retryText, 16, 122, 1, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("Restarting and trying again...", 16, 154, 1, TFT_DARKGREY, TFT_BLACK);
+#endif
+}
+
 void renderUi()
 {
 #if !MSV2_ENABLE_DISPLAY
@@ -1457,19 +1806,31 @@ void renderUi()
   tft.fillScreen(backgroundColor);
   const char* title = doc["title"] | "MSV2";
   drawTextLeft(title, 8, 8, 2, textColor, backgroundColor);
+#if MSV2_ENABLE_WIFI
+  if (!wifiSetupPortalActive)
+  {
+    char appAddress[36];
+    String ipText = currentIpAddress().toString();
+    snprintf(appAddress, sizeof(appAddress), "App %s", ipText.c_str());
+    drawTextRight(appAddress, tft.width() - 8, 12, 1, mutedColor, backgroundColor);
+  }
+#endif
 
   setCheckpoint("render: cards draw");
   JsonArray cards = doc["cards"].as<JsonArray>();
   artSlotCount = 0;
   if (!cards.isNull() && cards.size() > 0)
   {
-    int columns = clampInt(layout["columns"] | 4, 1, 4);
-    int rows = clampInt(layout["rows"] | 2, 1, 4);
+    DashboardGrid grid = gridForCardCount(cards.size());
+    int columns = grid.columns;
+    int rows = grid.rows;
     int gap = clampInt(layout["gap"] | 6, 2, 12);
     int padding = clampInt(layout["padding"] | 6, 2, 16);
     int top = 34;
     int cardW = (tft.width() - padding * 2 - gap * (columns - 1)) / columns;
     int cardH = (tft.height() - top - padding - gap * (rows - 1)) / rows;
+    int visibleCount = min((int)cards.size(), columns * rows);
+    bool showCardArt = visibleCount <= 8;
     int index = 0;
 
     for (JsonVariant cardValue : cards)
@@ -1485,7 +1846,14 @@ void renderUi()
       }
       int col = index % columns;
       int row = index / columns;
-      int x = padding + col * (cardW + gap);
+      int rowItems = columns;
+      int lastRowRemainder = visibleCount % columns;
+      if (lastRowRemainder > 0 && row == visibleCount / columns)
+      {
+        rowItems = lastRowRemainder;
+      }
+      int rowOffset = ((columns - rowItems) * (cardW + gap)) / 2;
+      int x = padding + rowOffset + col * (cardW + gap);
       int y = top + row * (cardH + gap);
       drawPlantCard(
         x,
@@ -1493,6 +1861,7 @@ void renderUi()
         cardW,
         cardH,
         card,
+        showCardArt,
         backgroundColor,
         surfaceColor,
         textColor,
@@ -1501,7 +1870,7 @@ void renderUi()
         warningColor,
         dangerColor
       );
-      cachePlantArtSlot(x, y, cardW, cardH, card, backgroundColor, surfaceColor, textColor, accentColor, mutedColor, warningColor, dangerColor);
+      cachePlantArtSlot(x, y, cardW, cardH, card, showCardArt, backgroundColor, surfaceColor, textColor, accentColor, mutedColor, warningColor, dangerColor);
       index++;
     }
   }
@@ -1562,6 +1931,10 @@ void renderAnimatedPlantArt()
   {
     PlantArtSlot& slot = artSlots[i];
     if (!slot.enabled)
+    {
+      continue;
+    }
+    if (!slot.artEnabled || slot.h < 76)
     {
       continue;
     }
@@ -1689,9 +2062,10 @@ String snapshotJson()
 
   JsonObject network = doc.createNestedObject("network");
 #if MSV2_ENABLE_WIFI
-  network["mode"] = wifiStationConnected ? "station" : "access-point";
+  network["mode"] = currentNetworkMode();
   network["ip"] = currentIpAddress().toString();
   network["rssi"] = wifiStationConnected ? WiFi.RSSI() : 0;
+  network["localOnly"] = wifiLocalOnly;
 #else
   network["mode"] = "offline";
   network["ip"] = "0.0.0.0";
@@ -1734,6 +2108,47 @@ void setCloudLastError(const char* error)
 void setCloudBootstrapLastError(const char* error)
 {
   strlcpy(cloudBootstrapLastError, error == nullptr ? "" : error, sizeof(cloudBootstrapLastError));
+}
+
+void setCloudConfigLastError(const char* error)
+{
+  strlcpy(cloudConfigLastError, error == nullptr ? "" : error, sizeof(cloudConfigLastError));
+}
+
+bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
+{
+  if (configValue.isNull())
+  {
+    return false;
+  }
+
+  DynamicJsonDocument nextConfig(12288);
+  nextConfig.set(configValue);
+  JsonObject root = nextConfig.as<JsonObject>();
+  if (root.isNull())
+  {
+    return false;
+  }
+
+  JsonObject meta = root["_meta"].to<JsonObject>();
+  meta["schema"] = 1;
+  meta["version"] = remoteVersion > 0 ? remoteVersion : uiConfigVersion + 1;
+  meta["updatedMs"] = millis();
+  meta["updatedBy"] = "cloud";
+
+  File file = LittleFS.open(UI_PATH, "w");
+  if (!file)
+  {
+    return false;
+  }
+
+  serializeJson(nextConfig, file);
+  file.close();
+  staleSeconds = nextConfig["staleSeconds"] | DEFAULT_STALE_SECONDS;
+  cacheUiMetadata(nextConfig["_meta"]);
+  displayDirty = true;
+  scheduleCloudSyncSoon(true);
+  return true;
 }
 
 void runCloudBootstrap(uint32_t now)
@@ -1826,7 +2241,7 @@ void runCloudBootstrap(uint32_t now)
     DeserializationError error = deserializeJson(responseDoc, response);
     const char* uploadUrl = responseDoc["uploadUrl"] | "";
     const char* apiToken = responseDoc["apiToken"] | "";
-    uint32_t syncIntervalSeconds = constrain((uint32_t)(responseDoc["syncIntervalSeconds"] | 300), 60UL, 86400UL);
+    uint32_t syncIntervalSeconds = constrain((uint32_t)(responseDoc["syncIntervalSeconds"] | CLOUD_SYNC_DEFAULT_SECONDS), 60UL, 86400UL);
 
     if (error || uploadUrl[0] == '\0' || apiToken[0] == '\0')
     {
@@ -1894,6 +2309,130 @@ void runCloudBootstrap(uint32_t now)
   }
 
   http.end();
+}
+
+void runCloudConfigPull(uint32_t now)
+{
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0')
+  {
+    nextCloudConfigPullMs = 0;
+    return;
+  }
+
+  if (nextCloudConfigPullMs == 0)
+  {
+    nextCloudConfigPullMs = now + 10000UL;
+    return;
+  }
+
+  if ((int32_t)(now - nextCloudConfigPullMs) < 0)
+  {
+    return;
+  }
+
+  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiStationConnected)
+  {
+    setCloudConfigLastError("waiting for station WiFi");
+    nextCloudConfigPullMs = now + 10000UL;
+    return;
+  }
+
+  const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
+  const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
+  if (!isHttps && !isHttp)
+  {
+    cloudConfigLastAttemptMs = now;
+    cloudConfigLastHttpStatus = 0;
+    setCloudConfigLastError("uploadUrl must start with http:// or https://");
+    nextCloudConfigPullMs = now + CLOUD_CONFIG_PULL_INTERVAL_MS;
+    return;
+  }
+
+  String configUrl = cloudUploadUrl;
+  configUrl += configUrl.indexOf('?') >= 0 ? "&" : "?";
+  configUrl += "config=1&receiverId=";
+  configUrl += receiverId;
+  configUrl += "&currentVersion=";
+  configUrl += String(uiConfigVersion);
+
+  HTTPClient http;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  bool began = false;
+  if (isHttps)
+  {
+    secureClient.setInsecure();
+    began = http.begin(secureClient, configUrl);
+  }
+  else
+  {
+    began = http.begin(plainClient, configUrl);
+  }
+
+  cloudConfigLastAttemptMs = now;
+  cloudConfigLastHttpStatus = 0;
+  if (!began)
+  {
+    setCloudConfigLastError("could not start HTTP client");
+    nextCloudConfigPullMs = now + CLOUD_CONFIG_PULL_INTERVAL_MS;
+    return;
+  }
+
+  http.setTimeout(8000);
+  String auth = "Bearer ";
+  auth += cloudApiToken;
+  http.addHeader("Authorization", auth);
+
+  int status = http.GET();
+  cloudConfigLastHttpStatus = status;
+  if (status >= 200 && status < 300)
+  {
+    String response = http.getString();
+    DynamicJsonDocument responseDoc(12288);
+    DeserializationError error = deserializeJson(responseDoc, response);
+    JsonObject configRow = responseDoc["config"].as<JsonObject>();
+    uint32_t remoteVersion = configRow["config_version"] | 0;
+    if (error)
+    {
+      setCloudConfigLastError("invalid config response");
+    }
+    else if (configRow.isNull())
+    {
+      setCloudConfigLastError("");
+      cloudConfigLastSuccessMs = millis();
+    }
+    else if (remoteVersion <= uiConfigVersion)
+    {
+      setCloudConfigLastError("");
+      cloudConfigLastSuccessMs = millis();
+    }
+    else if (applyCloudUiConfig(configRow["config"], remoteVersion))
+    {
+      setCloudConfigLastError("");
+      cloudConfigLastSuccessMs = millis();
+      Serial.print("[MSV2 cloud] applied config v");
+      Serial.println(remoteVersion);
+    }
+    else
+    {
+      setCloudConfigLastError("could not apply cloud config");
+    }
+  }
+  else if (status > 0)
+  {
+    String error = "HTTP ";
+    error += status;
+    setCloudConfigLastError(error.c_str());
+  }
+  else
+  {
+    String error = http.errorToString(status);
+    setCloudConfigLastError(error.c_str());
+  }
+
+  http.end();
+  nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
 }
 
 void runCloudSnapshotUploader(uint32_t now)
@@ -2034,11 +2573,13 @@ String deviceInfoJson()
 
 #if MSV2_ENABLE_WIFI
   IPAddress ip = wifiStationConnected ? WiFi.localIP() : WiFi.softAPIP();
-  doc["networkMode"] = wifiStationConnected ? "station" : "access-point";
+  doc["networkMode"] = currentNetworkMode();
   doc["ip"] = ip.toString();
   doc["setupSsid"] = AP_SSID;
+  doc["setupUrl"] = "http://192.168.4.1/app";
   doc["configuredSsid"] = configuredWifiSsid;
   doc["hasStoredWifiCredentials"] = storedWifiLoaded;
+  doc["localOnly"] = wifiLocalOnly;
 #else
   doc["networkMode"] = "offline";
   doc["ip"] = "0.0.0.0";
@@ -2119,6 +2660,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.rssi = advertisedDevice.getRSSI();
     reading.lastSeenMs = millis();
     sensorDataDirty = true;
+    scheduleCloudSyncSoon();
   }
 };
 
@@ -2139,6 +2681,12 @@ void bleScanTask(void* parameter)
 
 void setupServer()
 {
+  auto redirectToSetupApp = []() {
+    server.sendHeader("Location", "http://192.168.4.1/app", true);
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(302, "text/plain", "Open MSV2 setup at http://192.168.4.1/app\n");
+  };
+
   server.on("/", HTTP_GET, []() {
     Serial.println("[MSV2 web] GET /");
     server.sendHeader("Cache-Control", "no-store");
@@ -2173,6 +2721,13 @@ void setupServer()
     Serial.println("[MSV2 web] GET /ping");
     server.send(200, "text/plain", "pong\n");
   });
+
+  server.on("/generate_204", HTTP_GET, redirectToSetupApp);
+  server.on("/gen_204", HTTP_GET, redirectToSetupApp);
+  server.on("/hotspot-detect.html", HTTP_GET, redirectToSetupApp);
+  server.on("/library/test/success.html", HTTP_GET, redirectToSetupApp);
+  server.on("/connecttest.txt", HTTP_GET, redirectToSetupApp);
+  server.on("/ncsi.txt", HTTP_GET, redirectToSetupApp);
 
   server.on("/ui", HTTP_GET, []() {
     Serial.println("[MSV2 web] GET /ui");
@@ -2253,6 +2808,13 @@ void setupServer()
   server.onNotFound([]() {
     Serial.print("[MSV2 web] 404 ");
     Serial.println(server.uri());
+    if (!wifiStationConnected)
+    {
+      server.sendHeader("Location", "http://192.168.4.1/app", true);
+      server.sendHeader("Cache-Control", "no-store");
+      server.send(302, "text/plain", "Open MSV2 setup at http://192.168.4.1/app\n");
+      return;
+    }
     server.send(404, "text/plain", "not found\n");
   });
 
@@ -2268,14 +2830,48 @@ IPAddress currentIpAddress()
 #endif
 }
 
+const char* currentNetworkMode()
+{
+#if MSV2_ENABLE_WIFI
+  if (wifiStationConnected)
+  {
+    return "station";
+  }
+  if (wifiLocalOnly && !wifiSetupPortalActive)
+  {
+    return "local-only";
+  }
+  return "access-point";
+#else
+  return "offline";
+#endif
+}
+
 void setupWifi()
 {
 #if MSV2_ENABLE_WIFI
   wifiStationConnected = false;
+  wifiSetupPortalActive = false;
   loadStoredWifiConfig();
 
-  const char* stationSsid = storedWifiLoaded ? configuredWifiSsid : WIFI_SSID;
-  const char* stationPassword = storedWifiLoaded ? configuredWifiPassword : WIFI_PASSWORD;
+  const bool forceSetupUnlocked = MSV2_FORCE_WIFI_SETUP != 0 && LittleFS.exists(FORCE_WIFI_SETUP_UNLOCK_PATH);
+  const bool forceSetupMode = MSV2_FORCE_WIFI_SETUP != 0 && !forceSetupUnlocked;
+  const bool useLocalOnly = wifiLocalOnly && !forceSetupMode;
+  const char* stationSsid = (forceSetupMode || useLocalOnly) ? "" : (storedWifiLoaded ? configuredWifiSsid : WIFI_SSID);
+  const char* stationPassword = (forceSetupMode || useLocalOnly) ? "" : (storedWifiLoaded ? configuredWifiPassword : WIFI_PASSWORD);
+
+  if (forceSetupMode)
+  {
+    Serial.println("[MSV2 wifi] forced setup mode; no saved phone setup choice found");
+  }
+  else if (useLocalOnly)
+  {
+    Serial.println("[MSV2 wifi] local-only mode enabled; starting receiver access point");
+  }
+  else if (forceSetupUnlocked)
+  {
+    Serial.println("[MSV2 wifi] forced setup completed; using saved phone setup choice");
+  }
 
   if (strlen(stationSsid) > 0)
   {
@@ -2284,6 +2880,7 @@ void setupWifi()
     Serial.println(stationSsid);
     Serial.print("[MSV2 wifi] credential source: ");
     Serial.println(storedWifiLoaded ? "LittleFS" : "firmware");
+    renderWifiConnectingScreen(stationSsid, storedWifiLoaded ? "saved from phone app" : "firmware default");
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(stationSsid, stationPassword);
@@ -2299,19 +2896,69 @@ void setupWifi()
     if (WiFi.status() == WL_CONNECTED)
     {
       wifiStationConnected = true;
+      clearWifiRetryState();
       Serial.print("[MSV2 wifi] connected: ");
       Serial.println(WiFi.localIP());
       return;
     }
 
     Serial.println("[MSV2 wifi] station connect failed; falling back to AP");
+    if (storedWifiLoaded)
+    {
+      uint8_t retryCount = loadWifiRetryCount();
+      if (retryCount < WIFI_CONNECT_REBOOT_RETRIES)
+      {
+        retryCount++;
+        saveWifiRetryCount(retryCount);
+        Serial.print("[MSV2 wifi] saved credential retry reboot ");
+        Serial.print(retryCount);
+        Serial.print("/");
+        Serial.println(WIFI_CONNECT_REBOOT_RETRIES);
+        renderWifiRetryScreen(stationSsid, retryCount, WIFI_CONNECT_REBOOT_RETRIES);
+        Serial.flush();
+        delay(1500);
+        ESP.restart();
+      }
+      clearWifiRetryState();
+      Serial.println("[MSV2 wifi] saved credential retries exhausted; starting setup AP");
+    }
+    wifiSetupPortalActive = true;
+    renderWifiSetupScreen("Could not join home WiFi");
     WiFi.disconnect(true);
     delay(250);
   }
+  else if (useLocalOnly)
+  {
+    clearWifiRetryState();
+    wifiSetupScreenDrawn = false;
+  }
+  else
+  {
+    wifiSetupPortalActive = true;
+    renderWifiSetupScreen("First-time setup needed");
+  }
 
   bootLog("starting WiFi AP");
+  WiFi.persistent(false);
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
   WiFi.mode(WIFI_AP);
-  if (!WiFi.softAP(AP_SSID, AP_PASSWORD))
+  WiFi.setSleep(false);
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+  bool apStarted = AP_PASSWORD[0] == '\0' ? WiFi.softAP(AP_SSID) : WiFi.softAP(AP_SSID, AP_PASSWORD);
+  if (!apStarted)
+  {
+    Serial.println("[MSV2 wifi] AP start failed; retrying radio reset");
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    delay(250);
+    WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+    apStarted = AP_PASSWORD[0] == '\0' ? WiFi.softAP(AP_SSID) : WiFi.softAP(AP_SSID, AP_PASSWORD);
+  }
+  if (!apStarted)
   {
     bootLog("WiFi AP start failed");
   }
@@ -2321,6 +2968,15 @@ void setupWifi()
     Serial.println(AP_SSID);
     Serial.print("[MSV2 wifi] AP IP: ");
     Serial.println(WiFi.softAPIP());
+    if (dnsServerPtr == nullptr)
+    {
+      dnsServerPtr = new DNSServer();
+    }
+    if (dnsServerPtr != nullptr)
+    {
+      dnsServer.start(53, "*", WiFi.softAPIP());
+      Serial.println("[MSV2 wifi] captive DNS started");
+    }
   }
 #endif
 }
@@ -2330,11 +2986,12 @@ void setup()
   Serial.begin(115200);
   delay(2000);
   Serial.println();
+  esp_reset_reason_t resetReason = esp_reset_reason();
   Serial.println(MSV2_BUILD_TAG);
   Serial.print("[MSV2 boot] previous checkpoint before reset: ");
   Serial.println(lastCheckpoint);
   Serial.print("[MSV2 boot] reset reason: ");
-  Serial.println(resetReasonName(esp_reset_reason()));
+  Serial.println(resetReasonName(resetReason));
   randomSeed(esp_random());
   bootLog("serial ready");
 
@@ -2397,20 +3054,29 @@ void setup()
 #endif
 
 #if MSV2_ENABLE_BLE
-  bootLog("initializing BLE scanner");
-  BLEDevice::init("MSV2-DISPLAY");
-  bleScan = BLEDevice::getScan();
-  bleScan->setAdvertisedDeviceCallbacks(new Msv2AdvertisedDeviceCallbacks(), true);
-  bleScan->setActiveScan(false);
-  bleScan->setInterval(45);
-  bleScan->setWindow(45);
-  if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", 8192, nullptr, 1, &bleScanTaskHandle, 0) == pdPASS)
+#if MSV2_ENABLE_WIFI
+  if (wifiSetupPortalActive)
   {
-    bootLog("BLE scanner task running");
+    bootLog("BLE scanner deferred until WiFi setup is finished");
   }
   else
+#endif
   {
-    bootLog("BLE scanner task failed");
+    bootLog("initializing BLE scanner");
+    BLEDevice::init("MSV2-DISPLAY");
+    bleScan = BLEDevice::getScan();
+    bleScan->setAdvertisedDeviceCallbacks(new Msv2AdvertisedDeviceCallbacks(), true);
+    bleScan->setActiveScan(false);
+    bleScan->setInterval(120);
+    bleScan->setWindow(40);
+    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", 8192, nullptr, 1, &bleScanTaskHandle, 0) == pdPASS)
+    {
+      bootLog("BLE scanner task running");
+    }
+    else
+    {
+      bootLog("BLE scanner task failed");
+    }
   }
 #else
   bootLog("BLE disabled");
@@ -2424,7 +3090,22 @@ void setup()
 #endif
   bootLog("initial render");
   displayDirty = false;
+#if MSV2_ENABLE_WIFI
+  if (wifiStationConnected)
+  {
+    renderUi();
+  }
+  else if (!wifiSetupPortalActive)
+  {
+    renderUi();
+  }
+  else if (!wifiSetupScreenDrawn)
+  {
+    renderWifiSetupScreen("Setup page ready");
+  }
+#else
   renderUi();
+#endif
   bootLog("setup complete");
 }
 
@@ -2433,6 +3114,10 @@ void loop()
   uint32_t now = millis();
 
 #if MSV2_ENABLE_WIFI
+  if (dnsServerPtr != nullptr && !wifiStationConnected)
+  {
+    dnsServer.processNextRequest();
+  }
   server.handleClient();
   if (pendingRestartMs != 0 && (int32_t)(now - pendingRestartMs) >= 0)
   {
@@ -2441,11 +3126,33 @@ void loop()
     delay(50);
     ESP.restart();
   }
-  runCloudBootstrap(now);
-  runCloudSnapshotUploader(now);
+  if (wifiStationConnected)
+  {
+    runCloudBootstrap(now);
+    runCloudConfigPull(now);
+    runCloudSnapshotUploader(now);
+  }
 #endif
 
 #if MSV2_ENABLE_DISPLAY
+#if MSV2_ENABLE_WIFI
+  if (pendingRestartMs != 0)
+  {
+    displayDirty = false;
+    sensorDataDirty = false;
+    delay(1);
+    return;
+  }
+
+  if (wifiSetupPortalActive)
+  {
+    displayDirty = false;
+    sensorDataDirty = false;
+    delay(1);
+    return;
+  }
+#endif
+
   if (sensorDataDirty && now - lastSensorRenderMs >= SENSOR_RENDER_INTERVAL_MS)
   {
     sensorDataDirty = false;

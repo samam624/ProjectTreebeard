@@ -33,7 +33,7 @@
     h2 { margin: 0 0 10px; font-size: 18px; }
     h3 { margin: 0; font-size: 16px; }
     p { margin: 6px 0 0; color: var(--muted); }
-    main { width: min(1080px, 100%); margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 42px; }
+    main { width: min(1240px, 100%); margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 42px; }
     .topline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
     .pill { display: inline-flex; min-height: 28px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
     .toolbar { display: flex; gap: 8px; align-items: center; }
@@ -47,6 +47,8 @@
     button:disabled { opacity: .55; cursor: not-allowed; }
     .row { display: flex; gap: 8px; margin-top: 12px; }
     .row button { flex: 1; }
+    .scan-box { display: grid; gap: 8px; margin-top: 12px; }
+    .scan-box video { width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; background: #05090d; object-fit: cover; }
     .notice { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel-2); color: var(--muted); }
     .notice.error { border-color: rgba(255,90,95,.55); background: rgba(255,90,95,.11); color: var(--danger); }
     .notice.ok { border-color: rgba(32,201,151,.45); background: rgba(32,201,151,.11); color: var(--accent-dark); }
@@ -56,12 +58,14 @@
     .summary-value { font-size: 22px; font-weight: 800; line-height: 1; }
     .receiver { padding: 14px; margin-bottom: 14px; }
     .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; color: var(--muted); font-size: 13px; }
-    .display-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
-    .plant { min-height: 176px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel); position: relative; overflow: hidden; }
-    .plant-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; min-height: 68px; margin-bottom: 8px; }
+    body.connected .grid { grid-template-columns: 1fr; }
+    body.connected .toolbar { margin-left: auto; }
+    .display-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 14px; }
+    .plant { min-height: 196px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); position: relative; overflow: hidden; }
+    .plant-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; min-height: 70px; margin-bottom: 10px; }
     .plant-title { min-width: 0; }
     .plant-name { margin: 0; font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .plant-art { width: 58px; height: 58px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 5px 8px rgba(0,0,0,.25)); animation: plant-breathe 1.2s steps(2, end) infinite; }
+    .plant-art { width: 64px; height: 64px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 5px 8px rgba(0,0,0,.25)); animation: plant-breathe 1.2s steps(2, end) infinite; }
     @keyframes plant-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
     .badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
     .metric { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
@@ -84,7 +88,12 @@
       .display-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       main { padding-bottom: max(42px, env(safe-area-inset-bottom)); }
     }
-    @media (max-width: 420px) {
+    @media (min-width: 1100px) {
+      .display-board { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+      .plant { min-height: 212px; padding: 14px; }
+      .plant-art { width: 72px; height: 72px; }
+    }
+    @media (max-width: 520px) {
       .display-board { grid-template-columns: 1fr; }
     }
   </style>
@@ -104,7 +113,7 @@
     </div>
   </header>
   <main>
-    <div class="grid">
+    <div class="grid" id="appGrid">
       <section class="panel" id="connectPanel">
         <h2>Connect Household</h2>
         <p>Scan the receiver QR code or enter the pairing details from the ESP32 app. This phone will stay connected.</p>
@@ -116,6 +125,16 @@
         <input id="householdInput" autocomplete="organization" value="My Plants">
         <div class="row">
           <button type="button" id="connectButton">Connect</button>
+        </div>
+        <label for="claimUrlInput">App link or QR text</label>
+        <input id="claimUrlInput" autocomplete="off" placeholder="Paste hosted app link">
+        <div class="row">
+          <button type="button" class="secondary" id="scanQrButton">Scan QR</button>
+          <button type="button" class="secondary" id="useClaimUrlButton">Use Link</button>
+        </div>
+        <div class="scan-box" id="scanBox" hidden>
+          <video id="scanVideo" playsinline muted></video>
+          <button type="button" class="secondary" id="stopScanButton">Stop Scan</button>
         </div>
         <div class="notice" id="connectNotice">No account needed. The private household key is stored in this browser.</div>
       </section>
@@ -131,8 +150,15 @@
   <script>
     const API_BASE = "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-dashboard";
     const SHARE_TOKEN_KEY = "msv2.householdShareToken";
+    const SHARE_TOKEN_COOKIE = "msv2_share_token";
     const params = new URLSearchParams(window.location.search);
-    const state = { shareToken: localStorage.getItem(SHARE_TOKEN_KEY) || "", snapshots: [] };
+    const state = {
+      shareToken: loadShareToken(),
+      snapshots: [],
+      scanStream: null,
+      scanFrame: 0,
+      qrDecoderReady: false,
+    };
 
     const byId = (id) => document.getElementById(id);
     const setNotice = (text, type = "") => {
@@ -146,12 +172,76 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;");
 
+    function readCookie(name) {
+      const prefix = encodeURIComponent(name) + "=";
+      for (const part of document.cookie.split(";")) {
+        const value = part.trim();
+        if (value.startsWith(prefix)) return decodeURIComponent(value.slice(prefix.length));
+      }
+      return "";
+    }
+
+    function writeCookie(name, value) {
+      document.cookie = encodeURIComponent(name) + "=" + encodeURIComponent(value) + "; Max-Age=31536000; Path=/; SameSite=Lax; Secure";
+    }
+
+    function clearCookie(name) {
+      document.cookie = encodeURIComponent(name) + "=; Max-Age=0; Path=/; SameSite=Lax; Secure";
+    }
+
+    function loadShareToken() {
+      const token = localStorage.getItem(SHARE_TOKEN_KEY) || readCookie(SHARE_TOKEN_COOKIE) || "";
+      if (token) {
+        localStorage.setItem(SHARE_TOKEN_KEY, token);
+        writeCookie(SHARE_TOKEN_COOKIE, token);
+      }
+      return token;
+    }
+
+    function saveShareToken(token) {
+      state.shareToken = token;
+      localStorage.setItem(SHARE_TOKEN_KEY, token);
+      writeCookie(SHARE_TOKEN_COOKIE, token);
+    }
+
+    function clearShareToken() {
+      state.shareToken = "";
+      localStorage.removeItem(SHARE_TOKEN_KEY);
+      clearCookie(SHARE_TOKEN_COOKIE);
+    }
+
     function applyPairingParams() {
       const receiverId = params.get("receiverId") || params.get("rid") || "";
       const claimCode = params.get("claimCode") || params.get("code") || "";
       if (receiverId) byId("receiverIdInput").value = receiverId;
       if (claimCode) byId("claimCodeInput").value = claimCode;
       byId("claimPill").hidden = !(receiverId && claimCode);
+    }
+
+    function applyPairingLink(value, autoConnect = false) {
+      const text = String(value || "").trim();
+      if (!text) return false;
+      let parsed = null;
+      try {
+        parsed = new URL(text, window.location.href);
+      } catch (error) {
+        const query = text.includes("?") ? text.slice(text.indexOf("?")) : "?" + text.replace(/^[?#]/, "");
+        parsed = new URL(query, window.location.href);
+      }
+      const linkParams = parsed.searchParams;
+      const receiverId = linkParams.get("receiverId") || linkParams.get("rid") || "";
+      const claimCode = linkParams.get("claimCode") || linkParams.get("code") || "";
+      if (!receiverId || !claimCode) {
+        setNotice("That link does not include receiver pairing details.", "error");
+        return false;
+      }
+      byId("receiverIdInput").value = receiverId;
+      byId("claimCodeInput").value = claimCode;
+      byId("claimUrlInput").value = text;
+      byId("claimPill").hidden = false;
+      setNotice("Pairing details loaded in this app.", "ok");
+      if (autoConnect) connectHousehold().catch(() => setNotice("Could not connect from that link. Tap Connect to try again.", "error"));
+      return true;
     }
 
     function hasPairingParams() {
@@ -171,6 +261,7 @@
       byId("linkPill").textContent = connected ? "Household connected" : "No household link";
       byId("forgetButton").disabled = !state.shareToken;
       byId("connectPanel").hidden = connected;
+      document.body.classList.toggle("connected", connected);
     }
 
     async function connectHousehold() {
@@ -188,8 +279,7 @@
         setNotice(body.error || "Could not connect household.", "error");
         return;
       }
-      state.shareToken = body.share.share_token;
-      localStorage.setItem(SHARE_TOKEN_KEY, state.shareToken);
+      saveShareToken(body.share.share_token);
       setNotice("Household connected on this phone.", "ok");
       renderLinkState();
       await loadSnapshots();
@@ -204,12 +294,12 @@
         return;
       }
       const response = await fetch(API_BASE + "/api/share-snapshots", {
+        cache: "no-store",
         headers: { "Authorization": "Bearer " + state.shareToken },
       });
       const body = await response.json();
       if (!response.ok || !body.ok) {
-        state.shareToken = "";
-        localStorage.removeItem(SHARE_TOKEN_KEY);
+        clearShareToken();
         renderLinkState();
         byId("receivers").className = "empty";
         byId("receivers").innerHTML = "<h2>Could not load plants</h2><p>" + escapeHtml(body.error || "Unknown error") + "</p>";
@@ -221,11 +311,87 @@
     }
 
     function forgetHousehold() {
-      state.shareToken = "";
       state.snapshots = [];
-      localStorage.removeItem(SHARE_TOKEN_KEY);
+      clearShareToken();
       setNotice("Household link removed from this phone.");
       loadSnapshots();
+    }
+
+    async function startQrScan() {
+      stopQrScan();
+      try {
+        const detector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+        if (!detector) await loadQrDecoder();
+        state.scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        const video = byId("scanVideo");
+        video.srcObject = state.scanStream;
+        byId("scanBox").hidden = false;
+        setNotice("Point the camera at the receiver pairing QR code.");
+        await video.play();
+        const scan = async () => {
+          try {
+            const value = detector ? await scanWithBarcodeDetector(detector, video) : scanWithJsQr(video);
+            if (value && applyPairingLink(value, true)) {
+              stopQrScan();
+              return;
+            }
+          } catch (error) {
+            setNotice("Could not read that QR code yet.", "error");
+          }
+          state.scanFrame = requestAnimationFrame(scan);
+        };
+        scan();
+      } catch (error) {
+        stopQrScan();
+        setNotice("Camera QR scanning was not available. Paste the app link instead.", "error");
+      }
+    }
+
+    async function scanWithBarcodeDetector(detector, video) {
+      const codes = await detector.detect(video);
+      return codes[0]?.rawValue || "";
+    }
+
+    async function loadQrDecoder() {
+      if (window.jsQR) return;
+      if (state.qrDecoderReady) return;
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+        script.async = true;
+        script.onload = () => {
+          state.qrDecoderReady = true;
+          resolve();
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    function scanWithJsQr(video) {
+      if (!window.jsQR || !video.videoWidth || !video.videoHeight) return "";
+      const canvas = scanWithJsQr.canvas || (scanWithJsQr.canvas = document.createElement("canvas"));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const size = Math.min(video.videoWidth, video.videoHeight);
+      const sx = Math.max(0, Math.floor((video.videoWidth - size) / 2));
+      const sy = Math.max(0, Math.floor((video.videoHeight - size) / 2));
+      canvas.width = size;
+      canvas.height = size;
+      context.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+      const image = context.getImageData(0, 0, size, size);
+      const code = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
+      return code?.data || "";
+    }
+
+    function stopQrScan() {
+      if (state.scanFrame) cancelAnimationFrame(state.scanFrame);
+      state.scanFrame = 0;
+      if (state.scanStream) {
+        for (const track of state.scanStream.getTracks()) track.stop();
+      }
+      state.scanStream = null;
+      byId("scanVideo").srcObject = null;
+      byId("scanBox").hidden = true;
     }
 
     function renderDashboard() {
@@ -242,13 +408,13 @@
       let dryCount = 0;
       let lowBatteryCount = 0;
       for (const row of rows) {
-        const cards = cardsBySensor(row.snapshot?.config?.cards || []);
-        for (const plant of row.snapshot?.plants || []) {
-          plantCount += 1;
-          const card = cards.get(plant.sensor || 0);
-          const pct = percent(plant.moisture, card?.moisture?.dry ?? 350, card?.moisture?.wet ?? 800);
+        const plants = displayPlants(row.snapshot || {});
+        plantCount += plants.length;
+        for (const plant of plants) {
+          if (!plant.reading) continue;
+          const pct = percent(plant.reading.moisture, plant.card?.moisture?.dry ?? 350, plant.card?.moisture?.wet ?? 800);
           if (pct != null && pct < 25) dryCount += 1;
-          if (typeof plant.batteryPercent === "number" && plant.batteryPercent < 20) lowBatteryCount += 1;
+          if (typeof plant.reading.batteryPercent === "number" && plant.reading.batteryPercent < 20) lowBatteryCount += 1;
         }
       }
       return '<section class="summary" aria-label="Garden summary">' +
@@ -267,37 +433,72 @@
       const snapshot = row.snapshot || {};
       const config = snapshot.config || {};
       const title = config.title || row.household_name || "MSV2 Plants";
-      const readings = snapshot.plants || [];
-      const cards = cardsBySensor(config.cards || []);
-      const plants = readings.length ? readings.map((plant) => renderPlant(plant, cards.get(plant.sensor || 0))).join("") : "<p>No plant readings in this snapshot.</p>";
+      const plants = displayPlants(snapshot);
+      const plantCards = plants.length ? plants.map(renderPlant).join("") : "<p>No plant setup in this snapshot.</p>";
       return '<section class="receiver"><h2>' + escapeHtml(title) + '</h2><div class="meta">' +
         '<span>Household: ' + escapeHtml(row.household_name || "My Plants") + '</span>' +
         '<span>Receiver: <code>' + escapeHtml(row.receiver_id) + '</code></span>' +
         '<span>Config v' + escapeHtml(config.version ?? row.config_version ?? "--") + '</span>' +
         '<span>Cloud: ' + escapeHtml(formatDate(row.received_at)) + '</span>' +
-        '</div><div class="display-board">' + plants + '</div></section>';
+        '</div><div class="display-board">' + plantCards + '</div></section>';
     }
 
-    function renderPlant(plant, config) {
-      const name = config?.plant || "Probe " + (plant.sensor ?? "--");
-      const pct = percent(plant.moisture, config?.moisture?.dry ?? 350, config?.moisture?.wet ?? 800);
+    function renderPlant(plant) {
+      const card = plant.card || {};
+      const reading = plant.reading || {};
+      const name = card.plant || "Probe " + (plant.sensor ?? "--");
+      const pct = percent(reading.moisture, card.moisture?.dry ?? 350, card.moisture?.wet ?? 800);
       const moistureClass = healthClass(pct);
-      const battery = plant.batteryPercent;
+      const battery = reading.batteryPercent;
       const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
-      const art = config?.art || "sprout_pot";
+      const art = card.art || "sprout_pot";
       return '<article class="plant"><div class="plant-head"><div class="plant-title"><h3 class="plant-name">' + escapeHtml(name) + '</h3><div class="meta">Probe ' + escapeHtml(plant.sensor ?? "--") + '</div></div><img class="plant-art" src="' + escapeHtml(artSrc(art)) + '" alt=""></div>' +
-        metric("Moisture", String(plant.moisture ?? "--") + " raw / " + String(pct ?? "--") + "%", moistureClass) +
+        metric("Moisture", String(reading.moisture ?? "--") + " raw / " + String(pct ?? "--") + "%", moistureClass) +
         bar(pct, moistureClass) +
         metric("Battery", battery == null ? "--" : String(battery) + "%", batteryClass) +
-        metric("RSSI", String(plant.rssi ?? "--") + " dBm") +
-        metric("Age", String(plant.ageMs ?? "--") + " ms") +
-        metric("Packets", String(plant.received ?? "--") + " rx / " + String(plant.missedTotal ?? "--") + " missed") +
+        metric("RSSI", String(reading.rssi ?? "--") + " dBm") +
+        metric("Age", formatAge(reading.ageMs)) +
+        metric("Packets", String(reading.received ?? "--") + " rx / " + String(reading.missedTotal ?? "--") + " missed") +
         '</article>';
+    }
+
+    function displayPlants(snapshot) {
+      const cards = Array.isArray(snapshot.config?.cards) ? snapshot.config.cards : [];
+      const readings = readingsBySensor(snapshot.plants || []);
+      if (cards.length) {
+        const usedSensors = new Set();
+        const plants = cards.map((card, index) => {
+          const sensor = Number(card.sensor || index + 1);
+          usedSensors.add(sensor);
+          return { sensor, card, reading: readings.get(sensor) || null };
+        });
+        for (const reading of readings.values()) {
+          const sensor = Number(reading.sensor || 0);
+          if (sensor && !usedSensors.has(sensor)) {
+            plants.push({ sensor, card: { sensor, plant: "Unassigned", art: "sprout_pot" }, reading });
+          }
+        }
+        return plants;
+      }
+      return Array.from(readings.values()).map((reading) => ({
+        sensor: Number(reading.sensor || 0),
+        card: { sensor: reading.sensor, plant: "Probe " + (reading.sensor ?? "--"), art: "sprout_pot" },
+        reading,
+      }));
     }
 
     function cardsBySensor(cards) {
       const result = new Map();
       for (const card of cards) if (typeof card.sensor === "number") result.set(card.sensor, card);
+      return result;
+    }
+
+    function readingsBySensor(readings) {
+      const result = new Map();
+      for (const reading of readings) {
+        const sensor = Number(reading?.sensor || 0);
+        if (sensor) result.set(sensor, reading);
+      }
       return result;
     }
 
@@ -327,12 +528,27 @@
       return '<div class="metric"><span>' + escapeHtml(label) + '</span><span class="' + escapeHtml(className) + '">' + escapeHtml(value) + '</span></div>';
     }
 
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    function formatAge(value) {
+      if (typeof value !== "number") return "--";
+      const seconds = Math.max(0, Math.round(value / 1000));
+      if (seconds < 60) return seconds + "s";
+      const minutes = Math.floor(seconds / 60);
+      return minutes + "m " + String(seconds % 60) + "s";
+    }
+
     function formatDate(value) {
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString();
     }
 
     byId("connectButton").addEventListener("click", connectHousehold);
+    byId("useClaimUrlButton").addEventListener("click", () => applyPairingLink(byId("claimUrlInput").value, false));
+    byId("scanQrButton").addEventListener("click", startQrScan);
+    byId("stopScanButton").addEventListener("click", stopQrScan);
     byId("refreshButton").addEventListener("click", loadSnapshots);
     byId("forgetButton").addEventListener("click", forgetHousehold);
 
@@ -346,7 +562,7 @@
       loadSnapshots();
     }
     if ("serviceWorker" in navigator && location.protocol === "https:") {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+      navigator.serviceWorker.register("sw.js").then((registration) => registration.update()).catch(() => {});
     }
     window.setInterval(loadSnapshots, 30000);
   </script>

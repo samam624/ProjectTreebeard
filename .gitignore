@@ -7,6 +7,7 @@ packet_test*.csv
 .netlify/
 web/*.zip
 node_modules/
+.arduino-build/
 supabase/.temp/
 supabase/.branches/
 supabase/.env

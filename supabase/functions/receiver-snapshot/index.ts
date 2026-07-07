@@ -16,6 +16,21 @@ type Snapshot = {
   plants?: unknown[];
 };
 
+async function verifyReceiverToken(
+  supabase: any,
+  receiverToken: string,
+  receiverId: string,
+  providedToken: string,
+): Promise<boolean> {
+  if (!providedToken) return false;
+  if (providedToken === receiverToken) return true;
+  const { data: verified, error: verifyError } = await supabase.rpc("msv2_verify_receiver_api_token", {
+    p_receiver_id: receiverId,
+    p_api_token: providedToken,
+  });
+  return !verifyError && verified === true;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -61,12 +76,34 @@ Deno.serve(async (request) => {
     const providedToken = bearerToken(request);
 
     if (request.method === "GET") {
+      const url = new URL(request.url);
+      const receiverId = url.searchParams.get("receiverId");
+      const wantsConfig = url.searchParams.get("config") === "1";
+
+      if (wantsConfig) {
+        const cleanReceiverId = String(receiverId ?? "").trim();
+        if (!cleanReceiverId) {
+          return jsonResponse({ ok: false, error: "receiverId required" }, 400);
+        }
+        if (!(await verifyReceiverToken(supabase, receiverToken, cleanReceiverId, providedToken))) {
+          return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+        }
+        const currentVersion = Number(url.searchParams.get("currentVersion") ?? "0");
+        const { data, error } = await supabase.rpc("msv2_read_receiver_pending_config", {
+          p_receiver_id: cleanReceiverId,
+          p_current_version: Number.isFinite(currentVersion) ? currentVersion : 0,
+        });
+        if (error) {
+          return jsonResponse({ ok: false, error: error.message }, 500);
+        }
+        const config = Array.isArray(data) ? data[0] : data;
+        return jsonResponse({ ok: true, config: config ?? null });
+      }
+
       if (providedToken !== receiverToken) {
         return jsonResponse({ ok: false, error: "unauthorized" }, 401);
       }
 
-      const url = new URL(request.url);
-      const receiverId = url.searchParams.get("receiverId");
       const { data, error } = await supabase.rpc("msv2_read_latest_snapshots", {
         p_receiver_id: receiverId,
         p_limit: receiverId ? 1 : 20,
@@ -91,18 +128,8 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: "receiverId required" }, 400);
     }
 
-    if (!providedToken) {
+    if (!(await verifyReceiverToken(supabase, receiverToken, receiverId, providedToken))) {
       return jsonResponse({ ok: false, error: "unauthorized" }, 401);
-    }
-
-    if (providedToken !== receiverToken) {
-      const { data: verified, error: verifyError } = await supabase.rpc("msv2_verify_receiver_api_token", {
-        p_receiver_id: receiverId,
-        p_api_token: providedToken,
-      });
-      if (verifyError || verified !== true) {
-        return jsonResponse({ ok: false, error: "unauthorized" }, 401);
-      }
     }
 
     const forwardedFor = request.headers.get("x-forwarded-for") ?? "";

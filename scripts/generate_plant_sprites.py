@@ -14,6 +14,7 @@ Install dependency:
 Example:
   python scripts/generate_plant_sprites.py
   python scripts/generate_plant_sprites.py --scale 0.5 --max-poses 3
+  python scripts/generate_plant_sprites.py --target-width 84 --target-height 84
 """
 
 from __future__ import annotations
@@ -90,14 +91,32 @@ def image_signature(image: Image.Image) -> bytes:
     return image.tobytes()
 
 
-def fit_to_canvas(frames: list[Image.Image]) -> list[Image.Image]:
-    width = max(frame.width for frame in frames)
-    height = max(frame.height for frame in frames)
+def fit_to_canvas(frames: list[Image.Image], width: int | None = None, height: int | None = None) -> list[Image.Image]:
+    width = width or max(frame.width for frame in frames)
+    height = height or max(frame.height for frame in frames)
     fitted = []
     for frame in frames:
         canvas = Image.new("RGBA", (width, height), (255, 0, 255, 0))
         canvas.alpha_composite(frame, ((width - frame.width) // 2, height - frame.height))
         fitted.append(canvas)
+    return fitted
+
+
+def fit_sprite_to_target(frames: list[Image.Image], *, target_width: int, target_height: int) -> list[Image.Image]:
+    if target_width <= 0 or target_height <= 0:
+        return frames
+
+    width = max(frame.width for frame in frames)
+    height = max(frame.height for frame in frames)
+    scale = min(target_width / width, target_height / height, 1.0)
+    fitted = []
+    for frame in frames:
+        if scale < 1.0:
+            frame = frame.resize(
+                (max(1, round(frame.width * scale)), max(1, round(frame.height * scale))),
+                Image.Resampling.NEAREST,
+            )
+        fitted.extend(fit_to_canvas([frame], target_width, target_height))
     return fitted
 
 
@@ -122,7 +141,7 @@ def choose_poses(frames: list[Image.Image], max_poses: int) -> tuple[list[Image.
     return selected, [remap[index] for index in original_sequence]
 
 
-def load_sprite(path: Path, *, scale: float, max_poses: int, white_threshold: int) -> Sprite:
+def load_sprite(path: Path, *, scale: float, max_poses: int, white_threshold: int, target_width: int, target_height: int) -> Sprite:
     key = slugify(path.stem)
     raw_frames = [
         normalize_frame(frame, white_threshold=white_threshold, scale=scale)
@@ -132,14 +151,19 @@ def load_sprite(path: Path, *, scale: float, max_poses: int, white_threshold: in
     if not raw_frames:
         raise ValueError(f"{path} did not contain usable frames")
 
-    fitted = fit_to_canvas(raw_frames)
+    fitted = fit_sprite_to_target(
+        fit_to_canvas(raw_frames),
+        target_width=target_width,
+        target_height=target_height,
+    )
     poses, sequence = choose_poses(fitted, max_poses)
     return Sprite(key=key, label=label_from_key(key), frames=poses, sequence=sequence)
 
 
 def frame_to_rgb565_values(frame: Image.Image) -> list[int]:
     values = []
-    for r, g, b, a in frame.getdata():
+    pixels = frame.get_flattened_data() if hasattr(frame, "get_flattened_data") else frame.getdata()
+    for r, g, b, a in pixels:
         if a < 128:
             values.append(TRANSPARENT_RGB565)
         else:
@@ -322,6 +346,8 @@ def main() -> int:
     parser.add_argument("--out-sketch", type=Path, default=Path("arduino/MSV2_ESP32_Display_Runtime"), help="ESP32 display sketch folder.")
     parser.add_argument("--generated", type=Path, default=Path("generated/plant_sprites"), help="Generated preview/snippet output folder.")
     parser.add_argument("--scale", type=float, default=0.5, help="Nearest-neighbor scale applied to GIF frames.")
+    parser.add_argument("--target-width", type=int, default=84, help="Transparent output canvas width for every sprite. Use 0 to keep per-sprite widths.")
+    parser.add_argument("--target-height", type=int, default=84, help="Transparent output canvas height for every sprite. Use 0 to keep per-sprite heights.")
     parser.add_argument("--max-poses", type=int, default=3, help="Maximum unique bitmap poses per GIF.")
     parser.add_argument("--white-threshold", type=int, default=245, help="Make near-white pixels transparent. Use -1 to disable.")
     parser.add_argument("--skip-mobile-app", action="store_true", help="Do not update MobileAppPage.h art picker.")
@@ -332,7 +358,14 @@ def main() -> int:
         raise SystemExit(f"No GIFs found in {args.source}. Add files like fern.gif or monstera.gif.")
 
     sprites = [
-        load_sprite(path, scale=args.scale, max_poses=args.max_poses, white_threshold=args.white_threshold)
+        load_sprite(
+            path,
+            scale=args.scale,
+            max_poses=args.max_poses,
+            white_threshold=args.white_threshold,
+            target_width=args.target_width,
+            target_height=args.target_height,
+        )
         for path in gif_paths
     ]
 

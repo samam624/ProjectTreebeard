@@ -84,7 +84,7 @@ Deno.serve(async (request) => {
       apiToken: registration.api_token,
       apiTokenHint: registration.api_token_hint,
       claimCode: claimCode || null,
-      syncIntervalSeconds: 300,
+      syncIntervalSeconds: 60,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

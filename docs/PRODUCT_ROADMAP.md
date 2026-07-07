@@ -19,7 +19,8 @@ The goal is a plant monitor that a friend or family member can set up without Ar
 - The receiver creates a persistent local identity in `/device.json` and exposes `/claim` with a receiver ID and claim code.
 - Supabase has a receiver bootstrap endpoint, and the ESP32 firmware has first-pass auto-bootstrap so the receiver can register itself with its built-in ID/secret and receive a per-device upload token automatically.
 - The UI config carries `_meta.schema`, `_meta.version`, `_meta.updatedMs`, and `_meta.updatedBy`; `/config-meta` exposes that sync state.
-- Optional cloud relay settings are stored locally in `/cloud.json`, exposed through `/cloud`, and editable from `Setup > Cloud Sync`; receiver-side snapshot upload runs only when cloud sync is explicitly enabled.
+- Cloud relay settings are stored locally in `/cloud.json`, exposed through `/cloud`, and normally populated by automatic Supabase bootstrap after WiFi setup.
+- The ESP32 phone app shows cloud bootstrap/upload/config-pull status but no longer exposes manual cloud URL/token editing in the normal setup UI.
 - `/snapshot` exposes the cloud upload payload locally, and `scripts/mock_cloud_server.py` provides a tiny local API test harness.
 - The receiver serves PWA metadata, icon, and a service worker route. Some browsers still treat local `http://` receiver pages as home-screen shortcuts rather than full PWAs because full PWA installability generally expects HTTPS.
 
@@ -76,16 +77,17 @@ Long-term: cloud-backed PWA or native app using the same screens:
 ## Setup Flow For Friends
 
 1. Receiver boots.
-2. If it has no valid WiFi credentials, it starts `MSV2-Display` setup WiFi.
-3. Phone opens `http://192.168.4.1/app`.
-4. User enters home WiFi in the `Setup > Receiver WiFi` panel.
-5. Receiver saves credentials and reboots onto home WiFi.
-6. Receiver bootstraps to the hosted backend using its built-in receiver ID and private receiver secret.
-7. Receiver saves the returned cloud upload URL/token and starts uploading snapshots.
-8. App shows a claim code or QR code.
-9. User signs into app and claims the receiver.
-10. Probes appear as unassigned sensors when they are first heard.
-11. User assigns each probe to a plant, art, and moisture preset.
+2. If it has no valid WiFi settings, the TFT shows first-time setup instructions and the receiver starts the open `MSV2-Display` setup WiFi.
+3. Phone joins the open `MSV2-Display` setup network; captive-portal DNS/redirects try to open the receiver setup app automatically.
+4. If the phone does not open the page, the TFT tells the user to open `192.168.4.1`.
+5. User either enters home WiFi in the `Setup > Receiver WiFi` panel or checks `Use without home WiFi` for local-only mode.
+6. Receiver saves that choice and reboots to either the home network or the local `MSV2-Display` dashboard.
+7. If home WiFi is enabled, the receiver bootstraps to the hosted backend using its built-in receiver ID and private receiver secret.
+8. If home WiFi is enabled, the receiver saves the returned cloud upload URL/token and starts uploading snapshots.
+9. App shows a claim code or QR code.
+10. User signs into app and claims the receiver.
+11. Probes appear as unassigned sensors when they are first heard.
+12. User assigns each probe to a plant, art, and moisture preset.
 
 ## Remote Monitoring Flow
 
@@ -148,10 +150,10 @@ Later:
 
 1. Test the static no-login household Connect flow with the real receiver claim code.
 2. Deploy the static cloud app to a webpage host.
-3. Add cloud config command storage so the hosted app can edit plant names, art, moisture thresholds, and diagnostics settings.
-4. Add receiver-side config pull/apply so cloud edits reach the ESP32 safely.
-5. Add a local app QR/deep link that opens the hosted claim screen with receiver details prefilled.
+3. Keep the hosted Netlify app read-only for now to conserve hosting/backend usage: clean plant status, summary, and pairing only.
+4. Use the ESP32 local app as the plant setup surface for names, art, probe IDs, and calibration.
+5. Re-enable hosted config editing later only after the UX and backend write budget are ready.
 6. Make the phone app able to switch between local receiver mode and cloud account mode.
 7. Add OTA/update-channel metadata.
 
-The next best code milestone is cloud config write/pull support, because the static app now looks like the Plant Status Center but still needs the ESP32 webpage's editing powers.
+The next best code milestone is polishing the read-only hosted plant dashboard while keeping setup local-first on the ESP32.

@@ -1,4 +1,4 @@
-const MSV2_CACHE = "msv2-cloud-app-v2";
+const MSV2_CACHE = "msv2-cloud-app-v9";
 const MSV2_ASSETS = [
   "/",
   "/index.html",
@@ -28,10 +28,25 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const isAppShell =
+    event.request.mode === "navigate" ||
+    url.pathname === "/" ||
+    url.pathname.endsWith("/index.html");
+  if (isAppShell) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" }).then((response) => {
+        const copy = response.clone();
+        caches.open(MSV2_CACHE).then((cache) => cache.put(event.request, copy));
+        return response;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) =>
       cached || fetch(event.request).then((response) => {
-        if (new URL(event.request.url).origin === self.location.origin) {
+        if (url.origin === self.location.origin) {
           const copy = response.clone();
           caches.open(MSV2_CACHE).then((cache) => cache.put(event.request, copy));
         }

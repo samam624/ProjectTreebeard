@@ -16,6 +16,23 @@ Then regenerate firmware/web assets from the repo root:
 python scripts\generate_plant_sprites.py
 ```
 
+## Planter color sheets
+
+The planter color sprite sheets in `assets/` can be converted into animated
+source GIFs:
+
+```powershell
+python scripts\generate_planter_sheet_gifs.py
+```
+
+This writes one GIF per plant into this folder. By default each generated GIF
+keeps three deterministic random color frames from the source sheets so the ESP32
+firmware stays small. Regenerate the embedded assets afterward:
+
+```powershell
+python scripts\generate_plant_sprites.py
+```
+
 Generated outputs are written to:
 
 - `arduino/MSV2_ESP32_Display_Runtime/plant_sprites.h`

@@ -187,28 +187,11 @@ Invoke-RestMethod `
   | ConvertTo-Json -Depth 10
 ```
 
-## 6. Point The ESP32 At Supabase
+## 6. Confirm ESP32 Automatic Bootstrap
 
-In the receiver phone app:
+After the receiver has home WiFi, current firmware calls the hosted `receiver-bootstrap` endpoint automatically. It stores the returned per-device upload URL/token in `/cloud.json`, enables snapshot upload, and starts polling for newer cloud config versions.
 
-```text
-Setup > Cloud Sync
-```
-
-Use:
-
-```text
-Upload URL:
-https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-snapshot
-
-API token:
-YOUR_GENERATED_TOKEN
-
-Mode:
-Enabled
-```
-
-Save, then check:
+Check status from PowerShell:
 
 ```powershell
 Invoke-RestMethod http://BOARD_IP/cloud | ConvertTo-Json -Depth 5
@@ -218,8 +201,16 @@ Success looks like:
 
 ```json
 {
-  "lastHttpStatus": 200,
-  "lastError": ""
+  "enabled": true,
+  "hasApiToken": true,
+  "bootstrap": {
+    "lastHttpStatus": 200,
+    "lastError": ""
+  },
+  "upload": {
+    "lastHttpStatus": 200,
+    "lastError": ""
+  }
 }
 ```
 
@@ -285,7 +276,7 @@ Invoke-RestMethod http://BOARD_IP/claim | ConvertTo-Json -Depth 5
 The future QR code should open:
 
 ```text
-https://msv2-plant-dashboard-samam624-924.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234&autoConnect=1
+https://msv2-plants.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234&autoConnect=1
 ```
 
 The receiver `/claim` endpoint now returns this as `claimUrl`. The hosted app reads `receiverId`, `claimCode`, and `autoConnect=1`; on first open it creates the household share token and stores it in the phone browser. After that, reopening the app goes straight to the dashboard.
@@ -303,13 +294,13 @@ web/plant-dashboard/
 Current live app:
 
 ```text
-https://msv2-plant-dashboard-samam624-924.netlify.app
+https://msv2-plants.netlify.app
 ```
 
 Netlify project admin:
 
 ```text
-https://app.netlify.com/projects/msv2-plant-dashboard-samam624-924
+https://app.netlify.com/projects/msv2-plants
 ```
 
 The static app can be hosted anywhere because the Supabase APIs send permissive CORS headers.
@@ -392,7 +383,7 @@ Response:
   "apiToken": "PER_DEVICE_UPLOAD_TOKEN",
   "apiTokenHint": "a1b2c3",
   "claimCode": "ABCD-1234",
-  "syncIntervalSeconds": 300
+  "syncIntervalSeconds": 60
 }
 ```
 
@@ -400,7 +391,7 @@ The receiver should save `uploadUrl`, `apiToken`, and `syncIntervalSeconds` into
 
 This backend endpoint exists now, and the ESP32 firmware has the first auto-bootstrap implementation. After flashing updated firmware, a receiver with home WiFi should call this endpoint automatically if `/cloud.json` does not already contain an upload URL and API token.
 
-For your current test board, Cloud Sync already has a manually entered Supabase URL/token. Auto-bootstrap intentionally will not overwrite that. To test the automatic path after flashing the new firmware, clear the receiver cloud config first:
+For older test boards that already have a manually entered Supabase URL/token, auto-bootstrap intentionally will not overwrite that. To test the automatic path after flashing the new firmware, clear the receiver cloud config first:
 
 ```powershell
 Invoke-RestMethod http://BOARD_IP/cloud -Method Delete
@@ -420,7 +411,7 @@ Expected signs:
 - `uploadUrl` becomes the hosted `receiver-snapshot` URL.
 - `upload.lastHttpStatus` becomes `200` after the first snapshot upload.
 
-Confirmed on hardware: auto-bootstrap returned HTTP `200`, stored a per-device token, set `syncIntervalSeconds` to `300`, and enabled cloud sync.
+Confirmed on hardware: auto-bootstrap returned HTTP `200`, stored a per-device token, set `syncIntervalSeconds` to `60`, and enabled cloud sync.
 
 Confirmed on hardware: the first post-bootstrap snapshot upload returned HTTP `200` using the per-device token.
 

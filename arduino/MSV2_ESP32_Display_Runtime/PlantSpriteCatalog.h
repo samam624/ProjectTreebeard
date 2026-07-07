@@ -12,6 +12,13 @@ struct PlantSpriteCatalogEntry
 
 const PlantSpriteCatalogEntry PLANT_SPRITE_CATALOG[] = {
   { "cactus_cluster", "Cactus Cluster", &SPRITE_CACTUS_CLUSTER },
+  { "color_bonsai_bowl", "Color Bonsai Bowl", &SPRITE_COLOR_BONSAI_BOWL },
+  { "color_grass_planter", "Color Grass Planter", &SPRITE_COLOR_GRASS_PLANTER },
+  { "color_hanging_clump", "Color Hanging Clump", &SPRITE_COLOR_HANGING_CLUMP },
+  { "color_hanging_vine", "Color Hanging Vine", &SPRITE_COLOR_HANGING_VINE },
+  { "color_round_pot", "Color Round Pot", &SPRITE_COLOR_ROUND_POT },
+  { "color_vine_pot", "Color Vine Pot", &SPRITE_COLOR_VINE_POT },
+  { "color_zigzag_pot", "Color Zigzag Pot", &SPRITE_COLOR_ZIGZAG_POT },
   { "cup_plant", "Cup Plant", &SPRITE_CUP_PLANT },
   { "monstera", "Monstera", &SPRITE_MONSTERA },
   { "spindly", "Spindly", &SPRITE_SPINDLY },
