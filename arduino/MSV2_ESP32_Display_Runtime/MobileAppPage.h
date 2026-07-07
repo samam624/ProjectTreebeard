@@ -724,9 +724,9 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
             <div class="card-head">
               <div>
                 <div class="name">${escapeHtml(card.plant || card.label || ("Probe " + card.sensor))}</div>
-                <div class="meta">Probe ${card.sensor || "-"}${reading.rssi ? " / " + reading.rssi + " dBm" : ""}</div>
+                <div class="meta">Probe ${escapeHtml(card.sensor ?? "-")}${reading.rssi ? " / " + reading.rssi + " dBm" : ""}</div>
               </div>
-              <div class="art">${artPreview(card.art || "sprout_pot")}<span>${labelFor(artOptions, card.art || "sprout_pot")}</span></div>
+              <div class="art">${artPreview(card.art || "sprout_pot")}<span>${escapeHtml(labelFor(artOptions, card.art || "sprout_pot"))}</span></div>
             </div>
             ${metric("Moisture", reading.moisture == null ? "--" : reading.moisture, moistPct)}
             ${metric("Battery", battPct == null ? "--%" : battPct + "%", battPct)}

@@ -18,12 +18,10 @@ type Snapshot = {
 
 async function verifyReceiverToken(
   supabase: any,
-  receiverToken: string,
   receiverId: string,
   providedToken: string,
 ): Promise<boolean> {
-  if (!providedToken) return false;
-  if (providedToken === receiverToken) return true;
+  if (!providedToken || !receiverId) return false;
   const { data: verified, error: verifyError } = await supabase.rpc("msv2_verify_receiver_api_token", {
     p_receiver_id: receiverId,
     p_api_token: providedToken,
@@ -66,7 +64,6 @@ Deno.serve(async (request) => {
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL", "URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY", "SERVICE_ROLE_KEY");
-    const receiverToken = requireEnv("MSV2_RECEIVER_TOKEN");
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         persistSession: false,
@@ -80,14 +77,15 @@ Deno.serve(async (request) => {
       const receiverId = url.searchParams.get("receiverId");
       const wantsConfig = url.searchParams.get("config") === "1";
 
+      const cleanReceiverId = String(receiverId ?? "").trim();
+      if (!cleanReceiverId) {
+        return jsonResponse({ ok: false, error: "receiverId required" }, 400);
+      }
+      if (!(await verifyReceiverToken(supabase, cleanReceiverId, providedToken))) {
+        return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+      }
+
       if (wantsConfig) {
-        const cleanReceiverId = String(receiverId ?? "").trim();
-        if (!cleanReceiverId) {
-          return jsonResponse({ ok: false, error: "receiverId required" }, 400);
-        }
-        if (!(await verifyReceiverToken(supabase, receiverToken, cleanReceiverId, providedToken))) {
-          return jsonResponse({ ok: false, error: "unauthorized" }, 401);
-        }
         const currentVersion = Number(url.searchParams.get("currentVersion") ?? "0");
         const { data, error } = await supabase.rpc("msv2_read_receiver_pending_config", {
           p_receiver_id: cleanReceiverId,
@@ -100,13 +98,9 @@ Deno.serve(async (request) => {
         return jsonResponse({ ok: true, config: config ?? null });
       }
 
-      if (providedToken !== receiverToken) {
-        return jsonResponse({ ok: false, error: "unauthorized" }, 401);
-      }
-
       const { data, error } = await supabase.rpc("msv2_read_latest_snapshots", {
-        p_receiver_id: receiverId,
-        p_limit: receiverId ? 1 : 20,
+        p_receiver_id: cleanReceiverId,
+        p_limit: 1,
       });
       if (error) {
         return jsonResponse({ ok: false, error: error.message }, 500);
@@ -128,7 +122,7 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: "receiverId required" }, 400);
     }
 
-    if (!(await verifyReceiverToken(supabase, receiverToken, receiverId, providedToken))) {
+    if (!(await verifyReceiverToken(supabase, receiverId, providedToken))) {
       return jsonResponse({ ok: false, error: "unauthorized" }, 401);
     }
 

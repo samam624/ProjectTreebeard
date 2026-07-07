@@ -68,6 +68,7 @@ Deno.serve(async (request) => {
     if (path.endsWith("/manifest.webmanifest")) return jsonResponse(webManifest());
     if (path.endsWith("/app-icon.svg")) return response(appIconSvg(), "image/svg+xml");
     if (path.endsWith("/api/share-claim")) return await shareClaimApi(request);
+    if (path.endsWith("/api/share-revoke")) return await shareRevokeApi(request);
     if (path.endsWith("/api/share-snapshots")) return await shareSnapshotsApi(request);
     if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
@@ -78,6 +79,7 @@ Deno.serve(async (request) => {
       note: "Supabase Edge Functions serve browser HTML as text/plain in this project. Host web/plant-dashboard/index.html as the static app and keep this function for APIs.",
       endpoints: {
         shareClaim: "/functions/v1/plant-dashboard/api/share-claim",
+        shareRevoke: "/functions/v1/plant-dashboard/api/share-revoke",
         shareSnapshots: "/functions/v1/plant-dashboard/api/share-snapshots",
         shareConfig: "/functions/v1/plant-dashboard/api/share-config",
       },
@@ -112,6 +114,26 @@ async function shareClaimApi(request: Request): Promise<Response> {
 
   const share = Array.isArray(data) ? data[0] : data;
   return jsonResponse({ ok: true, share });
+}
+
+async function shareRevokeApi(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
+  }
+
+  const shareToken = bearerToken(request);
+  if (!shareToken) {
+    return jsonResponse({ ok: false, error: "share token required" }, 401);
+  }
+
+  const { error } = await serviceClient().rpc("msv2_revoke_household_share", {
+    p_share_token: shareToken,
+  });
+  if (error) {
+    return jsonResponse({ ok: false, error: error.message }, 400);
+  }
+
+  return jsonResponse({ ok: true });
 }
 
 async function shareSnapshotsApi(request: Request): Promise<Response> {

@@ -145,6 +145,50 @@ void loop()
 #if __has_include("WiFiCredentials.h")
 #include "WiFiCredentials.h"
 #endif
+
+// Trusted root CAs used instead of secureClient.setInsecure() so outbound cloud calls actually
+// validate the server certificate, rather than accepting anything. Pinning the ROOT (not the
+// leaf/intermediate Supabase presents) means this survives routine cert rotation -- roots change
+// on a timescale of years/decades, not weeks. Two roots are included because Supabase's edge
+// currently presents a GTS Root R4 cross-signed by the long-lived GlobalSign Root CA (for older
+// trust stores) rather than the modern self-signed GTS Root R4; either one alone completes a
+// chain that the other configuration would need.
+static const char MSV2_TRUSTED_ROOT_CA_PEM[] PROGMEM = R"PEM(
+-----BEGIN CERTIFICATE-----
+MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
+VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
+A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
+WjBHMQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2Vz
+IExMQzEUMBIGA1UEAxMLR1RTIFJvb3QgUjQwdjAQBgcqhkjOPQIBBgUrgQQAIgNi
+AATzdHOnaItgrkO4NcWBMHtLSZ37wWHO5t5GvWvVYRg1rkDdc/eJkTBa6zzuhXyi
+QHY7qca4R9gq55KRanPpsXI5nymfopjTX15YhmUPoYRlBtHci8nHc8iMai/lxKvR
+HYqjQjBAMA4GA1UdDwEB/wQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+BBSATNbrdP9JNqPV2Py1PsVq8JQdjDAKBggqhkjOPQQDAwNpADBmAjEA6ED/g94D
+9J+uHXqnLrmvT/aDHQ4thQEd0dlq7A/Cr8deVl5c1RxYIigL9zC2L7F8AjEA8GE8
+p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG
+A1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExEDAOBgNVBAsTB1Jv
+b3QgQ0ExGzAZBgNVBAMTEkdsb2JhbFNpZ24gUm9vdCBDQTAeFw05ODA5MDExMjAw
+MDBaFw0yODAxMjgxMjAwMDBaMFcxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9i
+YWxTaWduIG52LXNhMRAwDgYDVQQLEwdSb290IENBMRswGQYDVQQDExJHbG9iYWxT
+aWduIFJvb3QgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDaDuaZ
+jc6j40+Kfvvxi4Mla+pIH/EqsLmVEQS98GPR4mdmzxzdzxtIK+6NiY6arymAZavp
+xy0Sy6scTHAHoT0KMM0VjU/43dSMUBUc71DuxC73/OlS8pF94G3VNTCOXkNz8kHp
+1Wrjsok6Vjk4bwY8iGlbKk3Fp1S4bInMm/k8yuX9ifUSPJJ4ltbcdG6TRGHRjcdG
+snUOhugZitVtbNV4FpWi6cgKOOvyJBNPc1STE4U6G7weNLWLBYy5d4ux2x8gkasJ
+U26Qzns3dLlwR5EiUWMWea6xrkEmCMgZK9FGqkjWZCrXgzT/LCrBbBlDSgeF59N8
+9iFo7+ryUp9/k5DPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8E
+BTADAQH/MB0GA1UdDgQWBBRge2YaRQ2XyolQL30EzTSo//z9SzANBgkqhkiG9w0B
+AQUFAAOCAQEA1nPnfE920I2/7LqivjTFKDK1fPxsnCwrvQmeU79rXqoRSLblCKOz
+yj1hTdNGCbM+w6DjY1Ub8rrvrTnhQ7k4o+YviiY776BQVvnGCv04zcQLcFGUl5gE
+38NflNUVyRRBnMRddWQVDf9VMOyGj/8N7yy5Y0b2qvzfvGn9LhJIZJrglfCm7ymP
+AbEVtQwdpf5pLGkkeB6zpxxxYu7KyJesF12KwvhHhm4qxFYxldBniYUr+WymXUad
+DKqC5JlR3XC321Y9YeRq4VzW9v493kHMB65jUr9TU/Qr6cf9tveCX4XSQRjbgbME
+HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
+-----END CERTIFICATE-----
+)PEM";
 #endif
 
 const char AP_SSID[] = "MSV2-Display";
@@ -290,6 +334,19 @@ char receiverClaimCode[10] = "";
 uint32_t uiConfigVersion = 0;
 uint32_t uiUpdatedMs = 0;
 char uiUpdatedBy[24] = "unknown";
+
+// Local admin API (POST/DELETE on /ui, /cloud, /wifi) is only trusted for a grace window after
+// boot. Anyone on the LAN can otherwise reach these handlers indefinitely -- including in
+// local-only mode, where the device never leaves its own open AP. Power-cycling the device
+// reopens the window, matching how other consumer IoT devices gate local admin access to
+// "physically present shortly after a (re)boot" rather than "on my network, ever."
+const unsigned long ADMIN_GRACE_WINDOW_MS = 15UL * 60UL * 1000UL;
+unsigned long adminUnlockUntilMs = 0;
+
+bool isAdminActionAllowed()
+{
+  return millis() < adminUnlockUntilMs;
+}
 bool cloudEnabled = false;
 char cloudUploadUrl[160] = "";
 char cloudApiToken[80] = "";
@@ -2204,7 +2261,7 @@ void runCloudBootstrap(uint32_t now)
   bool began = false;
   if (isHttps)
   {
-    secureClient.setInsecure();
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
     began = http.begin(secureClient, MSV2_CLOUD_BOOTSTRAP_URL);
   }
   else
@@ -2362,7 +2419,7 @@ void runCloudConfigPull(uint32_t now)
   bool began = false;
   if (isHttps)
   {
-    secureClient.setInsecure();
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
     began = http.begin(secureClient, configUrl);
   }
   else
@@ -2482,7 +2539,7 @@ void runCloudSnapshotUploader(uint32_t now)
   bool began = false;
   if (isHttps)
   {
-    secureClient.setInsecure();
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
     began = http.begin(secureClient, cloudUploadUrl);
   }
   else
@@ -2737,6 +2794,11 @@ void setupServer()
 
   server.on("/ui", HTTP_POST, []() {
     Serial.println("[MSV2 web] POST /ui");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
     if (writeUiJson(server.arg("plain")))
     {
       server.send(200, "application/json", "{\"ok\":true}");
@@ -2781,11 +2843,21 @@ void setupServer()
 
   server.on("/cloud", HTTP_POST, []() {
     Serial.println("[MSV2 web] POST /cloud");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
     writeCloudConfigJson(server.arg("plain"));
   });
 
   server.on("/cloud", HTTP_DELETE, []() {
     Serial.println("[MSV2 web] DELETE /cloud");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
     resetCloudConfig();
   });
 
@@ -2797,11 +2869,21 @@ void setupServer()
 
   server.on("/wifi", HTTP_POST, []() {
     Serial.println("[MSV2 web] POST /wifi");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
     writeWifiConfigJson(server.arg("plain"));
   });
 
   server.on("/wifi", HTTP_DELETE, []() {
     Serial.println("[MSV2 web] DELETE /wifi");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
     forgetWifiConfig();
   });
 
@@ -2994,6 +3076,8 @@ void setup()
   Serial.println(resetReasonName(resetReason));
   randomSeed(esp_random());
   bootLog("serial ready");
+
+  adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
 
   bootLog("mounting LittleFS");
   if (!LittleFS.begin(true))
