@@ -31,21 +31,11 @@ Do not commit or paste the database password or service role key into repo files
   - `POST` registers a receiver using its built-in ID/secret.
   - Returns the hosted snapshot URL and a per-receiver upload token.
 
-The `receiver-snapshot` function still accepts the shared receiver token for the first hosted test. It can also accept per-receiver upload tokens after a receiver has bootstrapped.
+As of the 2026-07-07 security pass, `receiver-snapshot` **only** accepts a receiver's own per-device upload token (issued by `receiver-bootstrap` and verified against its hash in `msv2_receivers`). The old shared `MSV2_RECEIVER_TOKEN` bypass that let any caller with one fleet-wide secret read or write any receiver's data has been removed from the function and is no longer read from the environment. You do not need to generate or set one; skip straight to migrations.
 
-## 1. Create A Receiver Token
+## 1. (No longer needed) Shared Receiver Token
 
-In PowerShell:
-
-```powershell
-[guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
-```
-
-Save the output somewhere private. This is the token the ESP32 will send as:
-
-```text
-Authorization: Bearer YOUR_TOKEN
-```
+This step used to have you generate a `MSV2_RECEIVER_TOKEN` shared secret for testing. That auth path was removed for security reasons (it let anyone holding the token impersonate any receiver, and there was no way to scope or revoke it). Every receiver authenticates with its own bootstrapped token now — see [Section 6](#6-confirm-esp32-automatic-bootstrap).
 
 ## 2. Apply The Database Migration
 
@@ -80,6 +70,15 @@ In Supabase Dashboard:
 27. Open [009_msv2_household_share_tokens.sql](../supabase/migrations/009_msv2_household_share_tokens.sql).
 28. Paste it into the SQL editor.
 29. Run it.
+30. Open [010_msv2_receiver_cloud_config.sql](../supabase/migrations/010_msv2_receiver_cloud_config.sql).
+31. Paste it into the SQL editor.
+32. Run it.
+33. Open [011_msv2_lock_rpcs_to_service_role.sql](../supabase/migrations/011_msv2_lock_rpcs_to_service_role.sql).
+34. Paste it into the SQL editor.
+35. Run it.
+36. Open [012_msv2_revoke_public_execute.sql](../supabase/migrations/012_msv2_revoke_public_execute.sql).
+37. Paste it into the SQL editor.
+38. Run it.
 
 CLI alternative:
 
@@ -90,37 +89,34 @@ supabase link --project-ref lyemomfpzkawqecpfufm
 supabase db push
 ```
 
-## 3. Set Edge Function Secrets
+**If you ever apply SQL by hand in the dashboard editor instead of `db push`** (this project's history has some of that), the CLI's local migration tracking won't know about it and `db push` will try to re-run migrations that already landed — which fails on any non-idempotent statement (e.g. `create policy`). Check first with:
 
-In Supabase Dashboard:
-
-1. Go to `Edge Functions`.
-2. Open `Secrets`.
-3. Add only the custom receiver token:
-
-```text
-MSV2_RECEIVER_TOKEN=YOUR_GENERATED_TOKEN
+```powershell
+supabase migration list --linked
 ```
 
-Supabase Edge Functions often provide the reserved `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables automatically. The dashboard may prevent you from manually adding secrets with the `SUPABASE_` prefix; that is expected.
+If `local` versions show as applied on your database already but `remote` is blank, mark them as applied without re-running the SQL:
 
-If your project requires manual values and rejects the `SUPABASE_` prefix, add these fallback names instead:
+```powershell
+supabase migration repair 001 002 003 004 005 006 007 008 009 010 --status applied --linked
+```
+
+(adjust the version list to whatever the `remote` column shows as missing) — this only fixes the CLI's bookkeeping table, it does not touch your schema. Then `supabase db push --linked --dry-run` to confirm only the genuinely-new migrations remain before pushing for real.
+
+**Migrations 011 and 012 (2026-07-07) close the biggest issue in this backend:** every RPC below was originally granted `execute` to `anon, authenticated, service_role`, which meant anyone with the public `apikey` could call `/rest/v1/rpc/<function>` directly and skip every auth check written into the Edge Functions. 011 revokes from `anon, authenticated`; 012 is the important one — it additionally revokes from `PUBLIC`, because Postgres grants `EXECUTE` to `PUBLIC` by default on function creation and that isn't affected by revoking from a specific named role. If you ever add a new RPC, remember to `revoke ... from public` on it too, not just `anon, authenticated`, or it'll be callable by anyone regardless of what you did or didn't grant explicitly.
+
+## 3. Set Edge Function Secrets
+
+Supabase Edge Functions provide the reserved `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables automatically — there is nothing to set by hand for a normal deploy. `MSV2_RECEIVER_TOKEN` is no longer read by any function as of 2026-07-07; you can leave it unset, and it's safe to delete if you had set it previously.
+
+If your project requires manual values and rejects the `SUPABASE_` prefix, the functions also accept these fallback names:
 
 ```text
 URL=https://lyemomfpzkawqecpfufm.supabase.co
 SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-MSV2_RECEIVER_TOKEN=YOUR_GENERATED_TOKEN
 ```
-
-The `receiver-snapshot` function checks both naming styles.
 
 The service role key is private. Do not put it in frontend JavaScript, firmware, GitHub, or chat.
-
-CLI alternative:
-
-```powershell
-supabase secrets set MSV2_RECEIVER_TOKEN=YOUR_GENERATED_TOKEN
-```
 
 ## 4. Deploy The Edge Function
 
@@ -159,30 +155,21 @@ https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-bootstrap
 
 ## 5. Test From PowerShell
 
-First pull a local receiver snapshot:
+Every request now needs a real per-device token from `receiver-bootstrap` (Section 6) — there's no shared token to paste in anymore. Grab a device's token by reading its local `/cloud` status, or by re-running bootstrap by hand:
 
 ```powershell
-$snapshot = Invoke-RestMethod http://BOARD_IP/snapshot
+$boot = Invoke-RestMethod `
+  https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-bootstrap `
+  -Method Post -ContentType "application/json" `
+  -Body (@{ receiverId = "MSV2..."; receiverSecret = "THE_DEVICE_RECEIVER_SECRET" } | ConvertTo-Json)
+$token = $boot.apiToken
 ```
 
-Then upload it to Supabase:
-
-```powershell
-$token = "YOUR_GENERATED_TOKEN"
-$body = $snapshot | ConvertTo-Json -Depth 20 -Compress
-Invoke-RestMethod `
-  https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-snapshot `
-  -Method Post `
-  -ContentType "application/json" `
-  -Headers @{ Authorization = "Bearer $token" } `
-  -Body $body
-```
-
-Read latest snapshots back:
+Then read that receiver's latest snapshot back (requires `receiverId` and that device's own token — there is no fleet-wide listing anymore):
 
 ```powershell
 Invoke-RestMethod `
-  https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-snapshot `
+  "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-snapshot?receiverId=MSV2..." `
   -Headers @{ Authorization = "Bearer $token" } `
   | ConvertTo-Json -Depth 10
 ```

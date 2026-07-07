@@ -4,13 +4,19 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-07-05, the display receiver was flashed successfully on `COM13` with the `-ForceWifiSetup` build. The current firmware build tag is:
+As of 2026-07-07, the display receiver was reflashed on `COM13` with the normal (non-forced-setup) build, as part of a security hardening pass. The build tag string is unchanged from the source (this pass didn't touch `MSV2_BUILD_TAG`):
 
 ```text
 MSV2 runtime build 2026-07-05 reboot-screen-fix
 ```
 
-Known-good behavior from bench testing:
+Notable behavior changes from the 2026-07-07 flash (see `docs/STATUS_HANDOFF.md` for the full writeup):
+
+- Outbound cloud calls (bootstrap, config-pull, snapshot upload) now validate the server's TLS certificate against real root CAs instead of accepting anything. Verified live — snapshot uploads still return `HTTP 200`.
+- `POST`/`DELETE` on `/ui`, `/cloud`, `/wifi` now only work within 15 minutes of boot (`adminUnlockUntilMs`). After that window, they return `401` until the device is power-cycled. This applies in every mode, including local-only AP mode, which previously stayed open to unauthenticated local admin requests forever.
+- **Caution:** `POST /ui` does a full replace, not a merge. Posting `{}` (or any payload missing `cards`) wipes the plant card config, not a no-op. Read `GET /ui` first if testing against a live device with real configured cards.
+
+Known-good behavior from bench testing (pre-2026-07-07, still holds):
 
 - First-time setup can be tested with `-ForceWifiSetup` without erasing identity, plant setup, or cloud config.
 - After saving home WiFi or local-only mode, resets should return to that saved mode.
