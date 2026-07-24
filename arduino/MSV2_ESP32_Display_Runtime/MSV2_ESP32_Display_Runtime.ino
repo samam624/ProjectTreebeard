@@ -225,7 +225,7 @@ const uint32_t BLE_SCAN_IDLE_MS = 250;
 const uint32_t DEFAULT_STALE_SECONDS = 90;
 const uint8_t BATTERY_UNKNOWN = 255;
 const uint8_t MAX_ART_SLOTS = 16;
-const uint32_t SENSOR_RENDER_INTERVAL_MS = 10000;
+const uint32_t SENSOR_RENDER_INTERVAL_MS = 2000;
 const uint32_t CLOUD_BOOTSTRAP_FIRST_TRY_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_RETRY_MS = 300000;
 const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
@@ -2594,6 +2594,95 @@ void runCloudSnapshotUploader(uint32_t now)
   http.end();
   nextCloudSyncMs = millis() + cloudSyncIntervalSeconds * 1000UL;
 }
+
+// Proxies a per-sensor history read through to Supabase using this receiver's own
+// upload token. Buffers the response (same http.getString() pattern as
+// runCloudConfigPull) rather than hand-rolling a chunked-transfer stream forward -
+// the board has 8MB PSRAM and the history RPC caps at 5000 rows, so this is fine.
+void handleHistoryProxy()
+{
+  Serial.println("[MSV2 web] GET /history");
+  server.sendHeader("Cache-Control", "no-store");
+
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0' || receiverId[0] == '\0')
+  {
+    server.send(503, "application/json", "{\"ok\":false,\"error\":\"cloud sync not configured on this receiver\"}");
+    return;
+  }
+
+  if (!server.hasArg("sensor"))
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"sensor required\"}");
+    return;
+  }
+
+  String sensorArg = server.arg("sensor");
+  String hoursArg = server.hasArg("hours") ? server.arg("hours") : "24";
+  String afterIdArg = server.hasArg("afterId") ? server.arg("afterId") : "0";
+  String limitArg = server.hasArg("limit") ? server.arg("limit") : "150";
+
+  const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
+  const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
+  if (!isHttps && !isHttp)
+  {
+    server.send(500, "application/json", "{\"ok\":false,\"error\":\"cloud upload URL misconfigured\"}");
+    return;
+  }
+
+  // Pagination keeps each request/response small and fast (a few hundred rows) so this
+  // never risks the http.getString() timeout truncating a large response mid-object -
+  // the client (browser JS) loops pages and assembles the full range itself.
+  String historyUrl = cloudUploadUrl;
+  historyUrl += historyUrl.indexOf('?') >= 0 ? "&" : "?";
+  historyUrl += "history=1&receiverId=";
+  historyUrl += receiverId;
+  historyUrl += "&sensorId=";
+  historyUrl += sensorArg;
+  historyUrl += "&sinceHours=";
+  historyUrl += hoursArg;
+  historyUrl += "&afterId=";
+  historyUrl += afterIdArg;
+  historyUrl += "&limit=";
+  historyUrl += limitArg;
+
+  HTTPClient http;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  bool began = false;
+  if (isHttps)
+  {
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, historyUrl);
+  }
+  else
+  {
+    began = http.begin(plainClient, historyUrl);
+  }
+
+  if (!began)
+  {
+    server.send(502, "application/json", "{\"ok\":false,\"error\":\"could not reach cloud\"}");
+    return;
+  }
+
+  http.setTimeout(15000);
+  String auth = "Bearer ";
+  auth += cloudApiToken;
+  http.addHeader("Authorization", auth);
+
+  int status = http.GET();
+  if (status < 200 || status >= 300)
+  {
+    String error = status > 0 ? ("HTTP " + String(status)) : http.errorToString(status);
+    http.end();
+    server.send(502, "application/json", "{\"ok\":false,\"error\":\"" + error + "\"}");
+    return;
+  }
+
+  String response = http.getString();
+  http.end();
+  server.send(200, "application/json", response);
+}
 #endif
 
 String configMetaJson()
@@ -2651,6 +2740,7 @@ String deviceInfoJson()
   endpoints["claim"] = "/claim";
   endpoints["configMeta"] = "/config-meta";
   endpoints["cloud"] = "/cloud";
+  endpoints["history"] = "/history";
   endpoints["wifi"] = "/wifi";
   endpoints["manifest"] = "/manifest.webmanifest";
 
@@ -2860,6 +2950,8 @@ void setupServer()
     }
     resetCloudConfig();
   });
+
+  server.on("/history", HTTP_GET, handleHistoryProxy);
 
   server.on("/wifi", HTTP_GET, []() {
     Serial.println("[MSV2 web] GET /wifi");

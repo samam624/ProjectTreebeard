@@ -6,6 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+type PlantReading = {
+  sensor?: number;
+  wake?: number;
+  moisture?: number;
+  batteryPercent?: number;
+  rssi?: number;
+  ageMs?: number;
+};
+
 type Snapshot = {
   receiverId?: string;
   claimCode?: string;
@@ -13,7 +22,7 @@ type Snapshot = {
   config?: {
     version?: number;
   };
-  plants?: unknown[];
+  plants?: PlantReading[];
 };
 
 async function verifyReceiverToken(
@@ -76,6 +85,7 @@ Deno.serve(async (request) => {
       const url = new URL(request.url);
       const receiverId = url.searchParams.get("receiverId");
       const wantsConfig = url.searchParams.get("config") === "1";
+      const wantsHistory = url.searchParams.get("history") === "1";
 
       const cleanReceiverId = String(receiverId ?? "").trim();
       if (!cleanReceiverId) {
@@ -83,6 +93,30 @@ Deno.serve(async (request) => {
       }
       if (!(await verifyReceiverToken(supabase, cleanReceiverId, providedToken))) {
         return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+      }
+
+      if (wantsHistory) {
+        const sensorId = Number(url.searchParams.get("sensorId") ?? "0");
+        if (!Number.isFinite(sensorId) || sensorId <= 0) {
+          return jsonResponse({ ok: false, error: "sensorId required" }, 400);
+        }
+        const sinceHours = Number(url.searchParams.get("sinceHours") ?? "24");
+        const since = new Date(Date.now() - (Number.isFinite(sinceHours) ? sinceHours : 24) * 3600_000).toISOString();
+        const limit = Number(url.searchParams.get("limit") ?? "150");
+        const afterId = Number(url.searchParams.get("afterId") ?? "0");
+
+        const { data, error } = await supabase.rpc("msv2_read_sensor_history", {
+          p_receiver_id: cleanReceiverId,
+          p_sensor_id: sensorId,
+          p_since: since,
+          p_after_id: Number.isFinite(afterId) ? afterId : 0,
+          p_limit: Number.isFinite(limit) ? limit : 300,
+        });
+        if (error) {
+          return jsonResponse({ ok: false, error: error.message }, 500);
+        }
+
+        return jsonResponse({ ok: true, readings: data ?? [] });
       }
 
       if (wantsConfig) {
@@ -149,6 +183,26 @@ Deno.serve(async (request) => {
     });
     if (snapshotError) {
       return jsonResponse({ ok: false, error: snapshotError.message }, 500);
+    }
+
+    if (Array.isArray(snapshot.plants)) {
+      for (const plant of snapshot.plants) {
+        const sensorId = Number(plant?.sensor);
+        if (!Number.isFinite(sensorId) || sensorId <= 0) continue;
+
+        const { error: historyError } = await supabase.rpc("msv2_store_sensor_reading", {
+          p_receiver_id: receiverId,
+          p_sensor_id: sensorId,
+          p_wake: Number.isFinite(Number(plant?.wake)) ? Number(plant.wake) : null,
+          p_moisture: Number.isFinite(Number(plant?.moisture)) ? Number(plant.moisture) : null,
+          p_battery_percent: Number.isFinite(Number(plant?.batteryPercent)) ? Number(plant.batteryPercent) : null,
+          p_rssi: Number.isFinite(Number(plant?.rssi)) ? Number(plant.rssi) : null,
+          p_age_ms: Number.isFinite(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
+        });
+        if (historyError) {
+          console.error(`sensor history insert failed for sensor ${sensorId}: ${historyError.message}`);
+        }
+      }
     }
 
     return jsonResponse({

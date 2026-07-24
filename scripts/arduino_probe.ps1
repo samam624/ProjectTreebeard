@@ -3,7 +3,8 @@ param(
   [string]$Action = "upload",
   [string]$Port = "COM5",
   [string]$Sketch = "arduino/MSV2_Moisture_BLE_Sleep",
-  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
+  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
+  [string]$Fqbn = "Seeeduino:nrf52:xiaonRF52840Sense"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,8 +12,6 @@ $ErrorActionPreference = "Stop"
 if (!(Test-Path $CliPath)) {
   throw "arduino-cli.exe not found at $CliPath"
 }
-
-$Fqbn = "Seeeduino:nrf52:xiaonRF52840"
 
 switch ($Action) {
   "compile" {

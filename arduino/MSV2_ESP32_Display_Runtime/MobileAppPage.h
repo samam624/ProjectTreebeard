@@ -62,7 +62,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     main { padding: 14px; max-width: 880px; margin: 0 auto; }
     .tabs {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
       margin: 0 0 14px;
     }
@@ -341,6 +341,30 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .chart-card { margin-bottom: 12px; }
+    .chart-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+    .chart-title { font-size: 13px; font-weight: 800; }
+    .chart-latest { font-size: 12px; color: var(--muted); }
+    .chart-wrap { position: relative; }
+    svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+    .chart-grid { stroke: var(--line); stroke-width: 1; }
+    .chart-axis { fill: var(--muted); font-size: 10px; }
+    .chart-crosshair { stroke: var(--muted); stroke-width: 1; opacity: 0; pointer-events: none; }
+    .chart-tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: #000;
+      color: #fff;
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      opacity: 0;
+      transform: translate(-50%, -110%);
+      white-space: nowrap;
+      z-index: 5;
+    }
+    .chart-tooltip .tt-value { font-weight: 700; }
+    .chart-tooltip .tt-time { color: #aaa; font-size: 10px; }
     .hidden { display: none; }
     @media (min-width: 700px) {
       main { max-width: 960px; }
@@ -367,6 +391,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <button id="statusTab" class="active" type="button">Status</button>
       <button id="setupTab" type="button">Setup</button>
       <button id="diagnosticsTab" type="button">Diagnostics</button>
+      <button id="historyTab" type="button">History</button>
     </div>
 
     <section id="statusView">
@@ -466,6 +491,47 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <div id="diagnosticsList" class="diag-list"></div>
       <div class="notice">RSSI below -90 dBm is edge-of-range. Missed packets are inferred from probe wake-counter gaps.</div>
     </section>
+
+    <section id="historyView" class="hidden">
+      <section class="network-card">
+        <div class="network-row">
+          <label>Probe
+            <select id="historySensorSelect"></select>
+          </label>
+          <label>Range
+            <select id="historyRangeSelect">
+              <option value="6">Last 6 hours</option>
+              <option value="24" selected>Last 24 hours</option>
+              <option value="72">Last 3 days</option>
+              <option value="168">Last 7 days</option>
+            </select>
+          </label>
+        </div>
+        <div class="notice" id="historyNotice">Pulled from Supabase - requires cloud sync enabled on this receiver.</div>
+      </section>
+
+      <section class="network-card chart-card">
+        <div class="chart-head">
+          <div class="chart-title">Moisture (RC fall time, &micro;s)</div>
+          <div class="chart-latest" id="historyMoistureLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMoistureChart"></svg>
+          <div class="chart-tooltip" id="historyMoistureTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card">
+        <div class="chart-head">
+          <div class="chart-title">Battery</div>
+          <div class="chart-latest" id="historyBatteryLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyBatteryChart"></svg>
+          <div class="chart-tooltip" id="historyBatteryTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+    </section>
   </main>
 
   <script>
@@ -532,9 +598,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       $("statusView").classList.toggle("hidden", name !== "status");
       $("setupView").classList.toggle("hidden", name !== "setup");
       $("diagnosticsView").classList.toggle("hidden", name !== "diagnostics");
+      $("historyView").classList.toggle("hidden", name !== "history");
       $("statusTab").classList.toggle("active", name === "status");
       $("setupTab").classList.toggle("active", name === "setup");
       $("diagnosticsTab").classList.toggle("active", name === "diagnostics");
+      $("historyTab").classList.toggle("active", name === "history");
     }
 
     async function loadConfig() {
@@ -808,6 +876,240 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       return minutes + "m " + rem + "s";
     }
 
+    function niceHistoryStep(rough) {
+      const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+      const norm = rough / mag;
+      const step = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+      return step * mag;
+    }
+
+    function formatHistoryValue(v, unit) {
+      if (v == null) return "--";
+      const rounded = Math.round(v * 10) / 10;
+      return unit === "%" ? rounded.toFixed(0) + "%" : rounded.toLocaleString() + " " + unit;
+    }
+
+    function renderHistoryChart(svgId, tooltipId, latestId, points, color, unit) {
+      const svg = $(svgId);
+      const tooltip = $(tooltipId);
+      const latestEl = $(latestId);
+      svg.innerHTML = "";
+
+      if (!points.length) {
+        svg.setAttribute("viewBox", "0 0 800 60");
+        const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        t.setAttribute("x", 12);
+        t.setAttribute("y", 32);
+        t.setAttribute("class", "chart-axis");
+        t.textContent = "No data yet.";
+        svg.appendChild(t);
+        latestEl.textContent = "";
+        return;
+      }
+
+      const width = 800, height = 200, padL = 44, padR = 10, padT = 10, padB = 26;
+      const plotW = width - padL - padR, plotH = height - padT - padB;
+      const tMin = points[0].t, tMax = points[points.length - 1].t, tSpan = Math.max(1, tMax - tMin);
+
+      let vMin = Math.min(...points.map((p) => p.v));
+      let vMax = Math.max(...points.map((p) => p.v));
+      if (vMin === vMax) { vMin -= 1; vMax += 1; }
+      const pad = (vMax - vMin) * 0.1;
+      vMin -= pad;
+      vMax += pad;
+      if (unit === "%") { vMin = Math.max(0, vMin); vMax = Math.min(100, Math.max(vMax, vMin + 1)); }
+
+      const x = (t) => padL + ((t - tMin) / tSpan) * plotW;
+      const y = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * plotH;
+
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      const ns = "http://www.w3.org/2000/svg";
+
+      const yStep = niceHistoryStep((vMax - vMin) / 4);
+      for (let v = Math.ceil(vMin / yStep) * yStep; v <= vMax; v += yStep) {
+        const gy = y(v);
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", padL);
+        line.setAttribute("x2", width - padR);
+        line.setAttribute("y1", gy);
+        line.setAttribute("y2", gy);
+        line.setAttribute("class", "chart-grid");
+        svg.appendChild(line);
+
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", padL - 6);
+        label.setAttribute("y", gy + 3);
+        label.setAttribute("text-anchor", "end");
+        label.setAttribute("class", "chart-axis");
+        label.textContent = Math.round(v).toLocaleString();
+        svg.appendChild(label);
+      }
+
+      const tickCount = 4;
+      for (let i = 0; i < tickCount; i++) {
+        const t = tMin + (tSpan * i) / (tickCount - 1);
+        const gx = x(t);
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", gx);
+        label.setAttribute("y", height - 6);
+        label.setAttribute("text-anchor", i === 0 ? "start" : i === tickCount - 1 ? "end" : "middle");
+        label.setAttribute("class", "chart-axis");
+        label.textContent = new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        svg.appendChild(label);
+      }
+
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", points.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" "));
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("stroke-linecap", "round");
+      svg.appendChild(path);
+
+      const last = points[points.length - 1];
+      const endDot = document.createElementNS(ns, "circle");
+      endDot.setAttribute("cx", x(last.t));
+      endDot.setAttribute("cy", y(last.v));
+      endDot.setAttribute("r", 5);
+      endDot.setAttribute("fill", color);
+      endDot.setAttribute("stroke", "#17212b");
+      endDot.setAttribute("stroke-width", 2);
+      svg.appendChild(endDot);
+
+      const crosshair = document.createElementNS(ns, "line");
+      crosshair.setAttribute("y1", padT);
+      crosshair.setAttribute("y2", height - padB);
+      crosshair.setAttribute("class", "chart-crosshair");
+      svg.appendChild(crosshair);
+
+      const hoverDot = document.createElementNS(ns, "circle");
+      hoverDot.setAttribute("r", 4);
+      hoverDot.setAttribute("fill", color);
+      hoverDot.setAttribute("stroke", "#17212b");
+      hoverDot.setAttribute("stroke-width", 2);
+      hoverDot.setAttribute("opacity", 0);
+      svg.appendChild(hoverDot);
+
+      const hitRect = document.createElementNS(ns, "rect");
+      hitRect.setAttribute("x", padL);
+      hitRect.setAttribute("y", padT);
+      hitRect.setAttribute("width", plotW);
+      hitRect.setAttribute("height", plotH);
+      hitRect.setAttribute("fill", "transparent");
+      svg.appendChild(hitRect);
+
+      function nearest(clientX) {
+        const rect = svg.getBoundingClientRect();
+        const svgX = ((clientX - rect.left) / rect.width) * width;
+        const t = tMin + ((svgX - padL) / plotW) * tSpan;
+        let lo = 0, hi = points.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (points[mid].t < t) lo = mid + 1; else hi = mid;
+        }
+        if (lo > 0 && Math.abs(points[lo - 1].t - t) < Math.abs(points[lo].t - t)) lo -= 1;
+        return points[lo];
+      }
+
+      hitRect.addEventListener("pointermove", (evt) => {
+        const p = nearest(evt.clientX);
+        crosshair.setAttribute("x1", x(p.t));
+        crosshair.setAttribute("x2", x(p.t));
+        crosshair.setAttribute("opacity", 1);
+        hoverDot.setAttribute("cx", x(p.t));
+        hoverDot.setAttribute("cy", y(p.v));
+        hoverDot.setAttribute("opacity", 1);
+        const wrapRect = svg.parentElement.getBoundingClientRect();
+        tooltip.style.left = (evt.clientX - wrapRect.left) + "px";
+        tooltip.style.top = (evt.clientY - wrapRect.top) + "px";
+        tooltip.style.opacity = 1;
+        tooltip.querySelector(".tt-value").textContent = formatHistoryValue(p.v, unit);
+        tooltip.querySelector(".tt-time").textContent = new Date(p.t).toLocaleString();
+      });
+      hitRect.addEventListener("pointerleave", () => {
+        crosshair.setAttribute("opacity", 0);
+        hoverDot.setAttribute("opacity", 0);
+        tooltip.style.opacity = 0;
+      });
+
+      latestEl.textContent = `latest ${formatHistoryValue(last.v, unit)} · ${new Date(last.t).toLocaleString()}`;
+    }
+
+    function populateHistorySensorSelect() {
+      const select = $("historySensorSelect");
+      const seen = new Set();
+      const options = [];
+      (config?.cards || []).forEach((card) => {
+        if (card.sensor && !seen.has(Number(card.sensor))) {
+          seen.add(Number(card.sensor));
+          options.push([card.sensor, card.plant || ("Probe " + card.sensor)]);
+        }
+      });
+      Object.values(readings).forEach((r) => {
+        if (r.sensor && !seen.has(Number(r.sensor))) {
+          seen.add(Number(r.sensor));
+          options.push([r.sensor, "Probe " + r.sensor]);
+        }
+      });
+      const previous = select.value;
+      select.innerHTML = options.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join("");
+      if (previous && options.some(([id]) => String(id) === previous)) {
+        select.value = previous;
+      }
+    }
+
+    // 150 rows/page (~22KB JSON) stays comfortably under a hard ~31.6KB ceiling hit
+    // during testing - looked time-based at first (http.getString() timeout) but held
+    // steady at the same byte count regardless of requested size, so it's a fixed
+    // buffer limit somewhere in the ESP32's TLS/HTTPClient stack, not a timeout.
+    const HISTORY_PAGE_SIZE = 150;
+    const HISTORY_MAX_PAGES = 80; // safety cap: 80 * 150 = 12,000 rows max per load
+
+    async function loadHistory() {
+      populateHistorySensorSelect();
+      const sensor = $("historySensorSelect").value;
+      const hours = $("historyRangeSelect").value;
+      if (!sensor) {
+        $("historyNotice").textContent = "No probes seen yet.";
+        return;
+      }
+      $("historyNotice").textContent = "Loading...";
+
+      const rows = [];
+      let afterId = 0;
+      try {
+        for (let page = 0; page < HISTORY_MAX_PAGES; page++) {
+          const response = await fetch(
+            `/history?sensor=${encodeURIComponent(sensor)}&hours=${encodeURIComponent(hours)}&afterId=${afterId}&limit=${HISTORY_PAGE_SIZE}`,
+            { cache: "no-store" }
+          );
+          const body = await response.json();
+          if (!response.ok || !body.ok) {
+            $("historyNotice").textContent = body.error || ("HTTP " + response.status);
+            renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", [], "#3987e5", "µs");
+            renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", [], "#199e70", "%");
+            return;
+          }
+
+          const page_rows = body.readings || [];
+          rows.push(...page_rows);
+          if (page_rows.length < HISTORY_PAGE_SIZE) break;
+
+          afterId = page_rows[page_rows.length - 1].id;
+          $("historyNotice").textContent = `Loading... ${rows.length} readings so far`;
+        }
+
+        $("historyNotice").textContent = `${rows.length} readings`;
+        const moisturePoints = rows.filter((r) => r.moisture != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.moisture }));
+        const batteryPoints = rows.filter((r) => r.battery_percent != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.battery_percent }));
+        renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "µs");
+        renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", batteryPoints, "#199e70", "%");
+      } catch (err) {
+        $("historyNotice").textContent = "Fetch failed: " + err.message;
+      }
+    }
+
     function renderEditors() {
       const editorList = $("editorList");
       editorList.innerHTML = "";
@@ -957,6 +1259,9 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     $("statusTab").addEventListener("click", () => setTab("status"));
     $("setupTab").addEventListener("click", () => setTab("setup"));
     $("diagnosticsTab").addEventListener("click", () => setTab("diagnostics"));
+    $("historyTab").addEventListener("click", () => { setTab("history"); loadHistory(); });
+    $("historySensorSelect").addEventListener("change", loadHistory);
+    $("historyRangeSelect").addEventListener("change", loadHistory);
     $("wifiRefreshButton").addEventListener("click", loadWifi);
     $("wifiSaveButton").addEventListener("click", saveWifi);
     $("wifiForgetButton").addEventListener("click", forgetWifi);
@@ -1011,6 +1316,9 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         await loadClaim();
         await loadCloud();
         setInterval(loadReadings, 3000);
+        setInterval(() => {
+          if (!$("historyView").classList.contains("hidden")) loadHistory();
+        }, 30000);
       } catch (error) {
         $("statusText").textContent = "Could not load board";
         $("setupNotice").textContent = error.message || String(error);
