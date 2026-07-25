@@ -62,6 +62,75 @@ function requireEnv(name: string, fallbackName = ""): string {
   return value;
 }
 
+type AutoCalRawSensor = {
+  sensorId: number;
+  sampleCount: number;
+  oldestReadingAt: string | null;
+  dryBound: number | null;
+  wetBound: number | null;
+  rises: { at: string; delta: number }[];
+};
+
+const AUTOCAL_MIN_SAMPLES_READY = 50;
+const AUTOCAL_MIN_DAYS_READY = 3;
+const AUTOCAL_CLUSTER_GAP_MS = 12 * 3600_000; // merge rises within 12h into one watering event
+const AUTOCAL_MAX_EVENTS_FOR_INTERVAL = 7; // up to 6 gaps from the last 7 events
+
+// Clusters raw candidate "rise" rows (from msv2_read_sensor_auto_calibration) into
+// discrete watering events, then derives a median watering interval and whether this
+// sensor is overdue - done here in TypeScript rather than in SQL since clustering a
+// sorted list is much more naturally expressed as a simple loop than window-function
+// chains.
+function deriveAutoCal(sensor: AutoCalRawSensor, nowMs: number) {
+  const events: number[] = [];
+  let clusterStart: number | null = null;
+  let lastAt: number | null = null;
+  for (const rise of sensor.rises) {
+    const at = new Date(rise.at).getTime();
+    if (lastAt === null || at - lastAt > AUTOCAL_CLUSTER_GAP_MS) {
+      if (clusterStart !== null) events.push(clusterStart);
+      clusterStart = at;
+    }
+    lastAt = at;
+  }
+  if (clusterStart !== null) events.push(clusterStart);
+
+  const oldestReadingAtMs = sensor.oldestReadingAt ? new Date(sensor.oldestReadingAt).getTime() : null;
+  const ready = sensor.sampleCount >= AUTOCAL_MIN_SAMPLES_READY &&
+    oldestReadingAtMs !== null &&
+    (nowMs - oldestReadingAtMs) >= AUTOCAL_MIN_DAYS_READY * 24 * 3600_000;
+
+  let daysSinceLastWatering: number | null = null;
+  if (events.length > 0) {
+    daysSinceLastWatering = (nowMs - events[events.length - 1]) / (24 * 3600_000);
+  }
+
+  let predictedIntervalDays: number | null = null;
+  if (events.length >= 3) {
+    const recentEvents = events.slice(-AUTOCAL_MAX_EVENTS_FOR_INTERVAL);
+    const gaps: number[] = [];
+    for (let i = 1; i < recentEvents.length; i++) {
+      gaps.push((recentEvents[i] - recentEvents[i - 1]) / (24 * 3600_000));
+    }
+    gaps.sort((a, b) => a - b);
+    predictedIntervalDays = gaps[Math.floor(gaps.length / 2)];
+  }
+
+  const overdue = predictedIntervalDays !== null && daysSinceLastWatering !== null &&
+    daysSinceLastWatering > predictedIntervalDays;
+
+  return {
+    sensorId: sensor.sensorId,
+    ready,
+    sampleCount: sensor.sampleCount,
+    dryBound: sensor.dryBound,
+    wetBound: sensor.wetBound,
+    daysSinceLastWatering,
+    predictedIntervalDays,
+    overdue,
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -86,6 +155,7 @@ Deno.serve(async (request) => {
       const receiverId = url.searchParams.get("receiverId");
       const wantsConfig = url.searchParams.get("config") === "1";
       const wantsHistory = url.searchParams.get("history") === "1";
+      const wantsAutoCal = url.searchParams.get("autocal") === "1";
 
       const cleanReceiverId = String(receiverId ?? "").trim();
       if (!cleanReceiverId) {
@@ -117,6 +187,21 @@ Deno.serve(async (request) => {
         }
 
         return jsonResponse({ ok: true, readings: data ?? [] });
+      }
+
+      if (wantsAutoCal) {
+        const { data, error } = await supabase.rpc("msv2_read_sensor_auto_calibration", {
+          p_receiver_id: cleanReceiverId,
+        });
+        if (error) {
+          return jsonResponse({ ok: false, error: error.message }, 500);
+        }
+
+        const nowMs = Date.now();
+        const rawSensors = (data ?? []) as AutoCalRawSensor[];
+        const sensors = rawSensors.map((sensor) => deriveAutoCal(sensor, nowMs));
+
+        return jsonResponse({ ok: true, sensors });
       }
 
       if (wantsConfig) {

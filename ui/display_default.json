@@ -31,8 +31,8 @@
       "plant": "Basil",
       "art": "monstera",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -40,8 +40,8 @@
       "plant": "Mint",
       "art": "spindly",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -49,8 +49,8 @@
       "plant": "Thyme",
       "art": "wide_planter",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -58,8 +58,8 @@
       "plant": "Sage",
       "art": "sprout_pot",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -67,8 +67,8 @@
       "plant": "Rosemary",
       "art": "wide_planter",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -76,8 +76,8 @@
       "plant": "Oregano",
       "art": "cup_plant",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -85,8 +85,8 @@
       "plant": "Parsley",
       "art": "sprout_pot",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     },
     {
@@ -94,8 +94,8 @@
       "plant": "Cilantro",
       "art": "cactus_cluster",
       "moisture": {
-        "dry": 350,
-        "wet": 800
+        "dry": 120,
+        "wet": 175
       }
     }
   ]

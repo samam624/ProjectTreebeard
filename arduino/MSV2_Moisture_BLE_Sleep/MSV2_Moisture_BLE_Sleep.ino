@@ -11,45 +11,62 @@
 
 const char DEVICE_NAME[] = "MSV2-MOISTURE-001";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF; // Test/development company id.
-const uint8_t SENSOR_ID = 1; // Change to 2 before uploading to the second sender XIAO.
+const uint8_t SENSOR_ID = 2; // Change to 2 before uploading to the second sender XIAO.
 
-const uint32_t WAKE_PERIOD_MS = 3000;
+// Measure/check cadence - cheap (a few ms of oscillator sampling), so this can run
+// often without much battery cost. Actually advertising over BLE is the expensive part
+// (radio on, ~ADVERTISE_MS awake) so it happens far less often - see shouldAdvertise
+// in loop() below. Matches the "measure often, radio rarely" pattern sketched in
+// docs/PRODUCT_ROADMAP.md's probe section, tightened to this test's own numbers.
+const uint32_t WAKE_PERIOD_MS = 10000;
+// Normal BLE advertise cadence when nothing eventful is happening.
+const uint32_t ADVERTISE_INTERVAL_MS = 60000;
+// If moisture moves at least this much between checks (e.g. a watering event, or the
+// probe being pulled out), advertise immediately instead of waiting for the next
+// scheduled interval - matches PRODUCT_ROADMAP.md's "if moisture changed meaningfully"
+// condition. ~27% of the default 120-175 calibration range (see MOISTURE_INVERT_CEILING
+// below) - big enough to skip normal sample-to-sample noise, small enough to catch a
+// real watering/removal event within one 10s check.
+const int MOISTURE_SWING_THRESHOLD = 15;
 const uint32_t ADVERTISE_MS = 500;
 const uint32_t LED_PULSE_MS = 80;
 const uint8_t XIAO_LED_ON = LOW;
 const uint8_t XIAO_LED_OFF = HIGH;
 const bool ENABLE_STATUS_LEDS = false; // onboard RGB disabled for tonight's battery-impact test - see EXTERNAL_LED_PIN below
-const bool ENABLE_SERIAL_LOGS = false; // disabled for tonight's unattended overnight run - flip back to true to debug
+const bool ENABLE_SERIAL_LOGS = false; // disabled for the unattended overnight run - flip back to true to debug
 
-// External LED on D1, pulsed once per wake to mark a BLE advertise burst going out.
-// Only carries the RGB's old per-wake heartbeat semantics, not one blink per raw
-// 802.15 packet - Bluefruit doesn't expose a per-packet callback, and a literal
-// ~25-blink strobe every 500ms would defeat the point of an overnight power test.
+// External LED on D1: no longer a per-wake/per-advertise heartbeat (that cost battery
+// for no real benefit) - now purely a low-moisture alert, blinking 3x every wake while
+// moisture is low. LOW_MOISTURE_THRESHOLD is a FIXED cutoff, not the live auto-learned
+// or per-plant manual range configured on the receiver - this probe is advertise-only
+// (no BLE receive path), so it has no way to learn either of those without a real
+// architecture change. Matches the same 25%-of-default-range "danger" cutoff already
+// used everywhere else in this project (MSV2_ESP32_Display_Runtime.ino's healthColor()),
+// off the default dry=120/wet=175 calibration scale: 120 + 0.25*(175-120) = 134.
 const int EXTERNAL_LED_PIN = D1;
 const bool EXTERNAL_LED_ACTIVE_HIGH = true;
 const bool ENABLE_EXTERNAL_LED = true;
+const int LOW_MOISTURE_THRESHOLD = 134;
 
-// Moisture sensing node: precharge HIGH, release to INPUT, time the fall to LOW.
-// See MSV2_Moisture_RC_Test for the standalone version this was validated against.
+// Moisture sensing node: free-running RC relaxation oscillator, not one-shot timing.
+// The earlier precharge/discharge-timing approach (see git history) read cleanly on
+// the bench but saturated once actually inserted in soil - no resistor value made a
+// single-shot timed discharge survive real, variable soil conductivity. Replaced with
+// the architecture validated in MSV2_Moisture_Probe_Test.ino and
+// docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md: charge until HIGH, immediately discharge
+// until LOW, immediately recharge, repeat continuously, and count cycles in a fixed
+// window - the same free-running-astable-plus-frequency-counting principle as this
+// project's own MSV1 555-timer proof-of-concept. Requires a 100k pulldown resistor
+// populated on this node (the earlier unpopulated/DNC footprint was part of why the
+// old approach never stabilized).
 const int SENSE_PIN = D0;
-// A verify-via-analogRead precharge loop was tried and reverted: checking the charge
-// level means releasing the pin to INPUT to read it, which starts the very discharge
-// it's trying to avoid - if the ADC call's own overhead is comparable to the charge
-// burst, the loop nets out *worse* than a plain fixed delay (confirmed: it read
-// moisture=0 every cycle). A long, uninterrupted precharge is the sound approach here.
-// 10ms moved the baseline from ~12,000 to ~17,700us with much more consistent readings
-// and correct touch response, confirmed on hardware. Pinned here, NOT bumped further -
-// 20ms was tried for extra margin but broke touch response (reading collapsed far below
-// baseline on contact instead of rising), so 10ms is the validated value, not a guess.
-const uint32_t MOISTURE_PRECHARGE_US = 10000;
-// Bumped from 50ms: unplugging USB (removing ground-loop/mains-noise coupling into this
-// high-impedance node) revealed real fall times exceeding 50ms - every sample was hitting
-// the old timeout and reporting MOISTURE_INVALID (0xFFFF), which looked like a plausible
-// high reading but was actually "no valid measurement." Bumped generously to observe the
-// true value before dialing this back down.
-const uint32_t MOISTURE_FALL_TIMEOUT_US = 500000;
-const uint8_t MOISTURE_SAMPLES = 8;
-const uint16_t MOISTURE_INVALID = 0xFFFF; // sent when no valid fall was detected this cycle
+const uint32_t OSC_SAMPLE_WINDOW_MS = 1;
+const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x 1ms bursts, median-of-5 rejects scheduler-jitter outliers
+// Safety cap per half-cycle so a disconnected/open probe can't hang a burst.
+const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
+// Generous headroom above the ~10-90kHz range observed so far - see the inversion
+// comment in readAveragedMoisture() below.
+const uint16_t MOISTURE_INVERT_CEILING = 200;
 
 // 3.0V ADC reference, 12-bit resolution: 3000mV / 4096 counts.
 #define VBAT_MV_PER_LSB (0.73242188F)
@@ -92,7 +109,9 @@ Adafruit_SPIFlash flash(&flashTransport);
 // BLEDis bledis;
 // BLEBas blebas;
 
-uint32_t wakeCount = 0;
+uint32_t wakeCount = 0; // counts actual advertises, not every measure/check wake
+uint32_t lastAdvertiseMs = 0;
+int lastAdvertisedMoisture = -1;
 
 void setup()
 {
@@ -134,33 +153,57 @@ void setup()
 void loop()
 {
   uint32_t cycleStartMs = millis();
-  wakeCount++;
   int moisture = readAveragedMoisture();
-  uint8_t batteryPercent = batteryMvToPercent(readBatteryMv());
+  uint8_t batteryPercent = readSmoothedBatteryPercent();
 
-  if (ENABLE_SERIAL_LOGS)
+  bool intervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= ADVERTISE_INTERVAL_MS);
+  bool bigSwing = lastAdvertisedMoisture >= 0 && abs(moisture - lastAdvertisedMoisture) >= MOISTURE_SWING_THRESHOLD;
+  bool shouldAdvertise = intervalElapsed || bigSwing;
+
+  if (shouldAdvertise)
+  {
+    wakeCount++;
+
+    if (ENABLE_SERIAL_LOGS)
+    {
+      Serial.print("Sensor ");
+      Serial.print(SENSOR_ID);
+      Serial.print(" wake ");
+      Serial.print(wakeCount);
+      Serial.print(bigSwing ? " (swing) advertising for " : " advertising for ");
+      Serial.print(ADVERTISE_MS);
+      Serial.print(" ms moisture=");
+      Serial.print(moisture);
+      Serial.print(" battery=");
+      Serial.print(batteryPercent);
+      Serial.println("%");
+      Serial.flush();
+    }
+
+    startAdv(moisture, batteryPercent);
+    lowPowerDelay(ADVERTISE_MS);
+    Bluefruit.Advertising.stop();
+
+    // System OFF entry point commented out along with USE_SYSTEM_OFF_AFTER_SEND above.
+    // enterSystemOff();
+
+    lastAdvertiseMs = millis();
+    lastAdvertisedMoisture = moisture;
+  }
+  else if (ENABLE_SERIAL_LOGS)
   {
     Serial.print("Sensor ");
     Serial.print(SENSOR_ID);
-    Serial.print(" wake ");
-    Serial.print(wakeCount);
-    Serial.print(": advertising for ");
-    Serial.print(ADVERTISE_MS);
-    Serial.print(" ms moisture=");
+    Serial.print(" checked, moisture=");
     Serial.print(moisture);
-    Serial.print(" battery=");
-    Serial.print(batteryPercent);
-    Serial.println("%");
+    Serial.println(" - no advertise this wake");
     Serial.flush();
   }
 
-  startAdv(moisture, batteryPercent);
-  pulseExternalLed(LED_PULSE_MS); // marks the advertise burst going out
-  lowPowerDelay(ADVERTISE_MS);
-  Bluefruit.Advertising.stop();
-
-  // System OFF entry point commented out along with USE_SYSTEM_OFF_AFTER_SEND above.
-  // enterSystemOff();
+  if (moisture <= LOW_MOISTURE_THRESHOLD)
+  {
+    blinkExternalLed(3, LED_PULSE_MS, LED_PULSE_MS); // alert: moisture is low
+  }
 
   uint32_t awakeMs = millis() - cycleStartMs;
   uint32_t sleepMs = awakeMs < WAKE_PERIOD_MS ? (WAKE_PERIOD_MS - awakeMs) : 1;
@@ -177,50 +220,78 @@ void loop()
   lowPowerDelay(sleepMs);
 }
 
-// Precharges SENSE_PIN high, releases it to input, and times the fall to LOW.
-// Returns the fall time in microseconds, or -1 if it never fell within the timeout.
-long readMoistureFallUs()
+// Free-running relaxation oscillator: charge until HIGH, immediately discharge until
+// LOW, immediately recharge, repeat, for windowMs. Returns the number of complete
+// HIGH->LOW discharge cycles observed - ported near-verbatim from
+// MSV2_Moisture_Probe_Test.ino's countOscCycles(), which has no BLE dependency.
+uint32_t countOscCycles(uint32_t windowMs)
 {
-  pinMode(SENSE_PIN, OUTPUT);
-  digitalWrite(SENSE_PIN, HIGH);
-  delayMicroseconds(MOISTURE_PRECHARGE_US);
+  uint32_t windowStartMs = millis();
+  uint32_t cycles = 0;
 
-  pinMode(SENSE_PIN, INPUT);
-  uint32_t start = micros();
-
-  while (digitalRead(SENSE_PIN) == HIGH)
+  while (millis() - windowStartMs < windowMs)
   {
-    if (micros() - start > MOISTURE_FALL_TIMEOUT_US)
+    pinMode(SENSE_PIN, OUTPUT);
+    digitalWrite(SENSE_PIN, HIGH);
+
+    pinMode(SENSE_PIN, INPUT);
+    uint32_t waitStartUs = micros();
+    while (digitalRead(SENSE_PIN) == HIGH)
     {
-      return -1;
+      if (micros() - waitStartUs >= OSC_CYCLE_TIMEOUT_US)
+      {
+        break; // disconnected/open probe - bail this half-cycle
+      }
     }
+
+    cycles++;
   }
 
-  return (long)(micros() - start);
+  return cycles;
 }
 
+// In-place insertion sort + middle element. Fine for the small, fixed sample counts
+// used here (no need for anything fancier than O(n^2)).
+uint32_t medianOf(uint32_t vals[], uint8_t n)
+{
+  for (uint8_t i = 1; i < n; i++)
+  {
+    uint32_t key = vals[i];
+    int8_t j = i - 1;
+    while (j >= 0 && vals[j] > key)
+    {
+      vals[j + 1] = vals[j];
+      j--;
+    }
+    vals[j + 1] = key;
+  }
+  return vals[n / 2];
+}
+
+// Takes OSC_MEDIAN_SAMPLES independent OSC_SAMPLE_WINDOW_MS bursts and returns the
+// median cycle count, scaled to a per-second rate (kHz, since burst windows are ms).
+// At the validated 1ms window this numerically equals frequency in kHz directly, but
+// the division is spelled out so it stays correct if the window is ever retuned.
+// Lower value = wetter - the oscillator slows down as sensed capacitance rises.
 uint16_t readAveragedMoisture()
 {
-  uint32_t sum = 0;
-  uint8_t validSamples = 0;
-
-  for (uint8_t i = 0; i < MOISTURE_SAMPLES; i++)
+  uint32_t samples[OSC_MEDIAN_SAMPLES];
+  for (uint8_t i = 0; i < OSC_MEDIAN_SAMPLES; i++)
   {
-    long fallUs = readMoistureFallUs();
-    if (fallUs >= 0)
-    {
-      sum += (uint32_t)fallUs;
-      validSamples++;
-    }
-    delay(5); // let the node fully settle before recharging
+    samples[i] = countOscCycles(OSC_SAMPLE_WINDOW_MS);
   }
 
-  if (validSamples == 0)
-  {
-    return MOISTURE_INVALID;
-  }
+  uint32_t medianCycles = medianOf(samples, OSC_MEDIAN_SAMPLES);
+  uint16_t freqKHz = (uint16_t)(medianCycles * 1000UL / OSC_SAMPLE_WINDOW_MS / 1000UL);
 
-  return (uint16_t)(sum / validSamples);
+  // The oscillator's raw frequency runs the "wrong" way for a value called moisture -
+  // drier soil oscillates faster, so raw frequency goes UP as things dry out. Invert
+  // it here (ceiling - frequency) so the transmitted value reads the way the name
+  // implies (higher = wetter), matching every consumer downstream (dry/wet calibration,
+  // charts) and the original pre-oscillator convention. MOISTURE_INVERT_CEILING just
+  // needs to comfortably exceed the highest frequency this sensor will ever report -
+  // clamped to 0 rather than underflowing if it doesn't.
+  return freqKHz >= MOISTURE_INVERT_CEILING ? 0 : (MOISTURE_INVERT_CEILING - freqKHz);
 }
 
 // Reads LiPo voltage in millivolts via the XIAO's onboard VBAT divider.
@@ -241,6 +312,29 @@ float readBatteryMv(void)
   digitalWrite(VBAT_ENABLE, HIGH); // disable the divider again to save power
 
   return raw * REAL_VBAT_MV_PER_LSB;
+}
+
+// Exponential moving average of the battery percent, carried across wakes, to smooth
+// out per-sample ADC noise on the History chart's charging curve - same 0.2 smoothing
+// factor already validated for the moisture oscillator's frequency in
+// MSV2_Moisture_Probe_Test.ino. This only smooths the transmitted/charted value, not
+// the sampling rate - still one real ADC read per wake.
+float smoothedBatteryPercent = -1.0f;
+
+uint8_t readSmoothedBatteryPercent()
+{
+  float raw = batteryMvToPercent(readBatteryMv());
+
+  if (smoothedBatteryPercent < 0)
+  {
+    smoothedBatteryPercent = raw;
+  }
+  else
+  {
+    smoothedBatteryPercent += 0.2f * (raw - smoothedBatteryPercent);
+  }
+
+  return (uint8_t)(smoothedBatteryPercent + 0.5f);
 }
 
 // Rough LiPo mV -> percent curve (same shape as the Bluefruit52Lib adc_vbat example).
@@ -349,16 +443,23 @@ void externalLedWrite(bool on)
   digitalWrite(EXTERNAL_LED_PIN, on == EXTERNAL_LED_ACTIVE_HIGH ? HIGH : LOW);
 }
 
-void pulseExternalLed(uint32_t durationMs)
+void blinkExternalLed(uint8_t times, uint32_t onMs, uint32_t offMs)
 {
-  if (!ENABLE_EXTERNAL_LED || durationMs == 0)
+  if (!ENABLE_EXTERNAL_LED || times == 0 || onMs == 0)
   {
     return;
   }
 
-  externalLedWrite(true);
-  delay(durationMs);
-  externalLedWrite(false);
+  for (uint8_t i = 0; i < times; i++)
+  {
+    externalLedWrite(true);
+    delay(onMs);
+    externalLedWrite(false);
+    if (i + 1 < times)
+    {
+      delay(offMs);
+    }
+  }
 }
 
 void powerDownExternalFlash(void)

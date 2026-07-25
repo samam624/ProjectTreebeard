@@ -71,6 +71,8 @@ Deno.serve(async (request) => {
     if (path.endsWith("/api/share-revoke")) return await shareRevokeApi(request);
     if (path.endsWith("/api/share-snapshots")) return await shareSnapshotsApi(request);
     if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
+    if (path.endsWith("/api/share-history")) return await shareHistoryApi(request);
+    if (path.endsWith("/api/share-history-clear")) return await shareHistoryClearApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
 
     return jsonResponse({
@@ -82,6 +84,8 @@ Deno.serve(async (request) => {
         shareRevoke: "/functions/v1/plant-dashboard/api/share-revoke",
         shareSnapshots: "/functions/v1/plant-dashboard/api/share-snapshots",
         shareConfig: "/functions/v1/plant-dashboard/api/share-config",
+        shareHistory: "/functions/v1/plant-dashboard/api/share-history",
+        shareHistoryClear: "/functions/v1/plant-dashboard/api/share-history-clear",
       },
     });
   } catch (error) {
@@ -189,6 +193,70 @@ async function shareConfigApi(request: Request): Promise<Response> {
   }
 
   return jsonResponse({ ok: true, config: Array.isArray(data) ? data[0] : data });
+}
+
+async function shareHistoryApi(request: Request): Promise<Response> {
+  const shareToken = bearerToken(request);
+  if (!shareToken) {
+    return jsonResponse({ ok: false, error: "share token required" }, 401);
+  }
+
+  const url = new URL(request.url);
+  const receiverId = String(url.searchParams.get("receiverId") ?? "").trim();
+  if (!receiverId) {
+    return jsonResponse({ ok: false, error: "receiverId required" }, 400);
+  }
+
+  const sensorId = Number(url.searchParams.get("sensorId") ?? "0");
+  if (!Number.isFinite(sensorId) || sensorId <= 0) {
+    return jsonResponse({ ok: false, error: "sensorId required" }, 400);
+  }
+
+  const sinceHours = Number(url.searchParams.get("sinceHours") ?? "24");
+  const since = new Date(Date.now() - (Number.isFinite(sinceHours) ? sinceHours : 24) * 3600_000).toISOString();
+  const afterId = Number(url.searchParams.get("afterId") ?? "0");
+  const limit = Number(url.searchParams.get("limit") ?? "500");
+
+  const { data, error } = await serviceClient().rpc("msv2_read_share_sensor_history", {
+    p_share_token: shareToken,
+    p_receiver_id: receiverId,
+    p_sensor_id: sensorId,
+    p_since: since,
+    p_after_id: Number.isFinite(afterId) ? afterId : 0,
+    p_limit: Number.isFinite(limit) ? limit : 500,
+  });
+  if (error) {
+    return jsonResponse({ ok: false, error: error.message }, 401);
+  }
+
+  return jsonResponse({ ok: true, readings: data ?? [] });
+}
+
+async function shareHistoryClearApi(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
+  }
+
+  const shareToken = bearerToken(request);
+  if (!shareToken) {
+    return jsonResponse({ ok: false, error: "share token required" }, 401);
+  }
+
+  const body = await request.json();
+  const receiverId = String(body.receiverId ?? "").trim();
+  if (!receiverId) {
+    return jsonResponse({ ok: false, error: "receiverId required" }, 400);
+  }
+
+  const { data, error } = await serviceClient().rpc("msv2_clear_share_sensor_history", {
+    p_share_token: shareToken,
+    p_receiver_id: receiverId,
+  });
+  if (error) {
+    return jsonResponse({ ok: false, error: error.message }, 401);
+  }
+
+  return jsonResponse({ ok: true, deleted: data ?? 0 });
 }
 
 async function userSnapshotsApi(request: Request): Promise<Response> {

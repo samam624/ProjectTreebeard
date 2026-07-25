@@ -232,6 +232,7 @@ const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
 const uint32_t CLOUD_SYNC_SOON_MS = 5000;
 const uint32_t CLOUD_SYNC_SOON_THROTTLE_MS = 15000;
 const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 30000;
+const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned range/schedule changes slowly
 const uint8_t WIFI_CONNECT_REBOOT_RETRIES = 2;
 
 struct SensorReading
@@ -246,6 +247,24 @@ struct SensorReading
   uint32_t received = 0;
   uint32_t missedTotal = 0;
 };
+
+// Cached result of the periodic /autocal cloud pull (see runCloudAutoCalPull) - a
+// self-learned moisture range per sensor, replacing manually-guessed dry/wet
+// thresholds. "ready" gates whether there's enough history (min sample count + min
+// elapsed days, enforced server-side in receiver-snapshot's autocal=1 branch) to trust
+// the learned bounds yet; until then, callers should fall back to the manual/default
+// thresholds instead of using dryBound/wetBound.
+struct AutoCalState
+{
+  bool ready = false;
+  int dryBound = 0;
+  int wetBound = 0;
+  bool overdue = false;
+  float daysSinceLastWatering = -1.0f;
+  float predictedIntervalDays = -1.0f;
+};
+
+AutoCalState autoCal[MAX_SENSOR_ID + 1];
 
 #if MSV2_ENABLE_DISPLAY
 const int TFT_SCK = 12;
@@ -292,8 +311,10 @@ struct PlantArtSlot
   uint16_t mutedColor = 0;
   uint16_t warningColor = 0;
   uint16_t dangerColor = 0;
-  int dry = 350;
-  int wet = 800;
+  int dry = 120;
+  int wet = 175;
+  bool overdue = false; // forces dangerColor when auto mode thinks watering is overdue
+  bool pending = false; // auto mode on but not enough history yet - render like stale
   uint8_t frame = 0;
   uint16_t frameIntervalMs = 200;
   uint32_t nextFrameMs = 0;
@@ -343,9 +364,19 @@ char uiUpdatedBy[24] = "unknown";
 const unsigned long ADMIN_GRACE_WINDOW_MS = 15UL * 60UL * 1000UL;
 unsigned long adminUnlockUntilMs = 0;
 
+// Sliding expiry: an already-valid window gets extended by each successful admin
+// action, so an in-progress editing session (e.g. tuning several plant cards in one
+// sitting) doesn't get disruptively cut off mid-session. This doesn't weaken the
+// security property above - an already-expired window can't extend itself, so someone
+// who missed the post-boot period still can never gain admin access without a reboot.
 bool isAdminActionAllowed()
 {
-  return millis() < adminUnlockUntilMs;
+  if (millis() >= adminUnlockUntilMs)
+  {
+    return false;
+  }
+  adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
+  return true;
 }
 bool cloudEnabled = false;
 char cloudUploadUrl[160] = "";
@@ -362,6 +393,7 @@ uint32_t cloudConfigLastAttemptMs = 0;
 uint32_t cloudConfigLastSuccessMs = 0;
 int cloudConfigLastHttpStatus = 0;
 char cloudConfigLastError[96] = "";
+uint32_t nextCloudAutoCalPullMs = 0; // auto-calibration changes slowly - polled far less often than config
 uint32_t nextCloudBootstrapMs = 0;
 uint32_t cloudBootstrapLastAttemptMs = 0;
 uint32_t cloudBootstrapLastSuccessMs = 0;
@@ -483,14 +515,14 @@ void ensureDefaultUi()
     "\"theme\":{\"background\":\"#0E141B\",\"surface\":\"#17212B\",\"text\":\"#F5F7FA\",\"muted\":\"#8FA3AD\",\"accent\":\"#20C997\",\"warning\":\"#FFB020\",\"danger\":\"#FF5A5F\"},"
     "\"layout\":{\"type\":\"grid\",\"orientation\":\"landscape\",\"columns\":4,\"rows\":2,\"gap\":6,\"padding\":6},"
     "\"cards\":["
-    "{\"sensor\":1,\"plant\":\"Basil\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":2,\"plant\":\"Mint\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":3,\"plant\":\"Thyme\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":4,\"plant\":\"Sage\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":5,\"plant\":\"Rosemary\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":6,\"plant\":\"Oregano\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":7,\"plant\":\"Parsley\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":350,\"wet\":800}},"
-    "{\"sensor\":8,\"plant\":\"Cilantro\",\"art\":\"cactus_cluster\",\"moisture\":{\"dry\":350,\"wet\":800}}"
+    "{\"sensor\":1,\"plant\":\"Basil\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":2,\"plant\":\"Mint\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":3,\"plant\":\"Thyme\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":4,\"plant\":\"Sage\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":5,\"plant\":\"Rosemary\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":6,\"plant\":\"Oregano\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":7,\"plant\":\"Parsley\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
+    "{\"sensor\":8,\"plant\":\"Cilantro\",\"art\":\"cactus_cluster\",\"moisture\":{\"dry\":120,\"wet\":175}}"
     "]"
     "}"
   );
@@ -834,6 +866,7 @@ bool loadCloudConfig()
   cloudConfigLastSuccessMs = 0;
   cloudConfigLastHttpStatus = 0;
   cloudConfigLastError[0] = '\0';
+  nextCloudAutoCalPullMs = 0;
   nextCloudBootstrapMs = 0;
   cloudBootstrapLastAttemptMs = 0;
   cloudBootstrapLastSuccessMs = 0;
@@ -999,6 +1032,7 @@ bool resetCloudConfig()
   cloudConfigLastSuccessMs = 0;
   cloudConfigLastHttpStatus = 0;
   cloudConfigLastError[0] = '\0';
+  nextCloudAutoCalPullMs = 0;
   nextCloudBootstrapMs = millis() + CLOUD_BOOTSTRAP_FIRST_TRY_MS;
   server.send(200, "application/json", "{\"ok\":true}");
   return true;
@@ -1239,6 +1273,49 @@ void drawTextCenter(const char* text, int centerX, int y, uint8_t size, uint16_t
   drawTextLeft(text, centerX - textPixelWidth(text, size) / 2, y, size, color, backgroundColor);
 }
 
+// Resolves the dry/wet bounds and overdue flag to actually use for a card: the
+// self-learned auto-calibration range (when the card has "auto" enabled and enough
+// history has accumulated server-side), otherwise the manual/default thresholds. Used
+// by every moisture-rendering call site (both PlantArtSlot-based and direct) so the web
+// app and physical display never disagree.
+void resolveMoistureBounds(
+  JsonObject moistureConfig,
+  JsonObject card,
+  uint8_t sensorId,
+  int defaultDry,
+  int defaultWet,
+  int& outDry,
+  int& outWet,
+  bool& outOverdue,
+  bool& outPending
+)
+{
+  bool autoEnabled = moistureConfig["auto"] | false;
+  bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
+
+  if (autoEnabled && validSensor && autoCal[sensorId].ready)
+  {
+    outDry = autoCal[sensorId].dryBound;
+    outWet = autoCal[sensorId].wetBound;
+    outOverdue = autoCal[sensorId].overdue;
+    outPending = false;
+    return;
+  }
+
+  // Auto mode either off, or on but not enough history yet (the "ready" gate in
+  // msv2_read_sensor_auto_calibration / receiver-snapshot's autocal=1 branch). Either
+  // way, use the manually-configured (or preset-default) range as the working estimate
+  // - unlike the stale-scale bug this replaced, this range is on the CURRENT sensing
+  // scale (the user set it, or picked a preset, after today's oscillator/inversion
+  // changes), so it's a reasonable number to show rather than nothing. "pending" just
+  // flags "not auto-calibrated yet" for callers that want to note it - it doesn't
+  // block or invalidate the percentage anymore.
+  outDry = moistureConfig["dry"] | card["dry"] | defaultDry;
+  outWet = moistureConfig["wet"] | card["wet"] | defaultWet;
+  outOverdue = false;
+  outPending = autoEnabled;
+}
+
 uint8_t moisturePercent(uint16_t moisture, int dry, int wet)
 {
   if (wet <= dry)
@@ -1264,6 +1341,20 @@ uint16_t healthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColo
     return warningColor;
   }
   return accentColor;
+}
+
+// Turns a resolved "danger" color into a blink (alternating dangerColor/mutedColor
+// every 500ms) so a critically-low or overdue plant is an active alert on the physical
+// display, not just a static red border easy to miss at a glance - matches the probe's
+// own low-moisture LED alert. Leaves any other color (green/yellow/muted) untouched.
+uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uint16_t mutedColor)
+{
+  if (resolvedColor != dangerColor)
+  {
+    return resolvedColor;
+  }
+  bool blinkOn = (millis() / 500) % 2 == 0;
+  return blinkOn ? dangerColor : mutedColor;
 }
 
 void drawBar(int x, int y, int w, int h, uint8_t percent, uint16_t fillColor, uint16_t trackColor)
@@ -1479,8 +1570,7 @@ void cachePlantArtSlot(
   slot.sensorId = card["sensor"] | 0;
   strlcpy(slot.art, card["art"] | "sprout_pot", sizeof(slot.art));
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
-  slot.dry = moistureConfig["dry"] | card["dry"] | 350;
-  slot.wet = moistureConfig["wet"] | card["wet"] | 800;
+  resolveMoistureBounds(moistureConfig, card, slot.sensorId, 120, 175, slot.dry, slot.wet, slot.overdue, slot.pending);
   slot.x = x;
   slot.y = y;
   slot.w = w;
@@ -1578,15 +1668,22 @@ void drawPlantCard(
   }
   const char* art = card["art"] | "sprout";
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
-  int dry = moistureConfig["dry"] | card["dry"] | 350;
-  int wet = moistureConfig["wet"] | card["wet"] | 800;
+  int dry;
+  int wet;
+  bool overdue;
+  bool pending;
+  resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, overdue, pending);
 
   const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
   const SensorReading* reading = validSensor ? &sensors[sensorId] : nullptr;
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = healthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
+  uint16_t moistureColor = overdue ? dangerColor : healthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
+  if (!stale)
+  {
+    moistureColor = applyLowMoistureBlink(moistureColor, dangerColor, mutedColor);
+  }
   uint16_t batteryColor = healthColor(batteryPct, accentColor, warningColor, dangerColor, mutedColor);
 
   tft.fillRoundRect(x, y, w, h, 5, surfaceColor);
@@ -1645,7 +1742,11 @@ void drawPlantCardDataOnly(const PlantArtSlot& slot)
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = healthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  uint16_t moistureColor = slot.overdue ? slot.dangerColor : healthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  if (!stale)
+  {
+    moistureColor = applyLowMoistureBlink(moistureColor, slot.dangerColor, slot.mutedColor);
+  }
   uint16_t batteryColor = healthColor(batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
 
   tft.drawRoundRect(x, y, w, h, 5, stale ? slot.mutedColor : moistureColor);
@@ -1700,6 +1801,40 @@ void renderDashboardDataOnly()
       drawPlantCardDataOnly(artSlots[i]);
     }
   }
+}
+
+// The normal redraw gate only fires when new sensor data arrives (sensorDataDirty),
+// which - now that the probe only advertises every ~60s or on a big swing instead of
+// every wake - would make a "blinking" low-moisture alert change color only once a
+// minute rather than actually blink. This checks whether any currently-visible,
+// non-stale card is low enough to need that blink, so the caller can force a much
+// faster redraw cadence just while it's needed (see applyLowMoistureBlink's 500ms
+// phase and the render-gate call site in loop()).
+bool anyLowMoistureCardVisible()
+{
+  for (uint8_t i = 0; i < artSlotCount; i++)
+  {
+    PlantArtSlot& slot = artSlots[i];
+    if (!slot.enabled || slot.sensorId == 0 || slot.sensorId > MAX_SENSOR_ID)
+    {
+      continue;
+    }
+    SensorReading& reading = sensors[slot.sensorId];
+    bool stale = !reading.seen || (millis() - reading.lastSeenMs > staleSeconds * 1000UL);
+    if (stale)
+    {
+      continue;
+    }
+    if (slot.overdue)
+    {
+      return true;
+    }
+    if (moisturePercent(reading.moisture, slot.dry, slot.wet) < 25)
+    {
+      return true;
+    }
+  }
+  return false;
 }
 
 void drawLegacyRow(
@@ -2037,6 +2172,18 @@ String sensorDataJson()
     item["missed"] = sensors[sensorId].missed;
     item["received"] = sensors[sensorId].received;
     item["missedTotal"] = sensors[sensorId].missedTotal;
+
+    // Cached result of the periodic cloud auto-calibration pull (see
+    // runCloudAutoCalPull) - lets the browser use the same learned range/schedule the
+    // physical display uses, without minting its own share token or hitting the cloud
+    // directly (this data changes slowly, so a receiver-cached copy is plenty fresh).
+    JsonObject autoCalItem = item.createNestedObject("autoCal");
+    autoCalItem["ready"] = autoCal[sensorId].ready;
+    autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
+    autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
+    autoCalItem["overdue"] = autoCal[sensorId].overdue;
+    autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
+    autoCalItem["predictedIntervalDays"] = autoCal[sensorId].predictedIntervalDays;
   }
 
   String output;
@@ -2101,8 +2248,8 @@ String snapshotJson()
           item["plant"] = plant;
           item["art"] = card["art"] | "sprout_pot";
           JsonObject sourceMoisture = card["moisture"].as<JsonObject>();
-          int dry = card["dry"] | 350;
-          int wet = card["wet"] | 800;
+          int dry = card["dry"] | 120;
+          int wet = card["wet"] | 175;
           if (!sourceMoisture.isNull())
           {
             dry = sourceMoisture["dry"] | dry;
@@ -2492,6 +2639,107 @@ void runCloudConfigPull(uint32_t now)
   nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
 }
 
+// Pulls the self-learned per-sensor moisture range + watering schedule (see
+// docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md and migration 017) on the same throttled
+// pull pattern as runCloudConfigPull above, just far less frequently since this data
+// changes slowly. Cached in autoCal[] and reused by both the physical display and the
+// browser (via sensorDataJson()'s "autoCal" field) - neither needs its own cloud
+// round-trip for this.
+void runCloudAutoCalPull(uint32_t now)
+{
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0')
+  {
+    nextCloudAutoCalPullMs = 0;
+    return;
+  }
+
+  if (nextCloudAutoCalPullMs == 0)
+  {
+    nextCloudAutoCalPullMs = now + 10000UL;
+    return;
+  }
+
+  if ((int32_t)(now - nextCloudAutoCalPullMs) < 0)
+  {
+    return;
+  }
+
+  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiStationConnected)
+  {
+    nextCloudAutoCalPullMs = now + 10000UL;
+    return;
+  }
+
+  const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
+  const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
+  if (!isHttps && !isHttp)
+  {
+    nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
+    return;
+  }
+
+  String autoCalUrl = cloudUploadUrl;
+  autoCalUrl += autoCalUrl.indexOf('?') >= 0 ? "&" : "?";
+  autoCalUrl += "autocal=1&receiverId=";
+  autoCalUrl += receiverId;
+
+  HTTPClient http;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  bool began = false;
+  if (isHttps)
+  {
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, autoCalUrl);
+  }
+  else
+  {
+    began = http.begin(plainClient, autoCalUrl);
+  }
+
+  if (!began)
+  {
+    nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
+    return;
+  }
+
+  http.setTimeout(8000);
+  String auth = "Bearer ";
+  auth += cloudApiToken;
+  http.addHeader("Authorization", auth);
+
+  int status = http.GET();
+  if (status >= 200 && status < 300)
+  {
+    String response = http.getString();
+    DynamicJsonDocument responseDoc(4096);
+    DeserializationError error = deserializeJson(responseDoc, response);
+    if (!error && (responseDoc["ok"] | false))
+    {
+      JsonArray sensorsArray = responseDoc["sensors"].as<JsonArray>();
+      for (JsonObject sensorRow : sensorsArray)
+      {
+        uint16_t sensorId = sensorRow["sensorId"] | 0;
+        if (sensorId == 0 || sensorId > MAX_SENSOR_ID)
+        {
+          continue;
+        }
+        autoCal[sensorId].ready = sensorRow["ready"] | false;
+        autoCal[sensorId].dryBound = sensorRow["dryBound"] | 0;
+        autoCal[sensorId].wetBound = sensorRow["wetBound"] | 0;
+        autoCal[sensorId].overdue = sensorRow["overdue"] | false;
+        autoCal[sensorId].daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
+        autoCal[sensorId].predictedIntervalDays = sensorRow["predictedIntervalDays"] | -1.0f;
+      }
+      Serial.println("[MSV2 cloud] auto-calibration updated");
+    }
+  }
+
+  http.end();
+  nextCloudAutoCalPullMs = millis() + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
+}
+
 void runCloudSnapshotUploader(uint32_t now)
 {
   if (!cloudEnabled || cloudUploadUrl[0] == '\0')
@@ -2595,94 +2843,6 @@ void runCloudSnapshotUploader(uint32_t now)
   nextCloudSyncMs = millis() + cloudSyncIntervalSeconds * 1000UL;
 }
 
-// Proxies a per-sensor history read through to Supabase using this receiver's own
-// upload token. Buffers the response (same http.getString() pattern as
-// runCloudConfigPull) rather than hand-rolling a chunked-transfer stream forward -
-// the board has 8MB PSRAM and the history RPC caps at 5000 rows, so this is fine.
-void handleHistoryProxy()
-{
-  Serial.println("[MSV2 web] GET /history");
-  server.sendHeader("Cache-Control", "no-store");
-
-  if (!cloudEnabled || cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0' || receiverId[0] == '\0')
-  {
-    server.send(503, "application/json", "{\"ok\":false,\"error\":\"cloud sync not configured on this receiver\"}");
-    return;
-  }
-
-  if (!server.hasArg("sensor"))
-  {
-    server.send(400, "application/json", "{\"ok\":false,\"error\":\"sensor required\"}");
-    return;
-  }
-
-  String sensorArg = server.arg("sensor");
-  String hoursArg = server.hasArg("hours") ? server.arg("hours") : "24";
-  String afterIdArg = server.hasArg("afterId") ? server.arg("afterId") : "0";
-  String limitArg = server.hasArg("limit") ? server.arg("limit") : "150";
-
-  const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
-  const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
-  if (!isHttps && !isHttp)
-  {
-    server.send(500, "application/json", "{\"ok\":false,\"error\":\"cloud upload URL misconfigured\"}");
-    return;
-  }
-
-  // Pagination keeps each request/response small and fast (a few hundred rows) so this
-  // never risks the http.getString() timeout truncating a large response mid-object -
-  // the client (browser JS) loops pages and assembles the full range itself.
-  String historyUrl = cloudUploadUrl;
-  historyUrl += historyUrl.indexOf('?') >= 0 ? "&" : "?";
-  historyUrl += "history=1&receiverId=";
-  historyUrl += receiverId;
-  historyUrl += "&sensorId=";
-  historyUrl += sensorArg;
-  historyUrl += "&sinceHours=";
-  historyUrl += hoursArg;
-  historyUrl += "&afterId=";
-  historyUrl += afterIdArg;
-  historyUrl += "&limit=";
-  historyUrl += limitArg;
-
-  HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  bool began = false;
-  if (isHttps)
-  {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, historyUrl);
-  }
-  else
-  {
-    began = http.begin(plainClient, historyUrl);
-  }
-
-  if (!began)
-  {
-    server.send(502, "application/json", "{\"ok\":false,\"error\":\"could not reach cloud\"}");
-    return;
-  }
-
-  http.setTimeout(15000);
-  String auth = "Bearer ";
-  auth += cloudApiToken;
-  http.addHeader("Authorization", auth);
-
-  int status = http.GET();
-  if (status < 200 || status >= 300)
-  {
-    String error = status > 0 ? ("HTTP " + String(status)) : http.errorToString(status);
-    http.end();
-    server.send(502, "application/json", "{\"ok\":false,\"error\":\"" + error + "\"}");
-    return;
-  }
-
-  String response = http.getString();
-  http.end();
-  server.send(200, "application/json", response);
-}
 #endif
 
 String configMetaJson()
@@ -2740,7 +2900,6 @@ String deviceInfoJson()
   endpoints["claim"] = "/claim";
   endpoints["configMeta"] = "/config-meta";
   endpoints["cloud"] = "/cloud";
-  endpoints["history"] = "/history";
   endpoints["wifi"] = "/wifi";
   endpoints["manifest"] = "/manifest.webmanifest";
 
@@ -2950,8 +3109,6 @@ void setupServer()
     }
     resetCloudConfig();
   });
-
-  server.on("/history", HTTP_GET, handleHistoryProxy);
 
   server.on("/wifi", HTTP_GET, []() {
     Serial.println("[MSV2 web] GET /wifi");
@@ -3306,6 +3463,7 @@ void loop()
   {
     runCloudBootstrap(now);
     runCloudConfigPull(now);
+    runCloudAutoCalPull(now);
     runCloudSnapshotUploader(now);
   }
 #endif
@@ -3329,7 +3487,13 @@ void loop()
   }
 #endif
 
-  if (sensorDataDirty && now - lastSensorRenderMs >= SENSOR_RENDER_INTERVAL_MS)
+  // A low-moisture card needs to actually blink (see applyLowMoistureBlink), which
+  // needs redraws roughly every 500ms - much faster than the normal dirty-data-gated
+  // cadence, since the probe's new adaptive advertising means sensorDataDirty can go a
+  // full minute between updates otherwise.
+  bool blinkNeeded = anyLowMoistureCardVisible();
+  uint32_t renderIntervalMs = blinkNeeded ? 500 : SENSOR_RENDER_INTERVAL_MS;
+  if ((sensorDataDirty || blinkNeeded) && now - lastSensorRenderMs >= renderIntervalMs)
   {
     sensorDataDirty = false;
     lastSensorRenderMs = now;

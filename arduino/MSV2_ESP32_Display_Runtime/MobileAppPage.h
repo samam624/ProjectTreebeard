@@ -478,6 +478,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         </label>
         <div class="notice" id="configVersionText">Config version --</div>
         <div id="editorList"></div>
+        <div class="notice">Edits only save within about 15 minutes of the receiver's last reboot or edit (a security limit, not a bug). If "Save to Display" fails, power-cycle the receiver and save again - each successful save extends the window another 15 minutes.</div>
         <div class="actions">
           <button class="ghost" id="reloadButton" type="button">Reload</button>
           <button class="ghost" id="addPlantButton" type="button">Add Plant</button>
@@ -506,13 +507,14 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
               <option value="168">Last 7 days</option>
             </select>
           </label>
+          <button type="button" class="ghost" id="historyClearButton">Clear All History</button>
         </div>
         <div class="notice" id="historyNotice">Pulled from Supabase - requires cloud sync enabled on this receiver.</div>
       </section>
 
       <section class="network-card chart-card">
         <div class="chart-head">
-          <div class="chart-title">Moisture (RC fall time, &micro;s)</div>
+          <div class="chart-title">Moisture (oscillator, higher = wetter)</div>
           <div class="chart-latest" id="historyMoistureLatest"></div>
         </div>
         <div class="chart-wrap">
@@ -568,20 +570,31 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     };
     // MSV2_ART_CATALOG_END
 
+    // Dry/wet thresholds are in the oscillator sensor's raw units. The probe firmware
+    // now inverts its raw frequency reading (higher = wetter, matching the field name -
+    // see MOISTURE_INVERT_CEILING in MSV2_Moisture_BLE_Sleep.ino), so dry < wet again,
+    // same ordering as the original pre-oscillator scale, just different absolute
+    // numbers. Provisional until per-species soil calibration data replaces these.
     const presets = {
       custom: { label: "Custom", dry: null, wet: null },
-      herb: { label: "Herbs", dry: 350, wet: 800 },
-      tropical: { label: "Tropical", dry: 380, wet: 860 },
-      succulent: { label: "Succulent", dry: 260, wet: 650 },
-      fern: { label: "Fern", dry: 450, wet: 900 },
-      dryHouseplant: { label: "Dry houseplant", dry: 300, wet: 720 }
+      herb: { label: "Herbs", dry: 120, wet: 175 },
+      tropical: { label: "Tropical", dry: 125, wet: 180 },
+      succulent: { label: "Succulent", dry: 110, wet: 155 },
+      fern: { label: "Fern", dry: 135, wet: 190 },
+      dryHouseplant: { label: "Dry houseplant", dry: 115, wet: 170 }
     };
     let config = null;
     let readings = {};
     let wifiInfo = null;
     let claimInfo = null;
     let cloudInfo = null;
+    let shareToken = null;
     const MAX_PLANTS = 16;
+    // History reads go straight from this browser to Supabase (see loadHistory below)
+    // using a self-minted household share token, the same model web/plant-dashboard
+    // already uses - not the receiver's own private cloudApiToken, which never leaves
+    // the device.
+    const SHARE_API_BASE = "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-dashboard";
 
     const $ = (id) => document.getElementById(id);
     const pct = (value, dry, wet) => {
@@ -783,10 +796,24 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       if (!config) return;
       $("statusGrid").innerHTML = config.cards.map((card) => {
         const reading = readings[card.sensor] || {};
-        const dry = Number(card.moisture?.dry ?? card.dry ?? 350);
-        const wet = Number(card.moisture?.wet ?? card.wet ?? 800);
-        const moistPct = pct(reading.moisture, dry, wet);
+        const autoCal = reading.autoCal || null;
+        const autoEnabled = Boolean(card.moisture?.auto);
         const battPct = reading.batteryPercent == null ? null : Number(reading.batteryPercent);
+
+        // Not enough history yet (see msv2_read_sensor_auto_calibration's ready gate)?
+        // Fall back to the manually-configured/preset range as a working estimate -
+        // unlike the old stale-scale bug, this range is on the CURRENT sensing scale
+        // (set by the user, or a preset, after today's calibration fixes), so it's a
+        // reasonable number to show rather than nothing. Once ready, the learned range
+        // takes over automatically.
+        const autoReady = Boolean(autoEnabled && autoCal && autoCal.ready);
+        const learning = autoEnabled && !autoReady;
+        const dry = autoReady ? autoCal.dryBound : Number(card.moisture?.dry ?? card.dry ?? 120);
+        const wet = autoReady ? autoCal.wetBound : Number(card.moisture?.wet ?? card.wet ?? 175);
+        const moistPct = pct(reading.moisture, dry, wet);
+        const overdue = autoReady && autoCal.overdue;
+        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", reading.moisture == null ? "--" : reading.moisture, moistPct, overdue);
+
         return `
           <article class="card">
             <div class="card-head">
@@ -796,18 +823,20 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
               </div>
               <div class="art">${artPreview(card.art || "sprout_pot")}<span>${escapeHtml(labelFor(artOptions, card.art || "sprout_pot"))}</span></div>
             </div>
-            ${metric("Moisture", reading.moisture == null ? "--" : reading.moisture, moistPct)}
+            ${moistureMetric}
             ${metric("Battery", battPct == null ? "--%" : battPct + "%", battPct)}
           </article>
         `;
       }).join("");
     }
 
-    function metric(name, value, percent) {
+    function metric(name, value, percent, forceDanger) {
+      const fill = forceDanger ? "danger" : fillClass(percent);
+      const width = percent == null ? 0 : percent;
       return `
         <div class="metric">
           <div class="metric-row"><span>${name}</span><strong>${value}</strong></div>
-          <div class="bar"><div class="fill ${fillClass(percent)}" style="width:${percent == null ? 0 : percent}%"></div></div>
+          <div class="bar"><div class="fill ${fill}" style="width:${width}%"></div></div>
         </div>
       `;
     }
@@ -1059,13 +1088,61 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       }
     }
 
-    // 150 rows/page (~22KB JSON) stays comfortably under a hard ~31.6KB ceiling hit
-    // during testing - looked time-based at first (http.getString() timeout) but held
-    // steady at the same byte count regardless of requested size, so it's a fixed
-    // buffer limit somewhere in the ESP32's TLS/HTTPClient stack, not a timeout.
-    const HISTORY_PAGE_SIZE = 150;
-    const HISTORY_MAX_PAGES = 80; // safety cap: 80 * 150 = 12,000 rows max per load
+    // Supabase has none of the ESP32 HTTPClient's ~31.6KB response-buffer ceiling (the
+    // reason pages used to be capped at 150 rows), so pages can be much bigger here -
+    // still well under the RPC's own 5000-row limit, and a typical 24h load now usually
+    // fits in a single request.
+    const HISTORY_PAGE_SIZE = 1000;
+    const HISTORY_MAX_PAGES = 12; // safety cap: 12 * 1000 = 12,000 rows max per load
 
+    function shareTokenStorageKey() {
+      return "msv2.shareToken." + ((claimInfo && claimInfo.receiverId) || "");
+    }
+
+    // Self-mints a household share token from this receiver's own claim info (already
+    // fetched locally via /claim, no cloud round-trip needed for that part) and caches
+    // it, mirroring the same share-token model web/plant-dashboard uses. Pass
+    // forceRefresh after a 401 to discard a revoked/stale cached token and mint a fresh one.
+    async function getOrMintShareToken(forceRefresh = false) {
+      if (!forceRefresh && shareToken) return shareToken;
+
+      const storageKey = shareTokenStorageKey();
+      if (!forceRefresh) {
+        const cached = localStorage.getItem(storageKey);
+        if (cached) {
+          shareToken = cached;
+          return shareToken;
+        }
+      }
+
+      const response = await fetch(SHARE_API_BASE + "/api/share-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiverId: claimInfo.receiverId, claimCode: claimInfo.claimCode }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok || !body.share?.share_token) {
+        throw new Error(body.error || ("HTTP " + response.status));
+      }
+
+      shareToken = body.share.share_token;
+      localStorage.setItem(storageKey, shareToken);
+      return shareToken;
+    }
+
+    async function fetchHistoryPage(token, sensor, hours, afterId) {
+      const query = `receiverId=${encodeURIComponent(claimInfo.receiverId)}&sensorId=${encodeURIComponent(sensor)}` +
+        `&sinceHours=${encodeURIComponent(hours)}&afterId=${afterId}&limit=${HISTORY_PAGE_SIZE}`;
+      return fetch(`${SHARE_API_BASE}/api/share-history?${query}`, {
+        cache: "no-store",
+        headers: { "Authorization": "Bearer " + token },
+      });
+    }
+
+    // Fetches straight from this browser to Supabase - no longer proxied through the
+    // receiver's own blocking HTTPClient, which shared the ESP32's single loop with
+    // display rendering and froze the physical display for the length of the whole
+    // paginated fetch (a real, documented incident - see docs/STATUS_HANDOFF.md).
     async function loadHistory() {
       populateHistorySensorSelect();
       const sensor = $("historySensorSelect").value;
@@ -1079,15 +1156,19 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       const rows = [];
       let afterId = 0;
       try {
+        let token = await getOrMintShareToken();
+
         for (let page = 0; page < HISTORY_MAX_PAGES; page++) {
-          const response = await fetch(
-            `/history?sensor=${encodeURIComponent(sensor)}&hours=${encodeURIComponent(hours)}&afterId=${afterId}&limit=${HISTORY_PAGE_SIZE}`,
-            { cache: "no-store" }
-          );
+          let response = await fetchHistoryPage(token, sensor, hours, afterId);
+          if (response.status === 401) {
+            token = await getOrMintShareToken(true);
+            response = await fetchHistoryPage(token, sensor, hours, afterId);
+          }
+
           const body = await response.json();
           if (!response.ok || !body.ok) {
             $("historyNotice").textContent = body.error || ("HTTP " + response.status);
-            renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", [], "#3987e5", "µs");
+            renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", [], "#3987e5", "");
             renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", [], "#199e70", "%");
             return;
           }
@@ -1103,10 +1184,38 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         $("historyNotice").textContent = `${rows.length} readings`;
         const moisturePoints = rows.filter((r) => r.moisture != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.moisture }));
         const batteryPoints = rows.filter((r) => r.battery_percent != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.battery_percent }));
-        renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "µs");
+        renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "");
         renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", batteryPoints, "#199e70", "%");
       } catch (err) {
         $("historyNotice").textContent = "Fetch failed: " + err.message;
+      }
+    }
+
+    // Deletes all stored history for this receiver (every probe, every sensor) - not
+    // range- or probe-scoped, since data logged before a sensing-firmware change is
+    // uniformly meaningless, not just the currently-viewed slice.
+    async function clearAllHistory() {
+      if (!confirm("Delete all stored history for every probe on this receiver? This can't be undone.")) {
+        return;
+      }
+
+      $("historyNotice").textContent = "Clearing...";
+      try {
+        const token = await getOrMintShareToken();
+        const response = await fetch(SHARE_API_BASE + "/api/share-history-clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+          body: JSON.stringify({ receiverId: claimInfo.receiverId }),
+        });
+        const body = await response.json();
+        if (!response.ok || !body.ok) {
+          $("historyNotice").textContent = body.error || ("HTTP " + response.status);
+          return;
+        }
+
+        await loadHistory();
+      } catch (err) {
+        $("historyNotice").textContent = "Clear failed: " + err.message;
       }
     }
 
@@ -1114,9 +1223,10 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       const editorList = $("editorList");
       editorList.innerHTML = "";
       config.cards.forEach((card, index) => {
-        const dry = Number(card.moisture?.dry ?? card.dry ?? 350);
-        const wet = Number(card.moisture?.wet ?? card.wet ?? 800);
+        const dry = Number(card.moisture?.dry ?? card.dry ?? 120);
+        const wet = Number(card.moisture?.wet ?? card.wet ?? 175);
         const presetName = presetFor(dry, wet);
+        const autoEnabled = Boolean(card.moisture?.auto);
         const item = document.createElement("section");
         item.className = "editor-card";
         item.innerHTML = `
@@ -1128,9 +1238,10 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
             <label class="wide">Name<input data-field="plant" data-index="${index}" value="${escapeAttr(card.plant || "")}" maxlength="24"></label>
             <label>Probe ID<input type="number" min="1" max="16" data-field="sensor" data-index="${index}" value="${card.sensor || index + 1}"></label>
             <label>Art${artPreview(card.art || "sprout_pot", "editor-art-preview")}<select data-field="art" data-index="${index}">${options(artOptions, card.art || "sprout_pot")}</select></label>
-            <label>Preset<select data-field="preset" data-index="${index}">${presetOptions(presetName)}</select></label>
-            <label>Dry<input type="number" min="0" max="4095" data-field="dry" data-index="${index}" value="${dry}"></label>
-            <label>Wet<input type="number" min="0" max="4095" data-field="wet" data-index="${index}" value="${wet}"></label>
+            <label class="wide">Auto-calibrate (learn range + watering schedule from history)<input type="checkbox" data-field="auto" data-index="${index}" ${autoEnabled ? "checked" : ""}></label>
+            <label>Preset<select data-field="preset" data-index="${index}" ${autoEnabled ? "disabled" : ""}>${presetOptions(presetName)}</select></label>
+            <label>Dry<input type="number" min="0" max="4095" data-field="dry" data-index="${index}" value="${dry}" ${autoEnabled ? "disabled" : ""}></label>
+            <label>Wet<input type="number" min="0" max="4095" data-field="wet" data-index="${index}" value="${wet}" ${autoEnabled ? "disabled" : ""}></label>
           </div>
         `;
         editorList.appendChild(item);
@@ -1165,6 +1276,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         if (field === "plant") card.plant = input.value.trim() || ("Probe " + (card.sensor || index + 1));
         if (field === "sensor") card.sensor = Number(input.value || index + 1);
         if (field === "art") card.art = input.value;
+        if (field === "auto") card.moisture.auto = input.checked;
         if (field === "dry") card.moisture.dry = Number(input.value || 0);
         if (field === "wet") card.moisture.wet = Number(input.value || 0);
       });
@@ -1218,7 +1330,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         sensor,
         plant: "Plant " + sensor,
         art: "sprout_pot",
-        moisture: { dry: 350, wet: 800 }
+        moisture: { dry: 120, wet: 175 }
       });
       syncLayoutWithCards(config);
       renderEditors();
@@ -1229,23 +1341,42 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
 
     async function saveConfig(event) {
       event.preventDefault();
-      config = collectConfig();
-      if (config.cards.length > MAX_PLANTS) {
+      // Collect into a local candidate, not the shared `config` - mutating the shared
+      // one before the save is confirmed made a failed/rejected save (e.g. an expired
+      // admin session) look like it took effect: the Status tab reads `config` too, so
+      // it would show the new range even though the receiver's file never changed.
+      const candidate = collectConfig();
+      if (candidate.cards.length > MAX_PLANTS) {
         $("setupNotice").textContent = "Delete extra plants before saving. The display supports up to 16 plants.";
         return;
       }
       $("saveState").textContent = "Saving...";
-      const response = await fetch("/ui", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config)
-      });
-      if (!response.ok) throw new Error(await response.text());
-      await loadConfig();
-      $("saveState").textContent = "Saved";
-      $("setupNotice").textContent = "Saved to display.";
-      renderStatus();
-      setTimeout(() => $("saveState").textContent = "", 1600);
+      try {
+        const response = await fetch("/ui", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(candidate)
+        });
+        if (!response.ok) {
+          const bodyText = await response.text();
+          let reason = bodyText;
+          try {
+            reason = JSON.parse(bodyText).error || bodyText;
+          } catch (parseErr) {
+            // not JSON - fall back to the raw response text above
+          }
+          throw new Error(reason);
+        }
+        config = candidate;
+        await loadConfig();
+        $("saveState").textContent = "Saved";
+        $("setupNotice").textContent = "Saved to display.";
+        renderStatus();
+        setTimeout(() => $("saveState").textContent = "", 1600);
+      } catch (err) {
+        $("saveState").textContent = "";
+        $("setupNotice").textContent = "Save failed: " + err.message;
+      }
     }
 
     function escapeHtml(value) {
@@ -1262,6 +1393,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     $("historyTab").addEventListener("click", () => { setTab("history"); loadHistory(); });
     $("historySensorSelect").addEventListener("change", loadHistory);
     $("historyRangeSelect").addEventListener("change", loadHistory);
+    $("historyClearButton").addEventListener("click", clearAllHistory);
     $("wifiRefreshButton").addEventListener("click", loadWifi);
     $("wifiSaveButton").addEventListener("click", saveWifi);
     $("wifiForgetButton").addEventListener("click", forgetWifi);
@@ -1282,6 +1414,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       if (input.dataset.field === "art") {
         const preview = input.closest("label").querySelector(".editor-art-preview");
         if (preview) preview.src = artSrc(input.value);
+        return;
+      }
+      if (input.dataset.field === "auto") {
+        config = collectConfig();
+        renderEditors();
         return;
       }
       if (input.dataset.field !== "preset") return;

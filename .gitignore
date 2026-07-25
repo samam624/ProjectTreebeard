@@ -11,3 +11,4 @@ node_modules/
 supabase/.temp/
 supabase/.branches/
 supabase/.env
+.claude/settings.local.json
