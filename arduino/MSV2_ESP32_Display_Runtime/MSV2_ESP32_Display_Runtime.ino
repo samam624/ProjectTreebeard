@@ -335,6 +335,7 @@ uint8_t artSlotCount = 0;
 #if MSV2_ENABLE_WIFI
 #define server (*serverPtr)
 #define dnsServer (*dnsServerPtr)
+TaskHandle_t cloudSyncTaskHandle = nullptr;
 #endif
 
 bool displayDirty = true;
@@ -2956,7 +2957,16 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       return;
     }
 
-    reading.missed = reading.seen ? ((wake - reading.wake - 1) & 0xFFFFFF) : 0;
+    // wake going DOWN (rather than up) means the probe rebooted and its wake counter
+    // reset to a small value, not that ~16 million packets were dropped - computing
+    // (wake - reading.wake - 1) here would underflow and wrap to a huge spurious number
+    // (masked to 24 bits since wake is only ever a 24-bit field on the wire). Previously
+    // logged as "cosmetic, isolated to the missedTotal diagnostic stat" (2026-07-24), but
+    // a probe reflash on 2026-07-25 produced exactly this condition (wake reset to a low
+    // value) right before the receiver's WebServer/render loop hung - suspected trigger
+    // via a corrupted value reaching the blocking HTTPClient cloud-sync call, not fully
+    // confirmed, but worth fixing either way regardless of whether it was the cause here.
+    reading.missed = (reading.seen && wake > reading.wake) ? (wake - reading.wake - 1) : 0;
     reading.missedTotal += reading.missed;
     reading.received++;
     reading.seen = true;
@@ -2981,6 +2991,46 @@ void bleScanTask(void* parameter)
       bleScan->clearResults();
     }
     vTaskDelay(pdMS_TO_TICKS(BLE_SCAN_IDLE_MS));
+  }
+}
+#endif
+
+#if MSV2_ENABLE_WIFI
+// Runs the four cloud network calls (bootstrap, config pull, auto-cal pull, snapshot
+// upload) on their own task instead of inline in loop(), mirroring bleScanTask above -
+// the same pattern that already fixed BLE scanning contention with rendering/WebServer.
+// Each of these does a blocking HTTPClient/WiFiClientSecure call (fresh TLS handshake
+// every time, no session reuse) capped at an 8s timeout, but observed taking ~1.6-2.1s
+// even on success. Running them inline in loop() meant the shared render/WebServer loop
+// was blocked for that long on every one of these calls - the config pull alone fires
+// every ~30s (CLOUD_CONFIG_PULL_INTERVAL_MS), which was frequent enough on its own to
+// read as "periodic freezes" even with a perfectly calm probe (see 2026-07-26 chat log).
+// Pinned to core 0, same as bleScanTask, leaving core 1 free for rendering/WebServer.
+//
+// Known, accepted simplification (not new risk introduced by this change): this task
+// reads/writes cloudUploadUrl/cloudApiToken/wifiStationConnected and the sensors[]/
+// autoCal[] arrays without a mutex, same as the existing BLE scan callback already does
+// from its own context today - no new class of race condition, just one more reader/
+// writer of state that was already being touched across task boundaries. The one thing
+// that could have been a real hazard - applyCloudUiConfig() rewriting artSlots[] out
+// from under a mid-render read - isn't actually a risk here: that function only writes
+// ui.json to LittleFS and sets displayDirty, and renderUi() (which owns rebuilding
+// artSlots[] from that file) only ever runs from the main loop, so this task never
+// touches artSlots[] directly.
+void cloudSyncTask(void* parameter)
+{
+  (void)parameter;
+  for (;;)
+  {
+    uint32_t now = millis();
+    if (wifiStationConnected)
+    {
+      runCloudBootstrap(now);
+      runCloudConfigPull(now);
+      runCloudAutoCalPull(now);
+      runCloudSnapshotUploader(now);
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 #endif
@@ -3382,6 +3432,14 @@ void setup()
   }
   setupServer();
   bootLog("WiFi/server ready");
+  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", 16384, nullptr, 1, &cloudSyncTaskHandle, 0) == pdPASS)
+  {
+    bootLog("cloud sync task running");
+  }
+  else
+  {
+    bootLog("cloud sync task failed");
+  }
 #else
   bootLog("WiFi disabled");
 #endif
@@ -3459,13 +3517,10 @@ void loop()
     delay(50);
     ESP.restart();
   }
-  if (wifiStationConnected)
-  {
-    runCloudBootstrap(now);
-    runCloudConfigPull(now);
-    runCloudAutoCalPull(now);
-    runCloudSnapshotUploader(now);
-  }
+  // Cloud bootstrap/config-pull/auto-cal-pull/snapshot-upload now run on their own task
+  // (cloudSyncTask, created in setup()) instead of inline here - see that function's
+  // comment for why: these are blocking HTTPClient calls that were stalling this shared
+  // render/WebServer loop every time they fired, most noticeably the ~30s config pull.
 #endif
 
 #if MSV2_ENABLE_DISPLAY

@@ -11,7 +11,8 @@
 
 const char DEVICE_NAME[] = "MSV2-MOISTURE-001";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF; // Test/development company id.
-const uint8_t SENSOR_ID = 2; // Change to 2 before uploading to the second sender XIAO.
+const uint8_t SENSOR_ID = 2; // This is the Alocasia probe (COM11). Confirmed 2026-07-27 against
+                              // live dashboard data: sensor 1 = Scindapsus, sensor 2 = Alocasia.
 
 // Measure/check cadence - cheap (a few ms of oscillator sampling), so this can run
 // often without much battery cost. Actually advertising over BLE is the expensive part
@@ -28,6 +29,18 @@ const uint32_t ADVERTISE_INTERVAL_MS = 60000;
 // below) - big enough to skip normal sample-to-sample noise, small enough to catch a
 // real watering/removal event within one 10s check.
 const int MOISTURE_SWING_THRESHOLD = 15;
+// bigSwing below had no rate limit of its own - if the reading is genuinely unstable (e.g.
+// the probe sitting disconnected in open air instead of soil, which the whole oscillator
+// design is prone to being noisy under - see 2026-07-25/26 chat log), it can swing past
+// MOISTURE_SWING_THRESHOLD on every single WAKE_PERIOD_MS (10s) measurement, forcing an
+// advertise every 10s instead of the normal 60s indefinitely. That's a 6x jump in BLE
+// traffic, which was enough to keep re-triggering the receiver's scheduleCloudSyncSoon()
+// faster than its own blocking cloud-sync HTTP call (capped at 8s) could clear, leaving the
+// receiver's shared render/WebServer loop blocked roughly half the time for as long as the
+// probe stayed noisy - the "display freezes for long periods" symptom traced back to this.
+// A real watering/removal event is a one-time step change, not continuous noise, so it
+// doesn't need to fire more often than this floor to still be caught quickly.
+const uint32_t MIN_SWING_ADVERTISE_INTERVAL_MS = 30000;
 const uint32_t ADVERTISE_MS = 500;
 const uint32_t LED_PULSE_MS = 80;
 const uint8_t XIAO_LED_ON = LOW;
@@ -76,6 +89,39 @@ const uint16_t MOISTURE_INVERT_CEILING = 200;
 #define VBAT_DIVIDER_COMP (2.946F)
 #define REAL_VBAT_MV_PER_LSB (VBAT_DIVIDER_COMP * VBAT_MV_PER_LSB)
 
+// BQ25100 ~CHG status, active LOW while actively charging - same pin already bench-verified
+// as a plain Arduino digital input in MSV2_Moisture_Probe_Test.ino (no core macro exists for
+// it, but the raw pin number works fine with pinMode()/digitalRead() on this board/core).
+const int CHG_STATUS_PIN = 23; // D23/P0.17
+
+// Charging current flows through the cell's + path resistance in the opposite direction from
+// discharge, so terminal voltage while charging sits ABOVE true rest/open-circuit voltage by
+// roughly I*R - the same curve read while charging looks like a much higher percent than the
+// cell actually holds, and reads as a sudden jump the moment charging starts/stops (documented
+// battery-industry behavior, not a bug - see 2026-07-25 chat log). Subtracting an estimated
+// offset from the raw mV before running it through the normal curve approximates "what would
+// this cell read at rest" without needing a separate full charge-curve calibration.
+// PROVISIONAL: derived from one observed transition (2026-07-25, ~20%->80% jump on plug-in,
+// implying ~400mV). Needs refinement from a real logged charge cycle - see
+// scripts/log_sensor_readings.py - averaged over several plug-in events, ideally tied to the
+// actual charge current (PIN_CHARGING_CURRENT/HICHG) once that's pinned to a known value
+// instead of left floating.
+const float CHARGING_IR_COMPENSATION_MV = 400.0F;
+
+// The IR-drop overshoot above is proportional to actual charge CURRENT (V=IR), which isn't
+// constant through a charge cycle: it holds roughly steady during the bulk constant-current
+// phase, then tapers toward zero during the constant-voltage phase as the cell approaches
+// full - real charger behavior, not something this firmware controls. Applying a FIXED
+// compensation right up until the BQ25100 finally stops charging (~CHG flips) meant the
+// correction didn't taper down the way the real overshoot did - the reported percent sat
+// artificially low through the CV taper, then the full 400mV snapped away all at once the
+// instant charging stopped, showing up as a jump around 85%->100% (2026-07-25 chat log).
+// Tapering the compensation itself to zero as the raw reading approaches full charge fixes
+// this: by the time the chip actually stops charging, the correction has already faded out,
+// so there's nothing left to snap away.
+const float CHARGE_TAPER_START_MV = 4100.0F; // full compensation still applies at/below this
+const float CHARGE_TAPER_END_MV = 4200.0F;   // compensation is fully gone at/above this (full)
+
 // Unused for tonight's test (timed wake/send/sleep only) - commented out rather than
 // deleted since true System OFF deep sleep is real future work for the 30-min production
 // cadence. Re-enabling needs WAKE_PIN moved off A0 first (see note below on why).
@@ -121,6 +167,7 @@ void setup()
   ledsOff();
   pinMode(EXTERNAL_LED_PIN, OUTPUT);
   externalLedWrite(false);
+  pinMode(CHG_STATUS_PIN, INPUT_PULLUP);
   powerDownExternalFlash();
 
   Bluefruit.autoConnLed(false);
@@ -157,7 +204,8 @@ void loop()
   uint8_t batteryPercent = readSmoothedBatteryPercent();
 
   bool intervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= ADVERTISE_INTERVAL_MS);
-  bool bigSwing = lastAdvertisedMoisture >= 0 && abs(moisture - lastAdvertisedMoisture) >= MOISTURE_SWING_THRESHOLD;
+  bool minSwingIntervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= MIN_SWING_ADVERTISE_INTERVAL_MS);
+  bool bigSwing = lastAdvertisedMoisture >= 0 && abs(moisture - lastAdvertisedMoisture) >= MOISTURE_SWING_THRESHOLD && minSwingIntervalElapsed;
   bool shouldAdvertise = intervalElapsed || bigSwing;
 
   if (shouldAdvertise)
@@ -314,18 +362,32 @@ float readBatteryMv(void)
   return raw * REAL_VBAT_MV_PER_LSB;
 }
 
+// True while the BQ25100 is actively sourcing charge current into the cell.
+bool isBatteryCharging(void)
+{
+  return digitalRead(CHG_STATUS_PIN) == LOW;
+}
+
 // Exponential moving average of the battery percent, carried across wakes, to smooth
 // out per-sample ADC noise on the History chart's charging curve - same 0.2 smoothing
 // factor already validated for the moisture oscillator's frequency in
 // MSV2_Moisture_Probe_Test.ino. This only smooths the transmitted/charted value, not
 // the sampling rate - still one real ADC read per wake.
 float smoothedBatteryPercent = -1.0f;
+bool lastChargingState = false;
 
 uint8_t readSmoothedBatteryPercent()
 {
-  float raw = batteryMvToPercent(readBatteryMv());
+  bool charging = isBatteryCharging();
+  float raw = batteryMvToPercent(readBatteryMv(), charging);
 
-  if (smoothedBatteryPercent < 0)
+  // A charge/discharge transition is a real, instantaneous jump in what the corrected
+  // curve reads (the IR-drop offset direction flips), not sensor noise - blending it
+  // through the normal EMA would just smear the jump across several wakes instead of
+  // reflecting it, and would mix samples from two different curves together. Snap
+  // straight to the new curve's reading on the wake where the state actually changes,
+  // then resume normal smoothing within that state.
+  if (smoothedBatteryPercent < 0 || charging != lastChargingState)
   {
     smoothedBatteryPercent = raw;
   }
@@ -334,24 +396,89 @@ uint8_t readSmoothedBatteryPercent()
     smoothedBatteryPercent += 0.2f * (raw - smoothedBatteryPercent);
   }
 
+  lastChargingState = charging;
   return (uint8_t)(smoothedBatteryPercent + 0.5f);
 }
 
-// Rough LiPo mV -> percent curve (same shape as the Bluefruit52Lib adc_vbat example).
-uint8_t batteryMvToPercent(float mvolts)
+// Generic 1S LiPo open-circuit-voltage -> percent curve (a commonly cited hobbyist
+// reference shape, e.g. https://blog.ampow.com/lipo-voltage-chart/ - NOT derived from
+// this specific 150mAh cell's own discharge data, just a far better-shaped approximation
+// than a straight line). Real LiPo terminal voltage stays close to full for a large
+// fraction of actual usable capacity, then falls off a cliff near empty - the old
+// 2-segment linear-in-mV formula this replaced couldn't represent that shape, which is
+// exactly why the reported percent used to sit near 100% for ~12 hours then crater over
+// the next 6-12 (see 2026-07-25 chat log): it was reporting something closer to
+// "voltage relative to full" than "actual remaining charge relative to full," and those
+// two are very different curves for Li-ion chemistry. Piecewise-linear interpolation
+// between real reference points tracks true remaining capacity much better than any
+// single-slope formula can, without needing a coulomb counter or dedicated fuel-gauge IC.
+struct BatteryCurvePoint
 {
-  if (mvolts < 3300)
+  float mv;
+  float percent;
+};
+
+const BatteryCurvePoint BATTERY_CURVE[] = {
+    {4200, 100}, {4150, 95}, {4110, 90}, {4080, 85}, {4020, 80},
+    {3980, 75}, {3950, 70}, {3910, 65}, {3870, 60}, {3850, 55},
+    {3840, 50}, {3820, 45}, {3800, 40}, {3790, 35}, {3770, 30},
+    {3750, 25}, {3730, 20}, {3710, 15}, {3690, 10}, {3610, 5},
+    {3270, 0},
+};
+const uint8_t BATTERY_CURVE_POINTS = sizeof(BATTERY_CURVE) / sizeof(BATTERY_CURVE[0]);
+
+float interpolateBatteryPercent(float mvolts)
+{
+  if (mvolts >= BATTERY_CURVE[0].mv)
   {
-    return 0;
+    return BATTERY_CURVE[0].percent;
   }
 
-  if (mvolts < 3600)
+  if (mvolts <= BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].mv)
   {
-    return (uint8_t)((mvolts - 3300) / 30);
+    return BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].percent;
   }
 
-  float percent = 10 + (mvolts - 3600) * 0.15F;
-  return (uint8_t)(percent > 100 ? 100 : percent);
+  for (uint8_t i = 0; i < BATTERY_CURVE_POINTS - 1; i++)
+  {
+    if (mvolts <= BATTERY_CURVE[i].mv && mvolts >= BATTERY_CURVE[i + 1].mv)
+    {
+      float span = BATTERY_CURVE[i].mv - BATTERY_CURVE[i + 1].mv;
+      float frac = (mvolts - BATTERY_CURVE[i + 1].mv) / span;
+      return BATTERY_CURVE[i + 1].percent + frac * (BATTERY_CURVE[i].percent - BATTERY_CURVE[i + 1].percent);
+    }
+  }
+
+  return 0; // unreachable - the two bounds checks above cover the full range
+}
+
+// See CHARGE_TAPER_START_MV/CHARGE_TAPER_END_MV above for why this fades out instead of
+// applying at a constant strength right up until charging stops.
+float chargeCompensationMv(float mvolts)
+{
+  if (mvolts <= CHARGE_TAPER_START_MV)
+  {
+    return CHARGING_IR_COMPENSATION_MV;
+  }
+
+  if (mvolts >= CHARGE_TAPER_END_MV)
+  {
+    return 0.0F;
+  }
+
+  float remainingFrac = (CHARGE_TAPER_END_MV - mvolts) / (CHARGE_TAPER_END_MV - CHARGE_TAPER_START_MV);
+  return CHARGING_IR_COMPENSATION_MV * remainingFrac;
+}
+
+// While charging, the measured terminal voltage runs high of true rest voltage by
+// roughly the charge current's IR drop through the cell/path resistance - see
+// CHARGING_IR_COMPENSATION_MV above. Correcting the input before the same curve
+// approximates a separate charge-state curve without needing one calibrated from
+// scratch.
+uint8_t batteryMvToPercent(float mvolts, bool isCharging)
+{
+  float restEquivalentMv = isCharging ? mvolts - chargeCompensationMv(mvolts) : mvolts;
+  return (uint8_t)(interpolateBatteryPercent(restEquivalentMv) + 0.5f);
 }
 
 void startAdv(int moisture, uint8_t batteryPercent)
@@ -387,13 +514,26 @@ void startAdv(int moisture, uint8_t batteryPercent)
   Bluefruit.Advertising.start(0);
 }
 
+// This used to hand-roll a while(millis()-start<durationMs) waitForEvent() loop, which
+// looked like a sleep but wasn't one: waitForEvent() (-> sd_app_evt_wait() with the
+// softdevice enabled, which this sketch always has) has no way to tell the scheduler
+// how long it intends to wait, so the FreeRTOS port's regular ~0.977ms (1024Hz) RTC
+// tick interrupt keeps firing on its normal schedule the whole time, waking the WFE
+// almost immediately on every single tick - this specific "1ms spin-loop power waste"
+// failure mode is named and fixed in this exact core's own
+// port_cmsis_systick.c/vPortSuppressTicksAndSleep() (see
+// https://devzone.nordicsemi.com/f/nordic-q-a/63828/vtaskdelay-on-nrf52-freertos-port-wastes-cpu-power),
+// but that fix only runs for a task that actually blocks via vTaskDelay() - it never
+// engages for a raw waitForEvent() call sitting in an ordinary while loop. Plain
+// delay() calls vTaskDelay() under the hood, which lets the idle task disable that
+// periodic tick and sleep once for the whole requested duration instead of waking
+// ~1024 times a second - almost certainly the dominant power cost, not the moisture/
+// battery sensing or BLE advertising duty cycle (see 2026-07-25 chat log for the
+// budget math that didn't close until this was found). Unconfirmed with a real current
+// probe yet - that's Monday's bench test - but this is a source-level bug, not a guess.
 void lowPowerDelay(uint32_t durationMs)
 {
-  uint32_t start = millis();
-  while (millis() - start < durationMs)
-  {
-    waitForEvent();
-  }
+  delay(durationMs);
 }
 
 void setupStatusLeds(void)
