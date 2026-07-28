@@ -27,13 +27,17 @@ const uint8_t SENSOR_ID = 1; // This is the Scindapsus probe -- the physically-r
 const uint32_t WAKE_PERIOD_MS = 10000;
 // Normal BLE advertise cadence when nothing eventful is happening.
 const uint32_t ADVERTISE_INTERVAL_MS = 60000;
-// If moisture moves at least this much between checks (e.g. a watering event, or the
-// probe being pulled out), advertise immediately instead of waiting for the next
+// If the raw cycle count moves at least this much between checks (e.g. a watering event,
+// or the probe being pulled out), advertise immediately instead of waiting for the next
 // scheduled interval - matches PRODUCT_ROADMAP.md's "if moisture changed meaningfully"
-// condition. ~27% of the default 120-175 calibration range (see MOISTURE_INVERT_CEILING
-// below) - big enough to skip normal sample-to-sample noise, small enough to catch a
-// real watering/removal event within one 10s check.
-const int MOISTURE_SWING_THRESHOLD = 15;
+// condition. This is now measured on the RAW, uninverted cycle count (see the 2026-07-28
+// raw-values rework below) rather than the old calibrated 120-175 scale - rescaled to the
+// same ~27% proportion of the bench-observed 220-360kHz raw range (~140 units wide) that
+// the old threshold (15 of ~55 calibrated units) represented. Still just a magnitude
+// comparison between two raw readings, not an interpretation of what the value means, so
+// it stays on the probe under the same "policy, not calibration" logic as the advertise
+// cadence itself.
+const int MOISTURE_SWING_THRESHOLD = 38;
 // bigSwing below had no rate limit of its own - if the reading is genuinely unstable (e.g.
 // the probe sitting disconnected in open air instead of soil, which the whole oscillator
 // design is prone to being noisy under - see 2026-07-25/26 chat log), it can swing past
@@ -47,24 +51,23 @@ const int MOISTURE_SWING_THRESHOLD = 15;
 // doesn't need to fire more often than this floor to still be caught quickly.
 const uint32_t MIN_SWING_ADVERTISE_INTERVAL_MS = 30000;
 const uint32_t ADVERTISE_MS = 500;
-const uint32_t LED_PULSE_MS = 80;
 const uint8_t XIAO_LED_ON = LOW;
 const uint8_t XIAO_LED_OFF = HIGH;
 const bool ENABLE_STATUS_LEDS = false; // onboard RGB disabled for tonight's battery-impact test - see EXTERNAL_LED_PIN below
 const bool ENABLE_SERIAL_LOGS = false; // disabled for the unattended overnight run - flip back to true to debug
 
-// External LED on D1: no longer a per-wake/per-advertise heartbeat (that cost battery
-// for no real benefit) - now purely a low-moisture alert, blinking 3x every wake while
-// moisture is low. LOW_MOISTURE_THRESHOLD is a FIXED cutoff, not the live auto-learned
-// or per-plant manual range configured on the receiver - this probe is advertise-only
-// (no BLE receive path), so it has no way to learn either of those without a real
-// architecture change. Matches the same 25%-of-default-range "danger" cutoff already
-// used everywhere else in this project (MSV2_ESP32_Display_Runtime.ino's healthColor()),
-// off the default dry=120/wet=175 calibration scale: 120 + 0.25*(175-120) = 134.
+// External LED on D1: previously blinked 3x per wake as a low-moisture alert, gated on a
+// fixed raw-value cutoff (LOW_MOISTURE_THRESHOLD). Removed in the 2026-07-28 raw-values
+// rework: deciding "is this reading low" requires a calibrated dry/wet range, which is
+// exactly the kind of interpretation now deliberately kept off the probe (see the
+// countOscCycles()/readRawMoistureKHz() comments below) - and this probe is
+// advertise-only (no BLE receive path) so it never had access to the real per-plant range
+// anyway, only ever a hardcoded guess. If a physical low-moisture indicator is wanted
+// again, it belongs on the receiver, which already has per-card danger-color logic with
+// the real calibrated range.
 const int EXTERNAL_LED_PIN = D1;
 const bool EXTERNAL_LED_ACTIVE_HIGH = true;
 const bool ENABLE_EXTERNAL_LED = true;
-const int LOW_MOISTURE_THRESHOLD = 134;
 
 // Moisture sensing: free-running RC relaxation oscillator, not one-shot timing (see
 // docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md for the original architecture change and
@@ -102,17 +105,23 @@ const int PLATE_B_PIN = D2; // IO2 on the XIAO silkscreen -- the other comb.
 #define PLATE_A_BIT (1UL << 2)  // P0.02
 #define PLATE_B_BIT (1UL << 28) // P0.28
 const uint32_t OSC_SAMPLE_WINDOW_MS = 1;
-const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x 1ms bursts, median-of-5 rejects scheduler-jitter outliers
+const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x 1ms bursts, median-of-5 rejects scheduler-jitter outliers -
+                                       // this is noise rejection on the raw signal (protecting against a
+                                       // single scheduler-jitter-corrupted burst), not calibration, so it
+                                       // stays on the probe under the 2026-07-28 raw-values rework below.
 // Safety cap per half-cycle so a disconnected/open probe can't hang a burst.
 const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
-// Bench-observed range with this topology (10k/10k, 40-NOP charge settle) was roughly
-// 220-360kHz -- a totally different scale than the old single-plate/100k design's
-// ~10-90kHz this constant used to be tuned for. Generous headroom above the highest
-// frequency this sensor is expected to ever report - see the inversion comment in
-// readAveragedMoisture() below. PROVISIONAL: only bench-verified (touch/multi-finger
-// contact as a moisture stimulus), not yet against real soil - revisit once overnight/
-// real-soil data exists, same as every other calibration constant in this project so far.
-const uint16_t MOISTURE_INVERT_CEILING = 500;
+// 2026-07-28: moisture inversion (raw kHz -> "higher = wetter") moved to the receiver -
+// see MSV2_ESP32_Display_Runtime.ino's moistureCeilingForSensor()/calibrateRawMoisture().
+// The probe now transmits the raw median cycle count untouched. Reason: the ceiling this
+// inversion needs is a per-hardware-revision calibration constant that keeps changing as
+// the sensor design iterates (10-90kHz on the old single-plate/100k build, 220-360kHz on
+// this dual-plate/10k rework) - tuning it used to require a firmware reflash of a
+// physically-installed, hard-to-reach probe every time. Keeping the raw value on the wire
+// also means the actual sensed signal is always visible for debugging, instead of only
+// ever seeing it through whatever calibration transform happened to be baked into the
+// probe firmware at the time - see the 2026-07-27/28 chat log for the diagnosis session
+// this was blocking.
 
 // 3.0V ADC reference, 12-bit resolution: 3000mV / 4096 counts.
 #define VBAT_MV_PER_LSB (0.73242188F)
@@ -125,35 +134,15 @@ const uint16_t MOISTURE_INVERT_CEILING = 500;
 // BQ25100 ~CHG status, active LOW while actively charging - same pin already bench-verified
 // as a plain Arduino digital input in MSV2_Moisture_Probe_Test.ino (no core macro exists for
 // it, but the raw pin number works fine with pinMode()/digitalRead() on this board/core).
+// Still read on the probe (only the probe has physical access to this pin), but 2026-07-28
+// moved everything downstream of it - the charge-current IR-drop compensation curve, its
+// taper, and the LiPo mV->percent lookup table - to the receiver. The probe now just reports
+// the raw mV reading plus this one raw boolean and lets the receiver interpret both; see
+// MSV2_ESP32_Display_Runtime.ino's calibrateRawBattery(). Same rationale as the moisture
+// ceiling above: those curves are tuned constants that keep getting revised (see the
+// 2026-07-25 charge-jump chat log and the taper fix that followed it) and reflashing this
+// probe to update them isn't worth it when the raw mV is all the receiver actually needs.
 const int CHG_STATUS_PIN = 23; // D23/P0.17
-
-// Charging current flows through the cell's + path resistance in the opposite direction from
-// discharge, so terminal voltage while charging sits ABOVE true rest/open-circuit voltage by
-// roughly I*R - the same curve read while charging looks like a much higher percent than the
-// cell actually holds, and reads as a sudden jump the moment charging starts/stops (documented
-// battery-industry behavior, not a bug - see 2026-07-25 chat log). Subtracting an estimated
-// offset from the raw mV before running it through the normal curve approximates "what would
-// this cell read at rest" without needing a separate full charge-curve calibration.
-// PROVISIONAL: derived from one observed transition (2026-07-25, ~20%->80% jump on plug-in,
-// implying ~400mV). Needs refinement from a real logged charge cycle - see
-// scripts/log_sensor_readings.py - averaged over several plug-in events, ideally tied to the
-// actual charge current (PIN_CHARGING_CURRENT/HICHG) once that's pinned to a known value
-// instead of left floating.
-const float CHARGING_IR_COMPENSATION_MV = 400.0F;
-
-// The IR-drop overshoot above is proportional to actual charge CURRENT (V=IR), which isn't
-// constant through a charge cycle: it holds roughly steady during the bulk constant-current
-// phase, then tapers toward zero during the constant-voltage phase as the cell approaches
-// full - real charger behavior, not something this firmware controls. Applying a FIXED
-// compensation right up until the BQ25100 finally stops charging (~CHG flips) meant the
-// correction didn't taper down the way the real overshoot did - the reported percent sat
-// artificially low through the CV taper, then the full 400mV snapped away all at once the
-// instant charging stopped, showing up as a jump around 85%->100% (2026-07-25 chat log).
-// Tapering the compensation itself to zero as the raw reading approaches full charge fixes
-// this: by the time the chip actually stops charging, the correction has already faded out,
-// so there's nothing left to snap away.
-const float CHARGE_TAPER_START_MV = 4100.0F; // full compensation still applies at/below this
-const float CHARGE_TAPER_END_MV = 4200.0F;   // compensation is fully gone at/above this (full)
 
 // Unused for tonight's test (timed wake/send/sleep only) - commented out rather than
 // deleted since true System OFF deep sleep is real future work for the 30-min production
@@ -241,8 +230,9 @@ void setup()
 void loop()
 {
   uint32_t cycleStartMs = millis();
-  int moisture = readAveragedMoisture();
-  uint8_t batteryPercent = readSmoothedBatteryPercent();
+  int moisture = readRawMoistureKHz();
+  float batteryMv = readBatteryMv();
+  bool charging = isBatteryCharging();
 
   bool intervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= ADVERTISE_INTERVAL_MS);
   bool minSwingIntervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= MIN_SWING_ADVERTISE_INTERVAL_MS);
@@ -261,15 +251,16 @@ void loop()
       Serial.print(wakeCount);
       Serial.print(bigSwing ? " (swing) advertising for " : " advertising for ");
       Serial.print(ADVERTISE_MS);
-      Serial.print(" ms moisture=");
+      Serial.print(" ms rawMoistureKHz=");
       Serial.print(moisture);
-      Serial.print(" battery=");
-      Serial.print(batteryPercent);
-      Serial.println("%");
+      Serial.print(" rawBatteryMv=");
+      Serial.print(batteryMv);
+      Serial.print(charging ? " (charging)" : "");
+      Serial.println();
       Serial.flush();
     }
 
-    startAdv(moisture, batteryPercent);
+    startAdv(moisture, batteryMv, charging);
     lowPowerDelay(ADVERTISE_MS);
     Bluefruit.Advertising.stop();
 
@@ -283,15 +274,10 @@ void loop()
   {
     Serial.print("Sensor ");
     Serial.print(SENSOR_ID);
-    Serial.print(" checked, moisture=");
+    Serial.print(" checked, rawMoistureKHz=");
     Serial.print(moisture);
     Serial.println(" - no advertise this wake");
     Serial.flush();
-  }
-
-  if (moisture <= LOW_MOISTURE_THRESHOLD)
-  {
-    blinkExternalLed(3, LED_PULSE_MS, LED_PULSE_MS); // alert: moisture is low
   }
 
   uint32_t awakeMs = millis() - cycleStartMs;
@@ -391,8 +377,11 @@ uint32_t medianOf(uint32_t vals[], uint8_t n)
 // median cycle count, scaled to a per-second rate (kHz, since burst windows are ms).
 // At the validated 1ms window this numerically equals frequency in kHz directly, but
 // the division is spelled out so it stays correct if the window is ever retuned.
-// Lower value = wetter - the oscillator slows down as sensed capacitance rises.
-uint16_t readAveragedMoisture()
+// Returned RAW - no inversion, no calibration. Lower value = wetter (the oscillator
+// slows down as sensed capacitance rises), but that's left for the receiver to interpret
+// (see MSV2_ESP32_Display_Runtime.ino's calibrateRawMoisture()) - see the 2026-07-28
+// raw-values rework note above OSC_CYCLE_TIMEOUT_US.
+uint16_t readRawMoistureKHz()
 {
   uint32_t samples[OSC_MEDIAN_SAMPLES];
   for (uint8_t i = 0; i < OSC_MEDIAN_SAMPLES; i++)
@@ -401,16 +390,7 @@ uint16_t readAveragedMoisture()
   }
 
   uint32_t medianCycles = medianOf(samples, OSC_MEDIAN_SAMPLES);
-  uint16_t freqKHz = (uint16_t)(medianCycles * 1000UL / OSC_SAMPLE_WINDOW_MS / 1000UL);
-
-  // The oscillator's raw frequency runs the "wrong" way for a value called moisture -
-  // drier soil oscillates faster, so raw frequency goes UP as things dry out. Invert
-  // it here (ceiling - frequency) so the transmitted value reads the way the name
-  // implies (higher = wetter), matching every consumer downstream (dry/wet calibration,
-  // charts) and the original pre-oscillator convention. MOISTURE_INVERT_CEILING just
-  // needs to comfortably exceed the highest frequency this sensor will ever report -
-  // clamped to 0 rather than underflowing if it doesn't.
-  return freqKHz >= MOISTURE_INVERT_CEILING ? 0 : (MOISTURE_INVERT_CEILING - freqKHz);
+  return (uint16_t)(medianCycles * 1000UL / OSC_SAMPLE_WINDOW_MS / 1000UL);
 }
 
 // Reads LiPo voltage in millivolts via the XIAO's onboard VBAT divider.
@@ -439,122 +419,19 @@ bool isBatteryCharging(void)
   return digitalRead(CHG_STATUS_PIN) == LOW;
 }
 
-// Exponential moving average of the battery percent, carried across wakes, to smooth
-// out per-sample ADC noise on the History chart's charging curve - same 0.2 smoothing
-// factor already validated for the moisture oscillator's frequency in
-// MSV2_Moisture_Probe_Test.ino. This only smooths the transmitted/charted value, not
-// the sampling rate - still one real ADC read per wake.
-float smoothedBatteryPercent = -1.0f;
-bool lastChargingState = false;
+// 2026-07-28: everything downstream of the raw mV reading - the LiPo mV->percent curve,
+// the charge-current IR-drop compensation and its taper, and the smoothing across wakes -
+// moved to the receiver (see MSV2_ESP32_Display_Runtime.ino's calibrateRawBattery()). Same
+// rationale as the moisture ceiling above: those are tuned constants that have already
+// been revised twice (2026-07-24 divider cal, 2026-07-25 charge-jump taper fix) and each
+// revision used to mean reflashing this physically-installed probe. The probe now just
+// reports raw mV and the raw ~CHG state; the receiver derives percent, applies charge
+// compensation, and smooths across wakes.
 
-uint8_t readSmoothedBatteryPercent()
+void startAdv(int rawMoistureKHz, float rawBatteryMv, bool isCharging)
 {
-  bool charging = isBatteryCharging();
-  float raw = batteryMvToPercent(readBatteryMv(), charging);
-
-  // A charge/discharge transition is a real, instantaneous jump in what the corrected
-  // curve reads (the IR-drop offset direction flips), not sensor noise - blending it
-  // through the normal EMA would just smear the jump across several wakes instead of
-  // reflecting it, and would mix samples from two different curves together. Snap
-  // straight to the new curve's reading on the wake where the state actually changes,
-  // then resume normal smoothing within that state.
-  if (smoothedBatteryPercent < 0 || charging != lastChargingState)
-  {
-    smoothedBatteryPercent = raw;
-  }
-  else
-  {
-    smoothedBatteryPercent += 0.2f * (raw - smoothedBatteryPercent);
-  }
-
-  lastChargingState = charging;
-  return (uint8_t)(smoothedBatteryPercent + 0.5f);
-}
-
-// Generic 1S LiPo open-circuit-voltage -> percent curve (a commonly cited hobbyist
-// reference shape, e.g. https://blog.ampow.com/lipo-voltage-chart/ - NOT derived from
-// this specific 150mAh cell's own discharge data, just a far better-shaped approximation
-// than a straight line). Real LiPo terminal voltage stays close to full for a large
-// fraction of actual usable capacity, then falls off a cliff near empty - the old
-// 2-segment linear-in-mV formula this replaced couldn't represent that shape, which is
-// exactly why the reported percent used to sit near 100% for ~12 hours then crater over
-// the next 6-12 (see 2026-07-25 chat log): it was reporting something closer to
-// "voltage relative to full" than "actual remaining charge relative to full," and those
-// two are very different curves for Li-ion chemistry. Piecewise-linear interpolation
-// between real reference points tracks true remaining capacity much better than any
-// single-slope formula can, without needing a coulomb counter or dedicated fuel-gauge IC.
-struct BatteryCurvePoint
-{
-  float mv;
-  float percent;
-};
-
-const BatteryCurvePoint BATTERY_CURVE[] = {
-    {4200, 100}, {4150, 95}, {4110, 90}, {4080, 85}, {4020, 80},
-    {3980, 75}, {3950, 70}, {3910, 65}, {3870, 60}, {3850, 55},
-    {3840, 50}, {3820, 45}, {3800, 40}, {3790, 35}, {3770, 30},
-    {3750, 25}, {3730, 20}, {3710, 15}, {3690, 10}, {3610, 5},
-    {3270, 0},
-};
-const uint8_t BATTERY_CURVE_POINTS = sizeof(BATTERY_CURVE) / sizeof(BATTERY_CURVE[0]);
-
-float interpolateBatteryPercent(float mvolts)
-{
-  if (mvolts >= BATTERY_CURVE[0].mv)
-  {
-    return BATTERY_CURVE[0].percent;
-  }
-
-  if (mvolts <= BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].mv)
-  {
-    return BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].percent;
-  }
-
-  for (uint8_t i = 0; i < BATTERY_CURVE_POINTS - 1; i++)
-  {
-    if (mvolts <= BATTERY_CURVE[i].mv && mvolts >= BATTERY_CURVE[i + 1].mv)
-    {
-      float span = BATTERY_CURVE[i].mv - BATTERY_CURVE[i + 1].mv;
-      float frac = (mvolts - BATTERY_CURVE[i + 1].mv) / span;
-      return BATTERY_CURVE[i + 1].percent + frac * (BATTERY_CURVE[i].percent - BATTERY_CURVE[i + 1].percent);
-    }
-  }
-
-  return 0; // unreachable - the two bounds checks above cover the full range
-}
-
-// See CHARGE_TAPER_START_MV/CHARGE_TAPER_END_MV above for why this fades out instead of
-// applying at a constant strength right up until charging stops.
-float chargeCompensationMv(float mvolts)
-{
-  if (mvolts <= CHARGE_TAPER_START_MV)
-  {
-    return CHARGING_IR_COMPENSATION_MV;
-  }
-
-  if (mvolts >= CHARGE_TAPER_END_MV)
-  {
-    return 0.0F;
-  }
-
-  float remainingFrac = (CHARGE_TAPER_END_MV - mvolts) / (CHARGE_TAPER_END_MV - CHARGE_TAPER_START_MV);
-  return CHARGING_IR_COMPENSATION_MV * remainingFrac;
-}
-
-// While charging, the measured terminal voltage runs high of true rest voltage by
-// roughly the charge current's IR drop through the cell/path resistance - see
-// CHARGING_IR_COMPENSATION_MV above. Correcting the input before the same curve
-// approximates a separate charge-state curve without needing one calibrated from
-// scratch.
-uint8_t batteryMvToPercent(float mvolts, bool isCharging)
-{
-  float restEquivalentMv = isCharging ? mvolts - chargeCompensationMv(mvolts) : mvolts;
-  return (uint8_t)(interpolateBatteryPercent(restEquivalentMv) + 0.5f);
-}
-
-void startAdv(int moisture, uint8_t batteryPercent)
-{
-  uint8_t manufacturerData[13];
+  uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
+  uint8_t manufacturerData[15];
 
   manufacturerData[0] = lowByte(MSV2_COMPANY_ID);
   manufacturerData[1] = highByte(MSV2_COMPANY_ID);
@@ -566,9 +443,11 @@ void startAdv(int moisture, uint8_t batteryPercent)
   manufacturerData[7] = (uint8_t)(wakeCount & 0xFF);
   manufacturerData[8] = (uint8_t)((wakeCount >> 8) & 0xFF);
   manufacturerData[9] = (uint8_t)((wakeCount >> 16) & 0xFF);
-  manufacturerData[10] = (uint8_t)(moisture & 0xFF);
-  manufacturerData[11] = (uint8_t)((moisture >> 8) & 0xFF);
-  manufacturerData[12] = batteryPercent;
+  manufacturerData[10] = (uint8_t)(rawMoistureKHz & 0xFF);
+  manufacturerData[11] = (uint8_t)((rawMoistureKHz >> 8) & 0xFF);
+  manufacturerData[12] = (uint8_t)(batteryMvRounded & 0xFF);
+  manufacturerData[13] = (uint8_t)((batteryMvRounded >> 8) & 0xFF);
+  manufacturerData[14] = isCharging ? 0x01 : 0x00;
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
@@ -652,25 +531,6 @@ void externalLedWrite(bool on)
   }
 
   digitalWrite(EXTERNAL_LED_PIN, on == EXTERNAL_LED_ACTIVE_HIGH ? HIGH : LOW);
-}
-
-void blinkExternalLed(uint8_t times, uint32_t onMs, uint32_t offMs)
-{
-  if (!ENABLE_EXTERNAL_LED || times == 0 || onMs == 0)
-  {
-    return;
-  }
-
-  for (uint8_t i = 0; i < times; i++)
-  {
-    externalLedWrite(true);
-    delay(onMs);
-    externalLedWrite(false);
-    if (i + 1 < times)
-    {
-      delay(offMs);
-    }
-  }
 }
 
 void powerDownExternalFlash(void)

@@ -220,6 +220,13 @@ const char CLOUD_CONFIG_PATH[] = "/cloud.json";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
+// 2026-07-28: probes were reworked to send raw, uncalibrated readings (raw oscillator kHz,
+// raw battery mV, raw charging flag) instead of interpreting them on-device - see
+// MSV2_Moisture_BLE_Sleep.ino and calibrateRawMoisture()/calibrateRawBattery() below. That
+// widened the packet from 13 to 15 bytes, which doubles as a format-version check: probes
+// still running pre-rework firmware send the shorter legacy packet with already-calibrated
+// values, handled as a fallback in Msv2AdvertisedDeviceCallbacks::onResult().
+const size_t MSV2_RAW_PACKET_MIN_LEN = 15;
 const uint32_t BLE_SCAN_SECONDS = 3;
 const uint32_t BLE_SCAN_IDLE_MS = 250;
 const uint32_t DEFAULT_STALE_SECONDS = 90;
@@ -2909,6 +2916,169 @@ String deviceInfoJson()
   return output;
 }
 
+// 2026-07-28 raw-values rework: probes now send raw oscillator kHz, raw battery mV, and a
+// raw charging flag instead of interpreting them on-device (see MSV2_Moisture_BLE_Sleep.ino
+// and the MSV2_RAW_PACKET_MIN_LEN comment above). All calibration - moisture inversion, the
+// LiPo mV->percent curve, charge-current IR-drop compensation, and smoothing across wakes -
+// lives here now instead, where it can be revised without reflashing a physically-installed
+// probe, and the raw sensed values stay visible for debugging instead of only ever being
+// seen through whatever transform happened to be baked into probe firmware at the time.
+
+// Bench-observed raw range differs per hardware revision - roughly 10-90kHz on the original
+// single-plate/100k probes, 220-360kHz on the reworked dual-plate/10k Scindapsus probe (see
+// MSV2_Moisture_BLE_Sleep.ino's git history). Only sensor 1 (Scindapsus) has the rework as
+// of this writing; add an entry here whenever another probe gets it too. PROVISIONAL, same
+// as every other calibration constant in this project so far - bench-verified (touch/multi-
+// finger contact as a moisture stimulus), not yet against real soil.
+const uint16_t DEFAULT_MOISTURE_INVERT_CEILING = 200;
+const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
+    0,   // sensor 0 unused
+    500, // sensor 1: Scindapsus, dual-plate/10k rework
+};
+
+uint16_t moistureCeilingForSensor(uint8_t sensorId)
+{
+  if (sensorId <= MAX_SENSOR_ID && MOISTURE_INVERT_CEILING_BY_SENSOR[sensorId] != 0)
+  {
+    return MOISTURE_INVERT_CEILING_BY_SENSOR[sensorId];
+  }
+  return DEFAULT_MOISTURE_INVERT_CEILING;
+}
+
+// Raw oscillator frequency runs the "wrong" way for a value called moisture - drier soil
+// oscillates faster - so invert here (ceiling - freq), same transform the probe itself used
+// to apply before 2026-07-28, just centralized and per-sensor instead of baked into one
+// probe's firmware. Clamped to 0 rather than underflowing if a raw reading ever exceeds its
+// sensor's ceiling.
+uint16_t calibrateRawMoisture(uint8_t sensorId, uint16_t rawKHz)
+{
+  uint16_t ceiling = moistureCeilingForSensor(sensorId);
+  return rawKHz >= ceiling ? 0 : (ceiling - rawKHz);
+}
+
+// Generic 1S LiPo open-circuit-voltage -> percent curve (a commonly cited hobbyist
+// reference shape, e.g. https://blog.ampow.com/lipo-voltage-chart/ - NOT derived from this
+// specific 150mAh cell's own discharge data, just a far better-shaped approximation than a
+// straight line). Real LiPo terminal voltage stays close to full for a large fraction of
+// actual usable capacity, then falls off a cliff near empty - piecewise-linear interpolation
+// between real reference points tracks that shape much better than any single-slope formula
+// can, without needing a coulomb counter or dedicated fuel-gauge IC. Moved here verbatim
+// from the probe as part of the 2026-07-28 raw-values rework - see that file's git history
+// for the original derivation/revision notes (2026-07-24 divider cal, 2026-07-25 taper fix).
+struct BatteryCurvePoint
+{
+  float mv;
+  float percent;
+};
+
+const BatteryCurvePoint BATTERY_CURVE[] = {
+    {4200, 100}, {4150, 95}, {4110, 90}, {4080, 85}, {4020, 80},
+    {3980, 75}, {3950, 70}, {3910, 65}, {3870, 60}, {3850, 55},
+    {3840, 50}, {3820, 45}, {3800, 40}, {3790, 35}, {3770, 30},
+    {3750, 25}, {3730, 20}, {3710, 15}, {3690, 10}, {3610, 5},
+    {3270, 0},
+};
+const uint8_t BATTERY_CURVE_POINTS = sizeof(BATTERY_CURVE) / sizeof(BATTERY_CURVE[0]);
+
+float interpolateBatteryPercent(float mvolts)
+{
+  if (mvolts >= BATTERY_CURVE[0].mv)
+  {
+    return BATTERY_CURVE[0].percent;
+  }
+
+  if (mvolts <= BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].mv)
+  {
+    return BATTERY_CURVE[BATTERY_CURVE_POINTS - 1].percent;
+  }
+
+  for (uint8_t i = 0; i < BATTERY_CURVE_POINTS - 1; i++)
+  {
+    if (mvolts <= BATTERY_CURVE[i].mv && mvolts >= BATTERY_CURVE[i + 1].mv)
+    {
+      float span = BATTERY_CURVE[i].mv - BATTERY_CURVE[i + 1].mv;
+      float frac = (mvolts - BATTERY_CURVE[i + 1].mv) / span;
+      return BATTERY_CURVE[i + 1].percent + frac * (BATTERY_CURVE[i].percent - BATTERY_CURVE[i + 1].percent);
+    }
+  }
+
+  return 0; // unreachable - the two bounds checks above cover the full range
+}
+
+// Charging current flows through the cell's + path resistance in the opposite direction
+// from discharge, so terminal voltage while charging sits ABOVE true rest/open-circuit
+// voltage by roughly I*R - documented battery-industry behavior, not a bug (see the
+// 2026-07-25 chat log in the probe's git history). Subtracting an estimated offset before
+// running the curve approximates "what would this cell read at rest." PROVISIONAL: derived
+// from one observed transition, needs refinement from a real logged charge cycle.
+const float CHARGING_IR_COMPENSATION_MV = 400.0F;
+
+// The IR-drop overshoot is proportional to actual charge CURRENT, which tapers toward zero
+// during the constant-voltage phase as the cell approaches full - a fixed compensation right
+// up until charging stops made the correction snap away all at once instead of tapering with
+// it, showing up as a jump around 85%->100% (2026-07-25 chat log). Tapering the compensation
+// itself to zero as the reading approaches full fixes that.
+const float CHARGE_TAPER_START_MV = 4100.0F; // full compensation still applies at/below this
+const float CHARGE_TAPER_END_MV = 4200.0F;   // compensation is fully gone at/above this (full)
+
+float chargeCompensationMv(float mvolts)
+{
+  if (mvolts <= CHARGE_TAPER_START_MV)
+  {
+    return CHARGING_IR_COMPENSATION_MV;
+  }
+
+  if (mvolts >= CHARGE_TAPER_END_MV)
+  {
+    return 0.0F;
+  }
+
+  float remainingFrac = (CHARGE_TAPER_END_MV - mvolts) / (CHARGE_TAPER_END_MV - CHARGE_TAPER_START_MV);
+  return CHARGING_IR_COMPENSATION_MV * remainingFrac;
+}
+
+uint8_t batteryMvToPercent(float mvolts, bool isCharging)
+{
+  float restEquivalentMv = isCharging ? mvolts - chargeCompensationMv(mvolts) : mvolts;
+  return (uint8_t)(interpolateBatteryPercent(restEquivalentMv) + 0.5f);
+}
+
+// Per-sensor EMA smoothing state - was a single global on the probe (one probe, one
+// battery); now one slot per sensor here, since a single receiver interprets every probe's
+// raw readings. Smooths out per-sample ADC noise on the History chart's charging curve
+// (0.2 factor, same as the moisture oscillator's own outlier handling). File-scope arrays
+// zero-initialize, so smoothedBatteryReady[] starts all-false as intended.
+float smoothedBatteryPercent[MAX_SENSOR_ID + 1];
+bool smoothedBatteryReady[MAX_SENSOR_ID + 1];
+bool lastChargingStateBySensor[MAX_SENSOR_ID + 1];
+
+// A charge/discharge transition is a real, instantaneous jump in what the corrected curve
+// reads (the IR-drop offset direction flips), not sensor noise - blending it through the
+// normal EMA would just smear the jump across several readings instead of reflecting it.
+// Snap straight to the new curve's reading on the packet where the state actually changes,
+// then resume normal smoothing within that state.
+uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool charging)
+{
+  float raw = batteryMvToPercent(rawMv, charging);
+  if (sensorId > MAX_SENSOR_ID)
+  {
+    return (uint8_t)(raw + 0.5f);
+  }
+
+  if (!smoothedBatteryReady[sensorId] || charging != lastChargingStateBySensor[sensorId])
+  {
+    smoothedBatteryPercent[sensorId] = raw;
+    smoothedBatteryReady[sensorId] = true;
+  }
+  else
+  {
+    smoothedBatteryPercent[sensorId] += 0.2f * (raw - smoothedBatteryPercent[sensorId]);
+  }
+
+  lastChargingStateBySensor[sensorId] = charging;
+  return (uint8_t)(smoothedBatteryPercent[sensorId] + 0.5f);
+}
+
 #if MSV2_ENABLE_BLE
 class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
@@ -2948,8 +3118,28 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     uint32_t wake = ((uint32_t)buffer[7]) |
                     ((uint32_t)buffer[8] << 8) |
                     ((uint32_t)buffer[9] << 16);
-    uint16_t moisture = buffer[10] | (buffer[11] << 8);
-    uint8_t batteryPercent = len >= 13 ? buffer[12] : BATTERY_UNKNOWN;
+
+    // len >= MSV2_RAW_PACKET_MIN_LEN doubles as the format-version check described above
+    // that constant: probes running the 2026-07-28 raw-values rework send the wider
+    // packet (raw kHz + raw mV + charging flag) and get calibrated here; any probe still
+    // on pre-rework firmware sends the shorter legacy packet with already-calibrated
+    // values and is passed through unchanged, same as before this rework.
+    uint16_t moisture;
+    uint8_t batteryPercent;
+    if (len >= MSV2_RAW_PACKET_MIN_LEN)
+    {
+      uint16_t rawMoistureKHz = buffer[10] | (buffer[11] << 8);
+      uint16_t rawBatteryMv = buffer[12] | (buffer[13] << 8);
+      bool charging = (buffer[14] & 0x01) != 0;
+      moisture = calibrateRawMoisture(sensorId, rawMoistureKHz);
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, charging);
+    }
+    else
+    {
+      moisture = buffer[10] | (buffer[11] << 8);
+      batteryPercent = len >= 13 ? buffer[12] : BATTERY_UNKNOWN;
+    }
+
     SensorReading& reading = sensors[sensorId];
 
     if (reading.seen && wake == reading.wake)
