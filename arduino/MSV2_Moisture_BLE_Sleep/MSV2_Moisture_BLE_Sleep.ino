@@ -11,8 +11,13 @@
 
 const char DEVICE_NAME[] = "MSV2-MOISTURE-001";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF; // Test/development company id.
-const uint8_t SENSOR_ID = 2; // This is the Alocasia probe (COM11). Confirmed 2026-07-27 against
-                              // live dashboard data: sensor 1 = Scindapsus, sensor 2 = Alocasia.
+const uint8_t SENSOR_ID = 1; // This is the Scindapsus probe -- the physically-reworked (two-plate,
+                              // 10k/10k) unit on COM7, currently the one plugged in for bench testing.
+                              // The Alocasia probe (sensor 2) is a separate physical unit running
+                              // long-term elsewhere on the old single-plate/100k firmware -- do NOT
+                              // flash this build to it as-is, hardware doesn't match. Confirmed
+                              // 2026-07-27 against live dashboard data: sensor 1 = Scindapsus, sensor
+                              // 2 = Alocasia.
 
 // Measure/check cadence - cheap (a few ms of oscillator sampling), so this can run
 // often without much battery cost. Actually advertising over BLE is the expensive part
@@ -61,25 +66,53 @@ const bool EXTERNAL_LED_ACTIVE_HIGH = true;
 const bool ENABLE_EXTERNAL_LED = true;
 const int LOW_MOISTURE_THRESHOLD = 134;
 
-// Moisture sensing node: free-running RC relaxation oscillator, not one-shot timing.
-// The earlier precharge/discharge-timing approach (see git history) read cleanly on
-// the bench but saturated once actually inserted in soil - no resistor value made a
-// single-shot timed discharge survive real, variable soil conductivity. Replaced with
-// the architecture validated in MSV2_Moisture_Probe_Test.ino and
-// docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md: charge until HIGH, immediately discharge
-// until LOW, immediately recharge, repeat continuously, and count cycles in a fixed
-// window - the same free-running-astable-plus-frequency-counting principle as this
-// project's own MSV1 555-timer proof-of-concept. Requires a 100k pulldown resistor
-// populated on this node (the earlier unpopulated/DNC footprint was part of why the
-// old approach never stabilized).
-const int SENSE_PIN = D0;
+// Moisture sensing: free-running RC relaxation oscillator, not one-shot timing (see
+// docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md for the original architecture change and
+// the 2026-07-27 bench session for everything below it). Bench-validated in
+// MSV2_Moisture_Probe_Test.ino through several real hardware/firmware iterations since
+// the single-plate/100k version this originally shipped with:
+//   - Sensor reworked from one plate (driven/read) + a hardwired ground-referenced
+//     second comb, to TWO independently-addressable plates, each with its own 10k
+//     pulldown to GND (PLATE_A = original IO0/D0 trace, PLATE_B = new IO2/D2 jumper).
+//     countOscCycles() now alternates which plate drives and which reads every single
+//     cycle, so the net DC field across the sensor averages toward zero instead of
+//     compounding in one direction - this is the actual fix for the steady upward
+//     drift seen over back-to-back samples on the old single-plate design.
+//   - Rewritten from pinMode()/digitalWrite()/digitalRead() to direct nRF52840 NRF_P0
+//     register access, because at 10k the Arduino-call overhead (5 calls/cycle) was
+//     eating up to ~88% of each cycle, compressing the moisture range almost flat.
+//   - CHARGE_SETTLE_NOPS: a hard-won fix, not a style choice. Removing the Arduino-call
+//     overhead also removed the incidental ~1-2us of charge time those calls used to
+//     provide between "drive HIGH" and "release to read" - without it, a touch/moisture-
+//     loaded plate never reached a real HIGH before release, giving a small, plausible-
+//     looking reading that had silently stopped tracking real capacitance at all (zero
+//     touch response, confirmed live on the bench). Too little settling time also showed
+//     up as a WET-END-SPECIFIC saturation (heavy contact pegged at a floor and wouldn't
+//     go lower no matter how much more was added) even after touch response elsewhere
+//     was restored - the fixed charge pulse ran out of budget for that much capacitance.
+//     40 was sized for the wettest condition tested on the bench (multi-finger heavy
+//     contact reading monotonically, no plateau), not just a light single touch -
+//     correctly resolving "very wet" vs. "waterlogged" matters more for a soil sensor
+//     than maximizing dry-end range. Re-verify touch/moisture response live on real
+//     hardware after ever changing this - undershooting fails silently.
+const int PLATE_A_PIN = D0; // IO0 on the XIAO silkscreen -- one comb of the sensor.
+const int PLATE_B_PIN = D2; // IO2 on the XIAO silkscreen -- the other comb.
+// Per Seeed_XIAO_nRF52840_Sense's own variant.cpp pin map: D0/A0 (PLATE_A) = P0.02,
+// D2/A2 (PLATE_B) = P0.28 -- both on NRF_P0, so no port-1 handling needed here.
+#define PLATE_A_BIT (1UL << 2)  // P0.02
+#define PLATE_B_BIT (1UL << 28) // P0.28
 const uint32_t OSC_SAMPLE_WINDOW_MS = 1;
 const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x 1ms bursts, median-of-5 rejects scheduler-jitter outliers
 // Safety cap per half-cycle so a disconnected/open probe can't hang a burst.
 const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
-// Generous headroom above the ~10-90kHz range observed so far - see the inversion
-// comment in readAveragedMoisture() below.
-const uint16_t MOISTURE_INVERT_CEILING = 200;
+// Bench-observed range with this topology (10k/10k, 40-NOP charge settle) was roughly
+// 220-360kHz -- a totally different scale than the old single-plate/100k design's
+// ~10-90kHz this constant used to be tuned for. Generous headroom above the highest
+// frequency this sensor is expected to ever report - see the inversion comment in
+// readAveragedMoisture() below. PROVISIONAL: only bench-verified (touch/multi-finger
+// contact as a moisture stimulus), not yet against real soil - revisit once overnight/
+// real-soil data exists, same as every other calibration constant in this project so far.
+const uint16_t MOISTURE_INVERT_CEILING = 500;
 
 // 3.0V ADC reference, 12-bit resolution: 3000mV / 4096 counts.
 #define VBAT_MV_PER_LSB (0.73242188F)
@@ -131,7 +164,7 @@ const float CHARGE_TAPER_END_MV = 4200.0F;   // compensation is fully gone at/ab
 // // In System OFF mode, connect WAKE_PIN to GND to wake/reset the nRF52840.
 // // Change this to a pin driven by an external RTC/timer/sensor interrupt for
 // // periodic true-deep-sleep wakeups.
-// // NOTE: A0 and D0 are the same physical pin (0), which is also SENSE_PIN above -
+// // NOTE: A0 and D0 are the same physical pin (0), which is also PLATE_A_PIN above -
 // // move this off A0 before ever enabling System OFF mode on this board.
 // const int WAKE_PIN = A0;
 
@@ -169,6 +202,14 @@ void setup()
   externalLedWrite(false);
   pinMode(CHG_STATUS_PIN, INPUT_PULLUP);
   powerDownExternalFlash();
+
+  // One-time known-good PIN_CNF for both sensing plates: input buffer connected, no
+  // pull, standard drive, sense disabled (PIN_CNF=0 also leaves DIR=input). countOscCycles()
+  // only touches DIR/OUT via DIRSET/DIRCLR/OUTSET/OUTCLR after this -- those don't touch
+  // the input-buffer-connect bit, so this has to be set correctly once up front or IN
+  // reads could be unreliable. Ported from MSV2_Moisture_Probe_Test.ino.
+  NRF_P0->PIN_CNF[2] = 0;
+  NRF_P0->PIN_CNF[28] = 0;
 
   Bluefruit.autoConnLed(false);
   Bluefruit.begin();
@@ -268,10 +309,20 @@ void loop()
   lowPowerDelay(sleepMs);
 }
 
-// Free-running relaxation oscillator: charge until HIGH, immediately discharge until
-// LOW, immediately recharge, repeat, for windowMs. Returns the number of complete
-// HIGH->LOW discharge cycles observed - ported near-verbatim from
-// MSV2_Moisture_Probe_Test.ino's countOscCycles(), which has no BLE dependency.
+// Free-running relaxation oscillator, alternating which plate drives and which reads
+// every single cycle (see the PLATE_A_PIN/PLATE_B_PIN comment above for why): charge
+// the driven plate HIGH while actively holding the other plate LOW as a hard reference,
+// hold it briefly to let it actually charge, release the driven plate to INPUT and time
+// its own RC decay back to LOW through its own 10k pulldown, immediately swap roles,
+// repeat for windowMs. Uses direct NRF_P0 register access instead of pinMode()/
+// digitalWrite()/digitalRead() - ported from MSV2_Moisture_Probe_Test.ino after several
+// bench-verified fixes there (see the topology comment above for the full history).
+// Returns the total number of complete HIGH->LOW discharge cycles observed across both
+// plates - with RA==RB by design, A-driven and B-driven cycles should read near-
+// identically, so summing them is just summing more independent samples of the same
+// underlying capacitance.
+bool driveIsPlateA = true;
+
 uint32_t countOscCycles(uint32_t windowMs)
 {
   uint32_t windowStartMs = millis();
@@ -279,12 +330,31 @@ uint32_t countOscCycles(uint32_t windowMs)
 
   while (millis() - windowStartMs < windowMs)
   {
-    pinMode(SENSE_PIN, OUTPUT);
-    digitalWrite(SENSE_PIN, HIGH);
+    uint32_t driveBit = driveIsPlateA ? PLATE_A_BIT : PLATE_B_BIT;
+    uint32_t senseBit = driveIsPlateA ? PLATE_B_BIT : PLATE_A_BIT;
 
-    pinMode(SENSE_PIN, INPUT);
+    NRF_P0->DIRSET = senseBit; // plate not driven this cycle -> output
+    NRF_P0->OUTCLR = senseBit; // ...and held LOW as a hard reference
+
+    NRF_P0->DIRSET = driveBit; // driven plate -> output
+    NRF_P0->OUTSET = driveBit; // ...charge HIGH
+
+    // Charge-settling delay -- see CHARGE_SETTLE_NOPS note above. Unrolled, not a
+    // for-loop: a loop's own increment/compare/branch overhead would swamp a target
+    // this short and silently make the realized delay longer than intended.
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+
+    NRF_P0->DIRCLR = driveBit; // release driven plate to INPUT (float, PIN_CNF input buffer already connected from setup())
+
     uint32_t waitStartUs = micros();
-    while (digitalRead(SENSE_PIN) == HIGH)
+    while (NRF_P0->IN & driveBit)
     {
       if (micros() - waitStartUs >= OSC_CYCLE_TIMEOUT_US)
       {
@@ -293,6 +363,7 @@ uint32_t countOscCycles(uint32_t windowMs)
     }
 
     cycles++;
+    driveIsPlateA = !driveIsPlateA; // swap which plate drives next cycle
   }
 
   return cycles;
