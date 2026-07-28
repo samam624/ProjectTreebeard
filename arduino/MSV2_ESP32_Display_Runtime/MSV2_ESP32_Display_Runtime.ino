@@ -253,6 +253,16 @@ struct SensorReading
   uint32_t missed = 0;
   uint32_t received = 0;
   uint32_t missedTotal = 0;
+  // Raw, uncalibrated values as transmitted by 2026-07-28-rework probes (see
+  // calibrateRawMoisture()/calibrateRawBattery()) - kept alongside the calibrated fields
+  // above instead of being discarded after use, specifically so the raw sensed signal
+  // stays visible for troubleshooting instead of only ever being seen through whatever
+  // calibration transform happened to apply. hasRaw is false for probes still on
+  // pre-rework firmware (legacy packet, no raw fields to show).
+  bool hasRaw = false;
+  uint16_t rawMoistureKHz = 0;
+  uint16_t rawBatteryMv = 0;
+  bool rawCharging = false;
 };
 
 // Cached result of the periodic /autocal cloud pull (see runCloudAutoCalPull) - a
@@ -2181,6 +2191,18 @@ String sensorDataJson()
     item["received"] = sensors[sensorId].received;
     item["missedTotal"] = sensors[sensorId].missedTotal;
 
+    // Raw, uncalibrated values as transmitted by 2026-07-28-rework probes - see the
+    // SensorReading.hasRaw comment. Only present for probes that actually sent them;
+    // omitted (not just zeroed) for probes still on pre-rework legacy firmware so this
+    // field's presence itself signals which protocol a given sensor is on.
+    if (sensors[sensorId].hasRaw)
+    {
+      JsonObject rawItem = item.createNestedObject("raw");
+      rawItem["moistureKHz"] = sensors[sensorId].rawMoistureKHz;
+      rawItem["batteryMv"] = sensors[sensorId].rawBatteryMv;
+      rawItem["charging"] = sensors[sensorId].rawCharging;
+    }
+
     // Cached result of the periodic cloud auto-calibration pull (see
     // runCloudAutoCalPull) - lets the browser use the same learned range/schedule the
     // physical display uses, without minting its own share token or hitting the cloud
@@ -3126,13 +3148,17 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // values and is passed through unchanged, same as before this rework.
     uint16_t moisture;
     uint8_t batteryPercent;
-    if (len >= MSV2_RAW_PACKET_MIN_LEN)
+    bool hasRaw = len >= MSV2_RAW_PACKET_MIN_LEN;
+    uint16_t rawMoistureKHz = 0;
+    uint16_t rawBatteryMv = 0;
+    bool rawCharging = false;
+    if (hasRaw)
     {
-      uint16_t rawMoistureKHz = buffer[10] | (buffer[11] << 8);
-      uint16_t rawBatteryMv = buffer[12] | (buffer[13] << 8);
-      bool charging = (buffer[14] & 0x01) != 0;
+      rawMoistureKHz = buffer[10] | (buffer[11] << 8);
+      rawBatteryMv = buffer[12] | (buffer[13] << 8);
+      rawCharging = (buffer[14] & 0x01) != 0;
       moisture = calibrateRawMoisture(sensorId, rawMoistureKHz);
-      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, charging);
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, rawCharging);
     }
     else
     {
@@ -3163,6 +3189,10 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.wake = wake;
     reading.moisture = moisture;
     reading.batteryPercent = batteryPercent;
+    reading.hasRaw = hasRaw;
+    reading.rawMoistureKHz = rawMoistureKHz;
+    reading.rawBatteryMv = rawBatteryMv;
+    reading.rawCharging = rawCharging;
     reading.rssi = advertisedDevice.getRSSI();
     reading.lastSeenMs = millis();
     sensorDataDirty = true;
