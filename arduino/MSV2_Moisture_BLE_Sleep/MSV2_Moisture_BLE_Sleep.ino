@@ -54,7 +54,7 @@ const uint32_t ADVERTISE_MS = 500;
 const uint8_t XIAO_LED_ON = LOW;
 const uint8_t XIAO_LED_OFF = HIGH;
 const bool ENABLE_STATUS_LEDS = false; // onboard RGB disabled for tonight's battery-impact test - see EXTERNAL_LED_PIN below
-const bool ENABLE_SERIAL_LOGS = false; // disabled for the unattended overnight run - flip back to true to debug
+const bool ENABLE_SERIAL_LOGS = true; // 2026-07-28: re-enabled to debug erratic battery readings live on COM15
 
 // External LED on D1: previously blinked 3x per wake as a low-moisture alert, gated on a
 // fixed raw-value cutoff (LOW_MOISTURE_THRESHOLD). Removed in the 2026-07-28 raw-values
@@ -84,31 +84,60 @@ const bool ENABLE_EXTERNAL_LED = true;
 //   - Rewritten from pinMode()/digitalWrite()/digitalRead() to direct nRF52840 NRF_P0
 //     register access, because at 10k the Arduino-call overhead (5 calls/cycle) was
 //     eating up to ~88% of each cycle, compressing the moisture range almost flat.
-//   - CHARGE_SETTLE_NOPS: a hard-won fix, not a style choice. Removing the Arduino-call
-//     overhead also removed the incidental ~1-2us of charge time those calls used to
-//     provide between "drive HIGH" and "release to read" - without it, a touch/moisture-
-//     loaded plate never reached a real HIGH before release, giving a small, plausible-
-//     looking reading that had silently stopped tracking real capacitance at all (zero
-//     touch response, confirmed live on the bench). Too little settling time also showed
-//     up as a WET-END-SPECIFIC saturation (heavy contact pegged at a floor and wouldn't
-//     go lower no matter how much more was added) even after touch response elsewhere
-//     was restored - the fixed charge pulse ran out of budget for that much capacitance.
-//     40 was sized for the wettest condition tested on the bench (multi-finger heavy
-//     contact reading monotonically, no plateau), not just a light single touch -
-//     correctly resolving "very wet" vs. "waterlogged" matters more for a soil sensor
-//     than maximizing dry-end range. Re-verify touch/moisture response live on real
-//     hardware after ever changing this - undershooting fails silently.
+//   - 2026-07-28: the charge phase was originally a fixed 40-NOP blind delay between
+//     "drive HIGH" and "release to read," sized empirically against one bench load
+//     condition. That was the wrong shape of fix: it doesn't adapt to the load actually
+//     being sensed (moisture IS the load), so it silently undershoots outside whatever
+//     condition it was tuned against - already caught once as WET-END-SPECIFIC saturation
+//     under heavy contact, and the leading suspect for the "locks onto a wrong value for
+//     hours, then jumps" behavior diagnosed the same day (a fixed margin sitting right at
+//     a threshold that ambient temperature/voltage can tip either side of - a real analog
+//     regime switch, not gradual drift). Replaced with a poll loop - wait for the driven
+//     plate to actually read HIGH, capped by the same OSC_CYCLE_TIMEOUT_US used on the
+//     discharge side - symmetric with the (already-correct) discharge wait below, and the
+//     same self-timing principle the reference 555-timer design already relies on: let the
+//     real RC behavior decide when to release, not a guessed constant. This also only ever
+//     holds the plate driven HIGH for as long as actually needed instead of always paying a
+//     fixed worst-case duration, which matters because that hold time is a direct resistive
+//     bleed path (VDD -> GPIO driver -> plate -> its own 10k pulldown -> GND) - shortening
+//     it to the true minimum is a real, if unquantified without a current probe, battery win
+//     on top of the correctness fix.
 const int PLATE_A_PIN = D0; // IO0 on the XIAO silkscreen -- one comb of the sensor.
 const int PLATE_B_PIN = D2; // IO2 on the XIAO silkscreen -- the other comb.
 // Per Seeed_XIAO_nRF52840_Sense's own variant.cpp pin map: D0/A0 (PLATE_A) = P0.02,
 // D2/A2 (PLATE_B) = P0.28 -- both on NRF_P0, so no port-1 handling needed here.
 #define PLATE_A_BIT (1UL << 2)  // P0.02
 #define PLATE_B_BIT (1UL << 28) // P0.28
-const uint32_t OSC_SAMPLE_WINDOW_MS = 1;
-const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x 1ms bursts, median-of-5 rejects scheduler-jitter outliers -
-                                       // this is noise rejection on the raw signal (protecting against a
-                                       // single scheduler-jitter-corrupted burst), not calibration, so it
-                                       // stays on the probe under the 2026-07-28 raw-values rework below.
+// 2026-07-30: was 1ms. Widened after the receiver-side history showed the raw reading
+// snapping between a fixed comb of levels ~11-12 units apart, at every moisture level from
+// bone-dry to saturated, most of it uncorrelated with battery/handling (see the receiver
+// dashboard investigation this same day) - the fingerprint of a fixed *time* quantum, not a
+// physical effect. The outer burst boundary below (`while (millis() - windowStartMs <
+// windowMs)`) is gated on millis()/micros(), which on this chip come from RTC1 running off
+// the raw 32.768kHz LFCLK - the same clock lowPowerDelay()'s comment above already pins at
+// ~1024Hz/~0.977ms per hardware tick. At a 1ms nominal window, that ~30us tick granularity is
+// ~3% of the entire window: wherever windowStartMs happens to land relative to the next tick
+// edge (set by incidental timing of Serial prints/ADC delays elsewhere in the wake cycle, not
+// moisture) determines how much of that ~30us gets won or lost, and all 5 median samples
+// inherit the same offset since each burst starts right where the previous one exited - hence
+// rock-stable within one reading, then a clean jump to a different stable level on the next
+// wake. At the ~208kHz raw range this probe runs in, one ~30us quantum is ~6 cycles; landing
+// on either side of a tick boundary is ~12 - matches the observed step almost exactly.
+// docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md already flagged windows under ~10ms as producing
+// timing artifacts (attributed there to rare scheduler jitter); 1ms sat 10x inside that zone.
+// 5ms trades the tick-phase uncertainty down to ~0.6% of the window (~2-unit step instead of
+// ~11-12), for 25ms total active time across the 5-sample median instead of 5ms - still well
+// under the original pre-optimization 50ms design this replaced. readRawMoistureKHz()'s kHz
+// conversion already generalizes to any window size, so this is the only constant that needs
+// to move. Re-verify against the dashboard after flashing: the histogram of raw readings
+// should go from a comb with real gaps to a much finer-grained, near-continuous spread.
+const uint32_t OSC_SAMPLE_WINDOW_MS = 5;
+const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x OSC_SAMPLE_WINDOW_MS bursts, median-of-5 rejects
+                                       // scheduler-jitter outliers - this is noise rejection on
+                                       // the raw signal (protecting against a single
+                                       // scheduler-jitter-corrupted burst), not calibration, so
+                                       // it stays on the probe under the 2026-07-28 raw-values
+                                       // rework below.
 // Safety cap per half-cycle so a disconnected/open probe can't hang a burst.
 const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
 // 2026-07-28: moisture inversion (raw kHz -> "higher = wetter") moved to the receiver -
@@ -184,6 +213,9 @@ int lastAdvertisedMoisture = -1;
 void setup()
 {
   Serial.begin(115200);
+  delay(2500); // DIAGNOSTIC: give a host time to attach before anything else runs
+  Serial.println("[DIAG] serial begun");
+  Serial.flush();
 
   setupStatusLeds();
   ledsOff();
@@ -200,8 +232,12 @@ void setup()
   NRF_P0->PIN_CNF[2] = 0;
   NRF_P0->PIN_CNF[28] = 0;
 
+  Serial.println("[DIAG] before Bluefruit.begin()");
+  Serial.flush();
   Bluefruit.autoConnLed(false);
   Bluefruit.begin();
+  Serial.println("[DIAG] after Bluefruit.begin()");
+  Serial.flush();
   Bluefruit.setTxPower(4);
   Bluefruit.setName(DEVICE_NAME);
 
@@ -298,11 +334,12 @@ void loop()
 // Free-running relaxation oscillator, alternating which plate drives and which reads
 // every single cycle (see the PLATE_A_PIN/PLATE_B_PIN comment above for why): charge
 // the driven plate HIGH while actively holding the other plate LOW as a hard reference,
-// hold it briefly to let it actually charge, release the driven plate to INPUT and time
+// wait for it to actually reach a real HIGH, release the driven plate to INPUT and time
 // its own RC decay back to LOW through its own 10k pulldown, immediately swap roles,
 // repeat for windowMs. Uses direct NRF_P0 register access instead of pinMode()/
 // digitalWrite()/digitalRead() - ported from MSV2_Moisture_Probe_Test.ino after several
-// bench-verified fixes there (see the topology comment above for the full history).
+// bench-verified fixes there (see the topology comment above for the full history,
+// including the 2026-07-28 switch from a fixed-NOP charge guess to this poll loop).
 // Returns the total number of complete HIGH->LOW discharge cycles observed across both
 // plates - with RA==RB by design, A-driven and B-driven cycles should read near-
 // identically, so summing them is just summing more independent samples of the same
@@ -312,6 +349,7 @@ bool driveIsPlateA = true;
 uint32_t countOscCycles(uint32_t windowMs)
 {
   uint32_t windowStartMs = millis();
+  uint32_t windowStartUs = micros(); // diagnostic only, see the burst-duration log below
   uint32_t cycles = 0;
 
   while (millis() - windowStartMs < windowMs)
@@ -325,24 +363,27 @@ uint32_t countOscCycles(uint32_t windowMs)
     NRF_P0->DIRSET = driveBit; // driven plate -> output
     NRF_P0->OUTSET = driveBit; // ...charge HIGH
 
-    // Charge-settling delay -- see CHARGE_SETTLE_NOPS note above. Unrolled, not a
-    // for-loop: a loop's own increment/compare/branch overhead would swamp a target
-    // this short and silently make the realized delay longer than intended.
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    // Wait for the driven plate to actually reach a real HIGH before releasing it -
+    // see the topology comment above for why this replaced a fixed-NOP guess. Same
+    // shape as the discharge wait below, just polling the opposite level, and it also
+    // minimizes how long the plate sits driven HIGH (a direct resistive bleed path
+    // through its own 10k pulldown) to whatever the real load actually needs instead of
+    // always paying a fixed worst-case duration.
+    uint32_t chargeStartUs = micros();
+    while (!(NRF_P0->IN & driveBit))
+    {
+      if (micros() - chargeStartUs >= OSC_CYCLE_TIMEOUT_US)
+      {
+        break; // never reached a clean HIGH (shorted/disconnected plate) - bail this half-cycle
+      }
+    }
 
     NRF_P0->DIRCLR = driveBit; // release driven plate to INPUT (float, PIN_CNF input buffer already connected from setup())
 
-    uint32_t waitStartUs = micros();
+    uint32_t dischargeStartUs = micros();
     while (NRF_P0->IN & driveBit)
     {
-      if (micros() - waitStartUs >= OSC_CYCLE_TIMEOUT_US)
+      if (micros() - dischargeStartUs >= OSC_CYCLE_TIMEOUT_US)
       {
         break; // disconnected/open probe - bail this half-cycle
       }
@@ -350,6 +391,19 @@ uint32_t countOscCycles(uint32_t windowMs)
 
     cycles++;
     driveIsPlateA = !driveIsPlateA; // swap which plate drives next cycle
+  }
+
+  // 2026-07-30 diagnostic: confirms/refutes the OSC_SAMPLE_WINDOW_MS comment above. If the
+  // burst-boundary tick-quantization theory is right, burstUs across many readings should
+  // cluster into ~30us-spaced buckets (not vary smoothly), and cycles should visibly step
+  // in lockstep with which bucket it landed in. Safe to remove once confirmed.
+  if (ENABLE_SERIAL_LOGS)
+  {
+    uint32_t burstUs = micros() - windowStartUs;
+    Serial.print("  [osc] burstUs=");
+    Serial.print(burstUs);
+    Serial.print(" cycles=");
+    Serial.println(cycles);
   }
 
   return cycles;
@@ -375,8 +429,9 @@ uint32_t medianOf(uint32_t vals[], uint8_t n)
 
 // Takes OSC_MEDIAN_SAMPLES independent OSC_SAMPLE_WINDOW_MS bursts and returns the
 // median cycle count, scaled to a per-second rate (kHz, since burst windows are ms).
-// At the validated 1ms window this numerically equals frequency in kHz directly, but
-// the division is spelled out so it stays correct if the window is ever retuned.
+// The division is spelled out (rather than assuming windowMs=1 makes it a no-op) so this
+// stays correct as the window gets retuned - see the OSC_SAMPLE_WINDOW_MS comment above
+// for the 2026-07-30 change from 1ms to 5ms.
 // Returned RAW - no inversion, no calibration. Lower value = wetter (the oscillator
 // slows down as sensed capacitance rises), but that's left for the receiver to interpret
 // (see MSV2_ESP32_Display_Runtime.ino's calibrateRawMoisture()) - see the 2026-07-28
