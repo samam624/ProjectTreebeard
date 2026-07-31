@@ -2956,6 +2956,10 @@ const uint16_t DEFAULT_MOISTURE_INVERT_CEILING = 200;
 const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
     0,   // sensor 0 unused
     500, // sensor 1: Scindapsus, dual-plate/10k rework
+    0,   // sensor 2: Alocasia, legacy pre-calibrated packet - never reaches this raw path
+    3300, // sensor 3: AFE bench-test board (Capacitive Soil Moisture Sensor v1.2,
+          // MSV2_Moisture_AFE_Test.ino) - raw is millivolts, not kHz. Provisional ceiling
+          // (ESP32 ADC's practical max) - tighten once a real dry-air baseline is logged.
 };
 
 uint16_t moistureCeilingForSensor(uint8_t sensorId)
@@ -3196,6 +3200,26 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.rssi = advertisedDevice.getRSSI();
     reading.lastSeenMs = millis();
     sensorDataDirty = true;
+
+    // 2026-07-28: temporary debug print for live erratic-battery-reading investigation -
+    // remove once resolved (see chat log / scindapsus_probe memory for context).
+    Serial.print("[MSV2 debug] sensor ");
+    Serial.print(sensorId);
+    Serial.print(" wake ");
+    Serial.print(wake);
+    Serial.print(" hasRaw=");
+    Serial.print(hasRaw);
+    Serial.print(" rawBatteryMv=");
+    Serial.print(rawBatteryMv);
+    Serial.print(" rawCharging=");
+    Serial.print(rawCharging);
+    Serial.print(" batteryPercent=");
+    Serial.print(batteryPercent);
+    Serial.print(" rawMoistureKHz=");
+    Serial.print(rawMoistureKHz);
+    Serial.print(" moisture=");
+    Serial.println(moisture);
+
     scheduleCloudSyncSoon();
   }
 };
