@@ -19,11 +19,15 @@ const uint8_t SENSOR_ID = 1; // This is the Scindapsus probe -- the physically-r
                               // 2026-07-27 against live dashboard data: sensor 1 = Scindapsus, sensor
                               // 2 = Alocasia.
 
-// Measure/check cadence - cheap (a few ms of oscillator sampling), so this can run
-// often without much battery cost. Actually advertising over BLE is the expensive part
-// (radio on, ~ADVERTISE_MS awake) so it happens far less often - see shouldAdvertise
-// in loop() below. Matches the "measure often, radio rarely" pattern sketched in
-// docs/PRODUCT_ROADMAP.md's probe section, tightened to this test's own numbers.
+// 2026-08-09: back down to 10s measure/check cadence (was 1,800,000 / 30min for the
+// vacation run) now that the QSPI power-down bug is fixed - see powerDownExternalFlash()
+// below and msv2_probe_battery_drain_hypotheses memory. This reactivates the
+// bigSwing/MIN_SWING_ADVERTISE_INTERVAL_MS logic below, which was dead weight at 30min
+// (ADVERTISE_INTERVAL_MS/60s was always already elapsed by the next wake, so every wake
+// advertised regardless). Doubles as a quick overnight battery test: at this cadence the
+// active-energy budget dominates enough that if the QSPI fix weren't actually working,
+// the ~1.5mA leak would show up as a large, obvious overnight battery drop (~8-12% over
+// 8-10h) vs a healthy ~1% or less if it's genuinely fixed.
 const uint32_t WAKE_PERIOD_MS = 10000;
 // Normal BLE advertise cadence when nothing eventful is happening.
 const uint32_t ADVERTISE_INTERVAL_MS = 60000;
@@ -54,7 +58,14 @@ const uint32_t ADVERTISE_MS = 500;
 const uint8_t XIAO_LED_ON = LOW;
 const uint8_t XIAO_LED_OFF = HIGH;
 const bool ENABLE_STATUS_LEDS = false; // onboard RGB disabled for tonight's battery-impact test - see EXTERNAL_LED_PIN below
-const bool ENABLE_SERIAL_LOGS = true; // 2026-07-28: re-enabled to debug erratic battery readings live on COM15
+const bool ENABLE_SERIAL_LOGS = false; // disabled for the unattended 10-day vacation run starting 2026-07-31 - flip back to true to debug on the bench
+// 2026-08-09: bounded wait for a host to attach before boot-time diagnostics print (see
+// logFlashDiagnostic() and scripts/serial_capture.py) - native USB CDC here doesn't buffer
+// prints for a not-yet-attached host, so a reconnecting capture script started right after
+// an upload needs the board to hold briefly rather than racing it blind. Bounded, not
+// indefinite, so a real power-on with nothing attached still boots normally. One-time cost
+// at boot only (setup() runs once per power cycle, not per wake), so harmless to leave in.
+const uint32_t BOOT_HOST_WAIT_MS = 5000;
 
 // External LED on D1: previously blinked 3x per wake as a low-moisture alert, gated on a
 // fixed raw-value cutoff (LOW_MOISTURE_THRESHOLD). Removed in the 2026-07-28 raw-values
@@ -213,7 +224,18 @@ int lastAdvertisedMoisture = -1;
 void setup()
 {
   Serial.begin(115200);
-  delay(2500); // DIAGNOSTIC: give a host time to attach before anything else runs
+  uint32_t hostWaitStart = millis();
+  while (!Serial && millis() - hostWaitStart < BOOT_HOST_WAIT_MS)
+  {
+    delay(10);
+  }
+  // `Serial` reads true almost immediately post-DFU-reset on this board (the USB CDC
+  // interface looks "up" before a specific terminal has actually attached/opened it), so
+  // the loop above exits far earlier than a real capture script can reconnect - confirmed
+  // empirically 2026-08-09 (missed the first two boot prints, caught ones ~200-300ms later).
+  // This flat extra delay is the actual margin; the loop above is left in as a harmless
+  // best-effort head start.
+  delay(1500);
   Serial.println("[DIAG] serial begun");
   Serial.flush();
 
@@ -222,6 +244,7 @@ void setup()
   pinMode(EXTERNAL_LED_PIN, OUTPUT);
   externalLedWrite(false);
   pinMode(CHG_STATUS_PIN, INPUT_PULLUP);
+  logFlashDiagnostic();
   powerDownExternalFlash();
 
   // One-time known-good PIN_CNF for both sensing plates: input buffer connected, no
@@ -588,18 +611,93 @@ void externalLedWrite(bool on)
   digitalWrite(EXTERNAL_LED_PIN, on == EXTERNAL_LED_ACTIVE_HIGH ? HIGH : LOW);
 }
 
+#if HAS_EXTERNAL_FLASH
+void printJedecHex(const uint8_t ids[3])
+{
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    if (ids[i] < 0x10)
+    {
+      Serial.print('0');
+    }
+    Serial.print(ids[i], HEX);
+  }
+}
+#endif
+
+// 2026-08-09: temporary bench-check for the QSPI power-down bug below - prints the flash
+// chip's raw JEDEC ID and whether Adafruit_SPIFlash's device table recognizes it. Expect
+// "recognized=0": the XIAO nRF52840's onboard chip is a Puya P25Q16H, which is not in this
+// library's possible_devices[] list (GD25Q/S25FL/W25Q/AT25/MB85RS parts only). Safe to
+// delete once confirmed - runs once at boot, before advertising starts, so it doesn't affect
+// steady-state sleep current either way.
+void logFlashDiagnostic(void)
+{
+#if HAS_EXTERNAL_FLASH
+  uint8_t jedecIds[4] = {0, 0, 0, 0};
+  flashTransport.begin();
+  flashTransport.readCommand(SFLASH_CMD_READ_JEDEC_ID, jedecIds, 4);
+  flashTransport.end();
+
+  bool recognized = flash.begin();
+  if (recognized)
+  {
+    flash.end();
+  }
+
+  Serial.print("[flash diag] raw JEDEC ID: 0x");
+  printJedecHex(jedecIds);
+  Serial.print("  Adafruit_SPIFlash recognized=");
+  Serial.println(recognized ? 1 : 0);
+  Serial.flush();
+
+  // Wake/sleep ping: proves the chip actually answers when awake, rather than just assuming
+  // a non-answer means "asleep as intended" - it could equally mean "QSPI can't talk to this
+  // part at all" (a real, documented risk for this exact chip: zephyrproject-rtos/zephyr#55543
+  // describes Deep-Power-Down EXIT breaking specifically over the nRF QSPI peripheral on a
+  // P25Q16H, because Zephyr's driver polls a status register - which a sleeping chip won't
+  // answer - *before* it ever sends the release command, so it gives up without waking the
+  // part). Deliberately avoids that failure mode: no status-poll loop, just one raw
+  // single-shot cinstr wake (0xAB), a fixed settle delay, a raw read, then back to sleep
+  // (0xB9) and a second read - can't hang the way that bug does since nothing here retries
+  // or waits on the chip's own readiness signal.
+  uint8_t awakeIds[4] = {0, 0, 0, 0};
+  uint8_t asleepIds[4] = {0, 0, 0, 0};
+  flashTransport.begin();
+  flashTransport.runCommand(0xAB); // release from deep power-down
+  delay(1);                        // generous vs. a typical tRES1 of single-digit-to-tens of us
+  flashTransport.readCommand(SFLASH_CMD_READ_JEDEC_ID, awakeIds, 4);
+  flashTransport.runCommand(0xB9); // deep power-down again
+  delay(10);
+  flashTransport.readCommand(SFLASH_CMD_READ_JEDEC_ID, asleepIds, 4);
+  flashTransport.end();
+
+  Serial.print("[flash ping] awake ID: 0x");
+  printJedecHex(awakeIds);
+  Serial.print("  asleep ID: 0x");
+  printJedecHex(asleepIds);
+  Serial.println();
+  Serial.flush();
+#endif
+}
+
+// 2026-08-09: previously gated on flash.begin(), which fails on this board - see
+// logFlashDiagnostic() above. Adafruit_SPIFlashBase::begin() calls _trans->begin() (enabling
+// the QSPI peripheral) BEFORE checking its device table, then returns false with no matching
+// _trans->end() when the chip isn't recognized - so the old `if (!flash.begin()) return;`
+// guard meant the flash chip never got the deep-power-down command below AND the QSPI
+// peripheral was left enabled for the rest of the probe's life, every single boot. Likely
+// the dominant contributor to the ~1.5mA "sleep" current inferred from the 2026-08 vacation
+// battery data (150mAh cell drained in ~4-6 days instead of the expected 100s of days).
+// runCommand(0xB9) is a raw opcode that doesn't need device-table recognition, so talk to
+// flashTransport directly instead of routing through flash.begin()'s detection path.
 void powerDownExternalFlash(void)
 {
 #if HAS_EXTERNAL_FLASH
-  if (!flash.begin())
-  {
-    return;
-  }
-
   flashTransport.begin();
   flashTransport.runCommand(0xB9); // SPI/QSPI deep power-down command.
   delay(10);
-  flash.end();
+  flashTransport.end(); // nrfx_qspi_uninit() - disables the QSPI peripheral.
 #endif
 }
 
