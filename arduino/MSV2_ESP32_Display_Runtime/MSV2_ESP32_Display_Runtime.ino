@@ -229,7 +229,13 @@ const uint8_t MAX_SENSOR_ID = 16;
 const size_t MSV2_RAW_PACKET_MIN_LEN = 15;
 const uint32_t BLE_SCAN_SECONDS = 3;
 const uint32_t BLE_SCAN_IDLE_MS = 250;
-const uint32_t DEFAULT_STALE_SECONDS = 90;
+// 2026-07-31: was 90s, sized for the probes' old ~10s-measure/60s-advertise bench cadence.
+// Probes now wake/advertise every 30 min (see MSV2_Moisture_BLE_Sleep.ino's WAKE_PERIOD_MS),
+// so 90s made every card show stale/"--" for essentially the entire cycle. 3900s (65 min)
+// tolerates one fully missed wake (packet loss or a bad scan window) plus 5 min margin
+// before a card actually goes stale, while still flagging a truly dead/dead-battery probe
+// within a bit over an hour.
+const uint32_t DEFAULT_STALE_SECONDS = 3900;
 const uint8_t BATTERY_UNKNOWN = 255;
 const uint8_t MAX_ART_SLOTS = 16;
 const uint32_t SENSOR_RENDER_INTERVAL_MS = 2000;
@@ -528,7 +534,7 @@ void ensureDefaultUi()
     "{"
     "\"_meta\":{\"schema\":1,\"version\":1,\"updatedMs\":0,\"updatedBy\":\"factory-default\"},"
     "\"title\":\"MSV2 Garden\","
-    "\"staleSeconds\":90,"
+    "\"staleSeconds\":3900,"
     "\"rotation\":1,"
     "\"theme\":{\"background\":\"#0E141B\",\"surface\":\"#17212B\",\"text\":\"#F5F7FA\",\"muted\":\"#8FA3AD\",\"accent\":\"#20C997\",\"warning\":\"#FFB020\",\"danger\":\"#FF5A5F\"},"
     "\"layout\":{\"type\":\"grid\",\"orientation\":\"landscape\",\"columns\":4,\"rows\":2,\"gap\":6,\"padding\":6},"

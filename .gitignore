@@ -1,4 +1,4 @@
-arduino/MSV2_ESP32_Display_Runtime/WiFiCredentials.h
+**/WiFiCredentials.h
 .venv/
 __pycache__/
 *.py[cod]
