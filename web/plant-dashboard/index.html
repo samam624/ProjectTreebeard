@@ -42,11 +42,12 @@
     .panel { padding: 14px; }
     label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 13px; }
     input { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--field); color: var(--ink); font: inherit; }
+    input[type="range"] { min-height: 34px; padding: 0; accent-color: var(--accent); }
     button { min-height: 38px; border: 1px solid transparent; border-radius: 6px; padding: 8px 12px; background: var(--accent); color: #06231a; font: inherit; font-weight: 750; cursor: pointer; }
     button.secondary { background: transparent; color: var(--muted); border-color: var(--line); }
     button:disabled { opacity: .55; cursor: not-allowed; }
-    .row { display: flex; gap: 8px; margin-top: 12px; }
-    .row button { flex: 1; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .row button { flex: 1 1 90px; }
     .scan-box { display: grid; gap: 8px; margin-top: 12px; }
     .scan-box video { width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; background: #05090d; object-fit: cover; }
     .notice { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel-2); color: var(--muted); }
@@ -58,6 +59,13 @@
     .summary-value { font-size: 22px; font-weight: 800; line-height: 1; }
     .receiver { padding: 14px; margin-bottom: 14px; }
     .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .display-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+    .display-control label { margin: 0; }
+    .display-control .brightness-value { min-width: 48px; text-align: right; font-size: 18px; font-weight: 800; color: var(--accent-dark); }
+    .display-control input[type="range"] { grid-column: 1 / -1; }
+    .display-control .display-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+    .display-control .display-actions button { flex: 1 1 90px; }
+    .display-control .display-state { grid-column: 1 / -1; min-height: 18px; color: var(--muted); font-size: 12px; }
     body.connected .grid { grid-template-columns: 1fr; }
     body.connected .toolbar { margin-left: auto; }
     .display-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin-top: 14px; }
@@ -130,8 +138,10 @@
         <input id="claimUrlInput" autocomplete="off" placeholder="Paste hosted app link">
         <div class="row">
           <button type="button" class="secondary" id="scanQrButton">Scan QR</button>
+          <button type="button" class="secondary" id="scanPhotoButton">Scan Photo</button>
           <button type="button" class="secondary" id="useClaimUrlButton">Use Link</button>
         </div>
+        <input id="scanPhotoInput" type="file" accept="image/*" capture="environment" hidden>
         <div class="scan-box" id="scanBox" hidden>
           <video id="scanVideo" playsinline muted></video>
           <button type="button" class="secondary" id="stopScanButton">Stop Scan</button>
@@ -147,6 +157,6 @@
       </section>
     </div>
   </main>
-  <script src="assets/app.js" defer></script>
+  <script src="assets/app.v12.js" defer></script>
 </body>
 </html>

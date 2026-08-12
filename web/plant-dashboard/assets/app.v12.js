@@ -1,13 +1,19 @@
 const API_BASE = "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-dashboard";
 const SHARE_TOKEN_KEY = "msv2.householdShareToken";
 const SHARE_TOKEN_COOKIE = "msv2_share_token";
+const QR_DECODER_URL = "assets/jsQR-1.4.0.min.js";
+const QR_DECODER_INTEGRITY = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
 const params = new URLSearchParams(window.location.search);
 const state = {
   shareToken: loadShareToken(),
   snapshots: [],
+  displaySettings: new Map(),
   scanStream: null,
   scanFrame: 0,
+  scanSession: 0,
+  scanLastAt: 0,
   qrDecoderReady: false,
+  qrDecoderPromise: null,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -157,7 +163,56 @@ async function loadSnapshots() {
     return;
   }
   state.snapshots = body.snapshots || [];
+  try {
+    await loadDisplaySettings();
+  } catch (error) {
+    // Keep snapshot monitoring usable while an older backend is still rolling
+    // forward or if only the display-settings endpoint is temporarily unavailable.
+    console.warn("Could not load display settings", error);
+    state.displaySettings = new Map();
+  }
   renderDashboard();
+}
+
+async function loadDisplaySettings() {
+  if (!state.shareToken) {
+    state.displaySettings = new Map();
+    return;
+  }
+  const response = await fetch(API_BASE + "/api/share-display", {
+    cache: "no-store",
+    headers: { "Authorization": "Bearer " + state.shareToken },
+  });
+  const body = await response.json();
+  if (!response.ok || !body.ok) {
+    throw new Error(body.error || "Could not load display settings");
+  }
+  state.displaySettings = new Map((body.settings || []).map((item) => [item.receiverId, item]));
+}
+
+async function saveDisplaySettings(receiverId, brightnessPercent, screenOn) {
+  const slider = document.querySelector('[data-display-slider="' + CSS.escape(receiverId) + '"]');
+  const stateNode = document.querySelector('[data-display-state="' + CSS.escape(receiverId) + '"]');
+  if (stateNode) stateNode.textContent = "Sending setting...";
+  if (slider) slider.disabled = true;
+  try {
+    const response = await fetch(API_BASE + "/api/share-display", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + state.shareToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ receiverId, brightnessPercent, screenOn }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok) throw new Error(body.error || "Could not save display setting");
+    state.displaySettings.set(receiverId, body.settings);
+    renderDashboard();
+  } catch (error) {
+    if (stateNode) stateNode.textContent = "Save failed: " + error.message;
+  } finally {
+    if (slider) slider.disabled = false;
+  }
 }
 
 async function forgetHousehold() {
@@ -180,31 +235,104 @@ async function forgetHousehold() {
 
 async function startQrScan() {
   stopQrScan();
+  const scanSession = state.scanSession;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setNotice("Live camera scanning is not supported here. Use Scan Photo or paste the app link instead.", "error");
+    return;
+  }
+
   try {
-    const detector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
-    if (!detector) await loadQrDecoder();
-    state.scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    const video = byId("scanVideo");
-    video.srcObject = state.scanStream;
-    byId("scanBox").hidden = false;
-    setNotice("Point the camera at the receiver pairing QR code.");
-    await video.play();
-    const scan = async () => {
-      try {
-        const value = detector ? await scanWithBarcodeDetector(detector, video) : scanWithJsQr(video);
-        if (value && applyPairingLink(value, true)) {
-          stopQrScan();
-          return;
-        }
-      } catch (error) {
-        setNotice("Could not read that QR code yet.", "error");
-      }
-      state.scanFrame = requestAnimationFrame(scan);
-    };
-    scan();
+    state.scanStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" } },
+    });
   } catch (error) {
     stopQrScan();
-    setNotice("Camera QR scanning was not available. Paste the app link instead.", "error");
+    console.error("Could not start QR camera", error);
+    setNotice(cameraErrorMessage(error), "error");
+    return;
+  }
+
+  if (scanSession !== state.scanSession) {
+    stopQrScan();
+    return;
+  }
+  const video = byId("scanVideo");
+  video.srcObject = state.scanStream;
+  byId("scanBox").hidden = false;
+  setNotice("Camera ready. Starting the QR reader...");
+
+  try {
+    await video.play();
+  } catch (error) {
+    stopQrScan();
+    console.error("Could not play QR camera preview", error);
+    setNotice("The camera opened, but its preview could not start. Close other camera apps and try again.", "error");
+    return;
+  }
+
+  let detector = null;
+  try {
+    detector = await createBarcodeDetector();
+    if (!detector) await loadQrDecoder();
+  } catch (error) {
+    stopQrScan();
+    console.error("Could not load QR decoder", error);
+    setNotice("The camera works, but the QR reader could not load. Reload the app or use Scan Photo.", "error");
+    return;
+  }
+
+  if (scanSession !== state.scanSession) return;
+  setNotice("Point the camera at the receiver pairing QR code.");
+  const scan = async (timestamp) => {
+    if (scanSession !== state.scanSession) return;
+    if (timestamp - state.scanLastAt < 100) {
+      state.scanFrame = requestAnimationFrame(scan);
+      return;
+    }
+    state.scanLastAt = timestamp;
+    try {
+      const value = detector ? await scanWithBarcodeDetector(detector, video) : scanWithJsQr(video);
+      if (value && applyPairingLink(value, true)) {
+        stopQrScan();
+        return;
+      }
+    } catch (error) {
+      stopQrScan();
+      console.error("QR reader stopped", error);
+      setNotice("The QR reader stopped unexpectedly. Try again or use Scan Photo.", "error");
+      return;
+    }
+    if (scanSession === state.scanSession) state.scanFrame = requestAnimationFrame(scan);
+  };
+  state.scanFrame = requestAnimationFrame(scan);
+}
+
+function cameraErrorMessage(error) {
+  switch (error?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Camera access is blocked. In Safari Website Settings, set Camera to Allow, then reopen this app.";
+    case "NotFoundError":
+      return "No camera was found. Use Scan Photo or paste the app link instead.";
+    case "NotReadableError":
+    case "AbortError":
+      return "The camera is busy or unavailable. Close other camera apps, reopen this app, and try again.";
+    default:
+      return "The camera could not start. Use Scan Photo or paste the app link instead.";
+  }
+}
+
+async function createBarcodeDetector() {
+  if (!("BarcodeDetector" in window)) return null;
+  try {
+    if (typeof BarcodeDetector.getSupportedFormats === "function") {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) return null;
+    }
+    return new BarcodeDetector({ formats: ["qr_code"] });
+  } catch (error) {
+    return null;
   }
 }
 
@@ -214,41 +342,118 @@ async function scanWithBarcodeDetector(detector, video) {
 }
 
 async function loadQrDecoder() {
-  if (window.jsQR) return;
-  if (state.qrDecoderReady) return;
-  await new Promise((resolve, reject) => {
+  if (typeof window.jsQR === "function") {
+    state.qrDecoderReady = true;
+    return;
+  }
+  if (state.qrDecoderPromise) return state.qrDecoderPromise;
+  state.qrDecoderPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
-    script.integrity = "sha384-9Q0jWoineiIq95JeIyBsNV90KKLfDsbkj29k/YFxf76a2JwkHDYkMuSbNGN6XJfV";
+    script.src = QR_DECODER_URL;
+    script.integrity = QR_DECODER_INTEGRITY;
     script.crossOrigin = "anonymous";
     script.async = true;
     script.onload = () => {
+      if (typeof window.jsQR !== "function") {
+        reject(new Error("QR decoder loaded without exposing jsQR."));
+        return;
+      }
       state.qrDecoderReady = true;
       resolve();
     };
-    script.onerror = reject;
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("QR decoder script failed to load."));
+    };
     document.head.appendChild(script);
   });
+  try {
+    await state.qrDecoderPromise;
+  } catch (error) {
+    state.qrDecoderPromise = null;
+    state.qrDecoderReady = false;
+    throw error;
+  }
 }
 
 function scanWithJsQr(video) {
   if (!window.jsQR || !video.videoWidth || !video.videoHeight) return "";
   const canvas = scanWithJsQr.canvas || (scanWithJsQr.canvas = document.createElement("canvas"));
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  const size = Math.min(video.videoWidth, video.videoHeight);
-  const sx = Math.max(0, Math.floor((video.videoWidth - size) / 2));
-  const sy = Math.max(0, Math.floor((video.videoHeight - size) / 2));
-  canvas.width = size;
-  canvas.height = size;
-  context.drawImage(video, sx, sy, size, size, 0, 0, size, size);
-  const image = context.getImageData(0, 0, size, size);
+  const sourceSize = Math.min(video.videoWidth, video.videoHeight);
+  const targetSize = Math.min(sourceSize, 900);
+  const sx = Math.max(0, Math.floor((video.videoWidth - sourceSize) / 2));
+  const sy = Math.max(0, Math.floor((video.videoHeight - sourceSize) / 2));
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  context.drawImage(video, sx, sy, sourceSize, sourceSize, 0, 0, targetSize, targetSize);
+  const image = context.getImageData(0, 0, targetSize, targetSize);
   const code = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "dontInvert" });
   return code?.data || "";
 }
 
+async function scanQrPhoto(event) {
+  const input = event.currentTarget;
+  const file = input.files?.[0] || null;
+  input.value = "";
+  if (!file) return;
+  stopQrScan();
+  setNotice("Reading QR code from photo...");
+  try {
+    await loadQrDecoder();
+    const image = await loadQrImage(file);
+    const value = scanImageWithJsQr(image);
+    if (!value) {
+      setNotice("No QR code was found in that photo. Try a closer, sharper picture.", "error");
+      return;
+    }
+    if (!applyPairingLink(value, true)) {
+      setNotice("That photo contains a QR code, but it is not an MSV2 pairing link.", "error");
+    }
+  } catch (error) {
+    console.error("Could not read QR photo", error);
+    setNotice("The QR photo could not be read. Try another photo or paste the app link.", "error");
+  }
+}
+
+function loadQrImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Selected QR image could not be decoded."));
+    };
+    image.src = url;
+  });
+}
+
+function scanImageWithJsQr(image) {
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (!width || !height) return "";
+  const maxDimension = 2048;
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  const targetWidth = Math.max(1, Math.round(width * scale));
+  const targetHeight = Math.max(1, Math.round(height * scale));
+  const canvas = scanImageWithJsQr.canvas || (scanImageWithJsQr.canvas = document.createElement("canvas"));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  context.drawImage(image, 0, 0, targetWidth, targetHeight);
+  const pixels = context.getImageData(0, 0, targetWidth, targetHeight);
+  return window.jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: "attemptBoth" })?.data || "";
+}
+
 function stopQrScan() {
+  state.scanSession += 1;
   if (state.scanFrame) cancelAnimationFrame(state.scanFrame);
   state.scanFrame = 0;
+  state.scanLastAt = 0;
   if (state.scanStream) {
     for (const track of state.scanStream.getTracks()) track.stop();
   }
@@ -298,12 +503,38 @@ function renderReceiver(row) {
   const title = config.title || row.household_name || "MSV2 Plants";
   const plants = displayPlants(snapshot);
   const plantCards = plants.length ? plants.map(renderPlant).join("") : "<p>No plant setup in this snapshot.</p>";
+  const displayControl = renderDisplayControl(row);
   return '<section class="receiver"><h2>' + escapeHtml(title) + '</h2><div class="meta">' +
     '<span>Household: ' + escapeHtml(row.household_name || "My Plants") + '</span>' +
     '<span>Receiver: <code>' + escapeHtml(row.receiver_id) + '</code></span>' +
     '<span>Config v' + escapeHtml(config.version ?? row.config_version ?? "--") + '</span>' +
     '<span>Cloud: ' + escapeHtml(formatDate(row.received_at)) + '</span>' +
-    '</div><div class="display-board">' + plantCards + '</div></section>';
+    '</div>' + displayControl + '<div class="display-board">' + plantCards + '</div></section>';
+}
+
+function renderDisplayControl(row) {
+  const receiverId = String(row.receiver_id || "");
+  const reported = row.snapshot?.display || {};
+  const desired = state.displaySettings.get(receiverId) || {};
+  const brightness = Math.max(1, Math.min(100, Number(desired.brightnessPercent ?? reported.brightnessPercent ?? 75)));
+  const screenOn = typeof desired.screenOn === "boolean" ? desired.screenOn : reported.screenOn !== false;
+  const desiredVersion = Number(desired.settingsVersion || 0);
+  const appliedVersion = Number(reported.settingsVersion || 0);
+  let status = screenOn ? "Screen on" : "Screen off";
+  if (desiredVersion > appliedVersion) status += " · queued for receiver";
+  else if (desiredVersion && desiredVersion === appliedVersion) status += " · applied";
+  else status += " · receiver value";
+
+  return '<section class="display-control" data-display-control="' + escapeAttr(receiverId) + '">' +
+    '<label for="brightness-' + escapeAttr(receiverId) + '">Display brightness</label>' +
+    '<output class="brightness-value" data-display-value="' + escapeAttr(receiverId) + '">' + brightness + '%</output>' +
+    '<input id="brightness-' + escapeAttr(receiverId) + '" type="range" min="1" max="100" step="1" value="' + brightness + '" data-display-slider="' + escapeAttr(receiverId) + '" aria-label="Display brightness">' +
+    '<div class="display-actions">' +
+      [25, 50, 75, 100].map((value) => '<button type="button" class="secondary" data-display-preset="' + value + '" data-receiver-id="' + escapeAttr(receiverId) + '">' + value + '%</button>').join("") +
+      '<button type="button" class="secondary" data-display-power data-receiver-id="' + escapeAttr(receiverId) + '">' + (screenOn ? "Screen Off" : "Screen On") + '</button>' +
+    '</div>' +
+    '<div class="display-state" data-display-state="' + escapeAttr(receiverId) + '">' + escapeHtml(status) + '</div>' +
+  '</section>';
 }
 
 function renderPlant(plant) {
@@ -411,9 +642,44 @@ function formatDate(value) {
 byId("connectButton").addEventListener("click", connectHousehold);
 byId("useClaimUrlButton").addEventListener("click", () => applyPairingLink(byId("claimUrlInput").value, false));
 byId("scanQrButton").addEventListener("click", startQrScan);
+byId("scanPhotoButton").addEventListener("click", () => byId("scanPhotoInput").click());
+byId("scanPhotoInput").addEventListener("change", scanQrPhoto);
 byId("stopScanButton").addEventListener("click", stopQrScan);
 byId("refreshButton").addEventListener("click", loadSnapshots);
 byId("forgetButton").addEventListener("click", forgetHousehold);
+byId("receivers").addEventListener("input", (event) => {
+  const slider = event.target.closest?.("[data-display-slider]");
+  if (!slider) return;
+  const receiverId = slider.dataset.displaySlider;
+  const output = document.querySelector('[data-display-value="' + CSS.escape(receiverId) + '"]');
+  if (output) output.textContent = slider.value + "%";
+});
+byId("receivers").addEventListener("change", (event) => {
+  const slider = event.target.closest?.("[data-display-slider]");
+  if (!slider) return;
+  const receiverId = slider.dataset.displaySlider;
+  saveDisplaySettings(receiverId, Number(slider.value), true);
+});
+byId("receivers").addEventListener("click", (event) => {
+  const preset = event.target.closest?.("[data-display-preset]");
+  if (preset) {
+    saveDisplaySettings(preset.dataset.receiverId, Number(preset.dataset.displayPreset), true);
+    return;
+  }
+  const power = event.target.closest?.("[data-display-power]");
+  if (!power) return;
+  const receiverId = power.dataset.receiverId;
+  const desired = state.displaySettings.get(receiverId) || {};
+  const row = state.snapshots.find((item) => String(item.receiver_id) === receiverId);
+  const reported = row?.snapshot?.display || {};
+  const brightness = Number(desired.brightnessPercent ?? reported.brightnessPercent ?? 75);
+  const screenOn = typeof desired.screenOn === "boolean" ? desired.screenOn : reported.screenOn !== false;
+  saveDisplaySettings(receiverId, brightness, !screenOn);
+});
+window.addEventListener("pagehide", stopQrScan);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopQrScan();
+});
 
 applyPairingParams();
 renderLinkState();
@@ -422,9 +688,9 @@ if (!state.shareToken && shouldAutoConnect()) {
     setNotice("Could not auto-connect from the QR link. Tap Connect to try again.", "error");
   });
 } else {
-  loadSnapshots();
+  loadSnapshots().catch((error) => setNotice("Could not refresh plants: " + error.message, "error"));
 }
-if ("serviceWorker" in navigator && location.protocol === "https:") {
+if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("sw.js").then((registration) => registration.update()).catch(() => {});
 }
-window.setInterval(loadSnapshots, 30000);
+window.setInterval(() => loadSnapshots().catch((error) => console.warn("Automatic refresh failed", error)), 30000);

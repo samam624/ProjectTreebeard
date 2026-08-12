@@ -1,14 +1,16 @@
 # MSV2 Status Handoff
 
-Date: 2026-07-25 (see "2026-07-25 Oscillator Sensing Port, Auto Mode, and the RC-Timing-Was-Never-Going-To-Work Postmortem" below for the most recent work)
+Date: 2026-08-12 (see "2026-08-12 Surgical-Redraw Skill and Detail-View Refresh Fix" below for the most recent display-receiver work)
 
 ## Current State
 
 - ESP32 display runtime renders the plant grid, animated pixel art, BLE readings, diagnostics, and phone setup app.
-- ESP32 display runtime was last flashed successfully to the display receiver on `COM13` with:
-  - `powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13 -ForceWifiSetup`
-  - Current firmware build tag: `MSV2 runtime build 2026-07-05 reboot-screen-fix`
-  - Build size after flash: about 2,098,561 bytes, 66% of program storage.
+- ESP32 display runtime was last flashed successfully to the display receiver on `COM16` (port numbering shifts between sessions - always run `arduino_display.ps1 -Action board-list` first) with:
+  - `.\scripts\arduino_display.ps1 -Action upload -Port COM16`
+  - Firmware build tag constant is still `MSV2_BUILD_TAG "MSV2 runtime build 2026-08-11 display-touch-brightness-v1"` (not bumped despite the 2026-08-12 fixes below - the string wasn't touched, so don't rely on it to distinguish pre/post-fix builds).
+  - Build size after flash: 2,090,044 bytes, 66% of program storage; 57,948 bytes (17%) of dynamic memory.
+  - The header sun-button single-tap has been replaced (Codex, same day) with a double-tap-anywhere-on-dashboard gesture to open the brightness overlay - `TOUCH_DOUBLE_TAP_MIN_GAP_MS`/`TOUCH_DOUBLE_TAP_WINDOW_MS` in the `.ino`. `drawBrightnessButton()`/the header sun icon are gone. This freed up plain single-tap for the new tap-to-expand card detail view below. `docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md` still describes the old single-tap-header-button scheme and needs a pass to catch up.
+  - Local uncommitted working tree - none of the 2026-08-12 firmware/doc changes are committed yet (see `git status`/`git diff`).
 - Phone app supports:
   - Status dashboard.
   - Plant setup.
@@ -219,7 +221,7 @@ The 2026-07-24 run confirmed the one-shot RC precharge/discharge approach is fun
 - **Probe power rework for tonight's test**: measure/check cadence dropped to every 10s (cheap, ~5ms active), but actual BLE advertising (the expensive radio-on part) now only happens every 60s normally, or immediately if moisture swings ≥15 units between checks (a real watering/removal event, not sensor noise) — matches the "measure often, radio rarely" pattern already sketched in `docs/PRODUCT_ROADMAP.md`'s probe section. `wakeCount` now only increments on actual advertises so the receiver's missed-packet diagnostic still means "real over-the-air loss," not artificially inflated by the new power-saving skips. External LED no longer pulses per-advertise (pure battery cost, no signal value) — now blinks 3× per wake only while moisture is at/below a **fixed** threshold (134, matching the 25%-of-default-range "danger" cutoff used elsewhere) - fixed because the probe is advertise-only with no BLE receive path, so it has no way to learn the live auto-calibrated or per-plant manual range.
 - **Physical display now blinks red** (500ms phase) instead of a static border for low/overdue cards, mirroring the probe's own alert. Had to add a forced ~500ms redraw path specifically while a card is blinking (`anyLowMoistureCardVisible()`), since the normal redraw gate only fires on new BLE data (`sensorDataDirty`) — which, under the probe's new 60s-normal-advertise cadence, would have made "blinking" look like a color change once a minute instead of an actual blink.
 - **Real bug found and fixed**: manual dry/wet saves were silently failing and nobody noticed. Root cause was two compounding issues - (1) `isAdminActionAllowed()`'s 15-minute post-boot admin window (a deliberate security control from the 2026-07-07 pass - see that section) never refreshed, so any receiver that had been up for a while (exactly the overnight-test scenario) silently rejected every save with 401; (2) `MobileAppPage.h`'s `saveConfig()` mutated the shared `config` object (used by the Status tab's rendering) *before* the save's success was known, so a rejected save still looked like it took effect in the app while the receiver's file never changed - explaining "the app updates but the physical display doesn't." Fixed both: `isAdminActionAllowed()` now slides the window forward on each successful action (doesn't weaken the "must reboot to gain admin access at all" property - an already-expired window still can't extend itself), and `saveConfig()` now collects into a local candidate and only commits it to shared state after a confirmed 200, surfacing a parsed, readable error otherwise. Added a persistent hint in the Setup tab explaining the reboot-to-reconfigure behavior.
-- **Known, deferred**: the Netlify-hosted `web/plant-dashboard` has its own hardcoded art catalog (`known` array in `assets/app.js` + static GIFs in `assets/plant_gifs/`) completely separate from the firmware's embedded one - newer sprite keys (used by the current live cards, e.g. Scindapsus/Alocasia) aren't in either, so they silently fall back to `sprout_pot` there. Fix is known (update the array + add the GIFs) but **blocked on Netlify deploy minutes until end of month** - not done.
+- **Known, deferred**: the Netlify-hosted `web/plant-dashboard` has its own hardcoded art catalog (`known` array in `assets/app.v11.js` + static GIFs in `assets/plant_gifs/`) completely separate from the firmware's embedded one - newer sprite keys (used by the current live cards, e.g. Scindapsus/Alocasia) aren't in either, so they silently fall back to `sprout_pot` there. Fix is known (update the array + add the GIFs) but **blocked on Netlify deploy minutes until end of month** - not done.
 - **Not yet done**: real-soil calibration data (everything above used touch/hand-proximity bench testing); confirming the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig; a solar-panel charging test planned for tomorrow in direct sunlight (motivated the battery smoothing work - panel only appears to charge in direct sun, not even slight shade).
 
 ## 2026-08-09 QSPI Power-Down Bug (Root Cause of the Battery Drain), Cadence Restored, and VDD-Coupling Confirmed in Moisture Sensing
@@ -236,6 +238,227 @@ Triggered by reviewing a week of Supabase history from a vacation trip: both fie
 - **New finding this session, beyond quantization**: VDD/battery-state coupling into the moisture reading isn't limited to "battery critically low" - **active charging also visibly corrupts the reading** (large jumps observed correlating with charge events), via the same underlying mechanism (charge-current IR drop + possible charger switching noise disturbing the shared VDD rail that the GPIO-timed oscillator has zero rejection of). Root-caused precisely: the oscillator's timing is ratiometric to VDD (GPIO HIGH = VDD, input threshold = a fraction of VDD) with no independent reference, unlike the planned FDC2212 replacement, which measures LC-tank resonant frequency (a property of L and C only, not voltage) against a stable reference *clock* - a different measurement domain entirely, not just "a reference exists." Full mechanism writeup and field evidence added to `docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`'s 2026-08-09 section - this is concrete confirmation of that doc's existing "battery-voltage drift" rationale, not a new problem.
 - **Not yet done**: check tomorrow morning whether Alocasia's overnight battery drop matches the "fix is working" prediction (<~1-2%) or the "still broken" one (~8-12%); recharge/swap Scindapsus's battery; bench-check Scindapsus's BQ25100 `~CHG` pin for the noise hypothesis that explained its erratic battery% readings (still open, see the vacation-review memory); consider a firmware-side mitigation of discarding/flagging moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline; the receiver's `DEFAULT_STALE_SECONDS` (currently uncommitted locally at `3900`, sized for the old 30-min probe cadence) needs revisiting now that probes are back on ~60s - not done as part of this session, flagged for whoever picks that file back up.
 
+## 2026-08-11 Home-Screen QR Scanner Repair and Production Deploy
+
+- Root-caused the missing iPhone camera prompt: the live scanner waited for the jsQR CDN fallback before calling `getUserMedia()`, and its SRI value did not match the actual pinned jsQR 1.4.0 response. Browsers rejected the decoder, the camera line was never reached, and a catch-all message misreported the decoder failure as camera unavailability.
+- The reviewed decoder is now vendored as `web/plant-dashboard/assets/jsQR-1.4.0.min.js` with its Apache 2.0 license and correct SHA-384 pin. The production CSP no longer permits jsDelivr, and all three Netlify header sources explicitly allow `camera=(self)` while disabling microphone access.
+- Camera permission is now requested directly from the Scan QR click before decoder initialization. Permission, missing-camera, busy-camera, preview, and decoder failures have distinct user-facing guidance. Live scanning is throttled and downsampled to reduce iPhone CPU load, and camera tracks are released on Stop, page hide, or navigation.
+- Added a `Scan Photo` fallback using the phone's native image/camera picker. The selected image is decoded locally; nothing is uploaded.
+- Cache-safe upgrade: application code moved to `assets/app.v11.js`, the service-worker cache moved to `msv2-cloud-app-v11`, and both the versioned app and decoder are precached. This avoids the previous one-year immutable `assets/app.js` URL trapping existing Home-Screen installs on stale code.
+- Local verification command: `node scripts/verify_plant_dashboard_qr.mjs`. It launches a hidden headless Edge instance against localhost with a fake camera and verifies production CSP/permissions policy, v11 service-worker precaching, camera-before-decoder ordering, SRI-checked same-origin decoder load, MediaStream release, denied-permission guidance, and end-to-end decoding of `scripts/fixtures/msv2-pairing-qr.png`. No real claim request is sent; the verifier intercepts it locally.
+- Deployed to the existing `msv2-plants` Netlify production site on 2026-08-11 as deploy `6a7c09d1a8e26d5ff34c2c9b` after the user approved publishing. Verified both the immutable deploy URL and `https://msv2-plants.netlify.app`: root HTML references `app.v11.js`, CSP and camera policy are correct, service worker reports v11 with `no-store`, and the live app/decoder hashes exactly match the locally tested bytes.
+- Remaining validation: confirm on the real iPhone that the existing Home-Screen v10 installation upgrades, the first-use iOS prompt appears, the rear-camera preview and QR recognition work, the photo fallback works, and Stop/reopen releases and reacquires the camera normally.
+
+## 2026-08-12 Touch/Brightness UI Consistency and Display Reliability Fixes
+
+Started as a UI-consistency pass on the touch/brightness feature Codex had added (see
+`docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md`), then expanded into a real reliability
+investigation once physical testing turned up genuine display corruption. Everything below is
+flashed and user-confirmed working as of this handoff. Session ran collaboratively with Codex
+(the user ran both in parallel, feeding each round's results to the other).
+
+**UI consistency and touch-control bugs (first pass):**
+
+- The new touch UI (brightness modal, calibration screens, WiFi setup screens) was drawn with
+  hardcoded Adafruit_GFX-style primary colors (neon green `0x07E0`, pure red `0xF800`, etc.)
+  instead of the brand palette every other screen uses. Rebased the shared `TFT_*` palette
+  constants onto the exact web-dashboard tokens (`web/plant-dashboard/index.html` `:root`) and
+  renamed them to match (`TFT_ACCENT`/`TFT_WARNING`/`TFT_DANGER`/`TFT_SURFACE`/`TFT_MUTED`) so a
+  future edit can't silently drift back to neon colors.
+- `+`/`-` brightness buttons were snapping straight to 100%/0% instead of stepping by 10. Root
+  cause: the live slider-drag hit-region and the release-time button hit-regions used different,
+  independently-hardcoded coordinates that overlapped by ~10px on the button's inner edge - any
+  touch sample landing there mid-tap latched a "user is dragging" flag that made the release
+  handler skip button detection entirely. Fixed by excluding the exact button hit-boxes from the
+  drag-preview check.
+- Dragging the slider flashed the whole modal panel - `drawBrightnessOverlay()` repainted the
+  entire panel on every touch sample. Split into `drawBrightnessSliderRow()` for live updates
+  (just the value text, track, fill, and knob) so a drag redraws a small strip instead of the
+  whole modal.
+- The low-moisture blink cadence (every 500ms) was redrawing every visible card, not just the
+  blinking one(s) - `renderDashboardDataOnly()` now takes a `blinkOnly` flag and
+  `slotNeedsBlink()` scopes it down.
+- Auto-cal-learned moisture bounds/overdue flags were only ever applied on a full `renderUi()`
+  rebuild, which almost never happens again once cards are on screen (see the `displayDirty`
+  call sites) - a background auto-cal update could sit applied-but-invisible for a long time,
+  then suddenly appear the moment something incidental (like closing the brightness overlay)
+  forced a full re-render, looking like closing the menu itself caused a plant to flip to
+  "overdue". Fixed with `refreshSlotMoistureBounds()`, called from the lightweight per-tick path
+  too.
+
+**Display corruption investigation (second pass, triggered by physical testing after the above):**
+full write-up with code-level detail in `docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md`
+(status: RESOLVED). Summary:
+
+- Symptoms: random red pixels in the animated plant art, frames occasionally looking like two
+  poses superimposed, and (briefly, mid-investigation) one card's sprite flashing to a
+  *different* card's sprite for about half a second. All started specifically after the
+  touch/brightness feature was added - confirmed via `git diff HEAD` that the animation
+  rendering code itself was untouched, pointing at an interaction with the new touch traffic on
+  the shared SPI bus rather than a bug in the (unchanged) animation code.
+- Root cause 1: `tft.writePixel()` issues a full column/row-address-set + memory-write command
+  sequence (~13 bytes, several DC pin toggles) for *every single pixel*. The old animation
+  renderer called this once per changed (diff) or opaque pixel, so a single frame update could
+  issue hundreds of separate command sequences within one held SPI transaction - both slow and,
+  per Codex's review, a large surface for a leaked/misinterpreted byte to land somewhere visible.
+  Fixed by replacing the whole renderer (`drawPlantSpriteScaled`/`drawPlantSpriteDiffScaled`,
+  both deleted) with a single `drawPlantSpriteComposited()` that resolves an entire row into a
+  buffer (transparent pixels substituted with the background color) and sends it as one
+  `writeAddrWindow()`+`writePixels()` burst - one command sequence per row instead of one per
+  pixel, and no separate `fillRect()` pre-clear (eliminates the visible clear-then-rebuild flash
+  a full redraw used to cause).
+- Root cause 2 (found by Codex): `XPT2046_Touchscreen` runs in polling mode without an IRQ pin
+  (deliberately, per an existing code comment - the library's own interrupt-based gating was
+  found unreliable on this board), which means *every* `touchScreen.touched()` call performs a
+  real SPI transaction, forever, whether or not a finger is on the glass - continuous idle bus
+  traffic that didn't exist before touch was added. Those idle transactions could leak bytes into
+  whatever ST7796 address window the display renderer had last left open, landing at a
+  deterministic position (explaining the "2 pixels always in the same spot on every card"
+  symptom precisely). Fixed with a passive `digitalRead(TOUCH_IRQ) == HIGH` check in
+  `handleTouchInput()` before ever touching the SPI bus - skips the transaction entirely while
+  idle (T_IRQ is active-low), but keeps polling once a touch is in progress so release detection
+  still works. This is a level check re-evaluated every poll, not an attached interrupt, so it
+  doesn't have the missed-edge failure mode the original no-IRQ design was written to avoid.
+- Also closed two related but distinct redraw-coverage gaps found along the way, both in
+  `drawPlantCardDataOnly()` (the per-tick fast redraw path, as opposed to a full `renderUi()`
+  which repaints everything at once): (a) the art region's bottom edge and the "Moist" row's own
+  clear rect didn't quite meet (a persistent-artifact risk, any stray pixel landing in the gap
+  could never self-heal), and (b) the moist and battery rows were *always* fully cleared and
+  repainted on every low-moisture blink tick regardless of whether either value had actually
+  changed - including the battery row, which has nothing to do with a moisture alert. Both
+  fixed: gaps closed with `min()`-based clamps that only ever extend coverage, and each row now
+  caches its last-drawn value/color per `PlantArtSlot` and only repaints when something about it
+  actually changed (the moisture row's *color* still updates every blink tick as the alert
+  signal, but without the clear step, since same-width text/bar redraws cleanly in place).
+- SPI clock (`DISPLAY_SPI_HZ`) was also dropped from the Arduino_GFX ESP32 default of 40MHz to
+  10MHz as a signal-integrity margin trade, and the touch poll interval widened from 16ms to
+  32ms - both cheap, low-risk changes tried before the two root causes above were found; kept in
+  place since neither was shown to hurt anything, even though the T_IRQ fix turned out to be the
+  one that actually mattered.
+
+## 2026-08-12 Tap-to-Expand Plant Card Detail View
+
+Built on top of Codex's same-day double-tap rework above (brightness overlay moved off the
+header button onto a double-tap gesture specifically to free up plain single-tap for this).
+Compiled clean and flashed to the display receiver on `COM16`; not yet physically tapped/verified
+on the real touchscreen as of this handoff.
+
+- Tapping a plant card now expands it in place into a diagnostics view - same card footprint
+  (`x`/`y`/`w`/`h`), same rounded-rect/border/name-row/Moist/Batt-bar chrome as the normal card,
+  with extra rows filling the region the plant sprite would otherwise occupy. Tapping again
+  (the expanded card or anywhere else on the dashboard) collapses it back to normal. Only one
+  card can be expanded at a time; only one plain tap is needed (not a long-press or a
+  gesture) since double-tap is now reserved for the brightness overlay.
+- New `drawPlantCardDetail(PlantArtSlot& slot)` in the `.ino` - self-contained (no split
+  full/data-only variant like `drawPlantCard`/`drawPlantCardDataOnly`, since only one card is
+  ever expanded, a full repaint of just that card on every refresh is cheap). Content density
+  scales with the card's actual size using the *same* geometry `drawPlantArtInCard()` already
+  uses to size the sprite (`y + 24`, height `max(24, h - 91)`) - the diagnostic rows are quite
+  literally drawn into the space the art would have used, so bigger cards (fewer plants
+  configured) automatically show more rows, and row spacing (`clampInt(infoH / N, min, max)`)
+  stretches to fill taller cards instead of leaving them sparse. Below the `h < 76` compact
+  threshold (already used elsewhere for the smallest grid size) it falls back to the existing
+  compact Moist/Batt layout plus a small RSSI-quality dot in the corner, since there's no room
+  for anything else. Wider cards (`w >= 200`, roughly 1-2 cards per row) get a two-column
+  stat grid close to the phone app's Diagnostics tab (Probe, RSSI, Age, Wake, Received, Missed,
+  Loss%, dry/wet range, plus raw oscillator kHz/charging state when the probe firmware sends
+  raw fields); narrower cards get a single stacked column with fewer rows.
+- Touch-state plumbing (`handleTouchInput()` in the `.ino`): a tap-up that *doesn't* get
+  completed into a double-tap within `TOUCH_DOUBLE_TAP_WINDOW_MS` is a genuine single tap, but
+  that can only be known once the window has passed with no second tap. New
+  `resolvePendingDashboardTap(now)`, called every `loop()` iteration (not gated on the touch
+  controller being polled, since the panel can sit idle with no finger on it for the whole
+  window), checks elapsed time against `lastDashboardTapMs` and then calls
+  `handleDashboardSingleTap(x, y)`. The tap's coordinates are stashed into dedicated
+  `pendingSingleTapX/Y` at tap-up time rather than re-read from `lastTouchX/lastTouchY` when
+  resolved later, because a second, unrelated gesture starting before the window elapses would
+  otherwise overwrite those first.
+- `handleDashboardSingleTap(x, y)`: if a card is already expanded, any tap collapses it;
+  otherwise it hit-tests `artSlots[]` (already has each visible card's live `x/y/w/h`) and
+  expands whichever card the tap landed on. Respects the same `wifiSetupPortalActive`/
+  `pendingRestartMs` guard the double-tap path already used.
+- `PlantArtSlot` gained a cached `plant[24]` name field (the detail view's periodic refresh
+  path only has the `PlantArtSlot`, not the original JSON `card` object, to read from).
+  Factored the plant/label/name/title-with-"Probe N"-fallback resolution logic that used to be
+  inline in `drawPlantCard()` into a shared `resolvePlantName()` used by both
+  `drawPlantCard()` and `cachePlantArtSlot()`, so the name shown in the detail view can never
+  drift from the one shown on the normal card.
+- `expandedCardSlot` (an `artSlots[]` index, -1 = none) is cleared automatically in `renderUi()`
+  if a config reload leaves it pointing past the new card count - otherwise a reconfigure to
+  fewer cards, then back up, could make an unrelated card appear "expanded" the next time the
+  count grew back to include that index again.
+- `renderAnimatedPlantArt()` skips the expanded slot (no sprite is drawn into the detail view,
+  so there's nothing to animate there); the periodic sensor-render gate in `loop()` now also
+  fires while a card is expanded (reuses the existing 2s `SENSOR_RENDER_INTERVAL_MS`, no new
+  constant) so the Age/RSSI rows don't go stale for a full minute between real BLE updates.
+- Not yet done: physical confirmation that a single tap on the real touchscreen expands the
+  right card, that the double-tap-for-brightness gesture still works cleanly alongside it (no
+  accidental double-tap-detected-as-single-tap-then-second-tap-expands-a-card ambiguity in
+  practice), and that the smallest (4x4, 16-card) grid size's compact+dot fallback is legible.
+  `docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md` also still needs a pass to document the
+  double-tap gesture and this feature - not done as part of this session.
+
+## 2026-08-12 Surgical-Redraw Skill and Detail-View Refresh Fix
+
+Follow-up to the tap-to-expand detail view above, after the user physically tested it: the
+diagnostic content itself looked right, but the periodic refresh was visibly repainting more
+than it should ("refresh issues"), and the header IP address had drifted left. Both fixed,
+plus a new standing rule for all future display work. Compiled clean and flashed to `COM16`;
+not yet re-verified on the physical screen as of this handoff.
+
+- **New project skill: `.claude/skills/display-surgical-redraw/SKILL.md`.** Codifies a core
+  tenet for this firmware going forward: once a display feature is on screen and just
+  updating over time, its redraw path must only repaint the pixels that actually changed -
+  never a whole card or the whole screen as routine/steady-state behavior, full repaints
+  reserved for genuine one-time "this just appeared/changed layout" events. Grounded in real
+  history, not just style preference: the shared ST7796/XPT2046 SPI bus (see
+  `docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md`) turned "too many writes" into an actual
+  correctness bug once already (`docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md`), and a
+  full-panel repaint on every touch sample is exactly what made the brightness slider look
+  frozen/flashing before `drawBrightnessSliderRow()` split it out from
+  `drawBrightnessOverlay()`. Documents the established full-draw/data-only function-pair
+  pattern (`drawPlantCard`/`drawPlantCardDataOnly`, `drawBrightnessOverlay`/
+  `drawBrightnessSliderRow`, and now `drawPlantCardDetail`/`drawPlantCardDetailDataOnly`
+  below) with a checklist for applying it to the next new feature. Load this skill before
+  writing or reviewing any `drawPlantCard*`/`render*`/`draw*` function in this firmware.
+- **Root cause of the detail-view refresh issue**: the first cut of the feature had only one
+  drawing function, `drawPlantCardDetail()`, and the periodic refresh path (`loop()`'s
+  `detailOpen` gate, every ~2s while a card is expanded, plus every low-moisture blink tick)
+  called it directly - meaning a full `fillRoundRect` background repaint, a full info-band
+  `fillRect`, and every diagnostic row got redrawn unconditionally on every single tick, even
+  when nothing had changed. This is the exact anti-pattern the new skill exists to catch.
+- **Fix**: added `drawPlantCardDetailDataOnly()`, the data-only counterpart. Never fills the
+  card background or the info band; only the border re-strokes unconditionally (cheap, matches
+  `drawPlantCardDataOnly()`'s own existing precedent). Every diagnostic row (signal
+  label, RSSI, age, wake, loss, received, missed, moisture range, raw oscillator/charging) is
+  diffed against per-slot cached *formatted text* (new `PlantArtSlot` fields,
+  `lastDetailRssiText` etc. - caching the formatted string rather than the raw value avoids a
+  separate "how is this bucketed for display" logic path that could drift out of sync with
+  what's actually on screen) and only clears+redraws via a new
+  `drawDetailStatRowIfChanged()` helper when the text actually differs. Moist/Batt rows reuse
+  the exact same diff-and-redraw logic (and the same cache fields) as
+  `drawPlantCardDataOnly()`'s own moist/batt rows. `renderDashboardDataOnly()` now calls
+  `drawPlantCardDetailDataOnly()` for the expanded slot on every periodic tick;
+  `drawPlantCardDetail()` (full paint) is only reached from `renderUi()`'s full rebuild, i.e.
+  the moment a card is first expanded or the layout otherwise changes.
+- To keep the two draw functions from silently drifting apart on what a row's text/color
+  should be (a real risk once the logic exists in two places), extracted all the
+  formatting/computation into a shared `computeDetailStats()` filling a new `PlantDetailStats`
+  struct, called by both functions; `seedDetailCache()` (called at the end of the full paint)
+  seeds every field the data-only path diffs against. `PlantDetailStats` had to be defined up
+  near `PlantArtSlot`/`DashboardGrid` (not next to where it's actually used) - same reason
+  those two already have manual prototypes at that spot: Arduino's auto-generated-prototype
+  insertion point is before any struct definitions further down the file, so a function
+  signature referencing a not-yet-declared struct type fails to compile otherwise. Hit this
+  exact error on the first compile attempt, moved the struct, fixed on the second.
+- **IP address position fix**: the header's `App <ip>` text was right-anchored at
+  `tft.width() - 50` - a margin sized to clear the old header sun button. Now that Codex's
+  double-tap rework removed that button entirely (see the section above), the reserved 50px
+  was just empty space, making the address look like it had "slid left." Changed to
+  `tft.width() - 8`, matching the title's own 8px left margin for a symmetric header.
+- **User-confirmed working on the physical receiver 2026-08-12**: the expanded card's periodic
+  refresh no longer flashes, and the header IP address is back in the top-right corner.
+
 ## Last Known User Feedback
 
 - Display and app are working well after the WiFi/setup fixes.
@@ -245,6 +468,18 @@ Triggered by reviewing a week of Supabase history from a vacation trip: both fie
 - Latest sprite feedback: normalized old and new sprites now look much closer in size after the sheet-derived GIFs were upscaled before sprite generation.
 - Version numbers are visible and incrementing.
 - Mock cloud test concept makes sense and looks good.
+- 2026-08-12: user confirmed the touch/brightness UI now matches the rest of the app, the
+  `+`/`-` brightness buttons step correctly, the slider tracks smoothly with no flash, and all
+  animation corruption (red pixels, superimposed frames, the probe-sprite swap, and the
+  moist/batt row flashing on every blink tick) is resolved - "everything looks good now."
+- Later 2026-08-12 hardware feedback found the small header brightness activator still required
+  many attempts. The sun button was removed and replaced with a release-based double tap anywhere
+  on the dashboard (120-650ms between releases); wake-only touches and resistive contact bounce do
+  not count. XPT2046 cannot provide a true two-finger gesture because it reports only one point.
+- Final 2026-08-12 round: user confirmed the tap-to-expand plant card detail view works well on
+  the physical receiver, including after the redraw-discipline fix - the periodic refresh no
+  longer flashes the whole card, and the header IP address is back in the top-right corner -
+  "this is all working great."
 
 ## Important Preferences
 
@@ -271,7 +506,7 @@ Superseded, top of the list as of 2026-07-25:
 2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
 3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
 4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
-5. Update `web/plant-dashboard`'s hardcoded art catalog (`known` array in `assets/app.js` + `assets/plant_gifs/`) for the newer sprite keys and deploy - blocked on Netlify minutes until end of month.
+5. Update `web/plant-dashboard`'s hardcoded art catalog (`known` array in `assets/app.v11.js` + `assets/plant_gifs/`) for the newer sprite keys and deploy - blocked on Netlify minutes until end of month.
 6. Fix the receiver's missed-packet-counter wraparound-on-reboot bug (cosmetic, see 2026-07-24 section) if it's actually annoying in practice.
 
 Older, still open from the 2026-07-07 pass:

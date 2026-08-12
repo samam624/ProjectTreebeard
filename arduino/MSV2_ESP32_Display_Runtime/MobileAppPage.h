@@ -1130,9 +1130,9 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       return shareToken;
     }
 
-    async function fetchHistoryPage(token, sensor, hours, afterId) {
+    async function fetchHistoryPage(token, sensor, hours, beforeId) {
       const query = `receiverId=${encodeURIComponent(claimInfo.receiverId)}&sensorId=${encodeURIComponent(sensor)}` +
-        `&sinceHours=${encodeURIComponent(hours)}&afterId=${afterId}&limit=${HISTORY_PAGE_SIZE}`;
+        `&sinceHours=${encodeURIComponent(hours)}&beforeId=${beforeId}&limit=${HISTORY_PAGE_SIZE}`;
       return fetch(`${SHARE_API_BASE}/api/share-history?${query}`, {
         cache: "no-store",
         headers: { "Authorization": "Bearer " + token },
@@ -1143,29 +1143,48 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     // receiver's own blocking HTTPClient, which shared the ESP32's single loop with
     // display rendering and froze the physical display for the length of the whole
     // paginated fetch (a real, documented incident - see docs/STATUS_HANDOFF.md).
+    //
+    // historyRequestId guards against a stale response clobbering a fresh one: the 30s
+    // auto-refresh (see init() below) and a tab-switch-triggered call can overlap, and
+    // pagination time varies, so an older call can resolve AFTER a newer one and would
+    // otherwise blindly overwrite the chart it just rendered with out-of-date rows. Each
+    // call captures its own id and checks it's still current before touching the DOM;
+    // a superseded call just quietly stops.
+    let historyRequestId = 0;
+
     async function loadHistory() {
+      const requestId = ++historyRequestId;
+      const isCurrent = () => requestId === historyRequestId;
+
       populateHistorySensorSelect();
       const sensor = $("historySensorSelect").value;
       const hours = $("historyRangeSelect").value;
       if (!sensor) {
-        $("historyNotice").textContent = "No probes seen yet.";
+        if (isCurrent()) $("historyNotice").textContent = "No probes seen yet.";
         return;
       }
-      $("historyNotice").textContent = "Loading...";
+      if (isCurrent()) $("historyNotice").textContent = "Loading...";
 
-      const rows = [];
-      let afterId = 0;
+      // Pages walk backward from the most recent row (beforeId=0 means "start at the
+      // newest"), not forward from the start of the window - a dense window can hold
+      // far more rows than the page cap, and paginating forward from the oldest end
+      // meant the chart silently stalled short of "now" instead of ever reaching it,
+      // worse the wider the selected range. Each page comes back newest-first; the
+      // whole assembled list is reversed once at the end for chronological rendering.
+      const pages = [];
+      let beforeId = 0;
       try {
         let token = await getOrMintShareToken();
 
         for (let page = 0; page < HISTORY_MAX_PAGES; page++) {
-          let response = await fetchHistoryPage(token, sensor, hours, afterId);
+          let response = await fetchHistoryPage(token, sensor, hours, beforeId);
           if (response.status === 401) {
             token = await getOrMintShareToken(true);
-            response = await fetchHistoryPage(token, sensor, hours, afterId);
+            response = await fetchHistoryPage(token, sensor, hours, beforeId);
           }
 
           const body = await response.json();
+          if (!isCurrent()) return;
           if (!response.ok || !body.ok) {
             $("historyNotice").textContent = body.error || ("HTTP " + response.status);
             renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", [], "#3987e5", "");
@@ -1174,20 +1193,22 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           }
 
           const page_rows = body.readings || [];
-          rows.push(...page_rows);
+          pages.push(...page_rows);
           if (page_rows.length < HISTORY_PAGE_SIZE) break;
 
-          afterId = page_rows[page_rows.length - 1].id;
-          $("historyNotice").textContent = `Loading... ${rows.length} readings so far`;
+          beforeId = page_rows[page_rows.length - 1].id;
+          $("historyNotice").textContent = `Loading... ${pages.length} readings so far`;
         }
 
+        if (!isCurrent()) return;
+        const rows = pages.reverse();
         $("historyNotice").textContent = `${rows.length} readings`;
         const moisturePoints = rows.filter((r) => r.moisture != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.moisture }));
         const batteryPoints = rows.filter((r) => r.battery_percent != null).map((r) => ({ t: new Date(r.received_at).getTime(), v: r.battery_percent }));
         renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "");
         renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", batteryPoints, "#199e70", "%");
       } catch (err) {
-        $("historyNotice").textContent = "Fetch failed: " + err.message;
+        if (isCurrent()) $("historyNotice").textContent = "Fetch failed: " + err.message;
       }
     }
 

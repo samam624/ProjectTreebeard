@@ -1,10 +1,11 @@
-const MSV2_CACHE = "msv2-cloud-app-v10";
+const MSV2_CACHE = "msv2-cloud-app-v12";
 const MSV2_ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
   "/app-icon.svg",
-  "/assets/app.js",
+  "/assets/app.v12.js",
+  "/assets/jsQR-1.4.0.min.js",
   "/assets/plant_gifs/cactus_cluster.gif",
   "/assets/plant_gifs/cup_plant.gif",
   "/assets/plant_gifs/monstera.gif",

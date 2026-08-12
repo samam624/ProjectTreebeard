@@ -25,6 +25,27 @@ type Snapshot = {
   plants?: PlantReading[];
 };
 
+type DisplaySettingsRow = {
+  receiver_id: string;
+  brightness_percent: number;
+  screen_on: boolean;
+  settings_version: number;
+  updated_at: string;
+  updated_by: string;
+};
+
+function displaySettingsJson(row: DisplaySettingsRow | null | undefined) {
+  if (!row) return null;
+  return {
+    receiverId: row.receiver_id,
+    brightnessPercent: row.brightness_percent,
+    screenOn: row.screen_on,
+    settingsVersion: row.settings_version,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  };
+}
+
 async function verifyReceiverToken(
   supabase: any,
   receiverId: string,
@@ -149,11 +170,13 @@ Deno.serve(async (request) => {
     });
 
     const providedToken = bearerToken(request);
+    const requestUrl = new URL(request.url);
 
     if (request.method === "GET") {
-      const url = new URL(request.url);
+      const url = requestUrl;
       const receiverId = url.searchParams.get("receiverId");
       const wantsConfig = url.searchParams.get("config") === "1";
+      const wantsDisplay = url.searchParams.get("display") === "1";
       const wantsHistory = url.searchParams.get("history") === "1";
       const wantsAutoCal = url.searchParams.get("autocal") === "1";
 
@@ -163,6 +186,19 @@ Deno.serve(async (request) => {
       }
       if (!(await verifyReceiverToken(supabase, cleanReceiverId, providedToken))) {
         return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+      }
+
+      if (wantsDisplay) {
+        const currentVersion = Number(url.searchParams.get("currentVersion") ?? "0");
+        const { data, error } = await supabase.rpc("msv2_read_receiver_pending_display_settings", {
+          p_receiver_id: cleanReceiverId,
+          p_current_version: Number.isFinite(currentVersion) ? currentVersion : 0,
+        });
+        if (error) {
+          return jsonResponse({ ok: false, error: error.message }, 500);
+        }
+        const row = (Array.isArray(data) ? data[0] : data) as DisplaySettingsRow | null;
+        return jsonResponse({ ok: true, displaySettingsApi: 1, settings: displaySettingsJson(row) });
       }
 
       if (wantsHistory) {
@@ -235,7 +271,11 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: "method not allowed" }, 405);
     }
 
-    const snapshot = await request.json() as Snapshot;
+    const snapshot = await request.json() as Snapshot & {
+      brightnessPercent?: number;
+      screenOn?: boolean;
+      baseVersion?: number;
+    };
     const receiverId = String(snapshot.receiverId ?? "").trim();
     if (!receiverId) {
       return jsonResponse({ ok: false, error: "receiverId required" }, 400);
@@ -243,6 +283,25 @@ Deno.serve(async (request) => {
 
     if (!(await verifyReceiverToken(supabase, receiverId, providedToken))) {
       return jsonResponse({ ok: false, error: "unauthorized" }, 401);
+    }
+
+    if (requestUrl.searchParams.get("display") === "1") {
+      const brightnessPercent = Number(snapshot.brightnessPercent);
+      if (!Number.isInteger(brightnessPercent) || brightnessPercent < 1 || brightnessPercent > 100 ||
+          typeof snapshot.screenOn !== "boolean") {
+        return jsonResponse({ ok: false, error: "brightnessPercent 1-100 and screenOn are required" }, 400);
+      }
+      const { data, error } = await supabase.rpc("msv2_upsert_receiver_display_settings", {
+        p_receiver_id: receiverId,
+        p_brightness_percent: brightnessPercent,
+        p_screen_on: snapshot.screenOn,
+        p_updated_by: "receiver-touch",
+      });
+      if (error) {
+        return jsonResponse({ ok: false, error: error.message }, 400);
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as DisplaySettingsRow | null;
+      return jsonResponse({ ok: true, displaySettingsApi: 1, settings: displaySettingsJson(row) });
     }
 
     const forwardedFor = request.headers.get("x-forwarded-for") ?? "";

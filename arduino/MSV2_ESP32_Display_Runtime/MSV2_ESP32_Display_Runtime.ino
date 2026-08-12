@@ -10,6 +10,7 @@
     - ESP32 board package
     - GFX Library for Arduino
     - ArduinoJson
+    - XPT2046_Touchscreen
 
   The board starts an access point named MSV2-Display by default:
     SSID:     MSV2-Display
@@ -32,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-07-05 reboot-screen-fix"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-11 display-touch-brightness-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -48,6 +49,8 @@ using fs::File;
 
 #if MSV2_ENABLE_DISPLAY
 #include <Arduino_GFX_Library.h>
+#include <SPI.h>
+#include <XPT2046_Touchscreen.h>
 #include "PlantSpriteCatalog.h"
 #endif
 
@@ -70,9 +73,20 @@ void setup()
   Serial.println();
   Serial.println("[MSV2 safe boot] setup reached");
 #if MSV2_DISPLAY_TEST
+  // Backlight is gated by Q2 (2N7002) on GPIO11, non-inverted -- see
+  // MSV2_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
+  // so it has to be switched on explicitly or the panel stays dark even
+  // though SPI init/draw succeeds.
+  Serial.println("[MSV2 display test] enabling 75% backlight PWM (GPIO11)");
+  if (!ledcAttach(11, 1000, 10))
+  {
+    Serial.println("[MSV2 display test] backlight PWM attach failed");
+  }
+  ledcWrite(11, 575); // 75%^2 perceived-brightness curve, 10-bit duty
+
   Serial.println("[MSV2 display test] initializing Arduino_GFX");
-  Arduino_DataBus* testBus = new Arduino_ESP32SPI(15, 14, 12, 13, -1);
-  Arduino_GFX* testGfx = new Arduino_ST7796(testBus, 16, 1, false, 320, 480);
+  Arduino_DataBus* testBus = new Arduino_ESP32SPI(14, 16, 12, 13, -1);
+  Arduino_GFX* testGfx = new Arduino_ST7796(testBus, 15, 1, false, 320, 480);
   if (testBus == nullptr || testGfx == nullptr)
   {
     Serial.println("[MSV2 display test] allocation failed");
@@ -217,6 +231,8 @@ const char FORCE_WIFI_SETUP_UNLOCK_PATH[] = "/wifi-setup-unlock-v2.flag";
 const char WIFI_RETRY_STATE_PATH[] = "/wifi-retry.json";
 const char DEVICE_CONFIG_PATH[] = "/device.json";
 const char CLOUD_CONFIG_PATH[] = "/cloud.json";
+const char DISPLAY_SETTINGS_PATH[] = "/display.json";
+const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
@@ -243,9 +259,14 @@ const uint32_t CLOUD_BOOTSTRAP_FIRST_TRY_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_RETRY_MS = 300000;
 const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
 const uint32_t CLOUD_SYNC_SOON_MS = 5000;
-const uint32_t CLOUD_SYNC_SOON_THROTTLE_MS = 15000;
 const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 30000;
+const uint32_t CLOUD_DISPLAY_PULL_INTERVAL_MS = 30000;
 const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned range/schedule changes slowly
+// Cloud HTTP/TLS and BLE scanning intentionally stay off the render/WebServer core.
+// BLE gets the higher application-task priority so a due cloud request cannot delay the
+// next scan window. The ESP32 BLE host/controller tasks retain their own higher priorities.
+const UBaseType_t CLOUD_SYNC_TASK_PRIORITY = 1;
+const UBaseType_t BLE_SCAN_TASK_PRIORITY = 2;
 const uint8_t WIFI_CONNECT_REBOOT_RETRIES = 2;
 
 struct SensorReading
@@ -292,20 +313,67 @@ AutoCalState autoCal[MAX_SENSOR_ID + 1];
 #if MSV2_ENABLE_DISPLAY
 const int TFT_SCK = 12;
 const int TFT_MOSI = 13;
-const int TFT_CS = 14;
-const int TFT_DC = 15;
-const int TFT_RST = 16;
+const int TOUCH_IRQ = 7;
+const int TOUCH_MISO = 8;
+const int TOUCH_CS = 9;
+const int TFT_MISO = 10; // Wired for optional ST7796S reads; runtime SPI input uses TOUCH_MISO.
+const int TFT_BACKLIGHT = 11;
+const int TFT_DC = 14;
+const int TFT_RST = 15;
+const int TFT_CS = 16;
+const uint32_t BACKLIGHT_PWM_FREQUENCY_HZ = 1000;
+const uint8_t BACKLIGHT_PWM_RESOLUTION_BITS = 10;
+const uint16_t BACKLIGHT_PWM_MAX = (1U << BACKLIGHT_PWM_RESOLUTION_BITS) - 1;
+const uint8_t DEFAULT_BRIGHTNESS_PERCENT = 75;
+// XPT2046_Touchscreen's polling-mode update() (see the comment on touchScreen below)
+// performs a real SPI transaction on every touched() call, forever, whether or not a
+// finger is present - this is new bus traffic since touch was added, interleaved with
+// display writes on every loop() iteration. Widened from 16ms to reduce how often the
+// bus switches devices per second; still comfortably responsive for a slider drag (30Hz).
+const uint32_t TOUCH_POLL_INTERVAL_MS = 32;
+// Open the receiver brightness controls with two completed taps anywhere on the
+// dashboard. A minimum release-to-release gap rejects resistive-panel contact
+// bounce; the generous upper bound is easier to use than the old 48x40 corner target.
+const uint32_t TOUCH_DOUBLE_TAP_MIN_GAP_MS = 120;
+const uint32_t TOUCH_DOUBLE_TAP_WINDOW_MS = 650;
+const int TOUCH_TARGET_MARGIN = 48;
+// Arduino_GFX defaults an ESP32 SPI bus to 40MHz. That was fine when the ST7796S was the
+// only device on the bus; now XPT2046 is electrically tapped onto the same SCK/MOSI traces
+// (deselected via TOUCH_CS between reads, but still an extra chip's input capacitance on
+// the line). Dropped 40MHz -> 20MHz -> 10MHz; neither step fixed the reported animation-art
+// corruption (stray colored pixels, "two frames superimposed" look), which is evidence
+// against a purely clock-speed-driven signal integrity cause. Left at 10MHz since it's still
+// a reasonable margin and isn't implicated as having made anything worse. See
+// docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md for the full investigation - this bug
+// is UNRESOLVED, do not assume this constant is the fix.
+const uint32_t DISPLAY_SPI_HZ = 10000000;
 
-const uint16_t TFT_BLACK = 0x0000;
-const uint16_t TFT_NAVY = 0x000F;
-const uint16_t TFT_DARKGREY = 0x7BEF;
-const uint16_t TFT_WHITE = 0xFFFF;
-const uint16_t TFT_RED = 0xF800;
-const uint16_t TFT_GREEN = 0x07E0;
-const uint16_t TFT_ORANGE = 0xFD20;
+uint16_t color565(uint8_t r, uint8_t g, uint8_t b)
+{
+  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+// Every full-screen state (WiFi setup/calibration/error screens) and the touch overlay
+// draw against this fixed palette instead of the ui.json theme, since it renders before
+// - or on top of - ui.json is loaded. Values are the exact web dashboard tokens
+// (web/plant-dashboard/index.html :root) so the physical display never looks like a
+// different app from the PWA and the themed plant cards in renderUi().
+const uint16_t TFT_BLACK = color565(0x0E, 0x14, 0x1B);    // --bg
+const uint16_t TFT_SURFACE = color565(0x17, 0x21, 0x2B);  // --panel
+const uint16_t TFT_SURFACE_2 = color565(0x1D, 0x2A, 0x35); // --panel-2, nested controls
+const uint16_t TFT_MUTED = color565(0x8F, 0xA3, 0xAD);    // --muted
+const uint16_t TFT_WHITE = color565(0xF5, 0xF7, 0xFA);    // --ink
+const uint16_t TFT_DANGER = color565(0xFF, 0x5A, 0x5F);   // --danger
+const uint16_t TFT_ACCENT = color565(0x20, 0xC9, 0x97);   // --accent
+const uint16_t TFT_WARNING = color565(0xFF, 0xB0, 0x20);  // --warn
 
 Arduino_DataBus* busPtr = nullptr;
 Arduino_GFX* gfxPtr = nullptr;
+SPIClass displaySpi(FSPI);
+// Poll pressure over SPI instead of allowing the library to gate all reads behind T_IRQ.
+// This board exposes T_IRQ for diagnostics, but a missed/floating IRQ edge otherwise leaves
+// XPT2046_Touchscreen's isrWake false forever and makes every later touch look absent.
+XPT2046_Touchscreen touchScreen(TOUCH_CS);
 #endif
 #if MSV2_ENABLE_WIFI
 WebServer* serverPtr = nullptr;
@@ -323,6 +391,7 @@ struct PlantArtSlot
   bool artEnabled = true;
   uint16_t sensorId = 0;
   char art[24] = "sprout_pot";
+  char plant[24] = "";
   int x = 0;
   int y = 0;
   int w = 0;
@@ -338,9 +407,74 @@ struct PlantArtSlot
   int wet = 175;
   bool overdue = false; // forces dangerColor when auto mode thinks watering is overdue
   bool pending = false; // auto mode on but not enough history yet - render like stale
+  // Inputs to refreshSlotMoistureBounds(), cached once from ui.json since they can't
+  // change without a full renderUi() rebuild anyway. autoCal[] itself (read using these)
+  // is live, updated by a background cloud task - see refreshSlotMoistureBounds().
+  bool autoEnabled = false;
+  int manualDry = 120;
+  int manualWet = 175;
   uint8_t frame = 0;
   uint16_t frameIntervalMs = 200;
   uint32_t nextFrameMs = 0;
+  // Last-drawn state for drawPlantCardDataOnly()'s moist/batt rows, so a redraw pass that
+  // finds nothing actually different (e.g. a low-moisture blink tick with no new sensor
+  // data) can skip that row entirely instead of clearing and repainting it every time.
+  // metricsInitialized starts false so the first data-only draw after a fresh layout always
+  // paints (cheap, happens once per full renderUi(), and avoids needing to duplicate
+  // drawPlantCard's value computation here just to seed a matching cache).
+  bool metricsInitialized = false;
+  bool lastMoistureStale = true;
+  uint16_t lastMoistureRaw = 0;
+  uint8_t lastMoisturePct = 0;
+  uint16_t lastMoistureColor = 0;
+  uint8_t lastBatteryPct = 0;
+  // Last-drawn state for drawPlantCardDetailDataOnly()'s diagnostic rows - same "only
+  // repaint what changed" principle as the fields above, see seedDetailCache() and the
+  // display-surgical-redraw skill. Formatted text is cached (not raw values) so the
+  // comparison is a single strcmp against exactly what's on screen, with no separate
+  // "how is this value bucketed for display" logic to keep in sync in two places.
+  char lastDetailSignalLabel[10] = "";
+  uint16_t lastDetailSignalColor = 0;
+  char lastDetailRssiText[10] = "";
+  char lastDetailAgeText[12] = "";
+  char lastDetailWakeText[12] = "";
+  char lastDetailLossText[8] = "";
+  char lastDetailReceivedText[12] = "";
+  char lastDetailMissedText[12] = "";
+  char lastDetailRangeText[16] = "";
+  char lastDetailRawText[16] = "";
+  bool lastDetailCharging = false;
+};
+
+// All the formatted text/colors the detail view needs, computed once and shared by both
+// drawPlantCardDetail() (full paint) and drawPlantCardDetailDataOnly() (diff-and-redraw)
+// so the two can never drift out of sync on what a given row's "current value" is. Defined
+// up here (not next to computeDetailStats()/drawPlantCardDetail() where it's actually used)
+// for the same reason as the DashboardGrid/PlantArtSlot prototypes below - see that comment.
+struct PlantDetailStats
+{
+  bool stale;
+  uint8_t moisturePct;
+  uint8_t batteryPct;
+  uint16_t moistureColor;
+  uint16_t batteryColor;
+  uint16_t rawMoisture;
+  char moistureText[8];
+  char batteryText[8];
+  bool hasSignal;
+  uint16_t signalColor;
+  const char* signalLabel;
+  char rssiText[10];
+  char ageText[12];
+  char wakeText[12];
+  char lossText[8];
+  char receivedText[12];
+  char missedText[12];
+  char rangeText[16];
+  char probeText[8];
+  bool hasRaw;
+  char rawText[16];
+  bool rawCharging;
 };
 
 struct DashboardGrid
@@ -349,11 +483,51 @@ struct DashboardGrid
   int rows = 2;
 };
 
+struct DisplaySettings
+{
+  uint8_t brightnessPercent = DEFAULT_BRIGHTNESS_PERCENT;
+  bool screenOn = true;
+  uint32_t version = 0; // Assigned by the server; local/offline changes keep this base version.
+  bool pendingCloudUpdate = false;
+  uint32_t localGeneration = 0;
+  char updatedBy[24] = "factory-default";
+};
+
+// Three raw XPT2046 points define an affine transform into the current 480x320
+// display coordinate space. This handles swapped and inverted panel axes without
+// baking a particular module's resistor tolerances into firmware.
+struct TouchCalibration
+{
+  bool valid = false;
+  int16_t topLeftX = 300;
+  int16_t topLeftY = 300;
+  int16_t topRightX = 3800;
+  int16_t topRightY = 300;
+  int16_t bottomLeftX = 300;
+  int16_t bottomLeftY = 3800;
+};
+
 PlantArtSlot artSlots[MAX_ART_SLOTS];
 uint8_t artSlotCount = 0;
 
+// Arduino's auto-generated prototypes are inserted before these struct definitions, so any
+// function using DashboardGrid/PlantArtSlot in its signature needs a manual prototype here
+// (after the struct exists) or the sketch fails with "'DashboardGrid' does not name a type".
+DashboardGrid gridForCardCount(size_t count);
+void drawPlantCardDataOnly(PlantArtSlot& slot);
+void drawPlantCardDetail(PlantArtSlot& slot);
+void drawPlantCardDetailDataOnly(PlantArtSlot& slot);
+void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s);
+void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s);
+void refreshSlotMoistureBounds(PlantArtSlot& slot);
+bool slotNeedsBlink(PlantArtSlot& slot);
+
 #if MSV2_ENABLE_DISPLAY
 #define tft (*gfxPtr)
+// gfxPtr's declared type is the base Arduino_GFX, which doesn't expose writeAddrWindow()/
+// writePixels() (those are added by the Arduino_TFT subclass); gfxPtr is always actually
+// constructed as an Arduino_ST7796, which derives from Arduino_TFT, so this cast is safe.
+#define tftBus (*static_cast<Arduino_TFT*>(gfxPtr))
 #endif
 #if MSV2_ENABLE_WIFI
 #define server (*serverPtr)
@@ -407,7 +581,6 @@ char cloudUploadUrl[160] = "";
 char cloudApiToken[80] = "";
 uint32_t cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
 uint32_t nextCloudSyncMs = 0;
-uint32_t lastCloudSyncSoonMs = 0;
 uint32_t cloudLastAttemptMs = 0;
 uint32_t cloudLastSuccessMs = 0;
 int cloudLastHttpStatus = 0;
@@ -430,6 +603,29 @@ const uint32_t ART_FRAME_INTERVAL_MS = 500;
 const uint32_t ART_FRAME_JITTER_MS = 120;
 const uint32_t ART_RENDER_POLL_MS = 25;
 const uint8_t ART_FRAME_STEP = 1;
+DisplaySettings displaySettings;
+TouchCalibration touchCalibration;
+portMUX_TYPE displaySettingsMux = portMUX_INITIALIZER_UNLOCKED;
+SemaphoreHandle_t displaySettingsFileMutex = nullptr;
+bool touchReady = false;
+bool brightnessOverlayOpen = false;
+bool touchWasDown = false;
+bool touchGestureChangedBrightness = false;
+bool touchWakeOnlyThisGesture = false;
+int16_t lastTouchX = -1;
+int16_t lastTouchY = -1;
+uint32_t lastTouchPollMs = 0;
+uint32_t lastDashboardTapMs = 0;
+int16_t pendingSingleTapX = -1;
+int16_t pendingSingleTapY = -1;
+bool singleTapPending = false;
+int8_t expandedCardSlot = -1; // artSlots[] index rendered as the tap-to-expand detail view, -1 = none
+uint32_t nextCloudDisplaySyncMs = 0;
+uint32_t cloudDisplayLastAttemptMs = 0;
+uint32_t cloudDisplayLastSuccessMs = 0;
+int cloudDisplayLastHttpStatus = 0;
+char cloudDisplayLastError[96] = "";
+bool cloudDisplayApiReady = false;
 
 #if MSV2_ENABLE_WIFI
 IPAddress currentIpAddress();
@@ -482,11 +678,6 @@ void bootLog(const char* message)
   Serial.print("[MSV2 boot] ");
   Serial.println(message);
   Serial.flush();
-}
-
-uint16_t color565(uint8_t r, uint8_t g, uint8_t b)
-{
-  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
 uint16_t parseColor(const char* value, uint16_t fallback)
@@ -615,7 +806,11 @@ String readUiJson()
   return json;
 }
 
-void scheduleCloudSyncSoon(bool force = false)
+// Used only for an explicit local/remote configuration change that should be acknowledged
+// promptly. Sensor advertisements must not call this: routine snapshot cadence is governed
+// exclusively by cloudSyncIntervalSeconds so frequent BLE traffic cannot create frequent
+// blocking HTTPS/TLS work on the BLE core.
+void scheduleCloudSnapshotAfterStateChange()
 {
   if (!cloudEnabled || cloudUploadUrl[0] == '\0')
   {
@@ -623,12 +818,6 @@ void scheduleCloudSyncSoon(bool force = false)
   }
 
   const uint32_t now = millis();
-  if (!force && lastCloudSyncSoonMs != 0 && (uint32_t)(now - lastCloudSyncSoonMs) < CLOUD_SYNC_SOON_THROTTLE_MS)
-  {
-    return;
-  }
-
-  lastCloudSyncSoonMs = now;
   const uint32_t targetMs = now + CLOUD_SYNC_SOON_MS;
   if (nextCloudSyncMs == 0 || (int32_t)(nextCloudSyncMs - targetMs) > 0)
   {
@@ -666,7 +855,7 @@ bool writeUiJson(const String& body)
   staleSeconds = validation["staleSeconds"] | DEFAULT_STALE_SECONDS;
   cacheUiMetadata(validation["_meta"]);
   displayDirty = true;
-  scheduleCloudSyncSoon(true);
+  scheduleCloudSnapshotAfterStateChange();
   return true;
 }
 
@@ -890,6 +1079,12 @@ bool loadCloudConfig()
   cloudConfigLastSuccessMs = 0;
   cloudConfigLastHttpStatus = 0;
   cloudConfigLastError[0] = '\0';
+  nextCloudDisplaySyncMs = 0;
+  cloudDisplayLastAttemptMs = 0;
+  cloudDisplayLastSuccessMs = 0;
+  cloudDisplayLastHttpStatus = 0;
+  cloudDisplayLastError[0] = '\0';
+  cloudDisplayApiReady = false;
   nextCloudAutoCalPullMs = 0;
   nextCloudBootstrapMs = 0;
   cloudBootstrapLastAttemptMs = 0;
@@ -922,12 +1117,13 @@ bool loadCloudConfig()
   cloudSyncIntervalSeconds = constrain((uint32_t)(doc["syncIntervalSeconds"] | CLOUD_SYNC_DEFAULT_SECONDS), 60UL, 86400UL);
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
   nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
+  nextCloudDisplaySyncMs = cloudEnabled ? millis() + 7000UL : 0;
   return true;
 }
 
 String cloudConfigJson()
 {
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<1792> doc;
   doc["enabled"] = cloudEnabled;
   doc["uploadUrl"] = cloudUploadUrl;
   doc["syncIntervalSeconds"] = cloudSyncIntervalSeconds;
@@ -940,12 +1136,25 @@ String cloudConfigJson()
   upload["lastHttpStatus"] = cloudLastHttpStatus;
   upload["lastError"] = cloudLastError;
   upload["nextAttemptMs"] = cloudEnabled ? nextCloudSyncMs : 0;
+  upload["packetTriggered"] = false;
+  upload["stateChangeDelayMs"] = CLOUD_SYNC_SOON_MS;
+  JsonObject tasking = doc.createNestedObject("tasking");
+  tasking["core"] = 0;
+  tasking["cloudPriority"] = CLOUD_SYNC_TASK_PRIORITY;
+  tasking["bleScanPriority"] = BLE_SCAN_TASK_PRIORITY;
   JsonObject configPull = doc.createNestedObject("configPull");
   configPull["lastAttemptMs"] = cloudConfigLastAttemptMs;
   configPull["lastSuccessMs"] = cloudConfigLastSuccessMs;
   configPull["lastHttpStatus"] = cloudConfigLastHttpStatus;
   configPull["lastError"] = cloudConfigLastError;
   configPull["nextAttemptMs"] = cloudEnabled ? nextCloudConfigPullMs : 0;
+  JsonObject displaySync = doc.createNestedObject("displaySync");
+  displaySync["lastAttemptMs"] = cloudDisplayLastAttemptMs;
+  displaySync["lastSuccessMs"] = cloudDisplayLastSuccessMs;
+  displaySync["lastHttpStatus"] = cloudDisplayLastHttpStatus;
+  displaySync["lastError"] = cloudDisplayLastError;
+  displaySync["nextAttemptMs"] = cloudEnabled ? nextCloudDisplaySyncMs : 0;
+  displaySync["apiReady"] = cloudDisplayApiReady;
   JsonObject bootstrap = doc.createNestedObject("bootstrap");
   bootstrap["configured"] = strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0;
   bootstrap["url"] = MSV2_CLOUD_BOOTSTRAP_URL;
@@ -1024,6 +1233,7 @@ bool writeCloudConfigJson(const String& body)
   cloudSyncIntervalSeconds = syncIntervalSeconds;
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
   nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
+  nextCloudDisplaySyncMs = cloudEnabled ? millis() + 7000UL : 0;
   cloudLastError[0] = '\0';
 
   if (!persistCloudConfig())
@@ -1056,6 +1266,12 @@ bool resetCloudConfig()
   cloudConfigLastSuccessMs = 0;
   cloudConfigLastHttpStatus = 0;
   cloudConfigLastError[0] = '\0';
+  nextCloudDisplaySyncMs = 0;
+  cloudDisplayLastAttemptMs = 0;
+  cloudDisplayLastSuccessMs = 0;
+  cloudDisplayLastHttpStatus = 0;
+  cloudDisplayLastError[0] = '\0';
+  cloudDisplayApiReady = false;
   nextCloudAutoCalPullMs = 0;
   nextCloudBootstrapMs = millis() + CLOUD_BOOTSTRAP_FIRST_TRY_MS;
   server.send(200, "application/json", "{\"ok\":true}");
@@ -1189,6 +1405,184 @@ int clampInt(int value, int low, int high)
   return value;
 }
 
+uint16_t brightnessPercentToDuty(uint8_t percent)
+{
+  if (percent == 0)
+  {
+    return 0;
+  }
+
+  // A squared curve is a small, deterministic gamma correction: the existing
+  // bench sweep confirmed PWM is electrically linear, while perceived LED
+  // brightness is not. Preserve a small non-zero floor for very low settings.
+  uint32_t scaled = (uint32_t)percent * (uint32_t)percent * BACKLIGHT_PWM_MAX;
+  uint16_t duty = (uint16_t)((scaled + 5000UL) / 10000UL);
+  return duty < 2 ? 2 : duty;
+}
+
+uint8_t effectiveBrightnessPercent()
+{
+  portENTER_CRITICAL(&displaySettingsMux);
+  uint8_t value = displaySettings.screenOn ? displaySettings.brightnessPercent : 0;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  return value;
+}
+
+void applyBacklightFromSettings()
+{
+  ledcWrite(TFT_BACKLIGHT, brightnessPercentToDuty(effectiveBrightnessPercent()));
+}
+
+bool persistDisplaySettings()
+{
+  DisplaySettings snapshot;
+  portENTER_CRITICAL(&displaySettingsMux);
+  snapshot = displaySettings;
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  StaticJsonDocument<384> doc;
+  doc["schema"] = 1;
+  doc["brightnessPercent"] = snapshot.brightnessPercent;
+  doc["screenOn"] = snapshot.screenOn;
+  doc["version"] = snapshot.version;
+  doc["pendingCloudUpdate"] = snapshot.pendingCloudUpdate;
+  doc["localGeneration"] = snapshot.localGeneration;
+  doc["updatedBy"] = snapshot.updatedBy;
+
+  if (displaySettingsFileMutex != nullptr && xSemaphoreTake(displaySettingsFileMutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+  {
+    return false;
+  }
+  File file = LittleFS.open(DISPLAY_SETTINGS_PATH, "w");
+  if (!file)
+  {
+    if (displaySettingsFileMutex != nullptr) xSemaphoreGive(displaySettingsFileMutex);
+    return false;
+  }
+  serializeJson(doc, file);
+  file.close();
+  if (displaySettingsFileMutex != nullptr) xSemaphoreGive(displaySettingsFileMutex);
+  return true;
+}
+
+bool loadDisplaySettings()
+{
+  DisplaySettings loaded;
+  if (LittleFS.exists(DISPLAY_SETTINGS_PATH))
+  {
+    if (displaySettingsFileMutex != nullptr && xSemaphoreTake(displaySettingsFileMutex, pdMS_TO_TICKS(1000)) != pdTRUE)
+    {
+      return false;
+    }
+    File file = LittleFS.open(DISPLAY_SETTINGS_PATH, "r");
+    if (file)
+    {
+      StaticJsonDocument<384> doc;
+      DeserializationError error = deserializeJson(doc, file);
+      file.close();
+      if (!error)
+      {
+        loaded.brightnessPercent = (uint8_t)constrain((int)(doc["brightnessPercent"] | DEFAULT_BRIGHTNESS_PERCENT), 1, 100);
+        loaded.screenOn = doc["screenOn"] | true;
+        loaded.version = doc["version"] | 0;
+        loaded.pendingCloudUpdate = doc["pendingCloudUpdate"] | false;
+        loaded.localGeneration = doc["localGeneration"] | 0;
+        strlcpy(loaded.updatedBy, doc["updatedBy"] | "stored", sizeof(loaded.updatedBy));
+      }
+    }
+    if (displaySettingsFileMutex != nullptr) xSemaphoreGive(displaySettingsFileMutex);
+  }
+
+  portENTER_CRITICAL(&displaySettingsMux);
+  displaySettings = loaded;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  return true;
+}
+
+void setDisplaySettingsLocal(uint8_t brightnessPercent, bool screenOn, const char* source)
+{
+  portENTER_CRITICAL(&displaySettingsMux);
+  displaySettings.brightnessPercent = (uint8_t)clampInt(brightnessPercent, 1, 100);
+  displaySettings.screenOn = screenOn;
+  displaySettings.pendingCloudUpdate = true;
+  displaySettings.localGeneration++;
+  strlcpy(displaySettings.updatedBy, source == nullptr ? "receiver" : source, sizeof(displaySettings.updatedBy));
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  applyBacklightFromSettings();
+  persistDisplaySettings();
+  scheduleCloudSnapshotAfterStateChange();
+  nextCloudDisplaySyncMs = millis();
+}
+
+bool applyRemoteDisplaySettings(uint8_t brightnessPercent, bool screenOn, uint32_t version, const char* source)
+{
+  bool applied = false;
+  portENTER_CRITICAL(&displaySettingsMux);
+  if (!displaySettings.pendingCloudUpdate && version > displaySettings.version)
+  {
+    displaySettings.brightnessPercent = (uint8_t)clampInt(brightnessPercent, 1, 100);
+    displaySettings.screenOn = screenOn;
+    displaySettings.version = version;
+    displaySettings.localGeneration++;
+    strlcpy(displaySettings.updatedBy, source == nullptr ? "cloud" : source, sizeof(displaySettings.updatedBy));
+    applied = true;
+  }
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  if (applied)
+  {
+    applyBacklightFromSettings();
+    persistDisplaySettings();
+    scheduleCloudSnapshotAfterStateChange();
+  }
+  return applied;
+}
+
+String displaySettingsJson()
+{
+  DisplaySettings snapshot;
+  portENTER_CRITICAL(&displaySettingsMux);
+  snapshot = displaySettings;
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  StaticJsonDocument<512> doc;
+  doc["ok"] = true;
+  doc["brightnessPercent"] = snapshot.brightnessPercent;
+  doc["effectiveBrightnessPercent"] = snapshot.screenOn ? snapshot.brightnessPercent : 0;
+  doc["screenOn"] = snapshot.screenOn;
+  doc["settingsVersion"] = snapshot.version;
+  doc["pendingCloudUpdate"] = snapshot.pendingCloudUpdate;
+  doc["updatedBy"] = snapshot.updatedBy;
+  doc["touchReady"] = touchReady;
+  doc["touchCalibrated"] = touchCalibration.valid;
+
+  String output;
+  serializeJson(doc, output);
+  return output;
+}
+
+bool writeDisplaySettingsJson(const String& body)
+{
+  StaticJsonDocument<384> doc;
+  DeserializationError error = deserializeJson(doc, body);
+  if (error)
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
+    return false;
+  }
+
+  int brightness = doc["brightnessPercent"] | -1;
+  if (brightness < 1 || brightness > 100 || !doc["screenOn"].is<bool>())
+  {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"brightnessPercent 1-100 and screenOn are required\"}");
+    return false;
+  }
+  setDisplaySettingsLocal((uint8_t)brightness, doc["screenOn"].as<bool>(), "receiver-local");
+  server.send(200, "application/json", displaySettingsJson());
+  return true;
+}
+
 void applyDisplayRotation(uint8_t requestedRotation, bool forceLandscape)
 {
   requestedRotation = (uint8_t)clampInt(requestedRotation, 0, 3);
@@ -1270,6 +1664,34 @@ const char* firstString(JsonObject object, const char* key)
   return nullptr;
 }
 
+// Shared by drawPlantCard() (fresh JSON each full render) and cachePlantArtSlot()
+// (caches the same resolved name onto the PlantArtSlot for later data-only/detail
+// redraws, which no longer have the JsonObject around to re-resolve it from).
+void resolvePlantName(JsonObject card, uint16_t sensorId, char* out, size_t outSize)
+{
+  const char* plant = firstString(card, "plant");
+  if (plant == nullptr)
+  {
+    plant = firstString(card, "label");
+  }
+  if (plant == nullptr)
+  {
+    plant = firstString(card, "name");
+  }
+  if (plant == nullptr)
+  {
+    plant = firstString(card, "title");
+  }
+  if (plant == nullptr)
+  {
+    snprintf(out, outSize, "Probe %u", sensorId);
+  }
+  else
+  {
+    strlcpy(out, plant, outSize);
+  }
+}
+
 int textPixelWidth(const char* text, uint8_t size)
 {
   if (text == nullptr)
@@ -1295,6 +1717,613 @@ void drawTextRight(const char* text, int rightX, int y, uint8_t size, uint16_t c
 void drawTextCenter(const char* text, int centerX, int y, uint8_t size, uint16_t color, uint16_t backgroundColor)
 {
   drawTextLeft(text, centerX - textPixelWidth(text, size) / 2, y, size, color, backgroundColor);
+}
+
+bool loadTouchCalibration()
+{
+  if (!LittleFS.exists(TOUCH_CALIBRATION_PATH))
+  {
+    touchCalibration.valid = false;
+    return false;
+  }
+
+  File file = LittleFS.open(TOUCH_CALIBRATION_PATH, "r");
+  if (!file)
+  {
+    return false;
+  }
+  StaticJsonDocument<384> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error || (doc["schema"] | 0) != 1)
+  {
+    touchCalibration.valid = false;
+    return false;
+  }
+
+  touchCalibration.topLeftX = doc["topLeft"]["x"] | 300;
+  touchCalibration.topLeftY = doc["topLeft"]["y"] | 300;
+  touchCalibration.topRightX = doc["topRight"]["x"] | 3800;
+  touchCalibration.topRightY = doc["topRight"]["y"] | 300;
+  touchCalibration.bottomLeftX = doc["bottomLeft"]["x"] | 300;
+  touchCalibration.bottomLeftY = doc["bottomLeft"]["y"] | 3800;
+  int32_t determinant =
+    (int32_t)(touchCalibration.topRightX - touchCalibration.topLeftX) *
+      (touchCalibration.bottomLeftY - touchCalibration.topLeftY) -
+    (int32_t)(touchCalibration.topRightY - touchCalibration.topLeftY) *
+      (touchCalibration.bottomLeftX - touchCalibration.topLeftX);
+  touchCalibration.valid = abs(determinant) > 100000;
+  return touchCalibration.valid;
+}
+
+bool persistTouchCalibration()
+{
+  StaticJsonDocument<384> doc;
+  doc["schema"] = 1;
+  JsonObject topLeft = doc.createNestedObject("topLeft");
+  topLeft["x"] = touchCalibration.topLeftX;
+  topLeft["y"] = touchCalibration.topLeftY;
+  JsonObject topRight = doc.createNestedObject("topRight");
+  topRight["x"] = touchCalibration.topRightX;
+  topRight["y"] = touchCalibration.topRightY;
+  JsonObject bottomLeft = doc.createNestedObject("bottomLeft");
+  bottomLeft["x"] = touchCalibration.bottomLeftX;
+  bottomLeft["y"] = touchCalibration.bottomLeftY;
+
+  File file = LittleFS.open(TOUCH_CALIBRATION_PATH, "w");
+  if (!file)
+  {
+    return false;
+  }
+  serializeJson(doc, file);
+  file.close();
+  return true;
+}
+
+bool mapRawTouchToScreen(int16_t rawX, int16_t rawY, int16_t& screenX, int16_t& screenY)
+{
+  int64_t basisXX = touchCalibration.topRightX - touchCalibration.topLeftX;
+  int64_t basisXY = touchCalibration.topRightY - touchCalibration.topLeftY;
+  int64_t basisYX = touchCalibration.bottomLeftX - touchCalibration.topLeftX;
+  int64_t basisYY = touchCalibration.bottomLeftY - touchCalibration.topLeftY;
+  int64_t determinant = basisXX * basisYY - basisXY * basisYX;
+  if (llabs(determinant) < 100000)
+  {
+    return false;
+  }
+
+  int64_t offsetX = rawX - touchCalibration.topLeftX;
+  int64_t offsetY = rawY - touchCalibration.topLeftY;
+  int64_t normalizedX = offsetX * basisYY - offsetY * basisYX;
+  int64_t normalizedY = basisXX * offsetY - basisXY * offsetX;
+  const int baseWidth = 480;
+  const int baseHeight = 320;
+  const int spanX = baseWidth - TOUCH_TARGET_MARGIN * 2;
+  const int spanY = baseHeight - TOUCH_TARGET_MARGIN * 2;
+  int baseX = TOUCH_TARGET_MARGIN + (int)(normalizedX * spanX / determinant);
+  int baseY = TOUCH_TARGET_MARGIN + (int)(normalizedY * spanY / determinant);
+  baseX = clampInt(baseX, 0, baseWidth - 1);
+  baseY = clampInt(baseY, 0, baseHeight - 1);
+
+  // Calibration is collected in display rotation 1. Convert those calibrated
+  // landscape coordinates if a later ui.json selects another rotation.
+  switch (currentRotation)
+  {
+    case 0:
+      screenX = baseY;
+      screenY = baseWidth - 1 - baseX;
+      break;
+    case 2:
+      screenX = baseHeight - 1 - baseY;
+      screenY = baseX;
+      break;
+    case 3:
+      screenX = baseWidth - 1 - baseX;
+      screenY = baseHeight - 1 - baseY;
+      break;
+    case 1:
+    default:
+      screenX = baseX;
+      screenY = baseY;
+      break;
+  }
+  screenX = clampInt(screenX, 0, tft.width() - 1);
+  screenY = clampInt(screenY, 0, tft.height() - 1);
+  return true;
+}
+
+void drawCalibrationTarget(int x, int y, uint16_t color)
+{
+  // A one-pixel green target was too easy to miss against the bezel at the corner.
+  // Use a large bullseye and thick crosshair that remains obvious on the 4-inch panel.
+  tft.fillCircle(x, y, 19, TFT_WHITE);
+  tft.fillCircle(x, y, 13, color);
+  tft.fillCircle(x, y, 5, TFT_BLACK);
+  for (int offset = -1; offset <= 1; offset++)
+  {
+    tft.drawFastHLine(x - 25, y + offset, 51, TFT_WHITE);
+    tft.drawFastVLine(x + offset, y - 25, 51, TFT_WHITE);
+  }
+}
+
+bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& rawY, uint32_t timeoutMs)
+{
+  uint32_t releaseStart = millis();
+  bool stillPressed = touchScreen.touched();
+  while (stillPressed && millis() - releaseStart < 3000UL)
+  {
+    stillPressed = touchScreen.touched();
+    delay(10);
+  }
+  if (stillPressed)
+  {
+    Serial.print("[MSV2 touch] input stuck pressed before target irq=");
+    Serial.println(digitalRead(TOUCH_IRQ));
+    tft.fillScreen(TFT_BLACK);
+    drawTextCenter("Release the screen", tft.width() / 2, tft.height() / 2, 2, TFT_WARNING, TFT_BLACK);
+    return false;
+  }
+
+  tft.fillScreen(TFT_BLACK);
+  drawTextCenter("Tap the red target, then release", tft.width() / 2, 10, 2, TFT_WHITE, TFT_BLACK);
+  // Complete more than one display transaction, then allow the panel to settle before the
+  // input timeout starts. On the ST7796S module the first target was only becoming visible
+  // when the later timeout message caused another display transaction.
+  drawCalibrationTarget(targetX, targetY, TFT_DANGER);
+  delay(40);
+  drawCalibrationTarget(targetX, targetY, TFT_DANGER);
+  tft.drawPixel(tft.width() - 1, tft.height() - 1, TFT_BLACK);
+  delay(350);
+  Serial.print("[MSV2 touch] waiting target x=");
+  Serial.print(targetX);
+  Serial.print(" y=");
+  Serial.print(targetY);
+  Serial.print(" irq=");
+  Serial.println(digitalRead(TOUCH_IRQ));
+  uint32_t waitStart = millis();
+  while (!touchScreen.touched())
+  {
+    if (millis() - waitStart >= timeoutMs)
+    {
+      TS_Point timeoutPoint = touchScreen.getPoint();
+      Serial.print("[MSV2 touch] target timeout irq=");
+      Serial.print(digitalRead(TOUCH_IRQ));
+      Serial.print(" rawX=");
+      Serial.print(timeoutPoint.x);
+      Serial.print(" rawY=");
+      Serial.print(timeoutPoint.y);
+      Serial.print(" pressure=");
+      Serial.println(timeoutPoint.z);
+      tft.fillScreen(TFT_BLACK);
+      drawTextCenter("No touch detected", tft.width() / 2, tft.height() / 2 - 12, 2, TFT_WARNING, TFT_BLACK);
+      drawTextCenter("Restart to try again", tft.width() / 2, tft.height() / 2 + 18, 1, TFT_WHITE, TFT_BLACK);
+      return false;
+    }
+    delay(5);
+  }
+
+  delay(25);
+  int32_t sumX = 0;
+  int32_t sumY = 0;
+  uint8_t samples = 0;
+  while (touchScreen.touched() && samples < 16)
+  {
+    TS_Point point = touchScreen.getPoint();
+    if (point.z > 0)
+    {
+      sumX += point.x;
+      sumY += point.y;
+      samples++;
+    }
+    delay(8);
+  }
+  if (samples < 4)
+  {
+    Serial.print("[MSV2 touch] insufficient pressure samples=");
+    Serial.print(samples);
+    Serial.print(" irq=");
+    Serial.println(digitalRead(TOUCH_IRQ));
+    tft.fillScreen(TFT_BLACK);
+    drawTextCenter("Touch was too brief", tft.width() / 2, tft.height() / 2, 2, TFT_WARNING, TFT_BLACK);
+    return false;
+  }
+
+  rawX = (int16_t)(sumX / samples);
+  rawY = (int16_t)(sumY / samples);
+  Serial.print("[MSV2 touch] captured rawX=");
+  Serial.print(rawX);
+  Serial.print(" rawY=");
+  Serial.print(rawY);
+  Serial.print(" samples=");
+  Serial.println(samples);
+  tft.fillScreen(TFT_BLACK);
+  drawTextCenter("Lift your finger", tft.width() / 2, tft.height() / 2 - 12, 2, TFT_WHITE, TFT_BLACK);
+  drawTextCenter("Next target appears after release", tft.width() / 2, tft.height() / 2 + 18, 1, TFT_MUTED, TFT_BLACK);
+  releaseStart = millis();
+  while (touchScreen.touched() && millis() - releaseStart < 15000UL)
+  {
+    delay(5);
+  }
+  if (touchScreen.touched())
+  {
+    Serial.print("[MSV2 touch] input stuck pressed after target irq=");
+    Serial.println(digitalRead(TOUCH_IRQ));
+    return false;
+  }
+  delay(80);
+  return true;
+}
+
+bool runTouchCalibration(uint32_t firstPointTimeoutMs)
+{
+  touchScreen.setRotation(0);
+  applyDisplayRotation(1, true);
+  tft.fillScreen(TFT_BLACK);
+  drawTextCenter("Touch calibration", tft.width() / 2, tft.height() / 2 - 18, 2, TFT_WHITE, TFT_BLACK);
+  drawTextCenter("Press each crosshair, then release", tft.width() / 2, tft.height() / 2 + 12, 1, TFT_MUTED, TFT_BLACK);
+
+  int16_t tlX, tlY, trX, trY, blX, blY, brX, brY;
+  if (!captureCalibrationPoint(TOUCH_TARGET_MARGIN, TOUCH_TARGET_MARGIN, tlX, tlY, firstPointTimeoutMs) ||
+      !captureCalibrationPoint(tft.width() - 1 - TOUCH_TARGET_MARGIN, TOUCH_TARGET_MARGIN, trX, trY, 20000UL) ||
+      !captureCalibrationPoint(TOUCH_TARGET_MARGIN, tft.height() - 1 - TOUCH_TARGET_MARGIN, blX, blY, 20000UL) ||
+      !captureCalibrationPoint(tft.width() - 1 - TOUCH_TARGET_MARGIN, tft.height() - 1 - TOUCH_TARGET_MARGIN, brX, brY, 20000UL))
+  {
+    delay(1200);
+    return false;
+  }
+
+  TouchCalibration candidate;
+  candidate.topLeftX = tlX;
+  candidate.topLeftY = tlY;
+  candidate.topRightX = trX;
+  candidate.topRightY = trY;
+  candidate.bottomLeftX = blX;
+  candidate.bottomLeftY = blY;
+  candidate.valid = true;
+  TouchCalibration previous = touchCalibration;
+  touchCalibration = candidate;
+
+  int16_t checkX = 0;
+  int16_t checkY = 0;
+  bool mapped = mapRawTouchToScreen(brX, brY, checkX, checkY);
+  bool accurate = mapped &&
+    abs(checkX - (tft.width() - 1 - TOUCH_TARGET_MARGIN)) <= 55 &&
+    abs(checkY - (tft.height() - 1 - TOUCH_TARGET_MARGIN)) <= 55;
+  if (!accurate || !persistTouchCalibration())
+  {
+    touchCalibration = previous;
+    drawTextCenter("Calibration failed - retry at boot", tft.width() / 2, tft.height() / 2, 1, TFT_DANGER, TFT_BLACK);
+    delay(1200);
+    return false;
+  }
+
+  drawTextCenter("Calibration saved", tft.width() / 2, tft.height() / 2, 2, TFT_ACCENT, TFT_BLACK);
+  delay(700);
+  return true;
+}
+
+bool pointInside(int16_t x, int16_t y, int left, int top, int width, int height)
+{
+  return x >= left && x < left + width && y >= top && y < top + height;
+}
+
+// A confirmed single tap (see resolvePendingDashboardTap()) either closes the currently
+// expanded detail card (tapping anywhere while one is open) or, if none is open, expands
+// whichever plant card the tap landed on. Mirrors the brightness overlay's "no hidden
+// control activates unless dashboardControlsAllowed" guard.
+void handleDashboardSingleTap(int16_t x, int16_t y)
+{
+#if MSV2_ENABLE_WIFI
+  if (wifiSetupPortalActive || pendingRestartMs != 0)
+  {
+    return;
+  }
+#endif
+  if (expandedCardSlot >= 0)
+  {
+    expandedCardSlot = -1;
+    displayDirty = true;
+    return;
+  }
+  for (uint8_t i = 0; i < artSlotCount; i++)
+  {
+    if (artSlots[i].enabled && pointInside(x, y, artSlots[i].x, artSlots[i].y, artSlots[i].w, artSlots[i].h))
+    {
+      expandedCardSlot = i;
+      displayDirty = true;
+      return;
+    }
+  }
+}
+
+// Redraws only the live-value text and the slider track/fill/knob, not the rest of the
+// modal chrome. drawBrightnessOverlay() calls this once for the initial paint;
+// previewTouchBrightness() calls it on every drag sample instead of repainting the whole
+// panel - a full-panel fillRoundRect on every touch poll saturated the shared
+// display/touch SPI bus badly enough that the knob looked frozen (only a couple of the
+// slow full redraws ever completed during a typical drag) and the whole modal appeared to
+// flash on each sample.
+void drawBrightnessSliderRow(uint8_t brightness, bool screenOn)
+{
+  const int panelX = 34;
+  const int panelY = 54;
+  const int panelW = tft.width() - panelX * 2;
+  const int sliderX = panelX + 58;
+  const int sliderY = panelY + 82;
+  const int sliderW = panelW - 116;
+
+  char value[16];
+  snprintf(value, sizeof(value), "%u%%", brightness);
+  drawTextRight(value, panelX + panelW - 16, panelY + 16, 2, screenOn ? TFT_ACCENT : TFT_MUTED, TFT_SURFACE);
+
+  // Erase wide enough to cover the knob's full travel range (11px radius) at both ends,
+  // but clamped so it can never paint over the +/- buttons sitting right next to the
+  // track - their own edges are panelX+50 and panelX+panelW-50 (see the button
+  // fillRoundRect calls below). Without the clamp, dragging to either extreme bit a
+  // visible notch out of the adjacent button on every redraw.
+  const int minusButtonRight = panelX + 50;
+  const int plusButtonLeft = panelX + panelW - 50;
+  int eraseLeft = max(sliderX - 14, minusButtonRight);
+  int eraseRight = min(sliderX + sliderW + 14, plusButtonLeft);
+  tft.fillRoundRect(eraseLeft, sliderY - 11, eraseRight - eraseLeft, 38, 8, TFT_SURFACE);
+
+  tft.fillRoundRect(sliderX, sliderY, sliderW, 16, 8, TFT_SURFACE_2);
+  int fillW = max(8, sliderW * brightness / 100);
+  tft.fillRoundRect(sliderX, sliderY, fillW, 16, 8, screenOn ? TFT_ACCENT : TFT_MUTED);
+  int knobX = sliderX + sliderW * brightness / 100;
+  tft.fillCircle(knobX, sliderY + 8, 11, TFT_WHITE);
+}
+
+void drawBrightnessOverlay()
+{
+  uint8_t brightness;
+  bool screenOn;
+  portENTER_CRITICAL(&displaySettingsMux);
+  brightness = displaySettings.brightnessPercent;
+  screenOn = displaySettings.screenOn;
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  const int panelX = 34;
+  const int panelY = 54;
+  const int panelW = tft.width() - panelX * 2;
+  const int panelH = tft.height() - panelY - 24;
+  const int sliderY = panelY + 82;
+  tft.fillRoundRect(panelX, panelY, panelW, panelH, 10, TFT_SURFACE);
+  tft.drawRoundRect(panelX, panelY, panelW, panelH, 10, TFT_SURFACE_2);
+  drawTextLeft("Display brightness", panelX + 16, panelY + 14, 2, TFT_WHITE, TFT_SURFACE);
+
+  drawBrightnessSliderRow(brightness, screenOn);
+
+  tft.fillRoundRect(panelX + 12, sliderY - 8, 38, 34, 6, TFT_SURFACE_2);
+  drawTextCenter("-", panelX + 31, sliderY, 2, TFT_WHITE, TFT_SURFACE_2);
+  tft.fillRoundRect(panelX + panelW - 50, sliderY - 8, 38, 34, 6, TFT_SURFACE_2);
+  drawTextCenter("+", panelX + panelW - 31, sliderY, 2, TFT_WHITE, TFT_SURFACE_2);
+
+  // Button text is size 1 (8px glyph height) in a 34px-tall button, so the vertical
+  // offset that centers it is (34 - 8) / 2 = 13, not 9 - the old value sat visibly high.
+  const int buttonY = panelY + panelH - 50;
+  tft.fillRoundRect(panelX + 16, buttonY, 112, 34, 6, screenOn ? TFT_WARNING : TFT_ACCENT);
+  drawTextCenter(screenOn ? "Screen off" : "Screen on", panelX + 72, buttonY + 13, 1, TFT_BLACK, screenOn ? TFT_WARNING : TFT_ACCENT);
+  tft.fillRoundRect(panelX + panelW - 104, buttonY, 88, 34, 6, TFT_SURFACE_2);
+  drawTextCenter("Close", panelX + panelW - 60, buttonY + 13, 1, TFT_MUTED, TFT_SURFACE_2);
+}
+
+void previewTouchBrightness(int16_t x)
+{
+  const int panelX = 34;
+  const int panelW = tft.width() - panelX * 2;
+  const int sliderX = panelX + 58;
+  const int sliderW = panelW - 116;
+  uint8_t brightness = (uint8_t)clampInt(1 + (x - sliderX) * 99 / sliderW, 1, 100);
+  portENTER_CRITICAL(&displaySettingsMux);
+  displaySettings.brightnessPercent = brightness;
+  displaySettings.screenOn = true;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  applyBacklightFromSettings();
+  touchGestureChangedBrightness = true;
+  drawBrightnessSliderRow(brightness, true);
+}
+
+void handleTouchInput(uint32_t now)
+{
+  if (!touchReady || now - lastTouchPollMs < TOUCH_POLL_INTERVAL_MS)
+  {
+    return;
+  }
+  lastTouchPollMs = now;
+
+  // T_IRQ is active-low and can be sampled without touching the shared SPI bus.
+  // In polling mode touchScreen.touched() always performs an XPT2046 transaction,
+  // even while the panel is idle. On affected ST7796 modules those command bytes can
+  // leak into the TFT's last address window; the composited sprite renderer leaves
+  // that window on the bottom art row at x + 7, which is exactly where the two red
+  // pixels above "Moist" appeared on every card. Avoid all idle touch transactions,
+  // but keep polling once a gesture has started so its release is still detected.
+  if (!touchWasDown && digitalRead(TOUCH_IRQ) == HIGH)
+  {
+    return;
+  }
+
+  bool down = touchScreen.touched();
+  if (down)
+  {
+    TS_Point point = touchScreen.getPoint();
+    int16_t x = -1;
+    int16_t y = -1;
+    if (!mapRawTouchToScreen(point.x, point.y, x, y))
+    {
+      return;
+    }
+    lastTouchX = x;
+    lastTouchY = y;
+
+    if (!touchWasDown)
+    {
+      touchGestureChangedBrightness = false;
+      touchWakeOnlyThisGesture = false;
+      bool screenOn;
+      uint8_t brightness;
+      portENTER_CRITICAL(&displaySettingsMux);
+      screenOn = displaySettings.screenOn;
+      brightness = displaySettings.brightnessPercent;
+      portEXIT_CRITICAL(&displaySettingsMux);
+      if (!screenOn)
+      {
+        setDisplaySettingsLocal(brightness, true, "receiver-touch");
+        displayDirty = true;
+        lastDashboardTapMs = 0;
+        touchWakeOnlyThisGesture = true;
+        touchWasDown = true;
+        return; // Wake-only first touch; never activate a hidden control.
+      }
+    }
+
+    if (brightnessOverlayOpen)
+    {
+      const int panelX = 34;
+      const int panelY = 54;
+      const int panelW = tft.width() - panelX * 2;
+      const int sliderX = panelX + 58;
+      const int sliderY = panelY + 82;
+      const int sliderW = panelW - 116;
+      // The drag-preview hit box used to overlap the +/- buttons' own hit boxes (below,
+      // and in the release handler) by ~10px on their slider-facing edge. Any touch
+      // sample landing in that sliver during a normal button tap latched
+      // touchGestureChangedBrightness, which makes the release handler skip button
+      // detection entirely and just commit whatever extreme value that x position
+      // mapped to - the button appeared to always jump brightness to 100% or 1%
+      // instead of stepping by 10. Excluding the exact same button boxes used at
+      // release time makes the two hit-tests mutually exclusive by construction.
+      bool onMinusButton = pointInside(x, y, panelX + 4, sliderY - 14, 52, 48);
+      bool onPlusButton = pointInside(x, y, panelX + panelW - 56, sliderY - 14, 52, 48);
+      if (!onMinusButton && !onPlusButton && pointInside(x, y, sliderX - 12, sliderY - 20, sliderW + 24, 56))
+      {
+        previewTouchBrightness(x);
+      }
+    }
+    touchWasDown = true;
+    return;
+  }
+
+  if (!touchWasDown)
+  {
+    return;
+  }
+  touchWasDown = false;
+
+  if (!brightnessOverlayOpen)
+  {
+    if (touchWakeOnlyThisGesture)
+    {
+      touchWakeOnlyThisGesture = false;
+      lastDashboardTapMs = 0;
+      singleTapPending = false;
+      return;
+    }
+
+    bool dashboardControlsAllowed = true;
+#if MSV2_ENABLE_WIFI
+    dashboardControlsAllowed = !wifiSetupPortalActive && pendingRestartMs == 0;
+#endif
+    if (!dashboardControlsAllowed)
+    {
+      lastDashboardTapMs = 0;
+      singleTapPending = false;
+      return;
+    }
+
+    const uint32_t tapGapMs = now - lastDashboardTapMs;
+    if (lastDashboardTapMs != 0 &&
+        tapGapMs >= TOUCH_DOUBLE_TAP_MIN_GAP_MS &&
+        tapGapMs <= TOUCH_DOUBLE_TAP_WINDOW_MS)
+    {
+      lastDashboardTapMs = 0;
+      singleTapPending = false;
+      brightnessOverlayOpen = true;
+      drawBrightnessOverlay();
+      return;
+    }
+
+    // A contact bounce is too close to be a deliberate second tap. Keep the
+    // original timestamp so the user's real second tap can still complete it.
+    if (lastDashboardTapMs == 0 || tapGapMs > TOUCH_DOUBLE_TAP_WINDOW_MS)
+    {
+      lastDashboardTapMs = now;
+      // Resolved later in loop() by resolvePendingDashboardTap() once the double-tap
+      // window passes with no second tap. Stashed here rather than re-read from
+      // lastTouchX/lastTouchY at resolve time, because a new gesture starting before
+      // the window elapses overwrites those before this one would be resolved.
+      pendingSingleTapX = lastTouchX;
+      pendingSingleTapY = lastTouchY;
+      singleTapPending = true;
+    }
+    return;
+  }
+
+  if (touchGestureChangedBrightness)
+  {
+    uint8_t brightness;
+    portENTER_CRITICAL(&displaySettingsMux);
+    brightness = displaySettings.brightnessPercent;
+    portEXIT_CRITICAL(&displaySettingsMux);
+    setDisplaySettingsLocal(brightness, true, "receiver-touch");
+    drawBrightnessOverlay();
+    return;
+  }
+  const int panelX = 34;
+  const int panelY = 54;
+  const int panelW = tft.width() - panelX * 2;
+  const int panelH = tft.height() - panelY - 24;
+  const int sliderY = panelY + 82;
+  const int buttonY = panelY + panelH - 50;
+  uint8_t brightness;
+  bool screenOn;
+  portENTER_CRITICAL(&displaySettingsMux);
+  brightness = displaySettings.brightnessPercent;
+  screenOn = displaySettings.screenOn;
+  portEXIT_CRITICAL(&displaySettingsMux);
+
+  if (pointInside(lastTouchX, lastTouchY, panelX + 4, sliderY - 14, 52, 48))
+  {
+    setDisplaySettingsLocal((uint8_t)max(1, (int)brightness - 10), true, "receiver-touch");
+    drawBrightnessOverlay();
+  }
+  else if (pointInside(lastTouchX, lastTouchY, panelX + panelW - 56, sliderY - 14, 52, 48))
+  {
+    setDisplaySettingsLocal((uint8_t)min(100, (int)brightness + 10), true, "receiver-touch");
+    drawBrightnessOverlay();
+  }
+  else if (pointInside(lastTouchX, lastTouchY, panelX + 8, buttonY - 6, 128, 46))
+  {
+    setDisplaySettingsLocal(brightness, !screenOn, "receiver-touch");
+    if (!screenOn)
+    {
+      drawBrightnessOverlay();
+    }
+  }
+  else if (pointInside(lastTouchX, lastTouchY, panelX + panelW - 112, buttonY - 6, 104, 46) ||
+           !pointInside(lastTouchX, lastTouchY, panelX, panelY, panelW, panelH))
+  {
+    brightnessOverlayOpen = false;
+    lastDashboardTapMs = 0;
+    displayDirty = true;
+  }
+}
+
+// A tap-up that isn't completed by a second tap within TOUCH_DOUBLE_TAP_WINDOW_MS is a
+// genuine single tap, not the first half of a double-tap gesture. Resolved here on a
+// plain elapsed-time check (called from loop() every iteration) rather than inside
+// handleTouchInput() itself, since that function only runs when the touch controller is
+// actually polled - the panel can sit idle with no finger on the glass for the whole
+// window.
+void resolvePendingDashboardTap(uint32_t now)
+{
+  if (!singleTapPending || now - lastDashboardTapMs <= TOUCH_DOUBLE_TAP_WINDOW_MS)
+  {
+    return;
+  }
+  singleTapPending = false;
+  handleDashboardSingleTap(pendingSingleTapX, pendingSingleTapY);
 }
 
 // Resolves the dry/wet bounds and overdue flag to actually use for a card: the
@@ -1338,6 +2367,36 @@ void resolveMoistureBounds(
   outWet = moistureConfig["wet"] | card["wet"] | defaultWet;
   outOverdue = false;
   outPending = autoEnabled;
+}
+
+// Re-runs the auto-cal half of resolveMoistureBounds() against a cached PlantArtSlot,
+// using only fields that were snapshotted from ui.json (autoEnabled/manualDry/manualWet
+// - fixed until the next full renderUi() rebuild) plus the live autoCal[] state (updated
+// on its own ~10-minute cadence by runCloudAutoCalPull(), running on a separate task).
+//
+// Without this, slot.dry/wet/overdue were only ever set once, inside cachePlantArtSlot()
+// - itself only called from renderUi(). Ordinary operation almost never triggers another
+// full renderUi() once cards exist (see the displayDirty=true call sites), so a background
+// auto-cal update - a card newly flagged "overdue", or a shifted learned range - could sit
+// applied-but-invisible for arbitrarily long, only surfacing whenever something incidental
+// (e.g. closing the brightness overlay) happened to force a full re-render. Calling this
+// from both the blink-cadence check and the lightweight per-card redraw keeps the fast
+// path honest without needing a JSON re-parse or full screen repaint.
+void refreshSlotMoistureBounds(PlantArtSlot& slot)
+{
+  bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
+  if (slot.autoEnabled && validSensor && autoCal[slot.sensorId].ready)
+  {
+    slot.dry = autoCal[slot.sensorId].dryBound;
+    slot.wet = autoCal[slot.sensorId].wetBound;
+    slot.overdue = autoCal[slot.sensorId].overdue;
+    slot.pending = false;
+    return;
+  }
+  slot.dry = slot.manualDry;
+  slot.wet = slot.manualWet;
+  slot.overdue = false;
+  slot.pending = slot.autoEnabled;
 }
 
 uint8_t moisturePercent(uint16_t moisture, int dry, int wet)
@@ -1399,32 +2458,13 @@ const PlantSprite* spriteForArt(const char* art)
   return findPlantSpriteByKey(art);
 }
 
-void drawPlantSpriteScaled(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t frame)
-{
-  uint8_t scaleMul = 1;
-  uint8_t scaleDiv = 1;
-  int drawW = 0;
-  int drawH = 0;
-  int startX = 0;
-  int startY = 0;
-  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, startX, startY);
-  const uint8_t pose = pgm_read_byte(&sprite.sequence[frame % sprite.frameCount]);
-  const uint16_t* bitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[pose]);
-
-  tft.startWrite();
-  for (int yy = 0; yy < drawH; yy++)
-  {
-    for (int xx = 0; xx < drawW; xx++)
-    {
-      const uint16_t c = spriteScaledPixel(sprite, bitmap, scaleMul, scaleDiv, xx, yy);
-      if (c != PLANT_TRANSPARENT)
-      {
-        tft.writePixel(startX + xx, startY + yy, c);
-      }
-    }
-  }
-  tft.endWrite();
-}
+// Max row width drawPlantSpriteComposited() ever needs to buffer: the panel is 480px wide
+// and a row is clamped to tft.width() below, so this always covers it with no slack needed.
+const int PLANT_SPRITE_MAX_DRAW_W = 480;
+// Static rather than a function-local stack array: drawPlantSpriteComposited() is only ever
+// called from the single-threaded main loop (never reentrantly), so one shared buffer is
+// safe and keeps a 960-byte array off the call stack.
+uint16_t plantSpriteRowBuffer[PLANT_SPRITE_MAX_DRAW_W];
 
 void spriteDrawGeometry(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t& scaleMul, uint8_t& scaleDiv, int& drawW, int& drawH, int& startX, int& startY)
 {
@@ -1452,39 +2492,73 @@ uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, ui
   return pgm_read_word(&bitmap[sourceY * sprite.w + sourceX]);
 }
 
-void drawPlantSpriteDiffScaled(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t oldFrame, uint8_t newFrame, uint16_t backgroundColor)
+// Composites one sprite pose across the *entire* maxW x maxH card art area - not just the
+// sprite's own scaled bounding box, which can be smaller than the card - and sends every row
+// as one writeAddrWindow()+writePixels() burst. This replaces the old design, which called
+// tft.writePixel() per pixel (a full column/row-address-set + memory-write command sequence
+// each time, per Arduino_TFT::writePixelPreclipped / Arduino_ST7796::writeAddrWindow),
+// relied on a separate tft.fillRect() to clear the margin around a smaller sprite, and
+// tracked an old-frame/new-frame diff to decide what needed touching at all.
+//
+// This is now the *only* way sprite art gets drawn - both the initial full card layout and
+// every animation-frame update - since a full composite is cheap enough (one burst per row)
+// to just always do in full:
+//   - no separate fillRect() means no visible clear-then-rebuild flash between frames;
+//   - every pixel in the area is unconditionally rewritten from the current pose on every
+//     call, so there's no "the old diff comparison thought this pixel already matched"
+//     failure mode - a previously wrong pixel is corrected the moment this card's pose next
+//     changes, instead of persisting indefinitely;
+//   - command count drops from one per changed/opaque pixel to exactly one per row.
+// See docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md for the investigation this closes
+// out.
+void drawPlantSpriteComposited(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t frame, uint16_t backgroundColor)
 {
   uint8_t scaleMul = 1;
   uint8_t scaleDiv = 1;
   int drawW = 0;
   int drawH = 0;
-  int startX = 0;
-  int startY = 0;
-  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, startX, startY);
+  int spriteStartX = 0;
+  int spriteStartY = 0;
+  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, spriteStartX, spriteStartY);
+  const uint8_t pose = pgm_read_byte(&sprite.sequence[frame % sprite.frameCount]);
+  const uint16_t* bitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[pose]);
 
-  const uint8_t oldPose = pgm_read_byte(&sprite.sequence[oldFrame % sprite.frameCount]);
-  const uint8_t newPose = pgm_read_byte(&sprite.sequence[newFrame % sprite.frameCount]);
-  if (oldPose == newPose)
+  const int panelW = tft.width();
+  const int panelH = tft.height();
+  const int areaLeft = centerX - maxW / 2;
+  const int screenXMin = max(0, areaLeft);
+  const int screenXMax = min(panelW, areaLeft + maxW);
+  const int screenYMin = max(0, topY);
+  const int screenYMax = min(panelH, topY + maxH);
+  const int rowWidth = min(screenXMax - screenXMin, PLANT_SPRITE_MAX_DRAW_W);
+  if (rowWidth <= 0)
   {
     return;
   }
 
-  const uint16_t* oldBitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[oldPose]);
-  const uint16_t* newBitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[newPose]);
-
+  uint16_t* rowBuffer = plantSpriteRowBuffer;
   tft.startWrite();
-  for (int yy = 0; yy < drawH; yy++)
+  for (int screenY = screenYMin; screenY < screenYMax; screenY++)
   {
-    for (int xx = 0; xx < drawW; xx++)
+    const int localSpriteY = screenY - spriteStartY;
+    const bool rowInSprite = localSpriteY >= 0 && localSpriteY < drawH;
+    for (int i = 0; i < rowWidth; i++)
     {
-      const uint16_t oldColor = spriteScaledPixel(sprite, oldBitmap, scaleMul, scaleDiv, xx, yy);
-      const uint16_t newColor = spriteScaledPixel(sprite, newBitmap, scaleMul, scaleDiv, xx, yy);
-      if (oldColor == newColor)
+      const int screenX = screenXMin + i;
+      uint16_t color = backgroundColor;
+      const int localSpriteX = screenX - spriteStartX;
+      if (rowInSprite && localSpriteX >= 0 && localSpriteX < drawW)
       {
-        continue;
+        const uint16_t c = spriteScaledPixel(sprite, bitmap, scaleMul, scaleDiv, localSpriteX, localSpriteY);
+        if (c != PLANT_TRANSPARENT)
+        {
+          color = c;
+        }
       }
-      tft.writePixel(startX + xx, startY + yy, newColor == PLANT_TRANSPARENT ? backgroundColor : newColor);
+      rowBuffer[i] = color;
     }
+    tftBus.writeAddrWindow(screenXMin, screenY, rowWidth, 1);
+    tftBus.writePixels(rowBuffer, rowWidth);
   }
   tft.endWrite();
 }
@@ -1527,43 +2601,49 @@ void drawPlantArt(int x, int y, int maxW, int maxH, const char* art, uint16_t co
   const PlantSprite* sprite = spriteForArt(art);
   if (sprite != nullptr)
   {
-    drawPlantSpriteScaled(*sprite, x, y, maxW, maxH, frame);
+    drawPlantSpriteComposited(*sprite, x, y, maxW, maxH, frame, backgroundColor);
     return;
   }
 
+  // Sprite art self-covers its whole area (see drawPlantSpriteComposited); this ASCII
+  // fallback only paints glyph cells, so it still needs its own clear first.
+  tft.fillRect(x - maxW / 2, y, maxW, maxH, backgroundColor);
   drawAsciiPlantArt(x, y + max(0, (maxH - 45) / 2), art, color, backgroundColor);
 }
 
 void drawPlantArtInCard(int x, int y, int w, int h, const char* art, uint16_t color, uint16_t surfaceColor, uint8_t frame)
 {
   const bool compact = h < 76;
-  const int inset = compact ? 5 : 7;
-  const int artX = x + inset;
   const int artY = y + (compact ? 15 : 24);
+  const int inset = compact ? 5 : 7;
   const int artW = w - inset * 2;
   const int artH = compact ? max(10, h - 29) : max(24, h - 91);
 
-  tft.fillRect(artX, artY, artW, artH, surfaceColor);
   drawPlantArt(x + w / 2, artY, artW, artH, art, color, surfaceColor, frame);
 }
 
 void drawPlantArtDiffInCard(int x, int y, int w, int h, const char* art, uint16_t color, uint16_t surfaceColor, uint8_t oldFrame, uint8_t newFrame)
 {
-  const bool compact = h < 76;
-  const int inset = compact ? 5 : 7;
-  const int artX = x + inset;
-  const int artY = y + (compact ? 15 : 24);
-  const int artW = w - inset * 2;
-  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
+  // Cheap early-exit: if the pose sequence held (consecutive frame ticks can legitimately
+  // map to the same pose), there's nothing to redraw at all. Otherwise fall through to a
+  // full composited redraw of the new pose - see drawPlantSpriteComposited for why this no
+  // longer needs to diff against the old frame to decide what to touch.
   const PlantSprite* sprite = spriteForArt(art);
-
   if (sprite != nullptr)
   {
-    drawPlantSpriteDiffScaled(*sprite, x + w / 2, artY, artW, artH, oldFrame, newFrame, surfaceColor);
-    return;
+    const uint8_t oldPose = pgm_read_byte(&sprite->sequence[oldFrame % sprite->frameCount]);
+    const uint8_t newPose = pgm_read_byte(&sprite->sequence[newFrame % sprite->frameCount]);
+    if (oldPose == newPose)
+    {
+      return;
+    }
   }
 
-  tft.fillRect(artX, artY, artW, artH, surfaceColor);
+  const bool compact = h < 76;
+  const int artY = y + (compact ? 15 : 24);
+  const int inset = compact ? 5 : 7;
+  const int artW = w - inset * 2;
+  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
   drawPlantArt(x + w / 2, artY, artW, artH, art, color, surfaceColor, newFrame);
 }
 
@@ -1592,9 +2672,13 @@ void cachePlantArtSlot(
   slot.enabled = true;
   slot.artEnabled = artEnabled;
   slot.sensorId = card["sensor"] | 0;
+  resolvePlantName(card, slot.sensorId, slot.plant, sizeof(slot.plant));
   strlcpy(slot.art, card["art"] | "sprout_pot", sizeof(slot.art));
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
-  resolveMoistureBounds(moistureConfig, card, slot.sensorId, 120, 175, slot.dry, slot.wet, slot.overdue, slot.pending);
+  slot.autoEnabled = moistureConfig["auto"] | false;
+  slot.manualDry = moistureConfig["dry"] | card["dry"] | 120;
+  slot.manualWet = moistureConfig["wet"] | card["wet"] | 175;
+  refreshSlotMoistureBounds(slot);
   slot.x = x;
   slot.y = y;
   slot.w = w;
@@ -1670,26 +2754,9 @@ void drawPlantCard(
 )
 {
   uint16_t sensorId = card["sensor"] | 0;
-  const char* plant = firstString(card, "plant");
-  if (plant == nullptr)
-  {
-    plant = firstString(card, "label");
-  }
-  if (plant == nullptr)
-  {
-    plant = firstString(card, "name");
-  }
-  if (plant == nullptr)
-  {
-    plant = firstString(card, "title");
-  }
-
-  char fallbackPlant[16];
-  if (plant == nullptr)
-  {
-    snprintf(fallbackPlant, sizeof(fallbackPlant), "Probe %u", sensorId);
-    plant = fallbackPlant;
-  }
+  char plantName[24];
+  resolvePlantName(card, sensorId, plantName, sizeof(plantName));
+  const char* plant = plantName;
   const char* art = card["art"] | "sprout";
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
   int dry;
@@ -1755,8 +2822,9 @@ void drawPlantCard(
   drawBar(x + 7, y + h - 14, w - 14, 8, batteryPct, batteryColor, backgroundColor);
 }
 
-void drawPlantCardDataOnly(const PlantArtSlot& slot)
+void drawPlantCardDataOnly(PlantArtSlot& slot)
 {
+  refreshSlotMoistureBounds(slot);
   const int x = slot.x;
   const int y = slot.y;
   const int w = slot.w;
@@ -1801,18 +2869,503 @@ void drawPlantCardDataOnly(const PlantArtSlot& slot)
     return;
   }
 
-  tft.fillRect(x + 7, y + h - 63, w - 14, 26, slot.surfaceColor);
-  drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
-  drawTextRight(moistureText, x + w - 7, y + h - 62, 1, moistureColor, slot.surfaceColor);
-  drawBar(x + 7, y + h - 47, w - 14, 9, moisturePct, moistureColor, slot.backgroundColor);
+  // Only touch a row if something about it actually needs to change. Without this, every
+  // low-moisture blink tick (every 500ms, see anyLowMoistureCardVisible) repainted BOTH
+  // rows in full - including the battery row, which has nothing to do with the moisture
+  // alert - producing a visible flash on fields whose values hadn't moved at all.
+  //
+  // The moist row's *color* legitimately needs to update every blink tick (that's the
+  // alert), even when the reading itself hasn't changed, so it's gated separately from the
+  // reading/text/bar-width content. The fillRect clear is only needed when the content
+  // could have changed width (new value or stale-state flip, e.g. "175" -> "88" or "--") -
+  // skipping it on a color-only blink tick avoids the clear-then-redraw flash entirely,
+  // since drawTextRight/drawBar always fully repaint their own fixed-size cells anyway.
+  const bool moistureValueChanged = !slot.metricsInitialized || stale != slot.lastMoistureStale ||
+    (!stale && (reading->moisture != slot.lastMoistureRaw || moisturePct != slot.lastMoisturePct));
+  const bool moistureColorChanged = moistureColor != slot.lastMoistureColor;
+  const bool batteryValueChanged = !slot.metricsInitialized || batteryPct != slot.lastBatteryPct;
 
-  tft.fillRect(x + 7, y + h - 30, w - 14, 24, slot.surfaceColor);
-  drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
-  drawTextRight(batteryText, x + w - 7, y + h - 29, 1, batteryColor, slot.surfaceColor);
-  drawBar(x + 7, y + h - 14, w - 14, 8, batteryPct, batteryColor, slot.backgroundColor);
+  if (moistureValueChanged || moistureColorChanged)
+  {
+    if (moistureValueChanged)
+    {
+      // See the art-gap comment history: this clear must reach exactly up to the art
+      // region's own bottom edge (same artY/artH formula as drawPlantArtInCard) and down
+      // to exactly where the batt row's own clear starts, or a stray pixel in the
+      // uncovered band between them can never self-heal.
+      const int artBottomY = y + 24 + max(24, h - 91);
+      const int moistRowBottom = y + h - 37;
+      const int moistRowTop = min(y + h - 63, artBottomY);
+      tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
+      drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
+    }
+    drawTextRight(moistureText, x + w - 7, y + h - 62, 1, moistureColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 47, w - 14, 9, moisturePct, moistureColor, slot.backgroundColor);
+  }
+
+  if (batteryValueChanged)
+  {
+    const int moistRowBottom = y + h - 37;
+    const int battRowBottom = y + h - 6;
+    const int battRowTop = min(y + h - 30, moistRowBottom);
+    tft.fillRect(x + 7, battRowTop, w - 14, max(1, battRowBottom - battRowTop), slot.surfaceColor);
+    drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+    drawTextRight(batteryText, x + w - 7, y + h - 29, 1, batteryColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 14, w - 14, 8, batteryPct, batteryColor, slot.backgroundColor);
+  }
+
+  slot.metricsInitialized = true;
+  slot.lastMoistureStale = stale;
+  slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
+  slot.lastMoisturePct = moisturePct;
+  slot.lastMoistureColor = moistureColor;
+  slot.lastBatteryPct = batteryPct;
 }
 
-void renderDashboardDataOnly()
+void formatAgeText(uint32_t ms, char* out, size_t outSize)
+{
+  uint32_t seconds = ms / 1000UL;
+  if (seconds < 60)
+  {
+    snprintf(out, outSize, "%lus", (unsigned long)seconds);
+    return;
+  }
+  uint32_t minutes = seconds / 60UL;
+  if (minutes < 60)
+  {
+    snprintf(out, outSize, "%lum", (unsigned long)minutes);
+    return;
+  }
+  snprintf(out, outSize, "%luh", (unsigned long)(minutes / 60UL));
+}
+
+void drawDetailStatRow(int leftX, int rightX, int y, const char* label, const char* value, uint16_t labelColor, uint16_t valueColor, uint16_t backgroundColor)
+{
+  drawTextLeft(label, leftX, y, 1, labelColor, backgroundColor);
+  drawTextRight(value, rightX, y, 1, valueColor, backgroundColor);
+}
+
+// Data-only counterpart to drawDetailStatRow() - see the display-surgical-redraw skill.
+// Only clears+redraws this one row's own rect, and only when `changed` is true, so a
+// periodic refresh never touches a row whose value didn't move.
+void drawDetailStatRowIfChanged(bool changed, int leftX, int rightX, int y, const char* label, const char* value, uint16_t labelColor, uint16_t valueColor, uint16_t backgroundColor)
+{
+  if (!changed)
+  {
+    return;
+  }
+  tft.fillRect(leftX, y - 1, rightX - leftX, 10, backgroundColor);
+  drawDetailStatRow(leftX, rightX, y, label, value, labelColor, valueColor, backgroundColor);
+}
+
+void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
+{
+  const bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
+  const SensorReading* reading = validSensor ? &sensors[slot.sensorId] : nullptr;
+  s.stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
+  s.rawMoisture = reading != nullptr ? reading->moisture : 0;
+  s.moisturePct = s.stale ? BATTERY_UNKNOWN : moisturePercent(s.rawMoisture, slot.dry, slot.wet);
+  s.batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
+  s.moistureColor = slot.overdue ? slot.dangerColor : healthColor(s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  if (!s.stale)
+  {
+    s.moistureColor = applyLowMoistureBlink(s.moistureColor, slot.dangerColor, slot.mutedColor);
+  }
+  s.batteryColor = healthColor(s.batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  if (s.stale)
+  {
+    strlcpy(s.moistureText, "--", sizeof(s.moistureText));
+  }
+  else
+  {
+    snprintf(s.moistureText, sizeof(s.moistureText), "%u", s.rawMoisture);
+  }
+  if (s.batteryPct == BATTERY_UNKNOWN)
+  {
+    strlcpy(s.batteryText, "--%", sizeof(s.batteryText));
+  }
+  else
+  {
+    snprintf(s.batteryText, sizeof(s.batteryText), "%u%%", s.batteryPct);
+  }
+
+  s.hasSignal = reading != nullptr && reading->seen;
+  const int rssi = s.hasSignal ? reading->rssi : 0;
+  s.signalColor = !s.hasSignal ? slot.mutedColor : (rssi >= -75 ? slot.activeColor : (rssi >= -90 ? slot.warningColor : slot.dangerColor));
+  s.signalLabel = !s.hasSignal ? "No data" : (rssi >= -75 ? "Strong" : (rssi >= -90 ? "Usable" : "Weak"));
+  if (s.hasSignal)
+  {
+    snprintf(s.rssiText, sizeof(s.rssiText), "%ddBm", rssi);
+  }
+  else
+  {
+    strlcpy(s.rssiText, "--", sizeof(s.rssiText));
+  }
+  if (s.hasSignal)
+  {
+    formatAgeText(millis() - reading->lastSeenMs, s.ageText, sizeof(s.ageText));
+  }
+  else
+  {
+    strlcpy(s.ageText, "--", sizeof(s.ageText));
+  }
+  snprintf(s.wakeText, sizeof(s.wakeText), "%lu", reading != nullptr ? (unsigned long)reading->wake : 0UL);
+  uint32_t expected = reading != nullptr ? reading->received + reading->missedTotal : 0;
+  if (expected > 0)
+  {
+    snprintf(s.lossText, sizeof(s.lossText), "%lu%%", (unsigned long)(reading->missedTotal * 100UL / expected));
+  }
+  else
+  {
+    strlcpy(s.lossText, "--", sizeof(s.lossText));
+  }
+  snprintf(s.receivedText, sizeof(s.receivedText), "%lu", reading != nullptr ? (unsigned long)reading->received : 0UL);
+  snprintf(s.missedText, sizeof(s.missedText), "%lu", reading != nullptr ? (unsigned long)reading->missedTotal : 0UL);
+  snprintf(s.probeText, sizeof(s.probeText), "%u", slot.sensorId);
+  snprintf(s.rangeText, sizeof(s.rangeText), "%d-%d", slot.dry, slot.wet);
+  s.hasRaw = reading != nullptr && reading->hasRaw;
+  if (s.hasRaw)
+  {
+    snprintf(s.rawText, sizeof(s.rawText), "%ukHz", reading->rawMoistureKHz);
+  }
+  else
+  {
+    s.rawText[0] = '\0';
+  }
+  s.rawCharging = reading != nullptr && reading->rawCharging;
+}
+
+// Seeds every cache field drawPlantCardDetailDataOnly() diffs against, so the very next
+// data-only refresh has an accurate baseline instead of relying on whatever this slot
+// index last held (see the moist/batt fields, shared with the normal card's own cache).
+void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
+{
+  slot.metricsInitialized = true;
+  slot.lastMoistureStale = s.stale;
+  slot.lastMoistureRaw = s.stale ? slot.lastMoistureRaw : s.rawMoisture;
+  slot.lastMoisturePct = s.moisturePct;
+  slot.lastMoistureColor = s.moistureColor;
+  slot.lastBatteryPct = s.batteryPct;
+  strlcpy(slot.lastDetailSignalLabel, s.signalLabel, sizeof(slot.lastDetailSignalLabel));
+  slot.lastDetailSignalColor = s.signalColor;
+  strlcpy(slot.lastDetailRssiText, s.rssiText, sizeof(slot.lastDetailRssiText));
+  strlcpy(slot.lastDetailAgeText, s.ageText, sizeof(slot.lastDetailAgeText));
+  strlcpy(slot.lastDetailWakeText, s.wakeText, sizeof(slot.lastDetailWakeText));
+  strlcpy(slot.lastDetailLossText, s.lossText, sizeof(slot.lastDetailLossText));
+  strlcpy(slot.lastDetailReceivedText, s.receivedText, sizeof(slot.lastDetailReceivedText));
+  strlcpy(slot.lastDetailMissedText, s.missedText, sizeof(slot.lastDetailMissedText));
+  strlcpy(slot.lastDetailRangeText, s.rangeText, sizeof(slot.lastDetailRangeText));
+  strlcpy(slot.lastDetailRawText, s.rawText, sizeof(slot.lastDetailRawText));
+  slot.lastDetailCharging = s.rawCharging;
+}
+
+// Tap-to-expand detail view, full paint: replaces one plant card in place with a richer
+// readout (signal, age, wake/loss counters, moisture range) similar to the phone app's
+// Diagnostics tab - see handleDashboardSingleTap(). Reuses the exact art-region geometry
+// drawPlantArtInCard() would have used (y + 24, height max(24, h - 91)) so the extra rows
+// sit exactly where the sprite used to be, instead of inventing a separate layout system -
+// the same "more room at this card size" scaling drawPlantArtInCard/drawCompactCardMetrics
+// already rely on is what decides how many diagnostic rows fit here too.
+//
+// Paints unconditionally and is only called once per "this card just got expanded, or a
+// full layout rebuild happened" event (see renderUi()) - see display-surgical-redraw skill.
+// The periodic refresh path (renderDashboardDataOnly()) calls drawPlantCardDetailDataOnly()
+// instead, which diffs against the cache this function seeds via seedDetailCache().
+void drawPlantCardDetail(PlantArtSlot& slot)
+{
+  refreshSlotMoistureBounds(slot);
+  PlantDetailStats s;
+  computeDetailStats(slot, s);
+  const int x = slot.x;
+  const int y = slot.y;
+  const int w = slot.w;
+  const int h = slot.h;
+
+  tft.fillRoundRect(x, y, w, h, 5, slot.surfaceColor);
+  tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
+  drawTextLeft(slot.plant, x + 7, y + 6, 1, slot.textColor, slot.surfaceColor);
+
+  if (h < 76)
+  {
+    // Too small for extra rows - same layout as the normal compact card, plus a small
+    // signal-quality dot in the corner where the name row would otherwise leave blank
+    // space, so even the smallest grid size shows *something* extra on tap.
+    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    return;
+  }
+
+  const int infoY = y + 24;
+  const int infoH = max(24, h - 91);
+  const int infoBottom = infoY + infoH;
+  const int rightX = x + w - 7;
+  tft.fillRect(x + 7, infoY, w - 14, infoH, slot.surfaceColor);
+  drawTextRight(s.signalLabel, rightX, y + 6, 1, s.signalColor, slot.surfaceColor);
+
+  if (w < 200)
+  {
+    // Narrow cards (3+ per row): one stacked column of label/value rows, as many as the
+    // reclaimed art band has room for at this card's height.
+    const int rowStep = clampInt(infoH / 7, 12, 20);
+    int rowY = infoY;
+    drawDetailStatRow(x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    rowY += rowStep;
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, rightX, rowY, "Age", s.ageText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, rightX, rowY, "Wake", s.wakeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, rightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, rightX, rowY, "Probe", s.probeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    }
+  }
+  else
+  {
+    // Wide cards (1-2 per row): two columns of label/value pairs, matching the phone
+    // app's Diagnostics grid, with row spacing that grows with the available height.
+    const int colW = (w - 14) / 2;
+    const int col2X = x + 7 + colW + 6;
+    const int col1RightX = x + 7 + colW - 6;
+    const int rowStep = clampInt(infoH / 5, 14, 30);
+    int rowY = infoY + 2;
+    drawDetailStatRow(x + 7, col1RightX, rowY, "Probe", s.probeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    drawDetailStatRow(col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    rowY += rowStep;
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, col1RightX, rowY, "Age", s.ageText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(col2X, rightX, rowY, "Wake", s.wakeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, col1RightX, rowY, "Received", s.receivedText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(col2X, rightX, rowY, "Missed", s.missedText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, col1RightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (s.hasRaw && rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRow(x + 7, col1RightX, rowY, "Raw osc", s.rawText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(col2X, rightX, rowY, "Charging", s.rawCharging ? "Yes" : "No", slot.mutedColor, slot.textColor, slot.surfaceColor);
+    }
+  }
+
+  drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
+  drawTextRight(s.moistureText, rightX, y + h - 62, 1, s.moistureColor, slot.surfaceColor);
+  drawBar(x + 7, y + h - 47, w - 14, 9, s.moisturePct, s.moistureColor, slot.backgroundColor);
+
+  drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+  drawTextRight(s.batteryText, rightX, y + h - 29, 1, s.batteryColor, slot.surfaceColor);
+  drawBar(x + 7, y + h - 14, w - 14, 8, s.batteryPct, s.batteryColor, slot.backgroundColor);
+
+  seedDetailCache(slot, s);
+}
+
+// Tap-to-expand detail view, data-only: the periodic-refresh counterpart to
+// drawPlantCardDetail(), called every render-gate tick while a card is expanded (see
+// loop()'s `detailOpen` gate and renderDashboardDataOnly()). Never fills the card
+// background or the whole info band - only the border re-strokes unconditionally
+// (cheap, matches drawPlantCardDataOnly()'s own precedent), everything else is diffed
+// against the cache drawPlantCardDetail() seeds via seedDetailCache() and only
+// clears+redraws the one row that actually changed. See the display-surgical-redraw
+// skill for why this split exists.
+void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
+{
+  refreshSlotMoistureBounds(slot);
+  PlantDetailStats s;
+  computeDetailStats(slot, s);
+  const int x = slot.x;
+  const int y = slot.y;
+  const int w = slot.w;
+  const int h = slot.h;
+
+  tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
+
+  if (h < 76)
+  {
+    // Matches drawPlantCardDataOnly()'s own h < 76 behavior: drawCompactCardMetrics()
+    // already only clears its own metrics band, not the whole card, so there's no
+    // further diffing to do at this size.
+    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    return;
+  }
+
+  const int infoY = y + 24;
+  const int infoH = max(24, h - 91);
+  const int infoBottom = infoY + infoH;
+  const int rightX = x + w - 7;
+
+  const bool signalChanged = strcmp(s.signalLabel, slot.lastDetailSignalLabel) != 0 || s.signalColor != slot.lastDetailSignalColor;
+  if (signalChanged)
+  {
+    tft.fillRect(rightX - 54, y + 5, 54, 10, slot.surfaceColor);
+    drawTextRight(s.signalLabel, rightX, y + 6, 1, s.signalColor, slot.surfaceColor);
+  }
+
+  const bool rssiChanged = strcmp(s.rssiText, slot.lastDetailRssiText) != 0;
+  const bool ageChanged = strcmp(s.ageText, slot.lastDetailAgeText) != 0;
+  const bool wakeChanged = strcmp(s.wakeText, slot.lastDetailWakeText) != 0;
+  const bool lossChanged = strcmp(s.lossText, slot.lastDetailLossText) != 0;
+  const bool receivedChanged = strcmp(s.receivedText, slot.lastDetailReceivedText) != 0;
+  const bool missedChanged = strcmp(s.missedText, slot.lastDetailMissedText) != 0;
+  const bool rangeChanged = strcmp(s.rangeText, slot.lastDetailRangeText) != 0;
+  const bool rawChanged = strcmp(s.rawText, slot.lastDetailRawText) != 0 || s.rawCharging != slot.lastDetailCharging;
+
+  if (w < 200)
+  {
+    const int rowStep = clampInt(infoH / 7, 12, 20);
+    int rowY = infoY;
+    drawDetailStatRowIfChanged(rssiChanged, x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    rowY += rowStep;
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(ageChanged, x + 7, rightX, rowY, "Age", s.ageText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(wakeChanged, x + 7, rightX, rowY, "Wake", s.wakeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(lossChanged, x + 7, rightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      // Probe # never changes for a live slot without a full config reload, which
+      // always re-enters through drawPlantCardDetail() (full paint) anyway.
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(rangeChanged, x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    }
+  }
+  else
+  {
+    const int colW = (w - 14) / 2;
+    const int col2X = x + 7 + colW + 6;
+    const int col1RightX = x + 7 + colW - 6;
+    const int rowStep = clampInt(infoH / 5, 14, 30);
+    int rowY = infoY + 2;
+    drawDetailStatRowIfChanged(rssiChanged, col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    rowY += rowStep;
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(ageChanged, x + 7, col1RightX, rowY, "Age", s.ageText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(wakeChanged, col2X, rightX, rowY, "Wake", s.wakeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(receivedChanged, x + 7, col1RightX, rowY, "Received", s.receivedText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(missedChanged, col2X, rightX, rowY, "Missed", s.missedText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(lossChanged, x + 7, col1RightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(rangeChanged, col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      rowY += rowStep;
+    }
+    if (s.hasRaw && rowY + 8 <= infoBottom)
+    {
+      drawDetailStatRowIfChanged(rawChanged, x + 7, col1RightX, rowY, "Raw osc", s.rawText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(rawChanged, col2X, rightX, rowY, "Charging", s.rawCharging ? "Yes" : "No", slot.mutedColor, slot.textColor, slot.surfaceColor);
+    }
+  }
+
+  // Moist/Batt rows: identical diff-and-redraw idiom (and the same cache fields) as
+  // drawPlantCardDataOnly() - see that function's comments for why the clear itself is
+  // also conditional, not just the text/bar content.
+  const bool moistureValueChanged = !slot.metricsInitialized || s.stale != slot.lastMoistureStale ||
+    (!s.stale && (s.rawMoisture != slot.lastMoistureRaw || s.moisturePct != slot.lastMoisturePct));
+  const bool moistureColorChanged = s.moistureColor != slot.lastMoistureColor;
+  const bool batteryValueChanged = !slot.metricsInitialized || s.batteryPct != slot.lastBatteryPct;
+
+  if (moistureValueChanged || moistureColorChanged)
+  {
+    if (moistureValueChanged)
+    {
+      const int artBottomY = y + 24 + max(24, h - 91);
+      const int moistRowBottom = y + h - 37;
+      const int moistRowTop = min(y + h - 63, artBottomY);
+      tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
+      drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
+    }
+    drawTextRight(s.moistureText, rightX, y + h - 62, 1, s.moistureColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 47, w - 14, 9, s.moisturePct, s.moistureColor, slot.backgroundColor);
+  }
+
+  if (batteryValueChanged)
+  {
+    const int moistRowBottom = y + h - 37;
+    const int battRowBottom = y + h - 6;
+    const int battRowTop = min(y + h - 30, moistRowBottom);
+    tft.fillRect(x + 7, battRowTop, w - 14, max(1, battRowBottom - battRowTop), slot.surfaceColor);
+    drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+    drawTextRight(s.batteryText, rightX, y + h - 29, 1, s.batteryColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 14, w - 14, 8, s.batteryPct, s.batteryColor, slot.backgroundColor);
+  }
+
+  seedDetailCache(slot, s);
+}
+
+// Shared by anyLowMoistureCardVisible() (does ANY card need the fast blink cadence) and
+// renderDashboardDataOnly(true) (which cards does that redraw actually need to touch).
+bool slotNeedsBlink(PlantArtSlot& slot)
+{
+  if (!slot.enabled || slot.sensorId == 0 || slot.sensorId > MAX_SENSOR_ID)
+  {
+    return false;
+  }
+  SensorReading& reading = sensors[slot.sensorId];
+  bool stale = !reading.seen || (millis() - reading.lastSeenMs > staleSeconds * 1000UL);
+  if (stale)
+  {
+    return false;
+  }
+  refreshSlotMoistureBounds(slot);
+  if (slot.overdue)
+  {
+    return true;
+  }
+  return moisturePercent(reading.moisture, slot.dry, slot.wet) < 25;
+}
+
+// blinkOnly redraws only the card(s) driving the 500ms blink cadence, instead of every
+// visible card. Without this, one low-moisture card forced a full-board redraw twice a
+// second - every healthy card's border/bars got repainted over SPI even though nothing
+// about them had changed, which is both wasted shared-bus traffic (see DISPLAY_SPI_HZ)
+// and the "random parts of the display update every cycle" a user would actually notice.
+// Real sensor updates (sensorDataDirty) still redraw everything, since a single dirty
+// flag doesn't track which specific card's data changed.
+void renderDashboardDataOnly(bool blinkOnly)
 {
 #if !MSV2_ENABLE_DISPLAY
   return;
@@ -1820,10 +3373,20 @@ void renderDashboardDataOnly()
 
   for (uint8_t i = 0; i < artSlotCount; i++)
   {
-    if (artSlots[i].enabled)
+    if (!artSlots[i].enabled)
     {
-      drawPlantCardDataOnly(artSlots[i]);
+      continue;
     }
+    if (i == expandedCardSlot)
+    {
+      drawPlantCardDetailDataOnly(artSlots[i]);
+      continue;
+    }
+    if (blinkOnly && !slotNeedsBlink(artSlots[i]))
+    {
+      continue;
+    }
+    drawPlantCardDataOnly(artSlots[i]);
   }
 }
 
@@ -1838,22 +3401,7 @@ bool anyLowMoistureCardVisible()
 {
   for (uint8_t i = 0; i < artSlotCount; i++)
   {
-    PlantArtSlot& slot = artSlots[i];
-    if (!slot.enabled || slot.sensorId == 0 || slot.sensorId > MAX_SENSOR_ID)
-    {
-      continue;
-    }
-    SensorReading& reading = sensors[slot.sensorId];
-    bool stale = !reading.seen || (millis() - reading.lastSeenMs > staleSeconds * 1000UL);
-    if (stale)
-    {
-      continue;
-    }
-    if (slot.overdue)
-    {
-      return true;
-    }
-    if (moisturePercent(reading.moisture, slot.dry, slot.wet) < 25)
+    if (slotNeedsBlink(artSlots[i]))
     {
       return true;
     }
@@ -1911,12 +3459,12 @@ void renderWifiConnectingScreen(const char* ssid, const char* source)
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
   drawTextLeft("MSV2 Plants", 16, 16, 2, TFT_WHITE, TFT_BLACK);
-  drawTextLeft("Connecting to home WiFi...", 16, 48, 1, TFT_GREEN, TFT_BLACK);
-  drawTextLeft("Network", 16, 84, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("Connecting to home WiFi...", 16, 48, 1, TFT_ACCENT, TFT_BLACK);
+  drawTextLeft("Network", 16, 84, 1, TFT_MUTED, TFT_BLACK);
   drawTextLeft(ssid == nullptr || ssid[0] == '\0' ? "(none)" : ssid, 92, 84, 1, TFT_WHITE, TFT_BLACK);
-  drawTextLeft("Source", 16, 106, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("Source", 16, 106, 1, TFT_MUTED, TFT_BLACK);
   drawTextLeft(source == nullptr ? "saved setup" : source, 92, 106, 1, TFT_WHITE, TFT_BLACK);
-  drawTextLeft("If this takes too long, setup help will appear here.", 16, 146, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("If this takes too long, setup help will appear here.", 16, 146, 1, TFT_MUTED, TFT_BLACK);
 #endif
 }
 
@@ -1933,15 +3481,15 @@ void renderWifiSetupScreen(const char* reason)
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
   drawTextLeft("WiFi Setup", 16, 14, 2, TFT_WHITE, TFT_BLACK);
-  drawTextLeft(reason == nullptr || reason[0] == '\0' ? "Ready for first-time setup" : reason, 16, 43, 1, TFT_ORANGE, TFT_BLACK);
+  drawTextLeft(reason == nullptr || reason[0] == '\0' ? "Ready for first-time setup" : reason, 16, 43, 1, TFT_WARNING, TFT_BLACK);
 
-  drawSetupStep(78, "1", "On your phone, open WiFi settings.", TFT_WHITE, TFT_GREEN, TFT_BLACK);
-  drawSetupStep(110, "2", "Join network: MSV2-Display", TFT_WHITE, TFT_GREEN, TFT_BLACK);
-  drawSetupStep(142, "3", "No password needed", TFT_WHITE, TFT_GREEN, TFT_BLACK);
-  drawSetupStep(174, "4", "Choose home WiFi or local-only mode.", TFT_WHITE, TFT_GREEN, TFT_BLACK);
+  drawSetupStep(78, "1", "On your phone, open WiFi settings.", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
+  drawSetupStep(110, "2", "Join network: MSV2-Display", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
+  drawSetupStep(142, "3", "No password needed", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
+  drawSetupStep(174, "4", "Choose home WiFi or local-only mode.", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
 
-  drawTextLeft("If no page appears, open Safari/Chrome and type:", 16, 216, 1, TFT_DARKGREY, TFT_BLACK);
-  drawTextLeft("192.168.4.1", 16, 238, 2, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("If no page appears, open Safari/Chrome and type:", 16, 216, 1, TFT_MUTED, TFT_BLACK);
+  drawTextLeft("192.168.4.1", 16, 238, 2, TFT_ACCENT, TFT_BLACK);
   drawTextLeft("Then tap Setup > Receiver WiFi.", 16, 268, 1, TFT_WHITE, TFT_BLACK);
 #endif
 }
@@ -1956,9 +3504,9 @@ void renderWifiSavedScreen()
   displayDirty = false;
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
-  drawTextLeft("Settings Saved", 16, 16, 2, TFT_GREEN, TFT_BLACK);
+  drawTextLeft("Settings Saved", 16, 16, 2, TFT_ACCENT, TFT_BLACK);
   drawTextLeft("The receiver is restarting now.", 16, 54, 1, TFT_WHITE, TFT_BLACK);
-  drawTextLeft("After restart, this screen will show your plant dashboard.", 16, 86, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("After restart, this screen will show your plant dashboard.", 16, 86, 1, TFT_MUTED, TFT_BLACK);
 #endif
 }
 
@@ -1972,14 +3520,14 @@ void renderWifiRetryScreen(const char* ssid, uint8_t attempt, uint8_t maxAttempt
 #else
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
-  drawTextLeft("WiFi Retry", 16, 16, 2, TFT_ORANGE, TFT_BLACK);
+  drawTextLeft("WiFi Retry", 16, 16, 2, TFT_WARNING, TFT_BLACK);
   drawTextLeft("Could not reach your home WiFi yet.", 16, 54, 1, TFT_WHITE, TFT_BLACK);
-  drawTextLeft("Network", 16, 88, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft("Network", 16, 88, 1, TFT_MUTED, TFT_BLACK);
   drawTextLeft(ssid == nullptr || ssid[0] == '\0' ? "(saved network)" : ssid, 92, 88, 1, TFT_WHITE, TFT_BLACK);
   char retryText[32];
   snprintf(retryText, sizeof(retryText), "Retry %u of %u", attempt, maxAttempts);
-  drawTextLeft(retryText, 16, 122, 1, TFT_GREEN, TFT_BLACK);
-  drawTextLeft("Restarting and trying again...", 16, 154, 1, TFT_DARKGREY, TFT_BLACK);
+  drawTextLeft(retryText, 16, 122, 1, TFT_ACCENT, TFT_BLACK);
+  drawTextLeft("Restarting and trying again...", 16, 154, 1, TFT_MUTED, TFT_BLACK);
 #endif
 }
 
@@ -2000,19 +3548,19 @@ void renderUi()
   {
     setCheckpoint("render: parse error draw");
     tft.fillScreen(TFT_BLACK);
-    drawTextLeft("ui.json parse error", 8, 8, 1, TFT_RED, TFT_BLACK);
+    drawTextLeft("ui.json parse error", 8, 8, 1, TFT_DANGER, TFT_BLACK);
     return;
   }
 
   setCheckpoint("render: colors");
   JsonObject theme = doc["theme"];
   uint16_t backgroundColor = parseColor(theme["background"] | "#101820", TFT_BLACK);
-  uint16_t surfaceColor = parseColor(theme["surface"] | "#17212B", TFT_NAVY);
+  uint16_t surfaceColor = parseColor(theme["surface"] | "#17212B", TFT_SURFACE);
   uint16_t textColor = parseColor(theme["text"] | "#F2F5F7", TFT_WHITE);
-  uint16_t mutedColor = parseColor(theme["muted"] | "#8FA3AD", TFT_DARKGREY);
-  uint16_t accentColor = parseColor(theme["accent"] | "#20C997", TFT_GREEN);
-  uint16_t warningColor = parseColor(theme["warning"] | "#FFB020", TFT_ORANGE);
-  uint16_t dangerColor = parseColor(theme["danger"] | "#FF5A5F", TFT_RED);
+  uint16_t mutedColor = parseColor(theme["muted"] | "#8FA3AD", TFT_MUTED);
+  uint16_t accentColor = parseColor(theme["accent"] | "#20C997", TFT_ACCENT);
+  uint16_t warningColor = parseColor(theme["warning"] | "#FFB020", TFT_WARNING);
+  uint16_t dangerColor = parseColor(theme["danger"] | "#FF5A5F", TFT_DANGER);
   staleSeconds = doc["staleSeconds"] | DEFAULT_STALE_SECONDS;
   JsonObject layout = doc["layout"];
   uint8_t requestedRotation = doc["rotation"] | currentRotation;
@@ -2031,10 +3579,16 @@ void renderUi()
     drawTextRight(appAddress, tft.width() - 8, 12, 1, mutedColor, backgroundColor);
   }
 #endif
-
   setCheckpoint("render: cards draw");
   JsonArray cards = doc["cards"].as<JsonArray>();
   artSlotCount = 0;
+  if (cards.isNull() || expandedCardSlot >= (int)cards.size())
+  {
+    // A reconfigure (fewer cards, or none) can leave a stale index pointing at a slot
+    // that either no longer exists or now belongs to a different card - drop it rather
+    // than have an unrelated card appear "expanded" the next time the count grows back.
+    expandedCardSlot = -1;
+  }
   if (!cards.isNull() && cards.size() > 0)
   {
     DashboardGrid grid = gridForCardCount(cards.size());
@@ -2071,22 +3625,29 @@ void renderUi()
       int rowOffset = ((columns - rowItems) * (cardW + gap)) / 2;
       int x = padding + rowOffset + col * (cardW + gap);
       int y = top + row * (cardH + gap);
-      drawPlantCard(
-        x,
-        y,
-        cardW,
-        cardH,
-        card,
-        showCardArt,
-        backgroundColor,
-        surfaceColor,
-        textColor,
-        mutedColor,
-        accentColor,
-        warningColor,
-        dangerColor
-      );
       cachePlantArtSlot(x, y, cardW, cardH, card, showCardArt, backgroundColor, surfaceColor, textColor, accentColor, mutedColor, warningColor, dangerColor);
+      if (index == expandedCardSlot)
+      {
+        drawPlantCardDetail(artSlots[index]);
+      }
+      else
+      {
+        drawPlantCard(
+          x,
+          y,
+          cardW,
+          cardH,
+          card,
+          showCardArt,
+          backgroundColor,
+          surfaceColor,
+          textColor,
+          mutedColor,
+          accentColor,
+          warningColor,
+          dangerColor
+        );
+      }
       index++;
     }
   }
@@ -2146,7 +3707,7 @@ void renderAnimatedPlantArt()
   for (uint8_t i = 0; i < artSlotCount; i++)
   {
     PlantArtSlot& slot = artSlots[i];
-    if (!slot.enabled)
+    if (!slot.enabled || i == expandedCardSlot)
     {
       continue;
     }
@@ -2300,6 +3861,20 @@ String snapshotJson()
   }
 #endif
 
+  DisplaySettings reportedDisplay;
+  portENTER_CRITICAL(&displaySettingsMux);
+  reportedDisplay = displaySettings;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  JsonObject display = doc.createNestedObject("display");
+  display["brightnessPercent"] = reportedDisplay.brightnessPercent;
+  display["effectiveBrightnessPercent"] = reportedDisplay.screenOn ? reportedDisplay.brightnessPercent : 0;
+  display["screenOn"] = reportedDisplay.screenOn;
+  display["settingsVersion"] = reportedDisplay.version;
+  display["pendingCloudUpdate"] = reportedDisplay.pendingCloudUpdate;
+  display["updatedBy"] = reportedDisplay.updatedBy;
+  display["touchReady"] = touchReady;
+  display["touchCalibrated"] = touchCalibration.valid;
+
   JsonObject network = doc.createNestedObject("network");
 #if MSV2_ENABLE_WIFI
   network["mode"] = currentNetworkMode();
@@ -2387,7 +3962,7 @@ bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
   staleSeconds = nextConfig["staleSeconds"] | DEFAULT_STALE_SECONDS;
   cacheUiMetadata(nextConfig["_meta"]);
   displayDirty = true;
-  scheduleCloudSyncSoon(true);
+  scheduleCloudSnapshotAfterStateChange();
   return true;
 }
 
@@ -2673,6 +4248,185 @@ void runCloudConfigPull(uint32_t now)
 
   http.end();
   nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
+}
+
+void setCloudDisplayLastError(const char* error)
+{
+  strlcpy(cloudDisplayLastError, error == nullptr ? "" : error, sizeof(cloudDisplayLastError));
+}
+
+void runCloudDisplaySettings(uint32_t now)
+{
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0')
+  {
+    nextCloudDisplaySyncMs = 0;
+    return;
+  }
+  if (nextCloudDisplaySyncMs == 0)
+  {
+    nextCloudDisplaySyncMs = now + 5000UL;
+    return;
+  }
+  if ((int32_t)(now - nextCloudDisplaySyncMs) < 0)
+  {
+    return;
+  }
+
+  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiStationConnected)
+  {
+    setCloudDisplayLastError("waiting for station WiFi");
+    nextCloudDisplaySyncMs = now + 10000UL;
+    return;
+  }
+
+  DisplaySettings outgoing;
+  portENTER_CRITICAL(&displaySettingsMux);
+  outgoing = displaySettings;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  const bool sendingUpdate = outgoing.pendingCloudUpdate && cloudDisplayApiReady;
+
+  String url = cloudUploadUrl;
+  url += url.indexOf('?') >= 0 ? "&" : "?";
+  url += "display=1&receiverId=";
+  url += receiverId;
+  if (!sendingUpdate)
+  {
+    url += "&currentVersion=";
+    url += String(outgoing.version);
+  }
+
+  const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
+  const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
+  if (!isHttps && !isHttp)
+  {
+    setCloudDisplayLastError("uploadUrl must start with http:// or https://");
+    nextCloudDisplaySyncMs = now + CLOUD_DISPLAY_PULL_INTERVAL_MS;
+    return;
+  }
+
+  HTTPClient http;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  bool began = false;
+  if (isHttps)
+  {
+    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, url);
+  }
+  else
+  {
+    began = http.begin(plainClient, url);
+  }
+  cloudDisplayLastAttemptMs = now;
+  cloudDisplayLastHttpStatus = 0;
+  if (!began)
+  {
+    setCloudDisplayLastError("could not start HTTP client");
+    nextCloudDisplaySyncMs = now + CLOUD_DISPLAY_PULL_INTERVAL_MS;
+    return;
+  }
+
+  http.setTimeout(8000);
+  String auth = "Bearer ";
+  auth += cloudApiToken;
+  http.addHeader("Authorization", auth);
+  int status;
+  if (sendingUpdate)
+  {
+    StaticJsonDocument<384> requestDoc;
+    requestDoc["receiverId"] = receiverId;
+    requestDoc["brightnessPercent"] = outgoing.brightnessPercent;
+    requestDoc["screenOn"] = outgoing.screenOn;
+    requestDoc["baseVersion"] = outgoing.version;
+    String requestBody;
+    serializeJson(requestDoc, requestBody);
+    http.addHeader("Content-Type", "application/json");
+    status = http.POST(requestBody);
+  }
+  else
+  {
+    status = http.GET();
+  }
+  cloudDisplayLastHttpStatus = status;
+
+  if (status >= 200 && status < 300)
+  {
+    String response = http.getString();
+    StaticJsonDocument<1024> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, response);
+    JsonObject settings = responseDoc["settings"].as<JsonObject>();
+    if (error || !(responseDoc["ok"] | false))
+    {
+      setCloudDisplayLastError("invalid display settings response");
+    }
+    else if ((responseDoc["displaySettingsApi"] | 0) != 1)
+    {
+      // Safe staged rollout: older receiver-snapshot code ignores display=1
+      // and would treat a POST as a normal snapshot. Never send a settings
+      // POST until a GET explicitly advertises the v1 display protocol.
+      cloudDisplayApiReady = false;
+      setCloudDisplayLastError("backend display API upgrade required");
+    }
+    else if (settings.isNull())
+    {
+      cloudDisplayApiReady = true;
+      setCloudDisplayLastError("");
+      cloudDisplayLastSuccessMs = millis();
+    }
+    else
+    {
+      uint8_t brightness = (uint8_t)constrain((int)(settings["brightnessPercent"] | DEFAULT_BRIGHTNESS_PERCENT), 1, 100);
+      bool screenOn = settings["screenOn"] | true;
+      uint32_t version = settings["settingsVersion"] | 0;
+      const char* updatedBy = settings["updatedBy"] | "cloud";
+      cloudDisplayApiReady = true;
+      if (sendingUpdate)
+      {
+        bool stillCurrent;
+        portENTER_CRITICAL(&displaySettingsMux);
+        displaySettings.version = max(displaySettings.version, version);
+        stillCurrent = displaySettings.localGeneration == outgoing.localGeneration &&
+          displaySettings.brightnessPercent == outgoing.brightnessPercent &&
+          displaySettings.screenOn == outgoing.screenOn;
+        if (stillCurrent)
+        {
+          displaySettings.pendingCloudUpdate = false;
+          strlcpy(displaySettings.updatedBy, updatedBy, sizeof(displaySettings.updatedBy));
+        }
+        portEXIT_CRITICAL(&displaySettingsMux);
+        persistDisplaySettings();
+      }
+      else if (!outgoing.pendingCloudUpdate)
+      {
+        applyRemoteDisplaySettings(brightness, screenOn, version, updatedBy);
+      }
+      setCloudDisplayLastError("");
+      cloudDisplayLastSuccessMs = millis();
+      Serial.print("[MSV2 cloud] display settings v");
+      Serial.println(version);
+    }
+  }
+  else if (status > 0)
+  {
+    String error = "HTTP ";
+    error += status;
+    setCloudDisplayLastError(error.c_str());
+  }
+  else
+  {
+    String error = http.errorToString(status);
+    setCloudDisplayLastError(error.c_str());
+  }
+
+  http.end();
+  bool stillPending;
+  portENTER_CRITICAL(&displaySettingsMux);
+  stillPending = displaySettings.pendingCloudUpdate;
+  portEXIT_CRITICAL(&displaySettingsMux);
+  nextCloudDisplaySyncMs = millis() +
+    (stillPending && cloudDisplayApiReady ? 1000UL :
+      (cloudDisplayApiReady ? CLOUD_DISPLAY_PULL_INTERVAL_MS : CLOUD_BOOTSTRAP_RETRY_MS));
 }
 
 // Pulls the self-learned per-sensor moisture range + watering schedule (see
@@ -3226,7 +4980,9 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.print(" moisture=");
     Serial.println(moisture);
 
-    scheduleCloudSyncSoon();
+    // Do not schedule cloud work from packet reception. The periodic uploader will include
+    // this fresh value at the configured cloudSyncIntervalSeconds cadence; accelerating it
+    // here previously turned frequent advertisements into a TLS request every ~15-35s.
   }
 };
 
@@ -3246,7 +5002,8 @@ void bleScanTask(void* parameter)
 #endif
 
 #if MSV2_ENABLE_WIFI
-// Runs the four cloud network calls (bootstrap, config pull, auto-cal pull, snapshot
+// Runs the five cloud network calls (bootstrap, display settings, config pull,
+// auto-cal pull, snapshot
 // upload) on their own task instead of inline in loop(), mirroring bleScanTask above -
 // the same pattern that already fixed BLE scanning contention with rendering/WebServer.
 // Each of these does a blocking HTTPClient/WiFiClientSecure call (fresh TLS handshake
@@ -3256,6 +5013,8 @@ void bleScanTask(void* parameter)
 // every ~30s (CLOUD_CONFIG_PULL_INTERVAL_MS), which was frequent enough on its own to
 // read as "periodic freezes" even with a perfectly calm probe (see 2026-07-26 chat log).
 // Pinned to core 0, same as bleScanTask, leaving core 1 free for rendering/WebServer.
+// bleScanTask runs one priority level higher, preventing this task's blocking TLS work from
+// delaying scan-window scheduling. Packet reception no longer accelerates snapshot uploads.
 //
 // Known, accepted simplification (not new risk introduced by this change): this task
 // reads/writes cloudUploadUrl/cloudApiToken/wifiStationConnected and the sensors[]/
@@ -3276,6 +5035,7 @@ void cloudSyncTask(void* parameter)
     if (wifiStationConnected)
     {
       runCloudBootstrap(now);
+      runCloudDisplaySettings(now);
       runCloudConfigPull(now);
       runCloudAutoCalPull(now);
       runCloudSnapshotUploader(now);
@@ -3358,6 +5118,22 @@ void setupServer()
     Serial.println("[MSV2 web] GET /data");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", sensorDataJson());
+  });
+
+  server.on("/display", HTTP_GET, []() {
+    Serial.println("[MSV2 web] GET /display");
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(200, "application/json", displaySettingsJson());
+  });
+
+  server.on("/display", HTTP_POST, []() {
+    Serial.println("[MSV2 web] POST /display");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
+    writeDisplaySettingsJson(server.arg("plain"));
   });
 
   server.on("/snapshot", HTTP_GET, []() {
@@ -3627,6 +5403,7 @@ void setup()
   bootLog("serial ready");
 
   adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
+  displaySettingsFileMutex = xSemaphoreCreateMutex();
 
   bootLog("mounting LittleFS");
   if (!LittleFS.begin(true))
@@ -3637,11 +5414,31 @@ void setup()
   ensureUiMetadata();
   loadDeviceIdentity();
   loadCloudConfig();
+  loadDisplaySettings();
+  loadTouchCalibration();
   bootLog("LittleFS ready");
 
 #if MSV2_ENABLE_DISPLAY
+  bootLog("initializing backlight PWM (GPIO11)");
+  if (!ledcAttach(TFT_BACKLIGHT, BACKLIGHT_PWM_FREQUENCY_HZ, BACKLIGHT_PWM_RESOLUTION_BITS))
+  {
+    bootLog("backlight PWM attach failed");
+  }
+  applyBacklightFromSettings();
+
+  // Both SPI devices have 10K CS pull-ups on the PCB. Drive them high before
+  // initializing the shared bus as an additional guard against contention.
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+  pinMode(TOUCH_CS, OUTPUT);
+  digitalWrite(TOUCH_CS, HIGH);
+  pinMode(TOUCH_IRQ, INPUT_PULLUP);
+
   bootLog("initializing display");
-  busPtr = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, -1);
+  // Arduino_HWSPI deliberately shares one SPIClass with XPT2046_Touchscreen.
+  // The ST7796S is write-only at runtime, so the shared peripheral's input is
+  // routed to T_MISO/GPIO8; wired TFT_MISO/GPIO10 remains available but unused.
+  busPtr = new Arduino_HWSPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TOUCH_MISO, &displaySpi, true);
   if (busPtr == nullptr)
   {
     bootLog("display bus allocation failed");
@@ -3653,7 +5450,7 @@ void setup()
     bootLog("display allocation failed");
     return;
   }
-  if (!tft.begin())
+  if (!tft.begin(DISPLAY_SPI_HZ))
   {
     bootLog("display begin failed");
     return;
@@ -3668,6 +5465,43 @@ void setup()
   tft.fillScreen(TFT_BLACK);
   drawTextLeft("MSV2 booting", 8, 8, 1, TFT_WHITE, TFT_BLACK);
   bootLog("display ready");
+
+  bootLog("initializing XPT2046 touch");
+  touchReady = touchScreen.begin(displaySpi);
+  touchScreen.setRotation(0); // Persisted affine calibration handles display rotation.
+  Serial.print("[MSV2 touch] mode=polling cs=GPIO");
+  Serial.print(TOUCH_CS);
+  Serial.print(" irq=GPIO");
+  Serial.print(TOUCH_IRQ);
+  Serial.print(" irqIdle=");
+  Serial.println(digitalRead(TOUCH_IRQ));
+  if (!touchReady)
+  {
+    bootLog("XPT2046 touch init failed");
+  }
+  else
+  {
+    bool recalibrateHeld = false;
+    if (touchScreen.touched())
+    {
+      uint32_t holdStart = millis();
+      while (touchScreen.touched() && millis() - holdStart < 1200UL)
+      {
+        delay(10);
+      }
+      recalibrateHeld = millis() - holdStart >= 1000UL;
+    }
+    if (!touchCalibration.valid || recalibrateHeld)
+    {
+      bootLog(recalibrateHeld ? "touch held at boot; starting calibration" : "touch calibration missing; waiting for first target");
+      // Calibration must remain visible even if screen-off was persisted before
+      // this reboot. This preview does not alter the stored on/off setting.
+      ledcWrite(TFT_BACKLIGHT, brightnessPercentToDuty(max((int)DEFAULT_BRIGHTNESS_PERCENT, (int)displaySettings.brightnessPercent)));
+      runTouchCalibration(30000UL);
+      applyBacklightFromSettings();
+    }
+    bootLog(touchCalibration.valid ? "touch ready/calibrated" : "touch ready with fallback calibration");
+  }
 #else
   bootLog("display disabled");
 #endif
@@ -3682,7 +5516,7 @@ void setup()
   }
   setupServer();
   bootLog("WiFi/server ready");
-  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", 16384, nullptr, 1, &cloudSyncTaskHandle, 0) == pdPASS)
+  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", 16384, nullptr, CLOUD_SYNC_TASK_PRIORITY, &cloudSyncTaskHandle, 0) == pdPASS)
   {
     bootLog("cloud sync task running");
   }
@@ -3710,7 +5544,7 @@ void setup()
     bleScan->setActiveScan(false);
     bleScan->setInterval(120);
     bleScan->setWindow(40);
-    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", 8192, nullptr, 1, &bleScanTaskHandle, 0) == pdPASS)
+    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", 8192, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
     {
       bootLog("BLE scanner task running");
     }
@@ -3774,6 +5608,15 @@ void loop()
 #endif
 
 #if MSV2_ENABLE_DISPLAY
+  handleTouchInput(now);
+  resolvePendingDashboardTap(now);
+  if (brightnessOverlayOpen)
+  {
+    // Keep the modal stable while a finger is dragging. Sensor data remains
+    // cached and triggers its normal redraw as soon as the overlay closes.
+    delay(1);
+    return;
+  }
 #if MSV2_ENABLE_WIFI
   if (pendingRestartMs != 0)
   {
@@ -3797,14 +5640,16 @@ void loop()
   // cadence, since the probe's new adaptive advertising means sensorDataDirty can go a
   // full minute between updates otherwise.
   bool blinkNeeded = anyLowMoistureCardVisible();
+  bool detailOpen = expandedCardSlot >= 0;
   uint32_t renderIntervalMs = blinkNeeded ? 500 : SENSOR_RENDER_INTERVAL_MS;
-  if ((sensorDataDirty || blinkNeeded) && now - lastSensorRenderMs >= renderIntervalMs)
+  if ((sensorDataDirty || blinkNeeded || detailOpen) && now - lastSensorRenderMs >= renderIntervalMs)
   {
+    bool realDataChanged = sensorDataDirty;
     sensorDataDirty = false;
     lastSensorRenderMs = now;
     if (artSlotCount > 0)
     {
-      renderDashboardDataOnly();
+      renderDashboardDataOnly(!realDataChanged);
     }
     else
     {

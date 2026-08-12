@@ -24,16 +24,17 @@
 // ESP32-S3 wiring.
 #define USE_HSPI_PORT
 
-#define TFT_MISO -1
+#define TFT_MISO 10
 #define TFT_MOSI 13
 #define TFT_SCLK 12
-#define TFT_CS   14
-#define TFT_DC   15
-#define TFT_RST  16
+#define TFT_DC   14
+#define TFT_RST  15
+#define TFT_CS   16
 
-// Backlight is tied to 3.3V/5V in the current wiring, so TFT_eSPI does not
-// control it. If you later move LED/BL to a GPIO, set that pin here.
-#define TFT_BL   -1
+// Backlight is switched via Q1 (DMP3098L-7 high-side P-FET), gated by Q2
+// (2N7002) off GPIO11 -- see MSV2_ESP32_Backlight_Test for the bench-verified
+// PWM sweep. Non-inverted: duty cycle maps directly to backlight brightness.
+#define TFT_BL   11
 
 #define LOAD_GLCD
 #define LOAD_FONT2
