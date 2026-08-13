@@ -2440,6 +2440,24 @@ uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uin
   return blinkOn ? dangerColor : mutedColor;
 }
 
+// "Overdue" (see resolveMoistureBounds/refreshSlotMoistureBounds) is a pure watering-
+// schedule prediction from the cloud auto-cal function - median historical interval
+// between detected waterings vs. days since the last one - with zero awareness of the
+// current live reading. Left to force dangerColor unconditionally, a plant that was just
+// watered (moisture already back up near/at its wet bound) still blinks red until the
+// server-side rise-clustering catches up and clears the flag, which can lag well behind
+// the actual watering. Suppress the override once the live percent already contradicts
+// it, using healthColor's own "healthy" cutoff (50) rather than a separate threshold.
+uint16_t resolveMoistureColor(bool overdue, uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
+{
+  bool liveReadingContradictsOverdue = percent != BATTERY_UNKNOWN && percent >= 50;
+  if (overdue && !liveReadingContradictsOverdue)
+  {
+    return dangerColor;
+  }
+  return healthColor(percent, accentColor, warningColor, dangerColor, mutedColor);
+}
+
 void drawBar(int x, int y, int w, int h, uint8_t percent, uint16_t fillColor, uint16_t trackColor)
 {
   uint8_t clamped = percent == BATTERY_UNKNOWN ? 0 : (uint8_t)clampInt(percent, 0, 100);
@@ -2770,7 +2788,7 @@ void drawPlantCard(
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = overdue ? dangerColor : healthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
+  uint16_t moistureColor = resolveMoistureColor(overdue, moisturePct, accentColor, warningColor, dangerColor, mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, dangerColor, mutedColor);
@@ -2834,7 +2852,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = slot.overdue ? slot.dangerColor : healthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  uint16_t moistureColor = resolveMoistureColor(slot.overdue, moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, slot.dangerColor, slot.mutedColor);
@@ -2966,7 +2984,7 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   s.rawMoisture = reading != nullptr ? reading->moisture : 0;
   s.moisturePct = s.stale ? BATTERY_UNKNOWN : moisturePercent(s.rawMoisture, slot.dry, slot.wet);
   s.batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  s.moistureColor = slot.overdue ? slot.dangerColor : healthColor(s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  s.moistureColor = resolveMoistureColor(slot.overdue, s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!s.stale)
   {
     s.moistureColor = applyLowMoistureBlink(s.moistureColor, slot.dangerColor, slot.mutedColor);
@@ -3351,11 +3369,12 @@ bool slotNeedsBlink(PlantArtSlot& slot)
     return false;
   }
   refreshSlotMoistureBounds(slot);
-  if (slot.overdue)
+  uint8_t percent = moisturePercent(reading.moisture, slot.dry, slot.wet);
+  if (slot.overdue && percent < 50)
   {
     return true;
   }
-  return moisturePercent(reading.moisture, slot.dry, slot.wet) < 25;
+  return percent < 25;
 }
 
 // blinkOnly redraws only the card(s) driving the 500ms blink cadence, instead of every

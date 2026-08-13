@@ -811,7 +811,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         const dry = autoReady ? autoCal.dryBound : Number(card.moisture?.dry ?? card.dry ?? 120);
         const wet = autoReady ? autoCal.wetBound : Number(card.moisture?.wet ?? card.wet ?? 175);
         const moistPct = pct(reading.moisture, dry, wet);
-        const overdue = autoReady && autoCal.overdue;
+        // autoCal.overdue is a pure watering-schedule prediction with no awareness of the
+        // live reading (see receiver-snapshot's deriveAutoCal) - suppress it once the
+        // current moisture already contradicts it, same cutoff/reasoning as the physical
+        // display's resolveMoistureColor(), so the two never disagree.
+        const overdue = autoReady && autoCal.overdue && (moistPct == null || moistPct < 50);
         const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", reading.moisture == null ? "--" : reading.moisture, moistPct, overdue);
 
         return `
