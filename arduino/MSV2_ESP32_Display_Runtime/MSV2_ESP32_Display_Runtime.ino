@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-13 wifi-self-heal-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-13 wifi-self-heal-card-redraw-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -521,8 +521,12 @@ DashboardGrid gridForCardCount(size_t count);
 void drawPlantCardDataOnly(PlantArtSlot& slot);
 void drawPlantCardDetail(PlantArtSlot& slot);
 void drawPlantCardDetailDataOnly(PlantArtSlot& slot);
+void expandPlantCardInPlace(PlantArtSlot& slot);
+void collapsePlantCardInPlace(PlantArtSlot& slot);
 void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s);
+void seedDetailDiagnosticCache(PlantArtSlot& slot, const PlantDetailStats& s);
 void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s);
+void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s);
 void refreshSlotMoistureBounds(PlantArtSlot& slot);
 bool slotNeedsBlink(PlantArtSlot& slot);
 
@@ -2044,8 +2048,9 @@ void handleDashboardSingleTap(int16_t x, int16_t y)
 #endif
   if (expandedCardSlot >= 0)
   {
+    int8_t slotToCollapse = expandedCardSlot;
     expandedCardSlot = -1;
-    displayDirty = true;
+    collapsePlantCardInPlace(artSlots[slotToCollapse]);
     return;
   }
   for (uint8_t i = 0; i < artSlotCount; i++)
@@ -2053,7 +2058,7 @@ void handleDashboardSingleTap(int16_t x, int16_t y)
     if (artSlots[i].enabled && pointInside(x, y, artSlots[i].x, artSlots[i].y, artSlots[i].w, artSlots[i].h))
     {
       expandedCardSlot = i;
-      displayDirty = true;
+      expandPlantCardInPlace(artSlots[i]);
       return;
     }
   }
@@ -3076,17 +3081,8 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   s.rawCharging = reading != nullptr && reading->rawCharging;
 }
 
-// Seeds every cache field drawPlantCardDetailDataOnly() diffs against, so the very next
-// data-only refresh has an accurate baseline instead of relying on whatever this slot
-// index last held (see the moist/batt fields, shared with the normal card's own cache).
-void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
+void seedDetailDiagnosticCache(PlantArtSlot& slot, const PlantDetailStats& s)
 {
-  slot.metricsInitialized = true;
-  slot.lastMoistureStale = s.stale;
-  slot.lastMoistureRaw = s.stale ? slot.lastMoistureRaw : s.rawMoisture;
-  slot.lastMoisturePct = s.moisturePct;
-  slot.lastMoistureColor = s.moistureColor;
-  slot.lastBatteryPct = s.batteryPct;
   strlcpy(slot.lastDetailSignalLabel, s.signalLabel, sizeof(slot.lastDetailSignalLabel));
   slot.lastDetailSignalColor = s.signalColor;
   strlcpy(slot.lastDetailRssiText, s.rssiText, sizeof(slot.lastDetailRssiText));
@@ -3100,53 +3096,41 @@ void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
   slot.lastDetailCharging = s.rawCharging;
 }
 
-// Tap-to-expand detail view, full paint: replaces one plant card in place with a richer
-// readout (signal, age, wake/loss counters, moisture range) similar to the phone app's
-// Diagnostics tab - see handleDashboardSingleTap(). Reuses the exact art-region geometry
-// drawPlantArtInCard() would have used (y + 24, height max(24, h - 91)) so the extra rows
-// sit exactly where the sprite used to be, instead of inventing a separate layout system -
-// the same "more room at this card size" scaling drawPlantArtInCard/drawCompactCardMetrics
-// already rely on is what decides how many diagnostic rows fit here too.
-//
-// Paints unconditionally and is only called once per "this card just got expanded, or a
-// full layout rebuild happened" event (see renderUi()) - see display-surgical-redraw skill.
-// The periodic refresh path (renderDashboardDataOnly()) calls drawPlantCardDetailDataOnly()
-// instead, which diffs against the cache this function seeds via seedDetailCache().
-void drawPlantCardDetail(PlantArtSlot& slot)
+// Seeds every cache field drawPlantCardDetailDataOnly() diffs against, so the very next
+// data-only refresh has an accurate baseline instead of relying on whatever this slot
+// index last held (see the moist/batt fields, shared with the normal card's own cache).
+void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
 {
-  refreshSlotMoistureBounds(slot);
-  PlantDetailStats s;
-  computeDetailStats(slot, s);
+  slot.metricsInitialized = true;
+  slot.lastMoistureStale = s.stale;
+  slot.lastMoistureRaw = s.stale ? slot.lastMoistureRaw : s.rawMoisture;
+  slot.lastMoisturePct = s.moisturePct;
+  slot.lastMoistureColor = s.moistureColor;
+  slot.lastBatteryPct = s.batteryPct;
+  seedDetailDiagnosticCache(slot, s);
+}
+
+// Paints only the region that changes when a normal plant card flips to diagnostics:
+// the former sprite band plus the small signal label at the right of the existing name
+// row. The card background, border, name, moisture row, and battery row stay untouched.
+void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
+{
   const int x = slot.x;
   const int y = slot.y;
   const int w = slot.w;
   const int h = slot.h;
-
-  tft.fillRoundRect(x, y, w, h, 5, slot.surfaceColor);
-  tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
-  drawTextLeft(slot.plant, x + 7, y + 6, 1, slot.textColor, slot.surfaceColor);
-
-  if (h < 76)
-  {
-    // Too small for extra rows - same layout as the normal compact card, plus a small
-    // signal-quality dot in the corner where the name row would otherwise leave blank
-    // space, so even the smallest grid size shows *something* extra on tap.
-    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
-    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
-    return;
-  }
-
   const int infoY = y + 24;
   const int infoH = max(24, h - 91);
   const int infoBottom = infoY + infoH;
   const int rightX = x + w - 7;
+
+  // This is the exact region previously owned by the animated sprite. Clearing only
+  // this band removes the old pose without touching any neighboring card or metric row.
   tft.fillRect(x + 7, infoY, w - 14, infoH, slot.surfaceColor);
   drawTextRight(s.signalLabel, rightX, y + 6, 1, s.signalColor, slot.surfaceColor);
 
   if (w < 200)
   {
-    // Narrow cards (3+ per row): one stacked column of label/value rows, as many as the
-    // reclaimed art band has room for at this card's height.
     const int rowStep = clampInt(infoH / 7, 12, 20);
     int rowY = infoY;
     drawDetailStatRow(x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
@@ -3178,8 +3162,6 @@ void drawPlantCardDetail(PlantArtSlot& slot)
   }
   else
   {
-    // Wide cards (1-2 per row): two columns of label/value pairs, matching the phone
-    // app's Diagnostics grid, with row spacing that grows with the available height.
     const int colW = (w - 14) / 2;
     const int col2X = x + 7 + colW + 6;
     const int col1RightX = x + 7 + colW - 6;
@@ -3212,6 +3194,48 @@ void drawPlantCardDetail(PlantArtSlot& slot)
       drawDetailStatRow(col2X, rightX, rowY, "Charging", s.rawCharging ? "Yes" : "No", slot.mutedColor, slot.textColor, slot.surfaceColor);
     }
   }
+}
+
+// Tap-to-expand detail view, full paint: replaces one plant card in place with a richer
+// readout (signal, age, wake/loss counters, moisture range) similar to the phone app's
+// Diagnostics tab - see handleDashboardSingleTap(). Reuses the exact art-region geometry
+// drawPlantArtInCard() would have used (y + 24, height max(24, h - 91)) so the extra rows
+// sit exactly where the sprite used to be, instead of inventing a separate layout system -
+// the same "more room at this card size" scaling drawPlantArtInCard/drawCompactCardMetrics
+// already rely on is what decides how many diagnostic rows fit here too.
+//
+// Paints unconditionally and is only called during a genuine full layout rebuild (see
+// renderUi()). A tap transition uses expandPlantCardInPlace() instead, so it never routes
+// through this whole-card/full-dashboard path - see display-surgical-redraw skill.
+// The periodic refresh path (renderDashboardDataOnly()) calls drawPlantCardDetailDataOnly()
+// instead, which diffs against the cache this function seeds via seedDetailCache().
+void drawPlantCardDetail(PlantArtSlot& slot)
+{
+  refreshSlotMoistureBounds(slot);
+  PlantDetailStats s;
+  computeDetailStats(slot, s);
+  const int x = slot.x;
+  const int y = slot.y;
+  const int w = slot.w;
+  const int h = slot.h;
+
+  tft.fillRoundRect(x, y, w, h, 5, slot.surfaceColor);
+  tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
+  drawTextLeft(slot.plant, x + 7, y + 6, 1, slot.textColor, slot.surfaceColor);
+
+  if (h < 76)
+  {
+    // Too small for extra rows - same layout as the normal compact card, plus a small
+    // signal-quality dot in the corner where the name row would otherwise leave blank
+    // space, so even the smallest grid size shows *something* extra on tap.
+    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    seedDetailCache(slot, s);
+    return;
+  }
+
+  const int rightX = x + w - 7;
+  drawPlantCardDetailInfoBand(slot, s);
 
   drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
   drawTextRight(s.moistureText, rightX, y + h - 62, 1, s.moistureColor, slot.surfaceColor);
@@ -3222,6 +3246,59 @@ void drawPlantCardDetail(PlantArtSlot& slot)
   drawBar(x + 7, y + h - 14, w - 14, 8, s.batteryPct, s.batteryColor, slot.backgroundColor);
 
   seedDetailCache(slot, s);
+}
+
+void expandPlantCardInPlace(PlantArtSlot& slot)
+{
+  refreshSlotMoistureBounds(slot);
+  PlantDetailStats s;
+  computeDetailStats(slot, s);
+
+  if (slot.h < 76)
+  {
+    // Compact cards have no sprite band to replace; the diagnostic view adds only
+    // this small signal dot, so that is the only region touched on expansion.
+    tft.fillCircle(slot.x + slot.w - 8, slot.y + 8, 3, s.signalColor);
+    seedDetailDiagnosticCache(slot, s);
+    return;
+  }
+
+  drawPlantCardDetailInfoBand(slot, s);
+  // Moisture/battery cache fields already describe the unchanged normal-card rows.
+  // Seed only the newly painted diagnostic fields so pending sensor data still causes
+  // those existing rows to update on the next data-only pass.
+  seedDetailDiagnosticCache(slot, s);
+}
+
+void collapsePlantCardInPlace(PlantArtSlot& slot)
+{
+  const int x = slot.x;
+  const int y = slot.y;
+  const int w = slot.w;
+  const int h = slot.h;
+
+  if (h < 76)
+  {
+    tft.fillCircle(x + w - 8, y + 8, 3, slot.surfaceColor);
+    return;
+  }
+
+  const int infoY = y + 24;
+  const int infoH = max(24, h - 91);
+  const int rightX = x + w - 7;
+
+  // Remove only the two regions diagnostics owned, then restore the sprite into its
+  // original band. All normal-card chrome and metrics remain exactly as drawn.
+  tft.fillRect(rightX - 54, y + 5, 54, 10, slot.surfaceColor);
+  tft.fillRect(x + 7, infoY, w - 14, infoH, slot.surfaceColor);
+  if (slot.artEnabled)
+  {
+    const bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
+    const SensorReading* reading = validSensor ? &sensors[slot.sensorId] : nullptr;
+    const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
+    drawPlantArtInCard(x, y, w, h, slot.art, stale ? slot.mutedColor : slot.activeColor, slot.surfaceColor, slot.frame);
+  }
+  slot.nextFrameMs = millis() + slot.frameIntervalMs;
 }
 
 // Tap-to-expand detail view, data-only: the periodic-refresh counterpart to
@@ -3244,13 +3321,23 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
 
   tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
 
+  const bool signalChanged = strcmp(s.signalLabel, slot.lastDetailSignalLabel) != 0 || s.signalColor != slot.lastDetailSignalColor;
+  const bool moistureValueChanged = !slot.metricsInitialized || s.stale != slot.lastMoistureStale ||
+    (!s.stale && (s.rawMoisture != slot.lastMoistureRaw || s.moisturePct != slot.lastMoisturePct));
+  const bool moistureColorChanged = s.moistureColor != slot.lastMoistureColor;
+  const bool batteryValueChanged = !slot.metricsInitialized || s.batteryPct != slot.lastBatteryPct;
+
   if (h < 76)
   {
-    // Matches drawPlantCardDataOnly()'s own h < 76 behavior: drawCompactCardMetrics()
-    // already only clears its own metrics band, not the whole card, so there's no
-    // further diffing to do at this size.
-    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
-    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    if (moistureValueChanged || moistureColorChanged || batteryValueChanged)
+    {
+      drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    }
+    if (signalChanged)
+    {
+      tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    }
+    seedDetailCache(slot, s);
     return;
   }
 
@@ -3259,7 +3346,6 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   const int infoBottom = infoY + infoH;
   const int rightX = x + w - 7;
 
-  const bool signalChanged = strcmp(s.signalLabel, slot.lastDetailSignalLabel) != 0 || s.signalColor != slot.lastDetailSignalColor;
   if (signalChanged)
   {
     tft.fillRect(rightX - 54, y + 5, 54, 10, slot.surfaceColor);
@@ -3344,11 +3430,6 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   // Moist/Batt rows: identical diff-and-redraw idiom (and the same cache fields) as
   // drawPlantCardDataOnly() - see that function's comments for why the clear itself is
   // also conditional, not just the text/bar content.
-  const bool moistureValueChanged = !slot.metricsInitialized || s.stale != slot.lastMoistureStale ||
-    (!s.stale && (s.rawMoisture != slot.lastMoistureRaw || s.moisturePct != slot.lastMoisturePct));
-  const bool moistureColorChanged = s.moistureColor != slot.lastMoistureColor;
-  const bool batteryValueChanged = !slot.metricsInitialized || s.batteryPct != slot.lastBatteryPct;
-
   if (moistureValueChanged || moistureColorChanged)
   {
     if (moistureValueChanged)
