@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-11 display-touch-brightness-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-13 wifi-self-heal-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -268,6 +268,10 @@ const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned rang
 const UBaseType_t CLOUD_SYNC_TASK_PRIORITY = 1;
 const UBaseType_t BLE_SCAN_TASK_PRIORITY = 2;
 const uint8_t WIFI_CONNECT_REBOOT_RETRIES = 2;
+const uint32_t WIFI_HEALTH_CHECK_INTERVAL_MS = 1000;
+const uint32_t WIFI_RECONNECT_MIN_DELAY_MS = 5000;
+const uint32_t WIFI_RECONNECT_MAX_DELAY_MS = 60000;
+const uint8_t WIFI_RECONNECT_RADIO_RESET_EVERY = 5;
 
 struct SensorReading
 {
@@ -541,12 +545,23 @@ bool wifiSetupScreenDrawn = false;
 uint32_t lastSensorRenderMs = 0;
 uint32_t staleSeconds = DEFAULT_STALE_SECONDS;
 RTC_DATA_ATTR char lastCheckpoint[48] = "fresh boot";
-bool wifiStationConnected = false;
+volatile bool wifiStationConnected = false;
+volatile bool wifiStationDesired = false;
 bool wifiLocalOnly = false;
 bool wifiSetupPortalActive = false;
 bool storedWifiLoaded = false;
 char configuredWifiSsid[64] = "";
 char configuredWifiPassword[96] = "";
+char activeWifiSsid[64] = "";
+char activeWifiPassword[96] = "";
+uint32_t wifiLastHealthCheckMs = 0;
+uint32_t wifiDisconnectedSinceMs = 0;
+uint32_t wifiLastConnectedMs = 0;
+uint32_t wifiLastReconnectAttemptMs = 0;
+uint32_t wifiDisconnectCount = 0;
+uint32_t wifiReconnectAttemptTotal = 0;
+uint32_t wifiReconnectAttempts = 0;
+uint32_t nextWifiReconnectMs = 0;
 char receiverId[20] = "";
 char receiverSecret[33] = "";
 char receiverClaimCode[10] = "";
@@ -1280,7 +1295,7 @@ bool resetCloudConfig()
 
 String wifiStatusJson()
 {
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<768> doc;
   doc["networkMode"] = currentNetworkMode();
   doc["ip"] = currentIpAddress().toString();
   doc["setupSsid"] = AP_SSID;
@@ -1293,6 +1308,14 @@ String wifiStatusJson()
 #if MSV2_ENABLE_WIFI
   doc["connectedSsid"] = wifiStationConnected ? WiFi.SSID() : "";
   doc["rssi"] = wifiStationConnected ? WiFi.RSSI() : 0;
+  doc["stationDesired"] = wifiStationDesired;
+  doc["wifiStatus"] = (int)WiFi.status();
+  doc["disconnectCount"] = wifiDisconnectCount;
+  doc["disconnectedSinceMs"] = wifiDisconnectedSinceMs;
+  doc["lastConnectedMs"] = wifiLastConnectedMs;
+  doc["lastReconnectAttemptMs"] = wifiLastReconnectAttemptMs;
+  doc["reconnectAttempts"] = wifiReconnectAttempts;
+  doc["reconnectAttemptTotal"] = wifiReconnectAttemptTotal;
 #else
   doc["connectedSsid"] = "";
   doc["rssi"] = 0;
@@ -3593,8 +3616,15 @@ void renderUi()
   if (!wifiSetupPortalActive)
   {
     char appAddress[36];
-    String ipText = currentIpAddress().toString();
-    snprintf(appAddress, sizeof(appAddress), "App %s", ipText.c_str());
+    if (wifiStationDesired && !wifiStationConnected)
+    {
+      strlcpy(appAddress, "WiFi reconnecting", sizeof(appAddress));
+    }
+    else
+    {
+      String ipText = currentIpAddress().toString();
+      snprintf(appAddress, sizeof(appAddress), "App %s", ipText.c_str());
+    }
     drawTextRight(appAddress, tft.width() - 8, 12, 1, mutedColor, backgroundColor);
   }
 #endif
@@ -4010,7 +4040,7 @@ void runCloudBootstrap(uint32_t now)
     return;
   }
 
-  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
     setCloudBootstrapLastError("waiting for station WiFi");
@@ -4164,7 +4194,7 @@ void runCloudConfigPull(uint32_t now)
     return;
   }
 
-  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
     setCloudConfigLastError("waiting for station WiFi");
@@ -4291,7 +4321,7 @@ void runCloudDisplaySettings(uint32_t now)
     return;
   }
 
-  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
     setCloudDisplayLastError("waiting for station WiFi");
@@ -4473,7 +4503,7 @@ void runCloudAutoCalPull(uint32_t now)
     return;
   }
 
-  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
     nextCloudAutoCalPullMs = now + 10000UL;
@@ -4568,7 +4598,7 @@ void runCloudSnapshotUploader(uint32_t now)
     return;
   }
 
-  wifiStationConnected = WiFi.status() == WL_CONNECTED;
+  wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
     setCloudLastError("waiting for station WiFi");
@@ -5263,6 +5293,10 @@ const char* currentNetworkMode()
   {
     return "station";
   }
+  if (wifiStationDesired && !wifiSetupPortalActive)
+  {
+    return "reconnecting";
+  }
   if (wifiLocalOnly && !wifiSetupPortalActive)
   {
     return "local-only";
@@ -5273,11 +5307,136 @@ const char* currentNetworkMode()
 #endif
 }
 
+bool hasUsableStationConnection()
+{
+#if MSV2_ENABLE_WIFI
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    return false;
+  }
+  IPAddress ip = WiFi.localIP();
+  return ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0;
+#else
+  return false;
+#endif
+}
+
+void scheduleCloudCatchUpAfterWifiRecovery(uint32_t now)
+{
+  // Do not wait for the old periodic deadlines after an outage. Upload the latest
+  // sensor snapshot immediately, then stagger the less urgent pulls so reconnecting
+  // does not launch every TLS handshake in one burst.
+  if (strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0 && (cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0'))
+  {
+    nextCloudBootstrapMs = now;
+  }
+  if (cloudEnabled)
+  {
+    nextCloudSyncMs = now;
+    nextCloudDisplaySyncMs = now + 1000UL;
+    nextCloudConfigPullMs = now + 2000UL;
+    nextCloudAutoCalPullMs = now + 3000UL;
+  }
+}
+
+uint32_t wifiReconnectDelayMs(uint32_t attempt)
+{
+  // 5s, 10s, 20s, 40s, then one attempt per minute until the AP returns.
+  uint8_t shift = attempt > 4 ? 4 : (attempt == 0 ? 0 : (uint8_t)attempt - 1);
+  uint32_t delayMs = WIFI_RECONNECT_MIN_DELAY_MS << shift;
+  return delayMs > WIFI_RECONNECT_MAX_DELAY_MS ? WIFI_RECONNECT_MAX_DELAY_MS : delayMs;
+}
+
+void maintainWifiConnection(uint32_t now)
+{
+#if MSV2_ENABLE_WIFI
+  if (!wifiStationDesired || wifiSetupPortalActive || wifiLocalOnly || activeWifiSsid[0] == '\0')
+  {
+    return;
+  }
+  if ((int32_t)(now - wifiLastHealthCheckMs) < (int32_t)WIFI_HEALTH_CHECK_INTERVAL_MS)
+  {
+    return;
+  }
+  wifiLastHealthCheckMs = now;
+
+  if (hasUsableStationConnection())
+  {
+    if (!wifiStationConnected || wifiDisconnectedSinceMs != 0)
+    {
+      wifiStationConnected = true;
+      wifiLastConnectedMs = now;
+      wifiDisconnectedSinceMs = 0;
+      wifiReconnectAttempts = 0;
+      nextWifiReconnectMs = 0;
+      Serial.print("[MSV2 wifi] connection restored: ");
+      Serial.println(WiFi.localIP());
+      if (serverPtr != nullptr)
+      {
+        // Rebind the local app listener too; a full radio reset invalidates any
+        // sockets that were open on the old station interface.
+        server.begin();
+      }
+      scheduleCloudCatchUpAfterWifiRecovery(now);
+      displayDirty = true;
+      sensorDataDirty = true;
+    }
+    return;
+  }
+
+  wifiStationConnected = false;
+  if (wifiDisconnectedSinceMs == 0)
+  {
+    wifiDisconnectedSinceMs = now;
+    wifiDisconnectCount++;
+    nextWifiReconnectMs = now;
+    Serial.print("[MSV2 wifi] connection lost; status=");
+    Serial.println((int)WiFi.status());
+    displayDirty = true;
+  }
+  if ((int32_t)(now - nextWifiReconnectMs) < 0)
+  {
+    return;
+  }
+
+  wifiReconnectAttempts++;
+  wifiReconnectAttemptTotal++;
+  wifiLastReconnectAttemptMs = now;
+  const bool resetRadio = wifiReconnectAttempts % WIFI_RECONNECT_RADIO_RESET_EVERY == 0;
+  Serial.print("[MSV2 wifi] reconnect attempt ");
+  Serial.print(wifiReconnectAttempts);
+  Serial.println(resetRadio ? " (radio reset)" : "");
+
+  if (resetRadio)
+  {
+    // A normal reconnect is enough for router/channel interruptions. Periodically
+    // rebuild the station radio as well so a wedged DHCP/driver state cannot leave
+    // the receiver offline forever.
+    WiFi.disconnect(true);
+    delay(50);
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
+    WiFi.setSleep(false);
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(activeWifiSsid, activeWifiPassword);
+  }
+  else if (!WiFi.reconnect())
+  {
+    WiFi.begin(activeWifiSsid, activeWifiPassword);
+  }
+
+  nextWifiReconnectMs = now + wifiReconnectDelayMs(wifiReconnectAttempts);
+#endif
+}
+
 void setupWifi()
 {
 #if MSV2_ENABLE_WIFI
   wifiStationConnected = false;
+  wifiStationDesired = false;
   wifiSetupPortalActive = false;
+  activeWifiSsid[0] = '\0';
+  activeWifiPassword[0] = '\0';
   loadStoredWifiConfig();
 
   const bool forceSetupUnlocked = MSV2_FORCE_WIFI_SETUP != 0 && LittleFS.exists(FORCE_WIFI_SETUP_UNLOCK_PATH);
@@ -5301,6 +5460,9 @@ void setupWifi()
 
   if (strlen(stationSsid) > 0)
   {
+    wifiStationDesired = true;
+    strlcpy(activeWifiSsid, stationSsid, sizeof(activeWifiSsid));
+    strlcpy(activeWifiPassword, stationPassword, sizeof(activeWifiPassword));
     bootLog("connecting WiFi STA");
     Serial.print("[MSV2 wifi] SSID: ");
     Serial.println(stationSsid);
@@ -5308,20 +5470,24 @@ void setupWifi()
     Serial.println(storedWifiLoaded ? "LittleFS" : "firmware");
     renderWifiConnectingScreen(stationSsid, storedWifiLoaded ? "saved from phone app" : "firmware default");
 
+    WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(stationSsid, stationPassword);
+    WiFi.setSleep(false);
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(activeWifiSsid, activeWifiPassword);
 
     uint32_t startMs = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startMs < 15000)
+    while (!hasUsableStationConnection() && millis() - startMs < 15000)
     {
       delay(250);
       Serial.print(".");
     }
     Serial.println();
 
-    if (WiFi.status() == WL_CONNECTED)
+    if (hasUsableStationConnection())
     {
       wifiStationConnected = true;
+      wifiLastConnectedMs = millis();
       clearWifiRetryState();
       Serial.print("[MSV2 wifi] connected: ");
       Serial.println(WiFi.localIP());
@@ -5349,6 +5515,7 @@ void setupWifi()
       Serial.println("[MSV2 wifi] saved credential retries exhausted; starting setup AP");
     }
     wifiSetupPortalActive = true;
+    wifiStationDesired = false;
     renderWifiSetupScreen("Could not join home WiFi");
     WiFi.disconnect(true);
     delay(250);
@@ -5608,6 +5775,7 @@ void loop()
   uint32_t now = millis();
 
 #if MSV2_ENABLE_WIFI
+  maintainWifiConnection(now);
   if (dnsServerPtr != nullptr && !wifiStationConnected)
   {
     dnsServer.processNextRequest();
