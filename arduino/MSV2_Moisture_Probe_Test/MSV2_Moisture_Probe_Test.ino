@@ -98,25 +98,32 @@ const int LED_PIN = A1;     // external red LED, HIGH = on (flip if wired active
 const uint32_t WAKE_INTERVAL_MS = 3000;
 
 // Per-sample burst duration and how many samples feed the median. Total
-// active time per report is MEDIAN_SAMPLES * SAMPLE_WINDOW_MS = 5ms.
-const uint32_t SAMPLE_WINDOW_MS = 1;
+// active time per report is MEDIAN_SAMPLES * SAMPLE_WINDOW_MS = 25ms.
+// 2026-08-13: 1ms widened to 5ms, matching the deployed MSV2_Moisture_BLE_Sleep.ino fix
+// (2026-07-30) for RTC1/LFCLK's ~0.977ms tick granularity quantizing a 1ms window's burst
+// duration into a handful of discrete buckets - a chip-level nRF52840 millis()/micros()
+// property, not specific to that sketch, so this bench reference had the same exposure.
+const uint32_t SAMPLE_WINDOW_MS = 5;
 const uint8_t MEDIAN_SAMPLES = 5;
 
 // Safety cap per half-cycle so a disconnected/open probe (pin never
 // reads LOW) can't hang a burst forever.
 const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL; // 5 ms
 
-// Charge-settling delay before releasing the driven plate to float/read (see the 40
-// unrolled __NOP()s in countOscCycles()). The direct-register rewrite closed the ~1-2us
-// of incidental charge time Arduino's digitalWrite()+pinMode() call overhead used to
-// provide, which turned out to be load-bearing: without it, a touch-loaded plate didn't
-// reach a real HIGH before release, producing a small, plausible-looking reading that had
-// stopped tracking real capacitance changes (confirmed bench-side: zero touch response
-// with no delay, restored with delayMicroseconds(1) at 220-326kHz touch-responsive).
-// Trimmed to 20 NOPs (~312ns @ 64MHz) for more range, then bumped to 40 after a heavier
-// touch load (4 fingers) turned out to saturate at 20 -- see the fuller note at the NOP
-// block itself. Re-verify touch/moisture response live after any change to this value,
-// since undershooting fails silently (a plausible-looking number that's just wrong).
+// Charge-settling before releasing the driven plate to float/read. The direct-register
+// rewrite closed the ~1-2us of incidental charge time Arduino's digitalWrite()+pinMode()
+// call overhead used to provide, which turned out to be load-bearing: without it, a
+// touch-loaded plate didn't reach a real HIGH before release, producing a small,
+// plausible-looking reading that had stopped tracking real capacitance changes (confirmed
+// bench-side: zero touch response with no delay, restored with delayMicroseconds(1) at
+// 220-326kHz touch-responsive). Originally a fixed unrolled-NOP delay (20, then 40 after a
+// heavier 4-finger touch load turned out to saturate at 20 -- a fixed guess either wastes
+// time on a light load or undershoots on a heavy one). 2026-08-13: replaced with a poll
+// loop waiting for a real HIGH (bounded by OSC_CYCLE_TIMEOUT_US), ported from the deployed
+// MSV2_Moisture_BLE_Sleep.ino fix (2026-07-28) that made the same swap after root-causing
+// the fixed-NOP shape of delay as the leading suspect for a "locks onto a wrong value for
+// hours, then jumps" quantization artifact - a poll loop adapts to the real load every
+// cycle instead of needing hand-tuning against whatever load was on the bench that day.
 
 // --- Diagnostic: firmware overhead ceiling test ------------------------
 // Set true to measure this design's max possible cycle rate independent of
@@ -289,26 +296,17 @@ uint32_t countOscCycles(uint32_t windowMs)
     NRF_P0->DIRSET = driveBit; // driven plate -> output
     NRF_P0->OUTSET = driveBit; // ...charge HIGH
 
-    // Charge-settling delay -- see the longer note where CHARGE_SETTLE_NOPS is declared.
-    // Unrolled, not a for-loop: a loop's own increment/compare/branch overhead (several
-    // cycles/iteration on Cortex-M4) would swamp a target this short and silently make
-    // the realized delay LONGER than intended instead of shorter -- confirmed the hard
-    // way (a for-loop version dropped the reading from 326kHz to 250kHz, the wrong
-    // direction for a shortened delay). This is 20 literal NOP instructions, no branch.
-    // Bumped 20 -> 40: a heavier touch load (4 fingers) was saturating at 244kHz and
-    // never going lower no matter how much more contact was added -- not the sensor
-    // maxing out, but this delay running out of charge budget for that much capacitance
-    // (the fixed charge pulse can no longer get a big-enough plate meaningfully above
-    // the read threshold at all, so the reading stops tracking capacitance and flattens).
-    // Sized for the wettest case we expect (soaked soil), not just a light single touch.
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    // Wait for the driven plate to actually reach a real HIGH before releasing it -
+    // see the longer note where this is discussed above. Same shape as the discharge
+    // wait below, just polling the opposite level.
+    uint32_t chargeStartUs = micros();
+    while (!(NRF_P0->IN & driveBit))
+    {
+      if (micros() - chargeStartUs >= OSC_CYCLE_TIMEOUT_US)
+      {
+        break; // never reached a clean HIGH (shorted/disconnected plate) - bail this half-cycle
+      }
+    }
 
     NRF_P0->DIRCLR = driveBit; // release driven plate to INPUT (float, PIN_CNF input buffer already connected from setup())
 

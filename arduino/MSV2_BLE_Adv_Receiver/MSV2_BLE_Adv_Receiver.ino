@@ -17,8 +17,12 @@ bool haveLastWakeBySensor[MAX_SENSOR_ID + 1] = { false };
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial)
+  uint32_t serialWaitStart = millis();
+  while (!Serial && millis() - serialWaitStart < 3000)
   {
+    // Give the host up to 3s to open the port without hanging forever if nothing
+    // connects - this sketch is meant to run unattended off USB power, and the
+    // scan/log loop below works fine with Serial never opened.
     delay(10);
   }
 
@@ -89,8 +93,12 @@ void scan_callback(ble_gap_evt_adv_report_t* report)
     return;
   }
 
+  // Guard the reboot case explicitly (wake counter resets to a small value on
+  // probe power-cycle/reflash) instead of letting `wake - lastWake - 1` underflow
+  // into a huge, nonsensical 24-bit-masked count - same fix already applied to
+  // MSV2_ESP32_Display_Runtime.ino's onResult().
   uint32_t missed = 0;
-  if (haveLastWakeBySensor[sensorId])
+  if (haveLastWakeBySensor[sensorId] && wake > lastWakeBySensor[sensorId])
   {
     missed = (wake - lastWakeBySensor[sensorId] - 1) & 0xFFFFFF;
   }

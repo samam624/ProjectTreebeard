@@ -3,9 +3,13 @@
 // receiverSecret over HTTP or serial by design (see deviceInfoJson()), so pulling it off a
 // board that's being physically retired/replaced requires a one-shot read like this instead.
 //
-// Read-only: never writes, formats, or removes anything. Uses LittleFS.begin(true) to match
-// the runtime firmware's own mount call exactly (formatOnFail only triggers if the mount
-// itself fails, so a healthy filesystem is left untouched).
+// Read-only: never writes, formats, or removes anything. Uses LittleFS.begin(false) -
+// deliberately NOT matching the runtime firmware's formatOnFail=true mount call, because
+// this tool's whole purpose is rescuing /device.json/receiverSecret off a board that's
+// failing, and formatOnFail would destroy that exact data on the one mount outcome (a
+// failed mount) this tool actually exists to handle. A healthy filesystem mounts either
+// way; only the failure case differs, and that's precisely the case a rescue tool must
+// never write to.
 #include <FS.h>
 #include <LittleFS.h>
 using fs::File;

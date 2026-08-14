@@ -161,17 +161,36 @@ def upscale_frames(frames: list[Image.Image], factor: int) -> list[Image.Image]:
     ]
 
 
+MAGENTA_RGB = (255, 0, 255)
+
+
 def frame_to_gif_palette(frame: Image.Image) -> Image.Image:
-    transparent = Image.new("RGBA", frame.size, (255, 0, 255, 0))
+    transparent = Image.new("RGBA", frame.size, MAGENTA_RGB + (0,))
     transparent.alpha_composite(frame)
     return transparent.convert("P", palette=Image.Palette.ADAPTIVE, colors=255)
+
+
+def magenta_palette_index(frame: Image.Image) -> int:
+    # Adaptive quantization doesn't guarantee the placeholder color lands at
+    # index 0, so find the palette entry actually closest to it.
+    palette = frame.getpalette() or []
+    best_index = 0
+    best_distance = None
+    for index in range(0, len(palette), 3):
+        r, g, b = palette[index:index + 3]
+        distance = (r - MAGENTA_RGB[0]) ** 2 + (g - MAGENTA_RGB[1]) ** 2 + (b - MAGENTA_RGB[2]) ** 2
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_index = index // 3
+    return best_index
 
 
 def write_gif(path: Path, frames: list[Image.Image], *, duration_ms: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     palette_frames = [frame_to_gif_palette(frame) for frame in frames]
-    for frame in palette_frames:
-        frame.info["transparency"] = 0
+    transparency_indexes = [magenta_palette_index(frame) for frame in palette_frames]
+    for frame, transparency_index in zip(palette_frames, transparency_indexes):
+        frame.info["transparency"] = transparency_index
         frame.info["disposal"] = 2
     palette_frames[0].save(
         path,
@@ -179,7 +198,7 @@ def write_gif(path: Path, frames: list[Image.Image], *, duration_ms: int) -> Non
         append_images=palette_frames[1:],
         duration=duration_ms,
         loop=0,
-        transparency=0,
+        transparency=transparency_indexes[0],
         disposal=2,
         optimize=False,
     )

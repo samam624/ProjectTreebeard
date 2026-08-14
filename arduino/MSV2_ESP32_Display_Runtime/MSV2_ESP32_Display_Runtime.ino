@@ -245,13 +245,15 @@ const uint8_t MAX_SENSOR_ID = 16;
 const size_t MSV2_RAW_PACKET_MIN_LEN = 15;
 const uint32_t BLE_SCAN_SECONDS = 3;
 const uint32_t BLE_SCAN_IDLE_MS = 250;
-// 2026-07-31: was 90s, sized for the probes' old ~10s-measure/60s-advertise bench cadence.
-// Probes now wake/advertise every 30 min (see MSV2_Moisture_BLE_Sleep.ino's WAKE_PERIOD_MS),
-// so 90s made every card show stale/"--" for essentially the entire cycle. 3900s (65 min)
-// tolerates one fully missed wake (packet loss or a bad scan window) plus 5 min margin
-// before a card actually goes stale, while still flagging a truly dead/dead-battery probe
-// within a bit over an hour.
-const uint32_t DEFAULT_STALE_SECONDS = 3900;
+// 2026-08-13: back down from 3900s (65 min). That value was sized for a 30-minute
+// probe wake/advertise cadence that's since been superseded (see 2026-08-09 in
+// docs/STATUS_HANDOFF.md) - probes are back on the same ~10s-measure/60s-advertise
+// bench cadence 90s was originally tuned for, with immediate advertises on a big
+// moisture swing making steady-state gaps typically shorter than 60s, not longer.
+// 180s tolerates two fully missed 60s advertises (packet loss or a bad scan window)
+// plus margin before a card actually goes stale, while still flagging a truly
+// dead/dead-battery probe within a few minutes instead of over an hour.
+const uint32_t DEFAULT_STALE_SECONDS = 180;
 const uint8_t BATTERY_UNKNOWN = 255;
 const uint8_t MAX_ART_SLOTS = 16;
 const uint32_t SENSOR_RENDER_INTERVAL_MS = 2000;
@@ -543,11 +545,14 @@ bool slotNeedsBlink(PlantArtSlot& slot);
 TaskHandle_t cloudSyncTaskHandle = nullptr;
 #endif
 
-bool displayDirty = true;
+// volatile: both written from applyCloudUiConfig() on the cloud-sync task (pinned to
+// core 0) and read/cleared from loop() on the main render task (core 1) - same
+// producer/consumer shape as sensorDataDirty just below, which already had volatile.
+volatile bool displayDirty = true;
 volatile bool sensorDataDirty = false;
 bool wifiSetupScreenDrawn = false;
 uint32_t lastSensorRenderMs = 0;
-uint32_t staleSeconds = DEFAULT_STALE_SECONDS;
+volatile uint32_t staleSeconds = DEFAULT_STALE_SECONDS;
 RTC_DATA_ATTR char lastCheckpoint[48] = "fresh boot";
 volatile bool wifiStationConnected = false;
 volatile bool wifiStationDesired = false;
@@ -588,11 +593,19 @@ unsigned long adminUnlockUntilMs = 0;
 // who missed the post-boot period still can never gain admin access without a reboot.
 bool isAdminActionAllowed()
 {
-  if (millis() >= adminUnlockUntilMs)
+  // Rollover-safe comparison (matches the (int32_t)(now - deadline) idiom used
+  // elsewhere in this file, e.g. scheduleCloudSyncSoon()) - a plain millis() >=
+  // adminUnlockUntilMs comparison would misfire once millis() wraps at ~49.7 days:
+  // post-wrap, a small live millis() briefly reads as "less than" the small
+  // adminUnlockUntilMs left over from boot, so the window would look still-open
+  // (or freshly reopened) on a receiver that's been up for weeks, defeating the
+  // whole post-boot-only admin gate.
+  const uint32_t now = millis();
+  if ((int32_t)(now - adminUnlockUntilMs) >= 0)
   {
     return false;
   }
-  adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
+  adminUnlockUntilMs = now + ADMIN_GRACE_WINDOW_MS;
   return true;
 }
 bool cloudEnabled = false;
@@ -2391,8 +2404,12 @@ void resolveMoistureBounds(
   // changes), so it's a reasonable number to show rather than nothing. "pending" just
   // flags "not auto-calibrated yet" for callers that want to note it - it doesn't
   // block or invalidate the percentage anymore.
-  outDry = moistureConfig["dry"] | card["dry"] | defaultDry;
-  outWet = moistureConfig["wet"] | card["wet"] | defaultWet;
+  // Clamped to the domain of the raw moisture value itself (uint16_t) - moisturePercent()'s
+  // ((long)moisture - dry) * 100L intermediate can overflow a 32-bit long (signed-overflow
+  // UB) for a pathological dry/wet value, which requires an already-authenticated admin
+  // write but has no legitimate reason to be outside this range regardless.
+  outDry = clampInt(moistureConfig["dry"] | card["dry"] | defaultDry, 0, 65535);
+  outWet = clampInt(moistureConfig["wet"] | card["wet"] | defaultWet, 0, 65535);
   outOverdue = false;
   outPending = autoEnabled;
 }
@@ -2722,8 +2739,9 @@ void cachePlantArtSlot(
   strlcpy(slot.art, card["art"] | "sprout_pot", sizeof(slot.art));
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
   slot.autoEnabled = moistureConfig["auto"] | false;
-  slot.manualDry = moistureConfig["dry"] | card["dry"] | 120;
-  slot.manualWet = moistureConfig["wet"] | card["wet"] | 175;
+  // Clamped for the same overflow reason as resolveMoistureBounds() above.
+  slot.manualDry = clampInt(moistureConfig["dry"] | card["dry"] | 120, 0, 65535);
+  slot.manualWet = clampInt(moistureConfig["wet"] | card["wet"] | 175, 0, 65535);
   refreshSlotMoistureBounds(slot);
   slot.x = x;
   slot.y = y;

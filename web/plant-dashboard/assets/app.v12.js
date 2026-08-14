@@ -2,6 +2,12 @@ const API_BASE = "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-da
 const SHARE_TOKEN_KEY = "msv2.householdShareToken";
 const SHARE_TOKEN_COOKIE = "msv2_share_token";
 const QR_DECODER_URL = "assets/jsQR-1.4.0.min.js";
+// Not applied as the loaded <script>'s integrity/crossOrigin attributes anymore -
+// those were meaningless (and a future-drift footgun) for a same-origin file under
+// this app's script-src 'self' CSP, which already fully trusts same-origin script.
+// Kept as a source-level sentinel: scripts/verify_plant_dashboard_qr.mjs asserts this
+// exact line matches a freshly computed hash of the vendored file, catching the same
+// kind of hash/file drift that broke the decoder once before (2026-08-11).
 const QR_DECODER_INTEGRITY = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
 const params = new URLSearchParams(window.location.search);
 const state = {
@@ -241,8 +247,9 @@ async function startQrScan() {
     return;
   }
 
+  let stream;
   try {
-    state.scanStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: { facingMode: { ideal: "environment" } },
     });
@@ -253,10 +260,18 @@ async function startQrScan() {
     return;
   }
 
+  // A newer startQrScan()/stopQrScan() call can supersede this one while
+  // getUserMedia() was pending (e.g. a fast double-tap on Scan QR). Stop the stream
+  // this call just obtained directly, rather than assigning it to state.scanStream
+  // and calling stopQrScan() - that would only stop whatever state.scanStream
+  // CURRENTLY holds, which by now may belong to the newer, still-active call,
+  // leaking this call's camera hardware (and its "on" indicator) indefinitely
+  // instead of the stream that's actually still in use.
   if (scanSession !== state.scanSession) {
-    stopQrScan();
+    for (const track of stream.getTracks()) track.stop();
     return;
   }
+  state.scanStream = stream;
   const video = byId("scanVideo");
   video.srcObject = state.scanStream;
   byId("scanBox").hidden = false;
@@ -350,8 +365,6 @@ async function loadQrDecoder() {
   state.qrDecoderPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = QR_DECODER_URL;
-    script.integrity = QR_DECODER_INTEGRITY;
-    script.crossOrigin = "anonymous";
     script.async = true;
     script.onload = () => {
       if (typeof window.jsQR !== "function") {
@@ -598,7 +611,11 @@ function readingsBySensor(readings) {
 
 function artSrc(key) {
   const safe = String(key || "sprout_pot").replace(/[^a-z0-9_]/g, "");
-  const known = ["cactus_cluster", "cup_plant", "monstera", "spindly", "sprout_pot", "wide_planter"];
+  const known = [
+    "cactus_cluster", "cup_plant", "monstera", "spindly", "sprout_pot", "wide_planter",
+    "color_bonsai_bowl", "color_grass_planter", "color_hanging_clump", "color_hanging_vine",
+    "color_round_pot", "color_vine_pot", "color_zigzag_pot",
+  ];
   return "assets/plant_gifs/" + (known.includes(safe) ? safe : "sprout_pot") + ".gif";
 }
 
@@ -639,13 +656,23 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString();
 }
 
-byId("connectButton").addEventListener("click", connectHousehold);
+byId("connectButton").addEventListener("click", () => {
+  // Disabled for the duration of the request so a slow/failed attempt plus an
+  // impatient re-click can't fire two share-claim POSTs.
+  const button = byId("connectButton");
+  button.disabled = true;
+  connectHousehold()
+    .catch((error) => setNotice("Could not connect household: " + error.message, "error"))
+    .finally(() => { button.disabled = false; });
+});
 byId("useClaimUrlButton").addEventListener("click", () => applyPairingLink(byId("claimUrlInput").value, false));
 byId("scanQrButton").addEventListener("click", startQrScan);
 byId("scanPhotoButton").addEventListener("click", () => byId("scanPhotoInput").click());
 byId("scanPhotoInput").addEventListener("change", scanQrPhoto);
 byId("stopScanButton").addEventListener("click", stopQrScan);
-byId("refreshButton").addEventListener("click", loadSnapshots);
+byId("refreshButton").addEventListener("click", () => {
+  loadSnapshots().catch((error) => setNotice("Could not refresh plants: " + error.message, "error"));
+});
 byId("forgetButton").addEventListener("click", forgetHousehold);
 byId("receivers").addEventListener("input", (event) => {
   const slider = event.target.closest?.("[data-display-slider]");

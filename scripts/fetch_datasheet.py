@@ -24,8 +24,15 @@ import fitz  # PyMuPDF
 
 def download(url: str, dest: str) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as f:
-        f.write(resp.read())
+    part_path = dest + ".part"
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp, open(part_path, "wb") as f:
+            f.write(resp.read())
+    except BaseException:
+        if os.path.exists(part_path):
+            os.remove(part_path)
+        raise
+    os.replace(part_path, dest)
 
 
 def main() -> None:

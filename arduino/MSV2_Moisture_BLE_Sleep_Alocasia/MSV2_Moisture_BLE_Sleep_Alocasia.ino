@@ -331,6 +331,23 @@ uint32_t countOscCycles(uint32_t windowMs)
     pinMode(SENSE_PIN, OUTPUT);
     digitalWrite(SENSE_PIN, HIGH);
 
+    // Wait for the plate to actually reach a real HIGH before releasing it to be timed
+    // on discharge - this was supposed to already be ported from Scindapsus's
+    // countOscCycles() poll-loop fix (2026-07-28, see the top-of-file note) but was
+    // missing here. That fix replaced a fixed-delay charge guess after it was
+    // root-caused as the leading suspect for a "locks onto a wrong value for hours,
+    // then jumps" quantization artifact. Alocasia's 100k pulldown gives a 10x longer RC
+    // time constant than Scindapsus's 10k, so under-charging here is if anything a
+    // bigger risk, not a smaller one.
+    uint32_t chargeStartUs = micros();
+    while (digitalRead(SENSE_PIN) == LOW)
+    {
+      if (micros() - chargeStartUs >= OSC_CYCLE_TIMEOUT_US)
+      {
+        break; // never reached a clean HIGH (shorted/disconnected plate) - bail this half-cycle
+      }
+    }
+
     pinMode(SENSE_PIN, INPUT);
     uint32_t waitStartUs = micros();
     while (digitalRead(SENSE_PIN) == HIGH)

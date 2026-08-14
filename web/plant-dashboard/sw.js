@@ -11,7 +11,14 @@ const MSV2_ASSETS = [
   "/assets/plant_gifs/monstera.gif",
   "/assets/plant_gifs/spindly.gif",
   "/assets/plant_gifs/sprout_pot.gif",
-  "/assets/plant_gifs/wide_planter.gif"
+  "/assets/plant_gifs/wide_planter.gif",
+  "/assets/plant_gifs/color_bonsai_bowl.gif",
+  "/assets/plant_gifs/color_grass_planter.gif",
+  "/assets/plant_gifs/color_hanging_clump.gif",
+  "/assets/plant_gifs/color_hanging_vine.gif",
+  "/assets/plant_gifs/color_round_pot.gif",
+  "/assets/plant_gifs/color_vine_pot.gif",
+  "/assets/plant_gifs/color_zigzag_pot.gif"
 ];
 
 self.addEventListener("install", (event) => {

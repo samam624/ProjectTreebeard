@@ -46,7 +46,10 @@ class Sprite:
 
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
-    return slug or "plant"
+    slug = slug or "plant"
+    if slug[0].isdigit():
+        slug = "_" + slug
+    return slug
 
 
 def label_from_key(key: str) -> str:
@@ -134,6 +137,11 @@ def choose_poses(frames: list[Image.Image], max_poses: int) -> tuple[list[Image.
 
     if len(unique) <= max_poses:
         return unique, original_sequence
+
+    if max_poses == 1:
+        selected_indexes = [(len(unique) - 1) // 2]
+        remap = {old: 0 for old in range(len(unique))}
+        return [unique[selected_indexes[0]]], [remap[index] for index in original_sequence]
 
     selected_indexes = sorted({round(i * (len(unique) - 1) / (max_poses - 1)) for i in range(max_poses)})
     selected = [unique[i] for i in selected_indexes]

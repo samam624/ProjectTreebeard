@@ -50,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
             if snapshot is None:
                 self.send_json({"ok": False, "error": "snapshot not found"}, status=404)
                 return
-            self.send_json({"ok": True, "snapshot": snapshot})
+            self.send_json({"ok": True, "snapshots": [snapshot]})
             return
         self.send_error(404, "not found")
 
@@ -68,8 +68,10 @@ class Handler(BaseHTTPRequestHandler):
             print(f"claim receiver={receiver_id}")
             self.send_json({
                 "ok": True,
-                "householdId": "household_local",
-                "receiverApiToken": f"local_token_{receiver_id[-6:]}",
+                "claim": {
+                    "household_id": "household_local",
+                    "receiver_id": receiver_id,
+                },
             })
             return
 
@@ -77,6 +79,11 @@ class Handler(BaseHTTPRequestHandler):
         suffix = "/snapshot"
         if parsed.path.startswith(prefix) and parsed.path.endswith(suffix):
             receiver_id = parsed.path[len(prefix):-len(suffix)]
+            auth_header = self.headers.get("Authorization", "")
+            token = auth_header[len("Bearer "):].strip() if auth_header.startswith("Bearer ") else ""
+            if not token:
+                self.send_json({"ok": False, "error": "unauthorized"}, status=401)
+                return
             if body.get("receiverId") != receiver_id:
                 self.send_json({"ok": False, "error": "receiverId path/body mismatch"}, status=400)
                 return
@@ -87,8 +94,9 @@ class Handler(BaseHTTPRequestHandler):
             print(f"snapshot receiver={receiver_id} plants={plant_count} config=v{config_version}")
             self.send_json({
                 "ok": True,
-                "serverTimeMs": 0,
+                "serverTimeMs": int(time() * 1000),
                 "acceptedConfigVersion": config_version,
+                "plantCount": plant_count,
             })
             return
 
@@ -384,7 +392,7 @@ def dashboard_summary(receivers: list[tuple[str, dict[str, Any]]]) -> str:
             if moisture_pct is not None and moisture_pct < 25:
                 dry_count += 1
             battery = plant.get("batteryPercent")
-            if isinstance(battery, int) and battery < 20:
+            if isinstance(battery, (int, float)) and battery < 20:
                 low_battery_count += 1
 
     return f"""
@@ -444,7 +452,7 @@ def render_plant_card(plant: dict[str, Any], config_card: dict[str, Any]) -> str
     moisture_class = health_class(moisture_pct)
     moisture_label = "--" if moisture_pct is None else f"{moisture_pct}%"
     battery = plant.get("batteryPercent")
-    battery_class = "danger" if isinstance(battery, int) and battery < 20 else "warn" if isinstance(battery, int) and battery < 50 else "ok"
+    battery_class = "danger" if isinstance(battery, (int, float)) and battery < 20 else "warn" if isinstance(battery, (int, float)) and battery < 50 else "ok"
     packets = f'{plant.get("received", "--")} rx / {plant.get("missedTotal", "--")} missed'
     return f"""
       <article class="plant">

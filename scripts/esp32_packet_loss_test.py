@@ -148,6 +148,19 @@ def main() -> int:
                     )
                     continue
 
+                if received < base.received or missed_total < base.missed_total:
+                    print(f"sensor {sensor_id}: counters reset (probe/receiver reboot?), rebaselining")
+                    base = Baseline(
+                        wake=wake,
+                        received=received,
+                        missed_total=missed_total,
+                        time_s=elapsed,
+                        has_counters=has_counters,
+                    )
+                    baselines[sensor_id] = base
+                    lines.append(f"S{sensor_id}: rebaselined wake={wake} rssi={item.get('rssi', '--')} dBm")
+                    continue
+
                 received_delta = max(0, received - base.received)
                 missed_delta = max(0, missed_total - base.missed_total)
                 wake_delta_count = wake_delta(wake, base.wake)

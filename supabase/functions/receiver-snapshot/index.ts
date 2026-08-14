@@ -206,17 +206,24 @@ Deno.serve(async (request) => {
         if (!Number.isFinite(sensorId) || sensorId <= 0) {
           return jsonResponse({ ok: false, error: "sensorId required" }, 400);
         }
-        const sinceHours = Number(url.searchParams.get("sinceHours") ?? "24");
-        const since = new Date(Date.now() - (Number.isFinite(sinceHours) ? sinceHours : 24) * 3600_000).toISOString();
-        const limit = Number(url.searchParams.get("limit") ?? "150");
-        const afterId = Number(url.searchParams.get("afterId") ?? "0");
+        // Clamped before the Date math below - an unbounded sinceHours can push
+        // Date.now() - sinceHours*3600_000 outside the valid Date range, throwing an
+        // uncaught RangeError. 2160h (90 days) comfortably covers this endpoint's
+        // widest real caller (MobileAppPage.h's History tab, 7-day range).
+        const rawSinceHours = Number(url.searchParams.get("sinceHours") ?? "24");
+        const sinceHours = Number.isFinite(rawSinceHours) ? Math.min(Math.max(rawSinceHours, 1), 2160) : 24;
+        const since = new Date(Date.now() - sinceHours * 3600_000).toISOString();
+        const rawLimit = Number(url.searchParams.get("limit") ?? "150");
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 2000) : 150;
+        const rawAfterId = Number(url.searchParams.get("afterId") ?? "0");
+        const afterId = Number.isFinite(rawAfterId) ? Math.max(rawAfterId, 0) : 0;
 
         const { data, error } = await supabase.rpc("msv2_read_sensor_history", {
           p_receiver_id: cleanReceiverId,
           p_sensor_id: sensorId,
           p_since: since,
-          p_after_id: Number.isFinite(afterId) ? afterId : 0,
-          p_limit: Number.isFinite(limit) ? limit : 300,
+          p_after_id: afterId,
+          p_limit: limit,
         });
         if (error) {
           return jsonResponse({ ok: false, error: error.message }, 500);
@@ -329,8 +336,12 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: snapshotError.message }, 500);
     }
 
+    // Bounded to well above the firmware's real 16-card cap (MobileAppPage.h's
+    // MAX_PLANTS): an untrusted/buggy sender otherwise controls how many sequential
+    // per-plant RPC round-trips this request makes, with no cap.
+    const MAX_HISTORY_PLANTS_PER_SNAPSHOT = 32;
     if (Array.isArray(snapshot.plants)) {
-      for (const plant of snapshot.plants) {
+      for (const plant of snapshot.plants.slice(0, MAX_HISTORY_PLANTS_PER_SNAPSHOT)) {
         const sensorId = Number(plant?.sensor);
         if (!Number.isFinite(sensorId) || sensorId <= 0) continue;
 

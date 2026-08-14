@@ -37,9 +37,9 @@ Your display wiring:
 | SCK / CLK | GPIO 12 | SPI clock |
 | MOSI / SDA | GPIO 13 | SPI data to display |
 | MISO | Not connected | Normal display writes do not need it |
-| CS | GPIO 14 | Chip select |
-| DC | GPIO 15 | Data/command |
-| RST | GPIO 16 | Reset |
+| DC | GPIO 14 | Data/command |
+| RST | GPIO 15 | Reset |
+| CS | GPIO 16 | Chip select |
 | VCC | 3.3V, or 5V if supported | Use what your module supports |
 | GND | GND | Ground |
 | LED / BL | 3.3V or 5V | Backlight is always on with this wiring |
