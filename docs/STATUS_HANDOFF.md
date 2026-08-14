@@ -1,6 +1,6 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-12 (see "2026-08-12 Surgical-Redraw Skill and Detail-View Refresh Fix" below for the most recent display-receiver work)
+Date: 2026-08-14 (see "2026-08-13/14 Full-Repo Hostile Review Pass" below for the most recent work - a repo-wide bug-hunt and fix pass, not a single-feature session like the entries above it)
 
 ## Current State
 
@@ -181,7 +181,7 @@ A full-repo review (firmware, Supabase backend, scripts, web dashboard) found 46
 - **Migration history was out of sync with reality** on the live database — `supabase migration list --linked` showed 004-010 as unapplied even though their tables/functions were clearly live (device was actively using them). This came from applying SQL by hand in the dashboard editor in the past instead of `supabase db push`. Fixed via `supabase migration repair 001..010 --status applied --linked` (bookkeeping only, no schema change) before pushing 011/012. **If you hand-edit SQL again, remember to repair the tracking table afterward** or the next `db push` will try to re-run already-applied migrations and fail on non-idempotent statements like `create policy`.
 - Incident during verification: a test `POST /ui` with an empty `{}` body to the live device wiped its plant card config (full-replace semantics in `writeUiJson`, not a merge). Recovered by pushing `ui/display_default.json` (generic herb-themed placeholder cards) via `push_display_ui.py`. The original custom names/art are still recoverable from the last cloud snapshot: `select snapshot->'config'->'cards' from msv2_latest_snapshots where receiver_id = 'MSV2088A3104A7AC' order by received_at desc limit 1;` — not yet done as of this handoff.
 - Everything verified live end-to-end, not just compiled: firmware flashed to the physical device on `COM13`, migrations applied to the real Supabase project, both edge functions redeployed, web dashboard redeployed to `https://msv2-plants.netlify.app`. Commits: `825c1fc`, `9d959ec` (plus `451574c` checkpoint before the pass started).
-- Not done in this pass (by scope, not oversight): the Medium/Low findings from the review (docs drift elsewhere, dead code in `plant-dashboard/index.ts`'s unused `renderApp()`, script robustness issues in `esp32_packet_loss_test.py`/`mock_cloud_server.py`, stale plant-art whitelist in the dashboard vs. the new `color_*` sprite keys, etc.).
+- Not done in this pass (by scope, not oversight): the Medium/Low findings from the review (docs drift elsewhere, dead code in `plant-dashboard/index.ts`'s unused `renderApp()`, script robustness issues in `esp32_packet_loss_test.py`/`mock_cloud_server.py`, stale plant-art whitelist in the dashboard vs. the new `color_*` sprite keys, etc.). **All of these were picked up and closed in the 2026-08-13/14 full-repo review pass below** - `renderApp()` deleted, both scripts hardened, the art whitelist updated and deployed.
 
 ## 2026-07-24 Moisture Probe RC Sensing + Overnight Battery Test
 
@@ -459,6 +459,177 @@ not yet re-verified on the physical screen as of this handoff.
 - **User-confirmed working on the physical receiver 2026-08-12**: the expanded card's periodic
   refresh no longer flashes, and the header IP address is back in the top-right corner.
 
+## 2026-08-13/14 Full-Repo Hostile Review Pass
+
+User asked for a from-scratch, "reviewer on a bad day" pass over the entire repo -
+every Arduino sketch, every Python script, the Supabase SQL/edge functions, and the
+web dashboard - not a single feature. Done as 8 parallel read-only review agents (one
+per area), triaged by hand, fixed, compile/syntax-checked, then committed and
+deployed end-to-end the same session. Everything below is live as of this handoff,
+not just committed - see the deploy status note at the end of this section.
+
+**Probe firmware:**
+
+- `MSV2_Moisture_BLE_Sleep_Alocasia.ino` was missing the charge-settle poll-loop fix
+  its own header comment claimed was already ported from Scindapsus -
+  `countOscCycles()` drove the plate HIGH and released it to `INPUT` with zero wait,
+  unlike Scindapsus's validated poll loop (same "locks onto a value, then jumps"
+  quantization risk this exact fix already closed once on the other probe). Fixed
+  in the file, compiled clean. **Not yet flashed to the physical Alocasia board** -
+  user said to do that later, not part of this session's hardware work.
+- `MSV2_Moisture_Probe_Test.ino` (the bench reference this sensing approach was
+  ported from originally) had drifted stale, still reproducing two already-fixed
+  real-firmware bugs (`SAMPLE_WINDOW_MS=1`, a fixed 40-NOP charge-settle delay).
+  Updated to match the deployed, validated approach so future bench A/B comparisons
+  aren't measuring already-fixed bugs.
+
+**Display receiver (`MSV2_ESP32_Display_Runtime.ino`, `MobileAppPage.h`) - flashed
+and user-confirmed working on the physical receiver (`COM16`):**
+
+- `isAdminActionAllowed()` used a raw `millis() >=` comparison instead of the
+  rollover-safe idiom used elsewhere in the file - would have silently reopened the
+  unauthenticated local admin API after ~49.7 days of uptime. Fixed.
+- `DEFAULT_STALE_SECONDS` was still `3900` (sized for a stale 30-min probe-cadence
+  assumption, flagged as open in the "Suggested Next Work" list below as of
+  2026-08-09) - dropped to `180` to match the current ~60s cadence. **This closes
+  that open item.**
+- `displayDirty`/`staleSeconds` globals made `volatile` (cross-core race between
+  the cloud-sync task and the render loop); dry/wet moisture bounds now clamped to
+  prevent a signed-overflow path in `moisturePercent()`.
+- `MobileAppPage.h`: `saveWifi()`/`forgetWifi()` were dumping raw JSON error bodies
+  into the UI instead of the parsed `error` field `saveConfig()` already used
+  correctly (new shared `parseErrorText()` helper now used by all three);
+  `loadReadings()`/`loadWifi()`/`loadClaim()`/`loadCloud()` had no error handling,
+  so a dropped connection could leave the status text frozen on a stale
+  "Updated HH:MM:SS" forever; added a duplicate-Probe-ID check before save; fixed
+  an inconsistent HTML-escaping gap on RSSI/moisture/battery values.
+- Replaced the pairing QR code's dependency on a third-party rasterizing service
+  (`api.qrserver.com`) with a vendored, fully client-side QR encoder
+  (`kazuhikoarase/qrcode-generator`, MIT, verified via direct download plus a
+  minified-vs-unminified byte-comparison test before embedding, +21KB flash / 67%
+  total). The third party was free and worked over the internet, but was
+  completely unreachable when viewing the pairing screen over the receiver's own
+  local-only AP (a normal supported mode) - the QR silently never rendered there.
+  **User confirmed on the physical receiver post-flash: dashboard renders fine and
+  the new on-device QR code looks good.**
+
+**Other Arduino sketches:**
+
+- `MSV2_BLE_Adv_Receiver.ino`: bounded the `while(!Serial)` boot wait to 3s (was
+  the only sketch in the repo with an unbounded one); fixed the missed-packet
+  counter's wraparound-on-reboot math (same fix already live in the main
+  receiver - this is the "cosmetic, not fixed" item first noted in the
+  2026-07-24 section, closed here for this sketch; the main receiver's own
+  version turned out to already be fixed on inspection, just undocumented).
+- `MSV2_ESP32_DeviceIdentity_Dump.ino`: `LittleFS.begin(true)` was formatting the
+  filesystem on the exact mount-failure case this "never writes/formats" rescue
+  tool exists to recover data from. Changed to `begin(false)`.
+- `README.md`: TFT pin table (DC/RST/CS) was cyclically swapped vs the real
+  firmware constants - would have misdirected anyone wiring new hardware.
+
+**Supabase SQL - migrations 019, 020, 021 all pushed to the live project and
+functionally verified (not just deployed):**
+
+- 019 (`msv2_receiver_display_settings`) had been written and committed in an
+  earlier session (`516838a`) but, it turns out, never actually pushed -
+  `supabase migration list --linked` showed it missing remotely; confirmed this
+  wasn't the known migration-tracking-drift class of issue (see 2026-07-07
+  section) by querying `pg_proc` directly and confirming its functions genuinely
+  didn't exist live yet, so this was a clean push, not a repair situation.
+- 020: `msv2_read_share_sensor_history` and `msv2_clear_share_sensor_history` were
+  the only two RPCs in the schema's history still granted execute to
+  `anon, authenticated` - every sibling RPC has been `service_role`-only since the
+  2026-07-07 hardening pass, so these two were reachable directly via the public
+  anon key, bypassing the edge function's auth/CORS layer entirely. Locked to
+  `service_role` to match. Also adds a missing index for the id-cursor
+  sensor-history pagination introduced in 014/018 (was doing a full scan).
+- 021: mitigates (does **not** fully close - see the migration's own SQL comments
+  for the full reasoning) the `receiver-bootstrap` registration race, where
+  `receiver_id` is derived directly from the device's own MAC address and is
+  passively observable by anyone in WiFi range of its setup AP before the real
+  device's own first bootstrap call. A cryptographically complete fix needs a
+  manufacturing-time pre-shared secret, which would break this project's
+  deliberate zero-touch onboarding design (see "Important Preferences" below) -
+  that tradeoff wasn't made unilaterally. Instead: requires a non-empty claim code
+  on first-time registration (costs the real device nothing - it always has one
+  ready by the time it calls bootstrap) and adds a global rate limit
+  (`register-new-global`, 20/hr) on brand-new-receiver creation, which the
+  existing per-receiver_id limit does nothing to stop for a bulk/speculative
+  squatting campaign across the whole MAC-derived id space. Verified live by
+  directly calling `msv2_register_receiver` on the real DB with a disposable test
+  id: confirmed it now genuinely rejects a claim-code-less registration and
+  succeeds with one; test row deleted after.
+
+**Supabase edge functions - `plant-dashboard` and `receiver-snapshot` redeployed
+and verified live:**
+
+- `plant-dashboard/index.ts`: malformed JSON bodies on 4 POST routes were escaping
+  to the top-level catch, which returns an HTML error page - breaking
+  JSON-consuming clients and violating the function's own "API-only JSON"
+  contract (see the 2026-07-07 section's note about this exact HTML-vs-JSON
+  boundary). New `parseJsonBody()` helper surfaces a clean 400 instead - confirmed
+  live post-deploy by POSTing deliberately malformed JSON to `/api/share-claim`
+  and getting back `{"ok":false,"error":"invalid JSON body"}` with
+  `content-type: application/json`, not HTML. Also deleted the confirmed-dead
+  320-line `renderApp()` (zero references, the "dead code" item flagged as
+  out-of-scope in the 2026-07-07 section - closed here). Clamped
+  `sinceHours`/`limit`/`beforeId` on the history route.
+- `receiver-snapshot/index.ts`: same `sinceHours`/`limit` clamp on the GET history
+  route; bounded the `snapshot.plants` array before looping one RPC call per
+  entry (was unbounded).
+
+**Web dashboard - deployed to Netlify production (`https://msv2-plants.netlify.app`)
+and verified against the live URL, not just the draft:**
+
+- The app's own copy of `assets/plant_gifs/` and its art-key catalog were missing
+  all 7 `color_*` sprites added in the 2026-07-06 pipeline update (this is the
+  "known, deferred" item from that section's own writeup, finally closed) -
+  anyone using those plants silently saw the wrong icon. Copied the GIFs in,
+  updated the catalog array and the service worker's precache list.
+- Fixed a real camera-privacy bug in the QR scanner: an out-of-order
+  `getUserMedia()` resolution from a fast double-tap on "Scan QR" could overwrite
+  the shared `state.scanStream` field, so the stream actually feeding the visible
+  video element lost its only reference and was never `.stop()`'d - the camera
+  hardware indicator could stay on indefinitely after the user thought they'd
+  stopped scanning.
+- Confirmed via research (Netlify's own docs: header values are concatenated
+  across every matching rule, not overridden by the more specific one) that all
+  three header configs (`netlify.toml` x2, `_headers`) had a broad `/*` and a
+  specific `/assets/*` rule both setting `Cache-Control` - per RFC 7234,
+  `no-store` anywhere in that concatenated list wins, silently defeating the
+  long-cache/immutable strategy for every versioned asset since those files
+  existed. Restructured into non-overlapping path-scoped rules in all three
+  files; confirmed live via `curl -I` against the production URL post-deploy that
+  `app.v12.js`/the GIFs get clean `public,max-age=31536000,immutable` and
+  `index.html`/`sw.js` get clean `no-store`, no concatenation.
+- Added missing `.catch()` handling on the Connect and Refresh button click
+  handlers; disabled the Connect button for the duration of its request.
+
+**Python tooling** (`scripts/`): `mock_cloud_server.py` had drifted from the real
+Supabase functions' actual response shapes; `esp32_packet_loss_test.py`'s loss-rate
+math silently misreported instead of flagging a mid-test reboot;
+`generate_planter_sheet_gifs.py` hardcoded a transparency palette index without
+verifying the placeholder color actually quantized there (could silently corrupt
+shipped sprite art); `generate_plant_sprites.py` had a `ZeroDivisionError` on the
+documented valid `--max-poses 1` and a `slugify()` bug on digit-leading filenames;
+`antenna_rssi_logger.py` had no serial-reconnect handling; `fetch_datasheet.py`
+could leave a truncated file trusted by later runs. All fixed.
+
+**Deploy status - everything from this pass is fully live, not just committed:**
+git commit `2d7c7e4`; Supabase migrations 019/020/021 pushed and functionally
+tested against the real DB; both edited edge functions redeployed and verified;
+web dashboard on Netlify production, verified; display receiver firmware flashed
+and user-confirmed working on physical hardware. **Not yet flashed to physical
+hardware**: the Alocasia probe fix and the other Arduino sketch fixes
+(`MSV2_BLE_Adv_Receiver`, `MSV2_ESP32_DeviceIdentity_Dump`,
+`MSV2_Moisture_Probe_Test`) - committed to git, compiled clean, deliberately
+deferred per the user ("no lets do that later").
+
+Full findings/triage detail (including everything checked and found clean, e.g. no
+leaked credentials anywhere in git history, the 2026-07-07 RPC-lockdown holding for
+every function through migration 021) lives in this session's Claude memory
+(`msv2_full_repo_review_2026-08.md`) for whoever picks this back up.
+
 ## Last Known User Feedback
 
 - Display and app are working well after the WiFi/setup fixes.
@@ -480,6 +651,10 @@ not yet re-verified on the physical screen as of this handoff.
   the physical receiver, including after the redraw-discipline fix - the periodic refresh no
   longer flashes the whole card, and the header IP address is back in the top-right corner -
   "this is all working great."
+- 2026-08-14: after the full-repo review pass and flashing the display receiver, user confirmed
+  on the physical hardware: "looks great, QR good too" - the dashboard renders normally
+  post-flash and the new fully-offline client-side QR code (replacing the third-party
+  api.qrserver.com dependency) renders correctly on the real screen.
 
 ## Important Preferences
 
@@ -491,14 +666,35 @@ not yet re-verified on the physical screen as of this handoff.
 
 ## Suggested Next Work
 
-Top of the list as of 2026-08-09 (the 2026-07-25 list below is superseded - its overnight-oscillator and pulldown-confirmation items are long since resolved):
+Top of the list as of 2026-08-14 (the 2026-08-09 list below is superseded by ranking,
+not by completion - its battery/hardware items are physical-world tasks this
+session's software review pass didn't touch and are presumably still open):
+
+1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
+   physical boards - explicitly deferred this session ("no lets do that later").
+   Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
+   fix, a real quantization-risk bug on live hardware. Lower priority:
+   `MSV2_BLE_Adv_Receiver.ino`, `MSV2_ESP32_DeviceIdentity_Dump.ino`,
+   `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
+2. Decide whether the registration-race mitigation in migration 021 (claim-code-
+   required first registration + a global new-receiver rate limit) is sufficient,
+   or whether the residual risk (a determined, physically-proximate attacker can
+   still win the race - see that migration's own SQL comments for why a complete
+   fix needs a manufacturing-time secret) is worth a bigger design change. Not
+   urgent given the actual threat model for a small family/friends deployment.
+3. `claim-receiver` Edge Function still exists but is superseded by the no-login
+   `plant-dashboard` share-claim flow - decide whether to keep it or retire it
+   (open since the 2026-07-07 pass, still undecided).
+
+Superseded by ranking, top of the list as of 2026-08-09 (item 6 below is now DONE -
+see the 2026-08-14 section above):
 
 1. Check the overnight battery test: has Alocasia's battery held within ~1-2% (fix working) or dropped ~8-12% (QSPI leak somehow still active)?
 2. Recharge/swap Scindapsus's battery - it's been at/near 0% since ~Aug 7 and is blocking clean data from that probe on every front (moisture *and* the battery-fix test).
 3. Bench-check Scindapsus's BQ25100 `~CHG` pin for noise (leading theory for its erratic battery% readings even before the QSPI fix - see the 2026-08-09 section above).
 4. Continue the FDC2212/MSV3 PCB migration open items (`docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`) - now with concrete field evidence (not just theory) that VDD-coupling is a real, currently-happening problem, both from low battery and from active charging.
 5. Consider a firmware-only mitigation in the meantime: discard/flag moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline.
-6. Revisit the receiver's `DEFAULT_STALE_SECONDS` - a prior session's uncommitted change sized it for the old 30-minute probe cadence; probes are back on ~60s now.
+6. ~~Revisit the receiver's `DEFAULT_STALE_SECONDS`~~ - **done 2026-08-14**, dropped 3900 -> 180.
 
 Superseded, top of the list as of 2026-07-25:
 
@@ -506,8 +702,8 @@ Superseded, top of the list as of 2026-07-25:
 2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
 3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
 4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
-5. Update `web/plant-dashboard`'s hardcoded art catalog (`known` array in `assets/app.v11.js` + `assets/plant_gifs/`) for the newer sprite keys and deploy - blocked on Netlify minutes until end of month.
-6. Fix the receiver's missed-packet-counter wraparound-on-reboot bug (cosmetic, see 2026-07-24 section) if it's actually annoying in practice.
+5. ~~Update `web/plant-dashboard`'s hardcoded art catalog~~ - **done 2026-08-14**, all 7 `color_*` GIFs and catalog keys added, deployed to production.
+6. ~~Fix the receiver's missed-packet-counter wraparound-on-reboot bug~~ - **done 2026-08-14** for `MSV2_BLE_Adv_Receiver.ino`; the main receiver's own `onResult()` was found already correctly guarding this (undocumented until now).
 
 Older, still open from the 2026-07-07 pass:
 

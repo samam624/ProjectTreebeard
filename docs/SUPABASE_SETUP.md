@@ -338,6 +338,17 @@ Remote editing is the next backend milestone. The receiver currently pushes snap
 
 ## 8. Future Zero-Touch Receiver Bootstrap
 
+**2026-08-14 update**: as of migration `021_msv2_register_receiver_race_mitigation.sql`,
+`claimCode` in the body below is no longer just conventionally included - it's
+**required** on a receiver's very first-ever registration (`msv2_register_receiver`
+raises `claim code required for first-time registration` if omitted). This mitigates
+(does not fully close - see that migration's own SQL comments) a registration race
+where `receiverId`, being derived directly from the device's MAC address, is
+passively observable over WiFi before the real device's own first bootstrap call.
+Real firmware is unaffected - `ensureDeviceIdentity()` always generates a claim code
+alongside the secret before either is ever sent anywhere. Only matters if you're
+calling this endpoint by hand for testing.
+
 This is the path for giving a receiver to someone with almost no setup:
 
 1. During build/prep, the receiver already has a persistent `receiverId`, `receiverSecret`, and `claimCode` in `/device.json`.
