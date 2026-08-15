@@ -5511,11 +5511,18 @@ void maintainWifiConnection(uint32_t now)
     // A normal reconnect is enough for router/channel interruptions. Periodically
     // rebuild the station radio as well so a wedged DHCP/driver state cannot leave
     // the receiver offline forever.
+    // Deliberately no WiFi.setSleep(false) here (or in the station connect below).
+    // It was added on 2026-08-13 to make reconnects feel snappier and instead starved
+    // the BLE scan task of radio airtime: BLE and WiFi share one antenna on the ESP32,
+    // and the coexistence arbiter hands BLE its slices out of WiFi's modem-sleep
+    // windows. Disabling that sleep produced exactly "good RSSI, huge miss%" on live
+    // probes - fixed 2026-08-14, confirmed on hardware. Leave modem sleep at its
+    // default (on) unless a *measured* reconnect-latency problem justifies revisiting
+    // this, and if so, re-test BLE loss% on real probes before shipping it.
     WiFi.disconnect(true);
     delay(50);
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
-    WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
     WiFi.begin(activeWifiSsid, activeWifiPassword);
   }
@@ -5569,9 +5576,10 @@ void setupWifi()
     Serial.println(storedWifiLoaded ? "LittleFS" : "firmware");
     renderWifiConnectingScreen(stationSsid, storedWifiLoaded ? "saved from phone app" : "firmware default");
 
+    // No WiFi.setSleep(false) here - see the matching comment in the radio-reset
+    // branch of maintainWifiConnection() for why that starves BLE reception.
     WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
     WiFi.begin(activeWifiSsid, activeWifiPassword);
 
