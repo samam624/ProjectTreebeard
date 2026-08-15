@@ -84,16 +84,25 @@ minute indefinitely.
 
 ## Runtime Integration Notes
 
-- The normal display runtime has not yet been modified to play these sounds.
-- Keep sound scheduling non-blocking in the display runtime; the standalone test
-  uses `delay()` because it does not service BLE, Wi-Fi, HTTP, touch, or drawing.
-- Trigger the startup sound only when boot/setup reaches the desired ready state,
-  not on every internal recovery reset unless that behavior is intentional.
-- Trigger the water sound on a dry-state transition or through an explicit alert
-  scheduler. Avoid replaying it on every sensor update.
-- Pair the sound with the existing visual dry-plant indication; sound alone must
-  not be the only status signal.
-- Preserve a user-facing mute/disable option when the sound is integrated.
+- **Done (2026-08-14, commit `42a36b0`)**: the normal display runtime now plays both
+  sounds. `MSV2_ESP32_Display_Runtime.ino` has a non-blocking LEDC tone sequencer
+  (`startBuzzerPattern()`/`serviceBuzzer()`) driven off `millis()` deadlines only - no
+  `delay()` - so it can't stall BLE/WiFi/touch/render the way the standalone bench
+  sketch's blocking player would.
+- Startup sound plays once at the end of `setup()`, on every real boot/reset
+  (power-cycle, WiFi-retry-exhausted reboot, config-change reboot). The WiFi self-heal
+  radio-reset path does not call `ESP.restart()` and does not replay it.
+- The water sound is driven by `serviceWaterAlert()`, which reuses the exact same
+  overdue/critical condition (`anyLowMoistureCardVisible()`/`slotNeedsBlink()`) that
+  already drives the visual blink alert, so sound and blink can never disagree about
+  which plants count. It fires once on the false-to-true transition, then again every
+  `BUZZER_WATER_ALERT_REPEAT_MS` (currently 1 hour) while still overdue/critical, and
+  goes silent again as soon as the plant is watered - the bench sketch's unthrottled
+  60s loop was rejected as too naggy to ship.
+- A mute toggle is persisted locally to `/sound.json` and exposed via `GET`/`POST
+  /sound` (admin-gated like other config writes). It's user-reachable from both the
+  touchscreen double-tap brightness overlay (new "Sound on/off" button) and the phone
+  app's Setup tab ("Sound Alerts" card).
 
 ## Standalone Test Commands
 
