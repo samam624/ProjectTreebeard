@@ -432,6 +432,22 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <section class="network-card">
         <div class="editor-head">
           <div>
+            <div class="editor-title">Sound Alerts</div>
+            <div class="meta">Startup chime and water-warning buzzer</div>
+          </div>
+        </div>
+        <label class="check-row">
+          <input id="soundEnabledInput" type="checkbox">
+          <div>
+            Play alert sounds
+            <span>Startup chime, plus a short double-buzz that repeats hourly while a plant stays overdue for water.</span>
+          </div>
+        </label>
+        <div class="notice" id="soundNotice"></div>
+      </section>
+      <section class="network-card">
+        <div class="editor-head">
+          <div>
             <div class="editor-title">Receiver Pairing</div>
             <div class="meta" id="claimStatusText">Loading receiver...</div>
           </div>
@@ -601,6 +617,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     let wifiInfo = null;
     let claimInfo = null;
     let cloudInfo = null;
+    let soundInfo = null;
     let shareToken = null;
     const MAX_PLANTS = 16;
     // History reads go straight from this browser to Supabase (see loadHistory below)
@@ -759,6 +776,35 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       $("cloudNotice").textContent = cloudInfo.enabled
         ? `${lastSuccess}; ${lastAttempt}${error}${pullError}`
         : `${bootstrapText}. The receiver bootstraps cloud upload and config pull automatically after WiFi setup.`;
+    }
+
+    async function loadSound() {
+      const response = await fetch("/sound", { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      soundInfo = await response.json();
+      renderSound();
+    }
+
+    function renderSound() {
+      if (!soundInfo) return;
+      $("soundEnabledInput").checked = Boolean(soundInfo.enabled);
+    }
+
+    // Saves immediately on toggle, same pattern as wifiLocalOnlyInput's checkbox - no
+    // separate save button for a single on/off setting.
+    async function saveSound() {
+      const enabled = $("soundEnabledInput").checked;
+      const response = await fetch("/sound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (!response.ok) {
+        $("soundEnabledInput").checked = !enabled;
+        $("soundNotice").textContent = "Save failed: " + (await parseErrorText(response));
+        return;
+      }
+      $("soundNotice").textContent = enabled ? "Alert sounds on." : "Alert sounds muted.";
     }
 
     function renderConfigMeta() {
@@ -1472,6 +1518,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     $("wifiSaveButton").addEventListener("click", saveWifi);
     $("wifiForgetButton").addEventListener("click", forgetWifi);
     $("wifiLocalOnlyInput").addEventListener("change", updateWifiControls);
+    $("soundEnabledInput").addEventListener("change", saveSound);
     $("claimRefreshButton").addEventListener("click", loadClaim);
     $("copyReceiverIdButton").addEventListener("click", () => copyText(claimInfo?.receiverId, "Receiver ID copied."));
     $("copyClaimCodeButton").addEventListener("click", () => copyText(claimInfo?.claimCode, "Claim code copied."));
@@ -1487,6 +1534,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         await loadWifi();
         await loadClaim();
         await loadCloud();
+        await loadSound();
       } catch (error) {
         $("setupNotice").textContent = "Reload failed: " + (error.message || String(error));
       }
@@ -1536,6 +1584,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         await loadWifi();
         await loadClaim();
         await loadCloud();
+        await loadSound();
         setInterval(loadReadings, 3000);
         setInterval(() => {
           if (!$("historyView").classList.contains("hidden")) loadHistory();

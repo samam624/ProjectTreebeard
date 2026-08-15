@@ -233,6 +233,7 @@ const char DEVICE_CONFIG_PATH[] = "/device.json";
 const char CLOUD_CONFIG_PATH[] = "/cloud.json";
 const char DISPLAY_SETTINGS_PATH[] = "/display.json";
 const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
+const char SOUND_SETTINGS_PATH[] = "/sound.json";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
@@ -274,6 +275,46 @@ const uint32_t WIFI_HEALTH_CHECK_INTERVAL_MS = 1000;
 const uint32_t WIFI_RECONNECT_MIN_DELAY_MS = 5000;
 const uint32_t WIFI_RECONNECT_MAX_DELAY_MS = 60000;
 const uint8_t WIFI_RECONNECT_RADIO_RESET_EVERY = 5;
+
+// Buzzer output on GPIO38 through PCB transistor Q3, driven with LEDC PWM (never left
+// continuously high). Duty/envelope numbers are bench-tested on the assembled unit, not
+// calculated - see docs/DISPLAY_CENTER_BUZZER_SOUND_DESIGN.md. The replacement buzzer
+// soldered onto real units is an unknown-spec passive part (the original TDK piezo did
+// not work), so don't "improve" these from a datasheet; they were picked by ear.
+const uint8_t BUZZER_PIN = 38;
+const uint8_t BUZZER_PWM_RESOLUTION_BITS = 8;
+const uint16_t BUZZER_PWM_MAX = (1U << BUZZER_PWM_RESOLUTION_BITS) - 1U;
+const uint8_t BUZZER_DUTY_PERCENT = 4; // 8% was audibly harsher/louder on the bench unit
+const uint16_t BUZZER_ENVELOPE_MS = 8; // attack/release ramp; suppresses PWM switching clicks
+// How often the water-warning re-fires while a plant stays overdue/critical. The bench
+// audition looped every 60s indefinitely; shipped behavior is once immediately on the
+// overdue/critical transition, then hourly until watered, to avoid nagging.
+const uint32_t BUZZER_WATER_ALERT_REPEAT_MS = 3600000UL;
+
+struct BuzzerStep
+{
+  uint16_t frequencyHz;
+  uint16_t toneMs;
+  uint16_t silenceMs;
+};
+
+// Ascending major triad, played once after setup() reaches a ready state.
+const BuzzerStep BUZZER_STARTUP_SOUND[] = {
+  { 1047, 55, 22 },
+  { 1319, 60, 22 },
+  { 1568, 115, 0 },
+};
+
+// Minimal double buzz; serviceWaterAlert() repeats this 3x with a 350ms gap per alert.
+const BuzzerStep BUZZER_WATER_WARNING[] = {
+  { 2400, 48, 72 },
+  { 2400, 58, 0 },
+};
+
+uint16_t buzzerDutyRaw()
+{
+  return (uint16_t)((BUZZER_PWM_MAX * BUZZER_DUTY_PERCENT + 50U) / 100U);
+}
 
 struct SensorReading
 {
@@ -658,6 +699,28 @@ uint32_t cloudDisplayLastSuccessMs = 0;
 int cloudDisplayLastHttpStatus = 0;
 char cloudDisplayLastError[96] = "";
 bool cloudDisplayApiReady = false;
+
+bool soundEnabled = true;
+bool buzzerReady = false;
+bool waterAlertActive = false;
+uint32_t nextWaterAlertMs = 0;
+
+enum class BuzzerPhase : uint8_t { Idle, Tone, Gap };
+
+struct BuzzerState
+{
+  const BuzzerStep* steps = nullptr;
+  uint8_t stepCount = 0;
+  uint8_t stepIndex = 0;
+  uint8_t repeatsRemaining = 0;
+  uint16_t interRepeatGapMs = 0;
+  uint32_t releaseAtMs = 0;
+  uint32_t stepEndMs = 0;
+  bool releaseTriggered = false;
+  BuzzerPhase phase = BuzzerPhase::Idle;
+};
+
+BuzzerState buzzerState;
 
 #if MSV2_ENABLE_WIFI
 IPAddress currentIpAddress();
@@ -1555,6 +1618,159 @@ void setDisplaySettingsLocal(uint8_t brightnessPercent, bool screenOn, const cha
   nextCloudDisplaySyncMs = millis();
 }
 
+// Sound mute state is purely local receiver config, not part of the cloud-synced
+// DisplaySettings/snapshot schema (no version/pendingCloudUpdate bookkeeping needed) -
+// nothing outside this device needs to know whether its buzzer is muted.
+void persistSoundSettings()
+{
+  StaticJsonDocument<64> doc;
+  doc["enabled"] = soundEnabled;
+  File file = LittleFS.open(SOUND_SETTINGS_PATH, "w");
+  if (!file)
+  {
+    return;
+  }
+  serializeJson(doc, file);
+  file.close();
+}
+
+void loadSoundSettings()
+{
+  if (!LittleFS.exists(SOUND_SETTINGS_PATH))
+  {
+    return;
+  }
+  File file = LittleFS.open(SOUND_SETTINGS_PATH, "r");
+  if (!file)
+  {
+    return;
+  }
+  StaticJsonDocument<64> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (!error)
+  {
+    soundEnabled = doc["enabled"] | true;
+  }
+}
+
+void setSoundEnabledLocal(bool enabled)
+{
+  soundEnabled = enabled;
+  if (!enabled)
+  {
+    // Cut off an in-flight pattern immediately rather than letting it finish playing
+    // after the user just asked for silence.
+    buzzerState.phase = BuzzerPhase::Idle;
+    ledcWrite(BUZZER_PIN, 0);
+  }
+  persistSoundSettings();
+}
+
+void buzzerBeginStep(uint32_t now)
+{
+  const BuzzerStep& step = buzzerState.steps[buzzerState.stepIndex];
+  ledcChangeFrequency(BUZZER_PIN, step.frequencyHz, BUZZER_PWM_RESOLUTION_BITS);
+  uint16_t attackMs = step.toneMs < BUZZER_ENVELOPE_MS * 2 ? step.toneMs / 2 : BUZZER_ENVELOPE_MS;
+  uint16_t releaseMs = (step.toneMs - attackMs) < BUZZER_ENVELOPE_MS ? (step.toneMs - attackMs) : BUZZER_ENVELOPE_MS;
+  ledcFade(BUZZER_PIN, 0, buzzerDutyRaw(), attackMs);
+  buzzerState.releaseTriggered = false;
+  buzzerState.releaseAtMs = now + (step.toneMs > releaseMs ? step.toneMs - releaseMs : 0);
+  buzzerState.stepEndMs = now + step.toneMs + step.silenceMs;
+  buzzerState.phase = BuzzerPhase::Tone;
+}
+
+// Starts a non-blocking tone sequence: steps[0..count) played in order, the whole
+// sequence repeated repeatCount times with interRepeatGapMs of silence between
+// repeats. Must never block (delay()) - this runs from the same core-1 loop() that
+// also services BLE-derived sensor rendering, touch, and the WebServer, so a blocking
+// player would reintroduce the exact stalls the cloud/BLE tasks were split out to avoid.
+void startBuzzerPattern(const BuzzerStep* steps, uint8_t count, uint8_t repeatCount, uint16_t interRepeatGapMs)
+{
+  if (!buzzerReady || !soundEnabled || steps == nullptr || count == 0 || repeatCount == 0)
+  {
+    return;
+  }
+  buzzerState.steps = steps;
+  buzzerState.stepCount = count;
+  buzzerState.stepIndex = 0;
+  buzzerState.repeatsRemaining = repeatCount - 1;
+  buzzerState.interRepeatGapMs = interRepeatGapMs;
+  buzzerBeginStep(millis());
+}
+
+// Advances whatever pattern startBuzzerPattern() started, purely by comparing millis()
+// against scheduled deadlines - no delay() anywhere. Call every loop() iteration.
+void serviceBuzzer(uint32_t now)
+{
+  if (buzzerState.phase == BuzzerPhase::Idle)
+  {
+    return;
+  }
+
+  if (buzzerState.phase == BuzzerPhase::Gap)
+  {
+    if ((int32_t)(now - buzzerState.stepEndMs) >= 0)
+    {
+      buzzerState.stepIndex = 0;
+      buzzerBeginStep(now);
+    }
+    return;
+  }
+
+  if (!buzzerState.releaseTriggered && (int32_t)(now - buzzerState.releaseAtMs) >= 0)
+  {
+    ledcFade(BUZZER_PIN, buzzerDutyRaw(), 0, BUZZER_ENVELOPE_MS);
+    buzzerState.releaseTriggered = true;
+  }
+
+  if ((int32_t)(now - buzzerState.stepEndMs) < 0)
+  {
+    return;
+  }
+
+  buzzerState.stepIndex++;
+  if (buzzerState.stepIndex < buzzerState.stepCount)
+  {
+    buzzerBeginStep(now);
+    return;
+  }
+
+  if (buzzerState.repeatsRemaining > 0)
+  {
+    buzzerState.repeatsRemaining--;
+    buzzerState.phase = BuzzerPhase::Gap;
+    buzzerState.stepEndMs = now + buzzerState.interRepeatGapMs;
+    return;
+  }
+
+  buzzerState.phase = BuzzerPhase::Idle;
+  ledcWrite(BUZZER_PIN, 0);
+}
+
+// Reuses the exact same "critically-low or overdue" condition that already drives the
+// physical blink alert (anyLowMoistureCardVisible/slotNeedsBlink) so the audible and
+// visual alerts never disagree about which plants count. Fires once immediately on the
+// false->true transition, then again every BUZZER_WATER_ALERT_REPEAT_MS while still
+// true, and goes silent again the moment every visible card is watered/healthy - see
+// docs/DISPLAY_CENTER_BUZZER_SOUND_DESIGN.md for why an unthrottled repeat was rejected.
+void serviceWaterAlert(uint32_t now, bool anyCardNeedsAlert)
+{
+  if (!anyCardNeedsAlert)
+  {
+    waterAlertActive = false;
+    nextWaterAlertMs = 0;
+    return;
+  }
+  if (waterAlertActive && (int32_t)(now - nextWaterAlertMs) < 0)
+  {
+    return;
+  }
+  waterAlertActive = true;
+  nextWaterAlertMs = now + BUZZER_WATER_ALERT_REPEAT_MS;
+  startBuzzerPattern(BUZZER_WATER_WARNING, sizeof(BUZZER_WATER_WARNING) / sizeof(BUZZER_WATER_WARNING[0]), 3, 350);
+}
+
 bool applyRemoteDisplaySettings(uint8_t brightnessPercent, bool screenOn, uint32_t version, const char* source)
 {
   bool applied = false;
@@ -2145,6 +2361,12 @@ void drawBrightnessOverlay()
   const int buttonY = panelY + panelH - 50;
   tft.fillRoundRect(panelX + 16, buttonY, 112, 34, 6, screenOn ? TFT_WARNING : TFT_ACCENT);
   drawTextCenter(screenOn ? "Screen off" : "Screen on", panelX + 72, buttonY + 13, 1, TFT_BLACK, screenOn ? TFT_WARNING : TFT_ACCENT);
+  // Centered in the gap between the screen and close buttons - same tap-target-describes-
+  // action convention as the screen button above (label names what tapping it will do).
+  const int soundButtonW = 110;
+  const int soundButtonX = panelX + (panelW - soundButtonW) / 2;
+  tft.fillRoundRect(soundButtonX, buttonY, soundButtonW, 34, 6, soundEnabled ? TFT_WARNING : TFT_ACCENT);
+  drawTextCenter(soundEnabled ? "Sound off" : "Sound on", soundButtonX + soundButtonW / 2, buttonY + 13, 1, TFT_BLACK, soundEnabled ? TFT_WARNING : TFT_ACCENT);
   tft.fillRoundRect(panelX + panelW - 104, buttonY, 88, 34, 6, TFT_SURFACE_2);
   drawTextCenter("Close", panelX + panelW - 60, buttonY + 13, 1, TFT_MUTED, TFT_SURFACE_2);
 }
@@ -2341,6 +2563,11 @@ void handleTouchInput(uint32_t now)
     {
       drawBrightnessOverlay();
     }
+  }
+  else if (pointInside(lastTouchX, lastTouchY, panelX + (panelW - 110) / 2 - 4, buttonY - 6, 118, 46))
+  {
+    setSoundEnabledLocal(!soundEnabled);
+    drawBrightnessOverlay();
   }
   else if (pointInside(lastTouchX, lastTouchY, panelX + panelW - 112, buttonY - 6, 104, 46) ||
            !pointInside(lastTouchX, lastTouchY, panelX, panelY, panelW, panelH))
@@ -5284,6 +5511,35 @@ void setupServer()
     writeDisplaySettingsJson(server.arg("plain"));
   });
 
+  server.on("/sound", HTTP_GET, []() {
+    Serial.println("[MSV2 web] GET /sound");
+    server.sendHeader("Cache-Control", "no-store");
+    StaticJsonDocument<64> doc;
+    doc["ok"] = true;
+    doc["enabled"] = soundEnabled;
+    String output;
+    serializeJson(doc, output);
+    server.send(200, "application/json", output);
+  });
+
+  server.on("/sound", HTTP_POST, []() {
+    Serial.println("[MSV2 web] POST /sound");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
+    StaticJsonDocument<64> doc;
+    DeserializationError error = deserializeJson(doc, server.arg("plain"));
+    if (error || !doc["enabled"].is<bool>())
+    {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"enabled (boolean) is required\"}");
+      return;
+    }
+    setSoundEnabledLocal(doc["enabled"].as<bool>());
+    server.send(200, "application/json", "{\"ok\":true}");
+  });
+
   server.on("/snapshot", HTTP_GET, []() {
     Serial.println("[MSV2 web] GET /snapshot");
     server.sendHeader("Cache-Control", "no-store");
@@ -5709,7 +5965,19 @@ void setup()
   loadCloudConfig();
   loadDisplaySettings();
   loadTouchCalibration();
+  loadSoundSettings();
   bootLog("LittleFS ready");
+
+  bootLog("initializing buzzer PWM (GPIO38)");
+  buzzerReady = ledcAttach(BUZZER_PIN, 1000, BUZZER_PWM_RESOLUTION_BITS);
+  if (buzzerReady)
+  {
+    ledcWrite(BUZZER_PIN, 0);
+  }
+  else
+  {
+    bootLog("buzzer PWM attach failed");
+  }
 
 #if MSV2_ENABLE_DISPLAY
   bootLog("initializing backlight PWM (GPIO11)");
@@ -5874,12 +6142,19 @@ void setup()
 #else
   renderUi();
 #endif
+  // Once per successful boot/reset - setup() runs on every real power-cycle and every
+  // ESP.restart() (WiFi retry-exhausted reboot, config-change reboot), and "the
+  // receiver came alive" is still an accurate chime in each of those cases. The WiFi
+  // self-heal radio-reset path (maintainWifiConnection) does not call ESP.restart() and
+  // does not replay this.
+  startBuzzerPattern(BUZZER_STARTUP_SOUND, sizeof(BUZZER_STARTUP_SOUND) / sizeof(BUZZER_STARTUP_SOUND[0]), 1, 0);
   bootLog("setup complete");
 }
 
 void loop()
 {
   uint32_t now = millis();
+  serviceBuzzer(now);
 
 #if MSV2_ENABLE_WIFI
   maintainWifiConnection(now);
@@ -5934,6 +6209,7 @@ void loop()
   // cadence, since the probe's new adaptive advertising means sensorDataDirty can go a
   // full minute between updates otherwise.
   bool blinkNeeded = anyLowMoistureCardVisible();
+  serviceWaterAlert(now, blinkNeeded);
   bool detailOpen = expandedCardSlot >= 0;
   uint32_t renderIntervalMs = blinkNeeded ? 500 : SENSOR_RENDER_INTERVAL_MS;
   if ((sensorDataDirty || blinkNeeded || detailOpen) && now - lastSensorRenderMs >= renderIntervalMs)
