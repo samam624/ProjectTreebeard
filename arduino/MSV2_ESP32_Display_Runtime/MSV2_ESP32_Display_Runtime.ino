@@ -4165,7 +4165,9 @@ String sensorDataJson()
 
 String snapshotJson()
 {
-  DynamicJsonDocument doc(8192);
+  // Bumped from 8192: the per-sensor autoCal sub-object (6 fields, up to MAX_SENSOR_ID
+  // sensors) added ~140 bytes/sensor, and 8192 didn't have that much headroom to spare.
+  DynamicJsonDocument doc(12288);
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
   doc["build"] = MSV2_BUILD_TAG;
@@ -4222,14 +4224,17 @@ String snapshotJson()
           JsonObject sourceMoisture = card["moisture"].as<JsonObject>();
           int dry = card["dry"] | 120;
           int wet = card["wet"] | 175;
+          bool autoCalEnabled = false;
           if (!sourceMoisture.isNull())
           {
             dry = sourceMoisture["dry"] | dry;
             wet = sourceMoisture["wet"] | wet;
+            autoCalEnabled = sourceMoisture["auto"] | false;
           }
           JsonObject moisture = item.createNestedObject("moisture");
           moisture["dry"] = dry;
           moisture["wet"] = wet;
+          moisture["auto"] = autoCalEnabled;
         }
       }
     }
@@ -4282,6 +4287,18 @@ String snapshotJson()
     item["ageMs"] = millis() - sensors[sensorId].lastSeenMs;
     item["received"] = sensors[sensorId].received;
     item["missedTotal"] = sensors[sensorId].missedTotal;
+
+    // Same cached auto-calibration snapshot sensorDataJson() sends to the local /data
+    // endpoint - without this, the cloud (and therefore the Netlify dashboard) has no way
+    // to know a sensor is auto-calibrated or overdue, and falls back to the static
+    // manual/preset dry/wet bounds even when the display itself is using learned ones.
+    JsonObject autoCalItem = item.createNestedObject("autoCal");
+    autoCalItem["ready"] = autoCal[sensorId].ready;
+    autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
+    autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
+    autoCalItem["overdue"] = autoCal[sensorId].overdue;
+    autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
+    autoCalItem["predictedIntervalDays"] = autoCal[sensorId].predictedIntervalDays;
   }
 
   String output;

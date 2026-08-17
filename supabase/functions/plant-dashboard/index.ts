@@ -16,26 +16,6 @@ type SnapshotRow = {
   household_name?: string;
 };
 
-type DisplaySettingsRow = {
-  receiver_id: string;
-  brightness_percent: number;
-  screen_on: boolean;
-  settings_version: number;
-  updated_at: string;
-  updated_by: string;
-};
-
-function displaySettingsJson(row: DisplaySettingsRow) {
-  return {
-    receiverId: row.receiver_id,
-    brightnessPercent: row.brightness_percent,
-    screenOn: row.screen_on,
-    settingsVersion: row.settings_version,
-    updatedAt: row.updated_at,
-    updatedBy: row.updated_by,
-  };
-}
-
 function response(body: string, contentType: string, status = 200): Response {
   return new Response(body, {
     status,
@@ -102,7 +82,6 @@ Deno.serve(async (request) => {
     if (path.endsWith("/api/share-revoke")) return await shareRevokeApi(request);
     if (path.endsWith("/api/share-snapshots")) return await shareSnapshotsApi(request);
     if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
-    if (path.endsWith("/api/share-display")) return await shareDisplayApi(request);
     if (path.endsWith("/api/share-history")) return await shareHistoryApi(request);
     if (path.endsWith("/api/share-history-clear")) return await shareHistoryClearApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
@@ -116,7 +95,6 @@ Deno.serve(async (request) => {
         shareRevoke: "/functions/v1/plant-dashboard/api/share-revoke",
         shareSnapshots: "/functions/v1/plant-dashboard/api/share-snapshots",
         shareConfig: "/functions/v1/plant-dashboard/api/share-config",
-        shareDisplay: "/functions/v1/plant-dashboard/api/share-display",
         shareHistory: "/functions/v1/plant-dashboard/api/share-history",
         shareHistoryClear: "/functions/v1/plant-dashboard/api/share-history-clear",
       },
@@ -229,51 +207,6 @@ async function shareConfigApi(request: Request): Promise<Response> {
   }
 
   return jsonResponse({ ok: true, config: Array.isArray(data) ? data[0] : data });
-}
-
-async function shareDisplayApi(request: Request): Promise<Response> {
-  const shareToken = bearerToken(request);
-  if (!shareToken) {
-    return jsonResponse({ ok: false, error: "share token required" }, 401);
-  }
-
-  if (request.method === "GET") {
-    const { data, error } = await serviceClient().rpc("msv2_read_share_receiver_display_settings", {
-      p_share_token: shareToken,
-    });
-    if (error) {
-      return jsonResponse({ ok: false, error: error.message }, 401);
-    }
-    return jsonResponse({
-      ok: true,
-      settings: ((data ?? []) as DisplaySettingsRow[]).map(displaySettingsJson),
-    });
-  }
-
-  if (request.method !== "POST") {
-    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
-  }
-
-  const body = await parseJsonBody(request);
-  const receiverId = String(body.receiverId ?? "").trim();
-  const brightnessPercent = Number(body.brightnessPercent);
-  const screenOn = body.screenOn;
-  if (!receiverId || !Number.isInteger(brightnessPercent) || brightnessPercent < 1 || brightnessPercent > 100 ||
-      typeof screenOn !== "boolean") {
-    return jsonResponse({ ok: false, error: "receiverId, brightnessPercent 1-100, and screenOn are required" }, 400);
-  }
-
-  const { data, error } = await serviceClient().rpc("msv2_upsert_share_receiver_display_settings", {
-    p_share_token: shareToken,
-    p_receiver_id: receiverId,
-    p_brightness_percent: brightnessPercent,
-    p_screen_on: screenOn,
-  });
-  if (error) {
-    return jsonResponse({ ok: false, error: error.message }, 400);
-  }
-  const row = (Array.isArray(data) ? data[0] : data) as DisplaySettingsRow;
-  return jsonResponse({ ok: true, settings: displaySettingsJson(row) });
 }
 
 async function shareHistoryApi(request: Request): Promise<Response> {

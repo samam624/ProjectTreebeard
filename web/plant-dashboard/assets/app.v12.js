@@ -13,7 +13,6 @@ const params = new URLSearchParams(window.location.search);
 const state = {
   shareToken: loadShareToken(),
   snapshots: [],
-  displaySettings: new Map(),
   scanStream: null,
   scanFrame: 0,
   scanSession: 0,
@@ -169,56 +168,7 @@ async function loadSnapshots() {
     return;
   }
   state.snapshots = body.snapshots || [];
-  try {
-    await loadDisplaySettings();
-  } catch (error) {
-    // Keep snapshot monitoring usable while an older backend is still rolling
-    // forward or if only the display-settings endpoint is temporarily unavailable.
-    console.warn("Could not load display settings", error);
-    state.displaySettings = new Map();
-  }
   renderDashboard();
-}
-
-async function loadDisplaySettings() {
-  if (!state.shareToken) {
-    state.displaySettings = new Map();
-    return;
-  }
-  const response = await fetch(API_BASE + "/api/share-display", {
-    cache: "no-store",
-    headers: { "Authorization": "Bearer " + state.shareToken },
-  });
-  const body = await response.json();
-  if (!response.ok || !body.ok) {
-    throw new Error(body.error || "Could not load display settings");
-  }
-  state.displaySettings = new Map((body.settings || []).map((item) => [item.receiverId, item]));
-}
-
-async function saveDisplaySettings(receiverId, brightnessPercent, screenOn) {
-  const slider = document.querySelector('[data-display-slider="' + CSS.escape(receiverId) + '"]');
-  const stateNode = document.querySelector('[data-display-state="' + CSS.escape(receiverId) + '"]');
-  if (stateNode) stateNode.textContent = "Sending setting...";
-  if (slider) slider.disabled = true;
-  try {
-    const response = await fetch(API_BASE + "/api/share-display", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + state.shareToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ receiverId, brightnessPercent, screenOn }),
-    });
-    const body = await response.json();
-    if (!response.ok || !body.ok) throw new Error(body.error || "Could not save display setting");
-    state.displaySettings.set(receiverId, body.settings);
-    renderDashboard();
-  } catch (error) {
-    if (stateNode) stateNode.textContent = "Save failed: " + error.message;
-  } finally {
-    if (slider) slider.disabled = false;
-  }
 }
 
 async function forgetHousehold() {
@@ -493,8 +443,8 @@ function renderSummary(rows) {
     plantCount += plants.length;
     for (const plant of plants) {
       if (!plant.reading) continue;
-      const pct = percent(plant.reading.moisture, plant.card?.moisture?.dry ?? 350, plant.card?.moisture?.wet ?? 800);
-      if (pct != null && pct < 25) dryCount += 1;
+      const { healthCls } = resolveMoisture(plant.card, plant.reading);
+      if (healthCls === "danger") dryCount += 1;
       if (typeof plant.reading.batteryPercent === "number" && plant.reading.batteryPercent < 20) lowBatteryCount += 1;
     }
   }
@@ -516,46 +466,19 @@ function renderReceiver(row) {
   const title = config.title || row.household_name || "MSV2 Plants";
   const plants = displayPlants(snapshot);
   const plantCards = plants.length ? plants.map(renderPlant).join("") : "<p>No plant setup in this snapshot.</p>";
-  const displayControl = renderDisplayControl(row);
   return '<section class="receiver"><h2>' + escapeHtml(title) + '</h2><div class="meta">' +
     '<span>Household: ' + escapeHtml(row.household_name || "My Plants") + '</span>' +
     '<span>Receiver: <code>' + escapeHtml(row.receiver_id) + '</code></span>' +
     '<span>Config v' + escapeHtml(config.version ?? row.config_version ?? "--") + '</span>' +
     '<span>Cloud: ' + escapeHtml(formatDate(row.received_at)) + '</span>' +
-    '</div>' + displayControl + '<div class="display-board">' + plantCards + '</div></section>';
-}
-
-function renderDisplayControl(row) {
-  const receiverId = String(row.receiver_id || "");
-  const reported = row.snapshot?.display || {};
-  const desired = state.displaySettings.get(receiverId) || {};
-  const brightness = Math.max(1, Math.min(100, Number(desired.brightnessPercent ?? reported.brightnessPercent ?? 75)));
-  const screenOn = typeof desired.screenOn === "boolean" ? desired.screenOn : reported.screenOn !== false;
-  const desiredVersion = Number(desired.settingsVersion || 0);
-  const appliedVersion = Number(reported.settingsVersion || 0);
-  let status = screenOn ? "Screen on" : "Screen off";
-  if (desiredVersion > appliedVersion) status += " · queued for receiver";
-  else if (desiredVersion && desiredVersion === appliedVersion) status += " · applied";
-  else status += " · receiver value";
-
-  return '<section class="display-control" data-display-control="' + escapeAttr(receiverId) + '">' +
-    '<label for="brightness-' + escapeAttr(receiverId) + '">Display brightness</label>' +
-    '<output class="brightness-value" data-display-value="' + escapeAttr(receiverId) + '">' + brightness + '%</output>' +
-    '<input id="brightness-' + escapeAttr(receiverId) + '" type="range" min="1" max="100" step="1" value="' + brightness + '" data-display-slider="' + escapeAttr(receiverId) + '" aria-label="Display brightness">' +
-    '<div class="display-actions">' +
-      [25, 50, 75, 100].map((value) => '<button type="button" class="secondary" data-display-preset="' + value + '" data-receiver-id="' + escapeAttr(receiverId) + '">' + value + '%</button>').join("") +
-      '<button type="button" class="secondary" data-display-power data-receiver-id="' + escapeAttr(receiverId) + '">' + (screenOn ? "Screen Off" : "Screen On") + '</button>' +
-    '</div>' +
-    '<div class="display-state" data-display-state="' + escapeAttr(receiverId) + '">' + escapeHtml(status) + '</div>' +
-  '</section>';
+    '</div><div class="display-board">' + plantCards + '</div></section>';
 }
 
 function renderPlant(plant) {
   const card = plant.card || {};
   const reading = plant.reading || {};
   const name = card.plant || "Probe " + (plant.sensor ?? "--");
-  const pct = percent(reading.moisture, card.moisture?.dry ?? 350, card.moisture?.wet ?? 800);
-  const moistureClass = healthClass(pct);
+  const { pct, healthCls: moistureClass } = resolveMoisture(card, reading);
   const battery = reading.batteryPercent;
   const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
   const art = card.art || "sprout_pot";
@@ -631,16 +554,29 @@ function healthClass(pct) {
   return "ok";
 }
 
+// Mirrors the firmware's refreshSlotMoistureBounds()/resolveMoistureColor() (see
+// MSV2_ESP32_Display_Runtime.ino) and the local app's renderStatus() (MobileAppPage.h) so
+// this dashboard's colors never diverge from the physical display's: once a sensor's
+// auto-calibration is ready, the learned dry/wet bounds replace the static manual/preset
+// ones, and an "overdue" watering-schedule prediction forces red unless the live reading
+// already contradicts it.
+function resolveMoisture(card, reading) {
+  const autoEnabled = Boolean(card?.moisture?.auto);
+  const autoCal = reading?.autoCal || null;
+  const autoReady = Boolean(autoEnabled && autoCal && autoCal.ready);
+  const dry = autoReady ? autoCal.dryBound : Number(card?.moisture?.dry ?? 120);
+  const wet = autoReady ? autoCal.wetBound : Number(card?.moisture?.wet ?? 175);
+  const pct = percent(reading?.moisture, dry, wet);
+  const overdue = autoReady && autoCal.overdue && (pct == null || pct < 50);
+  return { pct, healthCls: overdue ? "danger" : healthClass(pct) };
+}
+
 function bar(pct, className) {
   return '<div class="bar ' + escapeHtml(className) + '" style="--pct:' + String(pct ?? 0) + '%"><span></span></div>';
 }
 
 function metric(label, value, className = "") {
   return '<div class="metric"><span>' + escapeHtml(label) + '</span><span class="' + escapeHtml(className) + '">' + escapeHtml(value) + '</span></div>';
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/`/g, "&#96;");
 }
 
 function formatAge(value) {
@@ -674,35 +610,6 @@ byId("refreshButton").addEventListener("click", () => {
   loadSnapshots().catch((error) => setNotice("Could not refresh plants: " + error.message, "error"));
 });
 byId("forgetButton").addEventListener("click", forgetHousehold);
-byId("receivers").addEventListener("input", (event) => {
-  const slider = event.target.closest?.("[data-display-slider]");
-  if (!slider) return;
-  const receiverId = slider.dataset.displaySlider;
-  const output = document.querySelector('[data-display-value="' + CSS.escape(receiverId) + '"]');
-  if (output) output.textContent = slider.value + "%";
-});
-byId("receivers").addEventListener("change", (event) => {
-  const slider = event.target.closest?.("[data-display-slider]");
-  if (!slider) return;
-  const receiverId = slider.dataset.displaySlider;
-  saveDisplaySettings(receiverId, Number(slider.value), true);
-});
-byId("receivers").addEventListener("click", (event) => {
-  const preset = event.target.closest?.("[data-display-preset]");
-  if (preset) {
-    saveDisplaySettings(preset.dataset.receiverId, Number(preset.dataset.displayPreset), true);
-    return;
-  }
-  const power = event.target.closest?.("[data-display-power]");
-  if (!power) return;
-  const receiverId = power.dataset.receiverId;
-  const desired = state.displaySettings.get(receiverId) || {};
-  const row = state.snapshots.find((item) => String(item.receiver_id) === receiverId);
-  const reported = row?.snapshot?.display || {};
-  const brightness = Number(desired.brightnessPercent ?? reported.brightnessPercent ?? 75);
-  const screenOn = typeof desired.screenOn === "boolean" ? desired.screenOn : reported.screenOn !== false;
-  saveDisplaySettings(receiverId, brightness, !screenOn);
-});
 window.addEventListener("pagehide", stopQrScan);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopQrScan();
