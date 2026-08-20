@@ -25,7 +25,7 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# The app shell: never cached, so a deploy's new app.v12.js/sw.js is always fetched
+# The app shell: never cached, so a deploy's new app.vNN.js/sw.js is always fetched
 # fresh rather than trapped behind a stale cached copy of the page that references it.
 [[headers]]
   for = "/"

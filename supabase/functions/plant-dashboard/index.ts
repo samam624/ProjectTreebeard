@@ -84,6 +84,7 @@ Deno.serve(async (request) => {
     if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
     if (path.endsWith("/api/share-history")) return await shareHistoryApi(request);
     if (path.endsWith("/api/share-history-clear")) return await shareHistoryClearApi(request);
+    if (path.endsWith("/api/share-autocal-reset")) return await shareAutocalResetApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
 
     return jsonResponse({
@@ -97,6 +98,7 @@ Deno.serve(async (request) => {
         shareConfig: "/functions/v1/plant-dashboard/api/share-config",
         shareHistory: "/functions/v1/plant-dashboard/api/share-history",
         shareHistoryClear: "/functions/v1/plant-dashboard/api/share-history-clear",
+        shareAutocalReset: "/functions/v1/plant-dashboard/api/share-autocal-reset",
       },
     });
   } catch (error) {
@@ -278,6 +280,39 @@ async function shareHistoryClearApi(request: Request): Promise<Response> {
   }
 
   return jsonResponse({ ok: true, deleted: data ?? 0 });
+}
+
+// Local app only (see MobileAppPage.h's Setup tab) - forces one sensor's learned range
+// back into "learning" mode from fresh data, for cases like moving a probe to a new
+// plant/pot. Not exposed on the read-only Netlify dashboard, matching the same
+// local-app-owns-writes decision as 022's retired share-display RPCs.
+async function shareAutocalResetApi(request: Request): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
+  }
+
+  const shareToken = bearerToken(request);
+  if (!shareToken) {
+    return jsonResponse({ ok: false, error: "share token required" }, 401);
+  }
+
+  const body = await parseJsonBody(request);
+  const receiverId = String(body.receiverId ?? "").trim();
+  const sensorId = Number(body.sensorId);
+  if (!receiverId || !Number.isFinite(sensorId) || sensorId <= 0) {
+    return jsonResponse({ ok: false, error: "receiverId and sensorId required" }, 400);
+  }
+
+  const { data, error } = await serviceClient().rpc("msv2_reset_sensor_calibration", {
+    p_share_token: shareToken,
+    p_receiver_id: receiverId,
+    p_sensor_id: sensorId,
+  });
+  if (error) {
+    return jsonResponse({ ok: false, error: error.message }, 401);
+  }
+
+  return jsonResponse({ ok: true, resetAt: data });
 }
 
 async function userSnapshotsApi(request: Request): Promise<Response> {

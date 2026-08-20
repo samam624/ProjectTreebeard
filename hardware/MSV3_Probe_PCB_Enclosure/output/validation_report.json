@@ -1,0 +1,275 @@
+{
+  "passed": true,
+  "errors": [],
+  "stepReports": {
+    "base": {
+      "meshCount": 1,
+      "triangles": 1040,
+      "min": [
+        -12,
+        82,
+        -6.35
+      ],
+      "max": [
+        30,
+        149,
+        0.65
+      ]
+    },
+    "lid": {
+      "meshCount": 1,
+      "triangles": 700,
+      "min": [
+        -8.45,
+        82,
+        -2.8
+      ],
+      "max": [
+        26.45,
+        149,
+        7.55
+      ]
+    },
+    "solarArmLeft": {
+      "meshCount": 1,
+      "triangles": 644,
+      "min": [
+        -13.85,
+        115.50242783199252,
+        -5.847572168007661
+      ],
+      "max": [
+        -12.25,
+        152.67757216800766,
+        18.147572168007663
+      ]
+    },
+    "solarArmRight": {
+      "meshCount": 1,
+      "triangles": 628,
+      "min": [
+        30.25,
+        115.50242783199252,
+        -5.847572168007661
+      ],
+      "max": [
+        31.85,
+        152.67757216800766,
+        18.147572168007663
+      ]
+    },
+    "solarPanelFrame": {
+      "meshCount": 1,
+      "triangles": 1296,
+      "min": [
+        -12,
+        119.68,
+        12.55
+      ],
+      "max": [
+        30,
+        179.68,
+        17.75
+      ]
+    },
+    "assembly": {
+      "meshCount": 5,
+      "triangles": 4308,
+      "min": [
+        -13.85,
+        82,
+        -6.35
+      ],
+      "max": [
+        31.85,
+        179.68,
+        18.147572168007663
+      ]
+    }
+  },
+  "stlReports": {
+    "base": {
+      "triangleCount": 1232,
+      "byteLength": 61684,
+      "min": [
+        -12,
+        82,
+        0
+      ],
+      "max": [
+        30,
+        149,
+        7
+      ]
+    },
+    "lid": {
+      "triangleCount": 796,
+      "byteLength": 39884,
+      "min": [
+        -8.449999809265137,
+        82,
+        -8.881784197001252e-16
+      ],
+      "max": [
+        26.450000762939453,
+        149,
+        10.350000381469727
+      ]
+    },
+    "solarArmLeft": {
+      "triangleCount": 788,
+      "byteLength": 39484,
+      "min": [
+        -5.848397731781006,
+        115.50160217285156,
+        1.500000053056283e-7
+      ],
+      "max": [
+        18.14839744567871,
+        152.6783905029297,
+        1.6000001430511475
+      ]
+    },
+    "solarArmRight": {
+      "triangleCount": 772,
+      "byteLength": 38684,
+      "min": [
+        -5.848397731781006,
+        115.50160217285156,
+        1.0000000116860974e-7
+      ],
+      "max": [
+        18.14839744567871,
+        152.6783905029297,
+        1.6000001430511475
+      ]
+    },
+    "solarPanelFrame": {
+      "triangleCount": 1592,
+      "byteLength": 79684,
+      "min": [
+        -12,
+        119.68000030517578,
+        1.500000053056283e-7
+      ],
+      "max": [
+        30,
+        179.67999267578125,
+        5.200000286102295
+      ]
+    }
+  },
+  "pcb": {
+    "sourceMeshCount": 569,
+    "correctedComponentEnvelope": {
+      "min": [
+        -3.7249999,
+        84.274581669022,
+        -3.40000030839
+      ],
+      "max": [
+        21.100000227926568,
+        145.50003179407,
+        4.800000347889
+      ]
+    },
+    "supportShelfAabbCandidates": [],
+    "outsideCavityVertexCount": 0,
+    "clearances": {
+      "floorToLowestConservativeComponent": 0.8499996916099999,
+      "highestComponentToLidRoof": 0.8999996521110001,
+      "pcbClampGap": 1.48,
+      "pcbClampInterference": 0.1200000000000001
+    },
+    "retention": {
+      "continuousRailLength": 44,
+      "verticalInterference": 0.12,
+      "shelfOverlapPerSide": 0.15,
+      "nominalLateralClearancePerSide": 0.05,
+      "totalNominalCompressionContactArea": 13.2
+    }
+  },
+  "snapGeometry": {
+    "externalOnly": true,
+    "leftBumpX": [
+      -7.45,
+      -7
+    ],
+    "rightBumpX": [
+      25,
+      25.45
+    ],
+    "cavitySideX": [
+      -4.65,
+      22.65
+    ]
+  },
+  "bottomSeal": {
+    "closedEndWall": true,
+    "splitBetweenBaseAndLid": true,
+    "baseTopZ": -0.8,
+    "lidBottomZ": -0.75,
+    "probeSlotXYClearance": 0.2,
+    "probeSlotZClearance": 0.15,
+    "intendedSealant": "epoxy or outdoor polyurethane adhesive"
+  },
+  "solar": {
+    "nominalPanelSize": [
+      30,
+      54
+    ],
+    "frontRecessSize": [
+      30.4,
+      54.4
+    ],
+    "frameBodySize": [
+      36,
+      60,
+      3
+    ],
+    "frontRecessDepth": 1.6,
+    "closedRearWallThickness": 1.4,
+    "panelWireHoles": {
+      "count": 2,
+      "diameter": 2.2,
+      "centersY": [
+        127.18,
+        172.18
+      ],
+      "insideRecess": true
+    },
+    "caseWireEntries": {
+      "count": 2,
+      "diameter": 1.6,
+      "centersZ": [
+        2.2,
+        4.6
+      ],
+      "location": "left side wall"
+    },
+    "leftArmWireChannel": {
+      "width": 2.6,
+      "depth": 0.55
+    },
+    "usbOpeningRemoved": true,
+    "enclosurePivotY": 118.5,
+    "panelPivotY": 149.68,
+    "enclosurePivotZ": -2.85,
+    "panelPivotZ": 15.15,
+    "panelPivotCentered": true,
+    "foldedPanelDirectlyAboveEnclosure": true,
+    "pivotCenterDistance": 36,
+    "roofSweepClearance": {
+      "limitingCornerDistanceFromPivot": 32.22436966024316,
+      "armEndRadius": 3,
+      "minimumRadialClearance": 0.7756303397568374
+    },
+    "armThickness": 1.6,
+    "armToBossAxialClearance": 0.25,
+    "armClearanceHoleDiameter": 2.4,
+    "heatSetInsertPocket": {
+      "diameter": 2.9,
+      "depth": 3.2
+    }
+  }
+}

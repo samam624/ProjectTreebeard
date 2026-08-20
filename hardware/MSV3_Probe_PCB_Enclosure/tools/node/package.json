@@ -1,0 +1,11 @@
+{
+  "name": "msv3-enclosure-tools",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "occt-import-js": "0.0.23",
+    "pngjs": "7.0.0",
+    "replicad": "1.0.0",
+    "replicad-opencascadejs": "1.0.0"
+  }
+}

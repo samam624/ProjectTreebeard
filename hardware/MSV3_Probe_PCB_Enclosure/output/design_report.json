@@ -1,0 +1,145 @@
+{
+  "version": "prototype-7-roof-clearance-arms",
+  "units": "mm",
+  "parameters": {
+    "pcbTopZ": 0,
+    "pcbThickness": 1.6,
+    "pcbSideClearance": 0.65,
+    "baseBottomZ": -6.35,
+    "baseCavityFloorZ": -4.25,
+    "baseTopZ": -0.8,
+    "lidBottomZ": -0.75,
+    "lidInnerRoofZ": 5.7,
+    "lidTopZ": 7.55,
+    "snapClearance": 0.25,
+    "snapBumpDepth": 0.45,
+    "snapArmThickness": 1.2,
+    "pcbClampInterference": 0.12,
+    "solarPivotY": 118.5,
+    "solarPivotZ": -2.85,
+    "solarArmLength": 36,
+    "solarArmThickness": 1.6,
+    "solarM2ClearanceDiameter": 2.4,
+    "solarInsertPocketDiameter": 2.9,
+    "solarInsertPocketDepth": 3.2,
+    "caseWireEntryDiameter": 1.6,
+    "caseWireEntryCentersZ": [
+      2.2,
+      4.6
+    ],
+    "solarPanelPocketWidth": 30.4,
+    "solarPanelPocketHeight": 54.4,
+    "solarPanelNominalWidth": 30,
+    "solarPanelNominalHeight": 54,
+    "solarPanelFrameWidth": 36,
+    "solarPanelFrameHeight": 60,
+    "solarPanelPivotY": 149.68,
+    "solarPanelPivotZ": 15.15,
+    "solarPanelBackZ": 13.65,
+    "solarPanelThickness": 3,
+    "solarPanelRecessDepth": 1.6,
+    "solarPanelWireHoleDiameter": 2.2,
+    "probeSlotXYClearance": 0.2,
+    "probeSlotZClearance": 0.15
+  },
+  "sourcePcbBrain": {
+    "width": 26,
+    "yMin": 87,
+    "yMax": 146,
+    "actualThickness": 1.6,
+    "stepThicknessIgnored": 1.81224174,
+    "modeledComponentEnvelope": {
+      "zMin": -3.4,
+      "zMax": 4.8
+    }
+  },
+  "enclosure": {
+    "exteriorBoundsWithoutSolarArms": {
+      "xMin": -12,
+      "xMax": 30,
+      "yMin": 82,
+      "yMax": 149,
+      "zMin": -6.35,
+      "zMax": 7.55
+    },
+    "nominalBodyWidth": 32,
+    "maximumSnapWidth": 34.9,
+    "height": 13.9,
+    "splitPlane": {
+      "baseTopZ": -0.8,
+      "lidBottomZ": -0.75,
+      "position": "through PCB thickness so both halves form the probe exit"
+    },
+    "usbOpening": "removed; enclosure wall is closed",
+    "pcbClampInterference": 0.12,
+    "probeExitSeal": {
+      "xyClearance": 0.2,
+      "zClearance": 0.15,
+      "splitBetweenBaseAndLid": true,
+      "sealingMethod": "fill close-fitting perimeter with epoxy or outdoor polyurethane adhesive"
+    },
+    "caseWireEntries": {
+      "count": 2,
+      "diameter": 1.6,
+      "centersZ": [
+        2.2,
+        4.6
+      ],
+      "location": "left side wall beside channeled arm; glue-sealable"
+    }
+  },
+  "solarAssembly": {
+    "panelNominalSize": [
+      30,
+      54
+    ],
+    "panelFrontRecessSize": [
+      30.4,
+      54.4
+    ],
+    "frameOuterSize": [
+      36,
+      60
+    ],
+    "armPivotCenterDistance": 36,
+    "panelRecessDepth": 1.6,
+    "trayThickness": 3,
+    "closedRearWallThickness": 1.4,
+    "foldedState": "panel tray parallel above the enclosure; arms at full 36.00 mm center distance",
+    "roofSweepClearance": {
+      "limitingCornerDistanceFromPivot": 32.22436966024316,
+      "armEndRadius": 3,
+      "minimumRadialClearance": 0.7756303397568374
+    },
+    "pivotFastener": "M2 screw into 2.90 mm diameter x 3.20 mm deep heat-set-insert pocket; tighten for friction adjustment",
+    "armClearanceHoleDiameter": 2.4,
+    "insertPocket": {
+      "diameter": 2.9,
+      "depth": 3.2
+    },
+    "wireHoles": {
+      "count": 2,
+      "diameter": 2.2,
+      "centersY": [
+        127.18,
+        172.18
+      ],
+      "position": "inside panel recess; glue-sealable"
+    },
+    "wireRouting": "open 2.60 x 0.55 mm channel on left arm to twin side entries"
+  },
+  "printGuidance": {
+    "preferredMaterials": [
+      "PETG",
+      "ASA",
+      "ABS"
+    ],
+    "prototypeLayerHeight": 0.2,
+    "perimeters": 4,
+    "baseOrientation": "floor down (already oriented in STL)",
+    "lidOrientation": "exterior roof down (already oriented in STL)",
+    "solarArmOrientation": "flat (already oriented in STL)",
+    "solarPanelFrameOrientation": "closed rear wall down, front recess up (already oriented in STL)",
+    "supports": "none expected"
+  }
+}

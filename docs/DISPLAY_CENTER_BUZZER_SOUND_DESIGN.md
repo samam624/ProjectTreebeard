@@ -93,12 +93,14 @@ minute indefinitely.
   (power-cycle, WiFi-retry-exhausted reboot, config-change reboot). The WiFi self-heal
   radio-reset path does not call `ESP.restart()` and does not replay it.
 - The water sound is driven by `serviceWaterAlert()`, which reuses the exact same
-  overdue/critical condition (`anyLowMoistureCardVisible()`/`slotNeedsBlink()`) that
+  critically-low condition (`anyLowMoistureCardVisible()`/`slotNeedsBlink()`) that
   already drives the visual blink alert, so sound and blink can never disagree about
   which plants count. It fires once on the false-to-true transition, then again every
-  `BUZZER_WATER_ALERT_REPEAT_MS` (currently 1 hour) while still overdue/critical, and
-  goes silent again as soon as the plant is watered - the bench sketch's unthrottled
-  60s loop was rejected as too naggy to ship.
+  `BUZZER_WATER_ALERT_REPEAT_MS` (currently 1 hour) while still critical, and goes
+  silent again as soon as the plant is watered - the bench sketch's unthrottled 60s loop
+  was rejected as too naggy to ship. (A separate calendar-based "overdue" prediction
+  used to also force this condition; removed 2026-08-17 - see
+  docs/STATUS_HANDOFF.md's 2026-08-16 auto-calibration redesign section.)
 - A mute toggle is persisted locally to `/sound.json` and exposed via `GET`/`POST
   /sound` (admin-gated like other config writes). It's user-reachable from both the
   touchscreen double-tap brightness overlay (new "Sound on/off" button) and the phone

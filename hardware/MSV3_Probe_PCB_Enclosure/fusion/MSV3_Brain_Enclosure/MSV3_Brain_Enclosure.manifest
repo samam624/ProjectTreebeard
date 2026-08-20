@@ -1,0 +1,11 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "script",
+  "author": "OpenAI Codex",
+  "description": {
+    "": "Creates the MSV3 enclosure with a split probe seal, continuous PCB clamp, roof-clearing fold-flat arms, and thin closed-back 30 x 54 mm solar-panel tray."
+  },
+  "supportedOS": "windows|mac",
+  "editEnabled": true,
+  "version": "7.0"
+}

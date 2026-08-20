@@ -1,6 +1,45 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-14 (see "2026-08-13/14 Full-Repo Hostile Review Pass" below for the most recent work - a repo-wide bug-hunt and fix pass, not a single-feature session like the entries above it)
+Date: 2026-08-17 (see "2026-08-17 Netlify Service Worker Stale-Data Bug" immediately below for the most recent work - a real, unrelated bug found while chasing a user-reported caching complaint, fixed in the working tree but explicitly NOT deployed yet; see "2026-08-17 Auto-Calibration Redesign Implementation" further down for the auto-cal work from earlier the same day)
+
+## 2026-08-17 Netlify Service Worker Stale-Data Bug
+
+User reported the Netlify dashboard (`msv2-plants.netlify.app`) kept showing old data on a
+normal page reload, requiring a hard reload (Ctrl+Shift+R) every single time to see fresh
+readings. This turned out to be a real bug in `web/plant-dashboard/sw.js`, unrelated to the
+auto-calibration work also happening this session - found and fixed, but **left
+undeployed** at the user's explicit request (Netlify pushes are on hold this session
+alongside the pending `app.v13.js` cache-bust from the auto-cal redesign work - see that
+section below).
+
+- **Root cause**: the service worker's `fetch` handler had exactly two branches - the app
+  shell (`/`, `/index.html`, navigations), handled correctly with a network-first
+  `cache:"no-store"` fetch, and a catch-all fallback for literally everything else that was
+  **cache-first**: `caches.match(request).then(cached => cached || fetch(...))`. That
+  fallback branch caught the page's own `fetch()` calls to the Supabase `plant-dashboard`
+  edge function (`/api/share-snapshots`, etc.) - the actual live moisture/battery/snapshot
+  data - not just the intended static assets (plant GIFs, `app.vXX.js`, jsQR). Once that
+  data URL was cached on first load, every normal reload kept serving that same stale
+  response from Cache Storage indefinitely, since nothing ever invalidated or re-fetched it.
+- **Why hard reload "fixed" it**: a forced/hard reload is a documented special case where
+  the browser bypasses the active service worker entirely for that one navigation - the
+  page temporarily has no SW controller, so *every* fetch it makes, including the data
+  call, goes straight to network. A normal reload stays under the SW's control and kept
+  hitting the same stale cache entry forever.
+- **Fix** (`web/plant-dashboard/sw.js`): the fallback branch now only cache-firsts
+  same-origin requests under `/assets/` (the actual versioned, immutable static assets -
+  matches the `/assets/*` immutable-cache scoping already in `_headers`/`netlify.toml`).
+  Everything else, including the cross-origin Supabase API calls, now goes straight to
+  `fetch(event.request)` with no Cache Storage involvement at all - no caching, no
+  fallback-to-stale, always live.
+- Side effect (harmless, not acted on): `/manifest.webmanifest` and `/app-icon.svg` are
+  still listed in the `install` handler's precache array but are no longer read from cache
+  by the `fetch` handler either (they're not under `/assets/`) - matches those two paths'
+  own `Cache-Control: no-store` in `_headers` anyway, so this is more consistent than
+  before, just slightly redundant precache work. Not worth trimming for two tiny files.
+- **Status: fixed in the working tree, not deployed.** Will ship in the same Netlify push
+  as the `app.v13.js` cache-bust from the auto-cal redesign work whenever that's approved -
+  see that section's own "not deployed" note.
 
 ## Current State
 
@@ -630,6 +669,245 @@ leaked credentials anywhere in git history, the 2026-07-07 RPC-lockdown holding 
 every function through migration 021) lives in this session's Claude memory
 (`msv2_full_repo_review_2026-08.md`) for whoever picks this back up.
 
+## 2026-08-17 Auto-Calibration Redesign Implementation
+
+Implements all six items from the "2026-08-16 Auto-Calibration ('Learning Mode')
+Redesign" section directly below. Code changes only in this pass - **not yet deployed**:
+the new migration hasn't been pushed to Supabase, the two edge functions haven't been
+redeployed, the Netlify site hasn't been redeployed, and no firmware has been flashed to
+physical hardware. Both firmware sketches (`MSV2_ESP32_Display_Runtime`,
+`MSV2_Moisture_AFE_Test`) compile clean via `arduino_display.ps1`/`arduino_moisture_afe_test.ps1
+-Action compile`.
+
+Two open design questions from the punch list were resolved with the user before
+implementing:
+- **Item 1 (daysSinceLastWatering fate)**: keep it, informational only. The event-clustering
+  SQL (`rises` CTE) and the clustering loop in `deriveAutoCal()` both stay; only the
+  `overdue`/`predictedIntervalDays` forcing/alerting behavior built on top was removed.
+- **Item 6 (drift guard design)**: "track drift as its own signal" (of the three candidates
+  listed) - a flag, not a clamp, so a genuinely lower-water plant's learned range can still
+  adapt; a household with chronic late watering instead sees a visible notice.
+
+**Item 1 - overdue/predicted-interval removed:**
+- `supabase/functions/receiver-snapshot/index.ts`'s `deriveAutoCal()`: dropped
+  `predictedIntervalDays`/`overdue` computation and `AUTOCAL_MAX_EVENTS_FOR_INTERVAL`;
+  `daysSinceLastWatering` and the `rises`-clustering loop stay.
+- **Follow-up fix, live-tested and deployed same day**: `MobileAppPage.h`'s "watered X ago"
+  note (see item 5 below) originally used `daysSinceLastWatering`, a rolling
+  hours/24 float with no concept of calendar-day boundaries - watering at 11pm and
+  checking at 9am the next morning is ~10 hours ago (rounds to "watered today") even
+  though it's clearly yesterday. User caught this live on the physical device. Fixed by
+  adding `lastWateredAtMs` (the actual event timestamp) alongside the existing float
+  everywhere in the pipeline (`deriveAutoCal`'s return, `AutoCalState`, both
+  `sensorDataJson()`/`snapshotJson()` emit sites, `runCloudAutoCalPull()`'s parse) and
+  rewriting `MobileAppPage.h`'s label function (`daysAgoText` → `wateredAgoText`) to
+  compare local calendar dates (`new Date(ms).setHours(0,0,0,0)`) instead of a rolling
+  24h window - this can only be done client-side, since the server has no idea what
+  timezone the viewer is in. Compiled, deployed (`receiver-snapshot` redeployed), and
+  reflashed to the physical receiver same session - confirmed live.
+- Firmware (`MSV2_ESP32_Display_Runtime.ino`): `resolveMoistureColor()` deleted entirely
+  (call sites now call `healthColor()` directly, per the punch list's own note that it
+  "collapses to plain healthColor()"). `resolveMoistureBounds()`/`refreshSlotMoistureBounds()`
+  no longer output/track `overdue`; `slotNeedsBlink()` (shared by the blink alert and the
+  buzzer's `serviceWaterAlert()`) dropped its overdue OR-clause, so both alerts are now
+  purely "moisture < 25%".
+- `MobileAppPage.h`: `renderStatus()`'s `overdue` computation removed; the Sound Alerts
+  copy reworded from "stays overdue for water" to "stays critically low on water".
+- `web/plant-dashboard/assets/app.v12.js` → renamed to **`app.v13.js`** (cache-bust, same
+  reasoning as the v10→v11 and v11→v12 bumps earlier this project - an in-place edit
+  wouldn't reach already-installed Home Screen PWAs). `resolveMoisture()`'s overdue-forces-red
+  logic removed. `index.html` and `sw.js` (cache name + precache list) updated to match.
+
+**Item 3 - manual recalibration/reset control:**
+- New migration `supabase/migrations/023_msv2_calibration_reset_and_drift.sql`: table
+  `msv2_sensor_calibration_reset` (receiver_id, sensor_id, reset_at) + RPC
+  `msv2_reset_sensor_calibration(share_token, receiver_id, sensor_id)`, same share-token
+  household-auth pattern as `msv2_clear_share_sensor_history` (016).
+  `msv2_read_sensor_auto_calibration` rebuilt to clamp its percentile window's lower bound
+  to `greatest(now() - lookback, reset_at)` - History-tab data is untouched, only the
+  calibration math ignores anything before the reset.
+- `supabase/functions/plant-dashboard/index.ts`: new route
+  `/api/share-autocal-reset` (`shareAutocalResetApi`). Deliberately **not** added to the
+  Netlify dashboard - matches the existing read-only-Netlify decision (see 022's retired
+  share-display RPCs).
+- `MobileAppPage.h` Setup tab: new "Reset calibration" button next to each auto-enabled
+  card's checkbox (`resetSensorCalibration()`), using the same self-minted share-token
+  pattern as `loadHistory()`/`clearAllHistory()` - no new receiver-local endpoint needed.
+
+**Item 4 - AFE bench sensor smoothing:** `MSV2_Moisture_AFE_Test.ino` now transmits
+`smoothedMv` (rounded) instead of raw `medianMv` - one line, the EMA was already computed
+and logged to serial, just never wired into `advertiseReading()`.
+
+**Item 5 - raw-to-percent moisture text once calibrated:** `resolveMoistureBounds()` gained
+an `outCalibrated` flag (true only when auto-cal bounds are actually in use, i.e. the old
+early-return branch). `drawPlantCard()`/`drawPlantCardDataOnly()`/`computeDetailStats()` all
+switch their moisture text from `"%u"` to `"%u%%"` when calibrated; the data-only diff
+tracking (`slot.lastMoistureCalibrated`) was extended so a calibration-readiness flip alone
+(without a raw-value change) still triggers a redraw. `MobileAppPage.h`'s `renderStatus()`
+does the same for the local app.
+
+**Item 6 - dry-bound floor clamp (revised twice after further discussion the same day):**
+the first cut (bucketed 3-window monotonic-decrease flag, informational only) was
+superseded before deployment once the user clarified the actual goal - stop chronic
+over/under-watering from destroying the recommendation interval, not just get notified
+about it, with no absolute ground-truth moisture value available to clamp against (differs
+per plant/pot/soil). The second cut (flat `AUTOCAL_DRY_FLOOR_MAX_DROP = 15` raw units) was
+itself revised once the user pointed out a flat unit count is meaningless across this
+deployment's three probes, which sit on very different raw scales (confirmed live via
+Supabase query mid-session: sensor 1 at `dryBound=183/wetBound=358` vs sensor 3 at
+`dryBound=1078/wetBound=1265`). **Landed design: anchor each sensor to its own first
+full-lookback-window calibration (not the earlier 3-day "ready" gate - the first 21 days
+run completely unclamped so several real watering cycles get observed first), then
+hard-clamp the dry bound to never drift more than `AUTOCAL_DRY_FLOOR_MARGIN_PCT` (10%,
+provisional) of that sensor's own anchored (wet - dry) range below its anchor.**
+- Table `msv2_sensor_calibration_reset` (migration 023, rewritten in place twice since
+  never deployed) gained `anchor_dry_bound` and `anchor_wet_bound`, both nullable, separate
+  from `reset_at` (also nullable) so a row can exist for anchor-only or reset-only reasons
+  independently. The two anchor columns are always written together (the margin needs both
+  to mean anything).
+- New RPC `msv2_set_sensor_calibration_anchor_if_unset(receiver_id, sensor_id, dry, wet)`
+  (service_role only, no share-token - internal system write, not a user action):
+  idempotent, only ever fills in a null anchor pair, never overwrites an existing one.
+- `msv2_reset_sensor_calibration` (item 3's manual reset button) now also clears both
+  anchor columns to null - a reset means "different plant/pot," so the old anchor is as
+  stale as the old learned range; a fresh one gets captured automatically once the
+  newly-reset window is full again.
+- `msv2_read_sensor_auto_calibration` returns each sensor's `anchorDryBound`/`anchorWetBound`
+  alongside the raw computed `dryBound`/`wetBound`; the earlier 3-bucket CTEs from the first
+  revision are gone entirely.
+- `receiver-snapshot/index.ts`'s `deriveAutoCal()` does the actual clamping, gated on a new
+  `AUTOCAL_LOOKBACK_DAYS = 21` (must match the SQL's `p_lookback_days` default) full-window
+  check, separate from and later than the existing 3-day `ready` gate: if the window is
+  full and no anchor exists yet, it flags `needsAnchor` (the GET handler then calls
+  `msv2_set_sensor_calibration_anchor_if_unset` with the current raw dry+wet bounds,
+  best-effort/fire-and-await, not blocking on failure); if an anchor exists, `dryBound` in
+  the response is clamped to `max(rawDryBound, anchorDry - 0.10*(anchorWet - anchorDry))` -
+  this is the value firmware/app actually use for percent/color, so the interval genuinely
+  cannot collapse past the floor, not just get a warning about collapsing.
+- `dryBoundTrendingLower` **keeps its exact name and JSON field** but now means "the clamp
+  is actively engaged" rather than "3 buckets happened to decrease" - zero firmware/app
+  changes needed as a result. Physical-display Range-row recoloring and the local app's
+  `.notice.warn` line both still work unmodified, now backed by a real corrective action
+  instead of a passive observation.
+- Researched via web search before landing on the clamp-vs-flag decision - see the
+  "shifting baseline"/"boiling frog" drift literature and the CGM/irrigation-controller
+  domain comparisons discussed in chat; the chosen approach mirrors the "sanity min/max on
+  an adaptive baseline" pattern from monitoring tooling, anchored per-sensor since no
+  universal ground truth exists.
+- **Live-queried mid-session, not deployed from**: pulled real numbers for the actual
+  deployed receiver (`MSV2088A3104A7AC`) via `supabase db query --linked` to answer a live
+  user question ("why does 297 read as ~65%?"). Confirmed the currently-*live* (pre-this-session,
+  unmodified) auto-cal already shows sensor 1 (Thaumatophyllum) at `dryBound=183`,
+  `wetBound=358` - and a day-by-day min/max breakdown showed a suspiciously flat 8/2-8/8
+  plateau (~180-183 every day, near-zero variance) sitting inside the 21-day window, lining
+  up exactly with the pre-8/9 QSPI battery bug (see that section above) rather than genuine
+  soil dryness. Real range since the 8/9 fix looks like ~280-430. Not a bug in anything
+  built today - this is live evidence of exactly the failure mode item 6 targets, plus a
+  reminder that whichever sensor gets its anchor captured first after deployment should
+  probably get a manual "Reset calibration" first if its window still contains pre-fix
+  data, so the anchor isn't captured from a still-corrupted floor.
+
+**Not done in this pass:**
+- Nothing pushed/deployed/flashed - see the note at the top of this section.
+- `web/msv2-plant-dashboard-static.zip` (mentioned elsewhere in this doc) was not
+  regenerated; it will be stale against `app.v13.js` until a fresh export happens.
+- No physical-hardware testing of the reset-calibration button, the percent-text switch,
+  or the drift notice - compiles clean but unverified on real screens/probes.
+
+## 2026-08-16 Auto-Calibration ("Learning Mode") Redesign — Handoff Notes
+
+User reviewed how the moisture auto-calibration/"learning mode" system actually works (see
+`supabase/migrations/017_msv2_sensor_auto_calibration.sql` and `deriveAutoCal()` in
+`supabase/functions/receiver-snapshot/index.ts` for the current implementation) and wants
+several changes. Nothing below is implemented yet - this is the punch list for next session.
+
+**1. Remove the predicted-watering-interval / "overdue" feature entirely.** User's reasoning:
+"the whole purpose of this system is to go off of moisture not timing, that's its whole upside" -
+a calendar-style watering-schedule prediction cuts against the product's actual value
+proposition. Touches every layer that currently reads `autoCal.overdue`:
+- `receiver-snapshot/index.ts`'s `deriveAutoCal()` (`AUTOCAL_CLUSTER_GAP_MS`,
+  `AUTOCAL_MAX_EVENTS_FOR_INTERVAL`, the event-clustering loop, `predictedIntervalDays`,
+  `overdue`) - remove the computation. **Check before deleting the "rises" pipeline entirely**:
+  the SQL function's `rises` CTE (candidate-jump flagging: gap ≤3h, delta ≥15% of range) exists
+  only to feed this clustering - if nothing else in the system reads `rises`, that whole
+  candidate-detection stage in `msv2_read_sensor_auto_calibration` becomes dead weight too and
+  should come out alongside it, not just the TypeScript consumer.
+- Firmware: `resolveMoistureColor()`'s `overdue` parameter (forces dangerColor) and
+  `refreshSlotMoistureBounds()`/`resolveMoistureBounds()`'s `slot.overdue`/`outOverdue`
+  assignments - `resolveMoistureColor()` collapses to plain `healthColor()` once this is gone,
+  could be inlined/removed.
+- `MobileAppPage.h`'s `overdue` computation in `renderStatus()`.
+- `web/plant-dashboard/assets/app.v12.js`'s `resolveMoisture()` - **note this was added THIS
+  SAME SESSION** (2026-08-16, to fix the Netlify/display color mismatch) specifically to mirror
+  the firmware's overdue-forces-red behavior. Once the firmware behavior changes, this needs a
+  matching follow-up edit, not just a one-time fix-and-forget.
+- Open question for tomorrow, not decided here: does `daysSinceLastWatering` (informational,
+  not a forcing/alerting signal by itself) stay as a nice-to-have display stat, or does the
+  whole watering-event-detection apparatus go? User's stated reasoning suggests the latter, but
+  wasn't explicitly asked.
+
+**2. No changes to the 21-day calibration window or the 3-day minimum calibration time** -
+explicitly confirmed good as-is (`msv2_read_sensor_auto_calibration`'s `p_lookback_days := 21`
+default, and `AUTOCAL_MIN_DAYS_READY = 3` / `AUTOCAL_MIN_SAMPLES_READY = 50` in
+`receiver-snapshot/index.ts`).
+
+**3. Add a manual recalibration/reset control** - a way to force a sensor back into "learning"
+mode and rebuild its range from fresh data, for cases like moving a probe to a new plant/pot.
+Not a trivial flag flip: readiness and the dry/wet bounds are computed live from a rolling
+window over real `msv2_sensor_history` rows (`min(received_at)` as the readiness clock, 21-day
+percentile window for the bounds) - there's no separate "calibration state" to simply clear.
+Two directions, leaning toward the second:
+- Destructive: delete/exclude that sensor's history before the reset point. Loses real
+  historical chart data - probably wrong.
+- **Recommended: a per-sensor "calibration epoch" timestamp** (new small table, e.g.
+  `receiver_id` + `sensor_id` + `reset_at`, or a column somewhere queryable by
+  `msv2_read_sensor_auto_calibration`) that the auto-cal SQL function clamps its window's lower
+  bound against (`greatest(now() - interval, reset_at)`) instead of using
+  `now() - lookback_days` unconditionally. Keeps full history intact for the History tab/charts;
+  only the calibration math ignores anything before the reset. Needs its own migration and a
+  new RPC (e.g. `msv2_reset_sensor_calibration`) plus a UI control - most natural home is the
+  local app's Setup tab next to the existing auto-calibrate checkbox, not something exposed on
+  Netlify (stays consistent with the read-only-Netlify decision from earlier this session).
+
+**4. More smoothing on the AFE bench sensor's ADC readings** - "this data jumps around a lot
+even with our current implementation." **This one has a concrete, already-diagnosed fix**, found
+earlier this same session: `MSV2_Moisture_AFE_Test.ino` already computes an EMA-smoothed value
+(`smoothedMv`, alpha 0.2) every reading cycle - but only prints it to serial for diagnostics.
+The value actually broadcast over BLE and stored in history is `medianMv` (line 149,
+`advertiseReading(medianMv)`), the raw median-of-5, not the smoothed one. The smoothing work is
+already written and never wired up. Fix: transmit `smoothedMv` (rounded) instead. If that's not
+smooth enough once it's actually live, tune the alpha constant down (e.g. 0.2 → 0.1) for a
+slower-moving average - straightforward once the EMA is actually in the transmit path.
+
+**5. Once the 3-day calibration period finishes, switch the displayed value from raw to
+percentage as a visual "done calibrating" indicator.** Confirmed the physical display currently
+always shows the raw value as text regardless of calibration state - `drawPlantCard()`
+(`MSV2_ESP32_Display_Runtime.ino` ~line 3086-3094): `snprintf(moistureText, ..., "%u",
+reading->moisture)`, with the percent value only driving the color bar underneath, never the
+text itself. Same pattern repeats in the diff-redraw siblings (`drawPlantCardDataOnly()`
+~3126-3154, `computeDetailStats()` ~3258-3280) - all three need the same change, not just one.
+Proposed behavior: once a sensor's bounds are auto-cal-derived (not manual/preset), swap the
+text to `"%u%%"` with `moisturePct` instead of the raw value. Also applies to `MobileAppPage.h`'s
+`moistureMetric` (currently always shows the raw value too) for consistency between the display
+and the local app.
+
+**6. Guard against the learned range silently drifting over time from chronic late watering.**
+Real concern, not yet addressed anywhere: since `dryBound` is the 5th percentile of a rolling
+21-day window, a household that's consistently late watering will see each cycle's unusually-low
+minimum become part of the new normal, pulling `dryBound` progressively lower - the alert
+threshold chases the neglectful behavior instead of holding a meaningful floor, exactly
+backwards from what an alert system should do. Not designed yet; candidate directions to weigh
+next session, none chosen:
+- Clamp the learned `dryBound` so it can never drift more than some fixed margin below the
+  original manual/preset value - anchors drift to a sane starting reference but caps how far
+  genuine long-term adaptation (e.g. a plant that's just naturally drought-tolerant) can go too.
+- Track the learned bound across successive windows and flag a sustained one-directional drift
+  as its own signal ("this plant's watering has been trending later") rather than only guarding
+  against it - turns the failure mode into a feature.
+- Keep the adaptive bound for day-to-day color/percent display, but maintain a separate,
+  slower-moving or fixed "hard floor" that still fires red/danger regardless of what the rolling
+  window currently considers normal.
+
 ## Last Known User Feedback
 
 - Display and app are working well after the WiFi/setup fixes.
@@ -666,9 +944,22 @@ every function through migration 021) lives in this session's Claude memory
 
 ## Suggested Next Work
 
-Top of the list as of 2026-08-14 (the 2026-08-09 list below is superseded by ranking,
-not by completion - its battery/hardware items are physical-world tasks this
-session's software review pass didn't touch and are presumably still open):
+Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
+not by completion):
+
+1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
+   section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
+   `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
+   (now on `app.v13.js`), flash `MSV2_ESP32_Display_Runtime` to the physical receiver, and
+   flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
+   the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
+   text switch once a sensor calibrates, and (once enough history exists to actually drift)
+   the dry-bound trend notice. None of this has been deployed or hardware-tested yet -
+   code-complete and compiling only.
+
+Superseded by ranking, top of the list as of 2026-08-14 (the 2026-08-09 list below is
+superseded by ranking, not by completion - its battery/hardware items are physical-world tasks
+that session's software review pass didn't touch and are presumably still open):
 
 1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
    physical boards - explicitly deferred this session ("no lets do that later").

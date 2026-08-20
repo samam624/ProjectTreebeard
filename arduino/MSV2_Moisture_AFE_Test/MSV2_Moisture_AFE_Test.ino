@@ -146,7 +146,11 @@ void loop()
   Serial.print(",");
   Serial.println(percent, 1);
 
-  advertiseReading(medianMv);
+  // Transmit the EMA-smoothed value, not the raw per-cycle median - this data jumps
+  // around a lot on the bench even with median-of-N sampling, and smoothedMv was already
+  // being computed above for the serial log but never actually sent (see
+  // docs/STATUS_HANDOFF.md's 2026-08-16 redesign item 4).
+  advertiseReading((uint16_t)(smoothedMv + 0.5f));
 
   delay(READING_PERIOD_MS);
 }

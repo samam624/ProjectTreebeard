@@ -185,6 +185,8 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       font-size: 12px;
     }
     label.wide { grid-column: 1 / -1; }
+    .fields .reset-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+    .fields .reset-row .editor-reset-status { color: var(--muted); font-size: 12px; }
     input, select {
       width: 100%;
       min-height: 38px;
@@ -218,6 +220,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       font-size: 12px;
       margin: 8px 0 0;
     }
+    .notice.warn { color: var(--warn); }
     .network-card {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -440,7 +443,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           <input id="soundEnabledInput" type="checkbox">
           <div>
             Play alert sounds
-            <span>Startup chime, plus a short double-buzz that repeats hourly while a plant stays overdue for water.</span>
+            <span>Startup chime, plus a short double-buzz that repeats hourly while a plant stays critically low on water.</span>
           </div>
         </label>
         <div class="notice" id="soundNotice"></div>
@@ -888,6 +891,30 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       $("wifiNotice").textContent = "Forgotten. After reboot, connect your phone to MSV2-Display to set up WiFi again.";
     }
 
+    // Calendar-day phrasing for autoCal.lastWateredAtMs - informational only (see
+    // receiver-snapshot's deriveAutoCal). The "overdue"/predicted-interval alerting this
+    // used to feed was removed 2026-08-17 (see docs/STATUS_HANDOFF.md): the product's
+    // whole point is moisture-based alerting, not a calendar prediction, so this is now
+    // just a nice-to-have stat, never a color/danger signal.
+    //
+    // Deliberately compares calendar dates, not "was this within the last 24h" - watering
+    // at 11pm and checking at 9am the next morning is only ~10 hours ago but is clearly
+    // "yesterday", not "today". A rolling-hours calculation (what this replaced) gets that
+    // wrong right up to the 24h mark regardless of where midnight actually fell. This can
+    // only be done client-side: the server has no idea what timezone the viewer is in.
+    function wateredAgoText(lastWateredAtMs) {
+      if (lastWateredAtMs == null || lastWateredAtMs < 0) return null;
+      const startOfDay = (ms) => {
+        const d = new Date(ms);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime();
+      };
+      const dayDiff = Math.round((startOfDay(Date.now()) - startOfDay(lastWateredAtMs)) / 86400000);
+      if (dayDiff <= 0) return "watered today";
+      if (dayDiff === 1) return "watered yesterday";
+      return "watered " + dayDiff + "d ago";
+    }
+
     function renderStatus() {
       if (!config) return;
       $("statusGrid").innerHTML = config.cards.map((card) => {
@@ -907,23 +934,25 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         const dry = autoReady ? autoCal.dryBound : Number(card.moisture?.dry ?? card.dry ?? 120);
         const wet = autoReady ? autoCal.wetBound : Number(card.moisture?.wet ?? card.wet ?? 175);
         const moistPct = pct(reading.moisture, dry, wet);
-        // autoCal.overdue is a pure watering-schedule prediction with no awareness of the
-        // live reading (see receiver-snapshot's deriveAutoCal) - suppress it once the
-        // current moisture already contradicts it, same cutoff/reasoning as the physical
-        // display's resolveMoistureColor(), so the two never disagree.
-        const overdue = autoReady && autoCal.overdue && (moistPct == null || moistPct < 50);
-        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", reading.moisture == null ? "--" : reading.moisture, moistPct, overdue);
+        // Once calibrated, show percent instead of the raw sensor value as a visual
+        // "calibration done" signal (mirrors the physical display - see
+        // docs/STATUS_HANDOFF.md's redesign item 5).
+        const moistValueText = reading.moisture == null ? "--" : (autoReady && moistPct != null ? moistPct + "%" : String(reading.moisture));
+        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct);
+        const wateredNote = autoReady ? wateredAgoText(autoCal.lastWateredAtMs) : null;
+        const trendNote = autoReady && autoCal.dryBoundTrendingLower;
 
         return `
           <article class="card">
             <div class="card-head">
               <div>
                 <div class="name">${escapeHtml(card.plant || card.label || ("Probe " + card.sensor))}</div>
-                <div class="meta">Probe ${escapeHtml(card.sensor ?? "-")}${reading.rssi ? " / " + escapeHtml(reading.rssi) + " dBm" : ""}</div>
+                <div class="meta">Probe ${escapeHtml(card.sensor ?? "-")}${reading.rssi ? " / " + escapeHtml(reading.rssi) + " dBm" : ""}${wateredNote ? " · " + escapeHtml(wateredNote) : ""}</div>
               </div>
               <div class="art">${artPreview(card.art || "sprout_pot")}<span>${escapeHtml(labelFor(artOptions, card.art || "sprout_pot"))}</span></div>
             </div>
             ${moistureMetric}
+            ${trendNote ? '<div class="notice warn">Dry range has been trending lower - may be worth a manual check.</div>' : ""}
             ${metric("Battery", battPct == null ? "--%" : battPct + "%", battPct)}
           </article>
         `;
@@ -1340,6 +1369,56 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
     }
 
+    // Forces one sensor's learned range back into "learning" mode from fresh data (see
+    // docs/STATUS_HANDOFF.md's redesign item 3) - for cases like moving a probe to a new
+    // plant/pot, where the old learned range no longer means anything. Server-side, this
+    // just moves the calibration window's lower bound forward (msv2_reset_sensor_calibration);
+    // History-tab data is untouched. Same share-token pattern as loadHistory/clearAllHistory.
+    async function resetSensorCalibration(button) {
+      const index = button.dataset.index;
+      const sensorId = Number(button.dataset.sensor);
+      if (!confirm("Reset the learned moisture range for this plant? It will show as \"learning\" again until enough new data comes in.")) {
+        return;
+      }
+      const status = document.querySelector(`[data-reset-status="${index}"]`);
+      button.disabled = true;
+      if (status) status.textContent = "Resetting...";
+      try {
+        let token = await getOrMintShareToken();
+        const post = (t) => fetch(SHARE_API_BASE + "/api/share-autocal-reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + t },
+          body: JSON.stringify({ receiverId: claimInfo.receiverId, sensorId }),
+        });
+        let response = await post(token);
+        if (response.status === 401) {
+          token = await getOrMintShareToken(true);
+          response = await post(token);
+        }
+        const body = await response.json();
+        if (!response.ok || !body.ok) {
+          throw new Error(body.error || ("HTTP " + response.status));
+        }
+        // The reset above went straight to Supabase - this receiver has no way to know
+        // it happened otherwise, and would keep showing the stale pre-reset range for up
+        // to ~10 minutes (its normal autocal poll cadence). Nudge it to refresh in ~10s
+        // instead. Best-effort: the reset itself already succeeded either way, so a
+        // failure here just means the usual ~10-minute wait instead of ~10 seconds.
+        try {
+          await fetch("/autocal-refresh", { method: "POST" });
+        } catch (refreshErr) {
+          // ignored - see comment above
+        }
+        if (status) status.textContent = "Reset. Refreshing calibration - this plant will show as \"learning\" within about 10 seconds, then relearn from new data.";
+        await loadReadings();
+        renderStatus();
+      } catch (err) {
+        if (status) status.textContent = "Reset failed: " + err.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function renderEditors() {
       const editorList = $("editorList");
       editorList.innerHTML = "";
@@ -1359,10 +1438,15 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             <label class="wide">Name<input data-field="plant" data-index="${index}" value="${escapeAttr(card.plant || "")}" maxlength="24"></label>
             <label>Probe ID<input type="number" min="1" max="16" data-field="sensor" data-index="${index}" value="${card.sensor || index + 1}"></label>
             <label>Art${artPreview(card.art || "sprout_pot", "editor-art-preview")}<select data-field="art" data-index="${index}">${options(artOptions, card.art || "sprout_pot")}</select></label>
-            <label class="wide">Auto-calibrate (learn range + watering schedule from history)<input type="checkbox" data-field="auto" data-index="${index}" ${autoEnabled ? "checked" : ""}></label>
+            <label class="wide">Auto-calibrate (learn moisture range from history)<input type="checkbox" data-field="auto" data-index="${index}" ${autoEnabled ? "checked" : ""}></label>
             <label>Preset<select data-field="preset" data-index="${index}" ${autoEnabled ? "disabled" : ""}>${presetOptions(presetName)}</select></label>
             <label>Dry<input type="number" min="0" max="4095" data-field="dry" data-index="${index}" value="${dry}" ${autoEnabled ? "disabled" : ""}></label>
             <label>Wet<input type="number" min="0" max="4095" data-field="wet" data-index="${index}" value="${wet}" ${autoEnabled ? "disabled" : ""}></label>
+            ${autoEnabled ? `
+            <div class="reset-row">
+              <button type="button" class="ghost" data-action="reset-cal" data-index="${index}" data-sensor="${card.sensor || index + 1}">Reset calibration</button>
+              <span class="editor-reset-status" data-reset-status="${index}">Forgets the learned range and starts relearning from now. History charts are unaffected.</span>
+            </div>` : ""}
           </div>
         `;
         editorList.appendChild(item);
@@ -1561,6 +1645,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       document.querySelector(`[data-field="wet"][data-index="${index}"]`).value = preset.wet;
     });
     $("editorList").addEventListener("click", (event) => {
+      const resetButton = event.target.closest("button[data-action='reset-cal']");
+      if (resetButton) {
+        resetSensorCalibration(resetButton);
+        return;
+      }
       const button = event.target.closest("button[data-action='delete']");
       if (!button) return;
       const index = Number(button.dataset.index);

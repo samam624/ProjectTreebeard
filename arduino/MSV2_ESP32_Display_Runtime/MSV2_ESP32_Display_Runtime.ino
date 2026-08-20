@@ -286,9 +286,9 @@ const uint8_t BUZZER_PWM_RESOLUTION_BITS = 8;
 const uint16_t BUZZER_PWM_MAX = (1U << BUZZER_PWM_RESOLUTION_BITS) - 1U;
 const uint8_t BUZZER_DUTY_PERCENT = 4; // 8% was audibly harsher/louder on the bench unit
 const uint16_t BUZZER_ENVELOPE_MS = 8; // attack/release ramp; suppresses PWM switching clicks
-// How often the water-warning re-fires while a plant stays overdue/critical. The bench
+// How often the water-warning re-fires while a plant stays critically low. The bench
 // audition looped every 60s indefinitely; shipped behavior is once immediately on the
-// overdue/critical transition, then hourly until watered, to avoid nagging.
+// critical transition, then hourly until watered, to avoid nagging.
 const uint32_t BUZZER_WATER_ALERT_REPEAT_MS = 3600000UL;
 
 struct BuzzerStep
@@ -350,9 +350,18 @@ struct AutoCalState
   bool ready = false;
   int dryBound = 0;
   int wetBound = 0;
-  bool overdue = false;
-  float daysSinceLastWatering = -1.0f;
-  float predictedIntervalDays = -1.0f;
+  float daysSinceLastWatering = -1.0f; // informational only - no longer drives any alert
+  // Epoch ms of the last detected watering event, -1 if none observed yet. Kept alongside
+  // daysSinceLastWatering (a rolling float, blind to calendar-day boundaries) because only
+  // a real timestamp lets a client render a correct "today"/"yesterday"/"Nd ago" label in
+  // its own local timezone - see MobileAppPage.h's wateredAgoText(). Not consumed by
+  // firmware itself, just piped through to the local /data endpoint.
+  double lastWateredAtMs = -1.0;
+  // True when the cloud's anchored floor clamp is actively holding dryBound up above
+  // where the raw rolling calibration would otherwise put it (see receiver-snapshot's
+  // deriveAutoCal/AUTOCAL_DRY_FLOOR_MARGIN_PCT) - dryBound above is already the clamped
+  // value either way, this just flags that clamping is happening for this sensor.
+  bool dryBoundTrendingLower = false;
 };
 
 AutoCalState autoCal[MAX_SENSOR_ID + 1];
@@ -452,7 +461,8 @@ struct PlantArtSlot
   uint16_t dangerColor = 0;
   int dry = 120;
   int wet = 175;
-  bool overdue = false; // forces dangerColor when auto mode thinks watering is overdue
+  bool calibrated = false; // bounds are auto-cal-derived (ready), not manual/preset
+  bool rangeTrendWarn = false; // dry bound has been trending lower across recent windows
   bool pending = false; // auto mode on but not enough history yet - render like stale
   // Inputs to refreshSlotMoistureBounds(), cached once from ui.json since they can't
   // change without a full renderUi() rebuild anyway. autoCal[] itself (read using these)
@@ -473,6 +483,7 @@ struct PlantArtSlot
   bool lastMoistureStale = true;
   uint16_t lastMoistureRaw = 0;
   uint8_t lastMoisturePct = 0;
+  bool lastMoistureCalibrated = false;
   uint16_t lastMoistureColor = 0;
   uint8_t lastBatteryPct = 0;
   // Last-drawn state for drawPlantCardDetailDataOnly()'s diagnostic rows - same "only
@@ -489,6 +500,7 @@ struct PlantArtSlot
   char lastDetailReceivedText[12] = "";
   char lastDetailMissedText[12] = "";
   char lastDetailRangeText[16] = "";
+  bool lastDetailRangeTrendWarn = false;
   char lastDetailRawText[16] = "";
   bool lastDetailCharging = false;
 };
@@ -1748,9 +1760,9 @@ void serviceBuzzer(uint32_t now)
   ledcWrite(BUZZER_PIN, 0);
 }
 
-// Reuses the exact same "critically-low or overdue" condition that already drives the
-// physical blink alert (anyLowMoistureCardVisible/slotNeedsBlink) so the audible and
-// visual alerts never disagree about which plants count. Fires once immediately on the
+// Reuses the exact same "critically low" condition that already drives the physical
+// blink alert (anyLowMoistureCardVisible/slotNeedsBlink) so the audible and visual
+// alerts never disagree about which plants count. Fires once immediately on the
 // false->true transition, then again every BUZZER_WATER_ALERT_REPEAT_MS while still
 // true, and goes silent again the moment every visible card is watered/healthy - see
 // docs/DISPLAY_CENTER_BUZZER_SOUND_DESIGN.md for why an unthrottled repeat was rejected.
@@ -2594,11 +2606,13 @@ void resolvePendingDashboardTap(uint32_t now)
   handleDashboardSingleTap(pendingSingleTapX, pendingSingleTapY);
 }
 
-// Resolves the dry/wet bounds and overdue flag to actually use for a card: the
-// self-learned auto-calibration range (when the card has "auto" enabled and enough
-// history has accumulated server-side), otherwise the manual/default thresholds. Used
-// by every moisture-rendering call site (both PlantArtSlot-based and direct) so the web
-// app and physical display never disagree.
+// Resolves the dry/wet bounds to actually use for a card: the self-learned
+// auto-calibration range (when the card has "auto" enabled and enough history has
+// accumulated server-side), otherwise the manual/default thresholds. Used by every
+// moisture-rendering call site (both PlantArtSlot-based and direct) so the web app and
+// physical display never disagree. outCalibrated tells the caller whether the bounds it
+// got back are auto-cal-derived (used to switch the moisture text from raw to percent -
+// see drawPlantCard()) as opposed to the manual/preset fallback.
 void resolveMoistureBounds(
   JsonObject moistureConfig,
   JsonObject card,
@@ -2607,7 +2621,7 @@ void resolveMoistureBounds(
   int defaultWet,
   int& outDry,
   int& outWet,
-  bool& outOverdue,
+  bool& outCalibrated,
   bool& outPending
 )
 {
@@ -2618,7 +2632,7 @@ void resolveMoistureBounds(
   {
     outDry = autoCal[sensorId].dryBound;
     outWet = autoCal[sensorId].wetBound;
-    outOverdue = autoCal[sensorId].overdue;
+    outCalibrated = true;
     outPending = false;
     return;
   }
@@ -2637,7 +2651,7 @@ void resolveMoistureBounds(
   // write but has no legitimate reason to be outside this range regardless.
   outDry = clampInt(moistureConfig["dry"] | card["dry"] | defaultDry, 0, 65535);
   outWet = clampInt(moistureConfig["wet"] | card["wet"] | defaultWet, 0, 65535);
-  outOverdue = false;
+  outCalibrated = false;
   outPending = autoEnabled;
 }
 
@@ -2646,14 +2660,15 @@ void resolveMoistureBounds(
 // - fixed until the next full renderUi() rebuild) plus the live autoCal[] state (updated
 // on its own ~10-minute cadence by runCloudAutoCalPull(), running on a separate task).
 //
-// Without this, slot.dry/wet/overdue were only ever set once, inside cachePlantArtSlot()
-// - itself only called from renderUi(). Ordinary operation almost never triggers another
-// full renderUi() once cards exist (see the displayDirty=true call sites), so a background
-// auto-cal update - a card newly flagged "overdue", or a shifted learned range - could sit
-// applied-but-invisible for arbitrarily long, only surfacing whenever something incidental
-// (e.g. closing the brightness overlay) happened to force a full re-render. Calling this
-// from both the blink-cadence check and the lightweight per-card redraw keeps the fast
-// path honest without needing a JSON re-parse or full screen repaint.
+// Without this, slot.dry/wet/calibrated were only ever set once, inside
+// cachePlantArtSlot() - itself only called from renderUi(). Ordinary operation almost
+// never triggers another full renderUi() once cards exist (see the displayDirty=true
+// call sites), so a background auto-cal update - the range finishing calibration, or a
+// shifted learned range - could sit applied-but-invisible for arbitrarily long, only
+// surfacing whenever something incidental (e.g. closing the brightness overlay) happened
+// to force a full re-render. Calling this from both the blink-cadence check and the
+// lightweight per-card redraw keeps the fast path honest without needing a JSON re-parse
+// or full screen repaint.
 void refreshSlotMoistureBounds(PlantArtSlot& slot)
 {
   bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
@@ -2661,13 +2676,15 @@ void refreshSlotMoistureBounds(PlantArtSlot& slot)
   {
     slot.dry = autoCal[slot.sensorId].dryBound;
     slot.wet = autoCal[slot.sensorId].wetBound;
-    slot.overdue = autoCal[slot.sensorId].overdue;
+    slot.calibrated = true;
+    slot.rangeTrendWarn = autoCal[slot.sensorId].dryBoundTrendingLower;
     slot.pending = false;
     return;
   }
   slot.dry = slot.manualDry;
   slot.wet = slot.manualWet;
-  slot.overdue = false;
+  slot.calibrated = false;
+  slot.rangeTrendWarn = false;
   slot.pending = slot.autoEnabled;
 }
 
@@ -2699,9 +2716,9 @@ uint16_t healthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColo
 }
 
 // Turns a resolved "danger" color into a blink (alternating dangerColor/mutedColor
-// every 500ms) so a critically-low or overdue plant is an active alert on the physical
-// display, not just a static red border easy to miss at a glance - matches the probe's
-// own low-moisture LED alert. Leaves any other color (green/yellow/muted) untouched.
+// every 500ms) so a critically-low plant is an active alert on the physical display, not
+// just a static red border easy to miss at a glance - matches the probe's own
+// low-moisture LED alert. Leaves any other color (green/yellow/muted) untouched.
 uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uint16_t mutedColor)
 {
   if (resolvedColor != dangerColor)
@@ -2710,24 +2727,6 @@ uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uin
   }
   bool blinkOn = (millis() / 500) % 2 == 0;
   return blinkOn ? dangerColor : mutedColor;
-}
-
-// "Overdue" (see resolveMoistureBounds/refreshSlotMoistureBounds) is a pure watering-
-// schedule prediction from the cloud auto-cal function - median historical interval
-// between detected waterings vs. days since the last one - with zero awareness of the
-// current live reading. Left to force dangerColor unconditionally, a plant that was just
-// watered (moisture already back up near/at its wet bound) still blinks red until the
-// server-side rise-clustering catches up and clears the flag, which can lag well behind
-// the actual watering. Suppress the override once the live percent already contradicts
-// it, using healthColor's own "healthy" cutoff (50) rather than a separate threshold.
-uint16_t resolveMoistureColor(bool overdue, uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
-{
-  bool liveReadingContradictsOverdue = percent != BATTERY_UNKNOWN && percent >= 50;
-  if (overdue && !liveReadingContradictsOverdue)
-  {
-    return dangerColor;
-  }
-  return healthColor(percent, accentColor, warningColor, dangerColor, mutedColor);
 }
 
 void drawBar(int x, int y, int w, int h, uint8_t percent, uint16_t fillColor, uint16_t trackColor)
@@ -3052,16 +3051,16 @@ void drawPlantCard(
   JsonObject moistureConfig = card["moisture"].as<JsonObject>();
   int dry;
   int wet;
-  bool overdue;
+  bool calibrated;
   bool pending;
-  resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, overdue, pending);
+  resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, calibrated, pending);
 
   const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
   const SensorReading* reading = validSensor ? &sensors[sensorId] : nullptr;
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = resolveMoistureColor(overdue, moisturePct, accentColor, warningColor, dangerColor, mutedColor);
+  uint16_t moistureColor = healthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, dangerColor, mutedColor);
@@ -3087,6 +3086,12 @@ void drawPlantCard(
   if (stale)
   {
     strlcpy(moistureText, "--", sizeof(moistureText));
+  }
+  else if (calibrated)
+  {
+    // Auto-cal-derived bounds in use: show percent instead of the raw sensor value, as
+    // a visual "calibration done" signal (see docs/STATUS_HANDOFF.md's redesign item 5).
+    snprintf(moistureText, sizeof(moistureText), "%u%%", moisturePct);
   }
   else
   {
@@ -3125,7 +3130,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = resolveMoistureColor(slot.overdue, moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  uint16_t moistureColor = healthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, slot.dangerColor, slot.mutedColor);
@@ -3138,6 +3143,10 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   if (stale)
   {
     strlcpy(moistureText, "--", sizeof(moistureText));
+  }
+  else if (slot.calibrated)
+  {
+    snprintf(moistureText, sizeof(moistureText), "%u%%", moisturePct);
   }
   else
   {
@@ -3172,6 +3181,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   // skipping it on a color-only blink tick avoids the clear-then-redraw flash entirely,
   // since drawTextRight/drawBar always fully repaint their own fixed-size cells anyway.
   const bool moistureValueChanged = !slot.metricsInitialized || stale != slot.lastMoistureStale ||
+    slot.calibrated != slot.lastMoistureCalibrated ||
     (!stale && (reading->moisture != slot.lastMoistureRaw || moisturePct != slot.lastMoisturePct));
   const bool moistureColorChanged = moistureColor != slot.lastMoistureColor;
   const bool batteryValueChanged = !slot.metricsInitialized || batteryPct != slot.lastBatteryPct;
@@ -3209,6 +3219,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   slot.lastMoistureStale = stale;
   slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
   slot.lastMoisturePct = moisturePct;
+  slot.lastMoistureCalibrated = slot.calibrated;
   slot.lastMoistureColor = moistureColor;
   slot.lastBatteryPct = batteryPct;
 }
@@ -3257,7 +3268,7 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   s.rawMoisture = reading != nullptr ? reading->moisture : 0;
   s.moisturePct = s.stale ? BATTERY_UNKNOWN : moisturePercent(s.rawMoisture, slot.dry, slot.wet);
   s.batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  s.moistureColor = resolveMoistureColor(slot.overdue, s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  s.moistureColor = healthColor(s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!s.stale)
   {
     s.moistureColor = applyLowMoistureBlink(s.moistureColor, slot.dangerColor, slot.mutedColor);
@@ -3266,6 +3277,10 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   if (s.stale)
   {
     strlcpy(s.moistureText, "--", sizeof(s.moistureText));
+  }
+  else if (slot.calibrated)
+  {
+    snprintf(s.moistureText, sizeof(s.moistureText), "%u%%", s.moisturePct);
   }
   else
   {
@@ -3337,6 +3352,7 @@ void seedDetailDiagnosticCache(PlantArtSlot& slot, const PlantDetailStats& s)
   strlcpy(slot.lastDetailReceivedText, s.receivedText, sizeof(slot.lastDetailReceivedText));
   strlcpy(slot.lastDetailMissedText, s.missedText, sizeof(slot.lastDetailMissedText));
   strlcpy(slot.lastDetailRangeText, s.rangeText, sizeof(slot.lastDetailRangeText));
+  slot.lastDetailRangeTrendWarn = slot.rangeTrendWarn;
   strlcpy(slot.lastDetailRawText, s.rawText, sizeof(slot.lastDetailRawText));
   slot.lastDetailCharging = s.rawCharging;
 }
@@ -3350,6 +3366,7 @@ void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
   slot.lastMoistureStale = s.stale;
   slot.lastMoistureRaw = s.stale ? slot.lastMoistureRaw : s.rawMoisture;
   slot.lastMoisturePct = s.moisturePct;
+  slot.lastMoistureCalibrated = slot.calibrated;
   slot.lastMoistureColor = s.moistureColor;
   slot.lastBatteryPct = s.batteryPct;
   seedDetailDiagnosticCache(slot, s);
@@ -3368,6 +3385,9 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
   const int infoH = max(24, h - 91);
   const int infoBottom = infoY + infoH;
   const int rightX = x + w - 7;
+  // See drawPlantCardDetailDataOnly()'s matching comment: recolors the Range row's
+  // value when the learned dry bound has been trending lower, instead of adding a new row.
+  const uint16_t rangeValueColor = slot.rangeTrendWarn ? slot.warningColor : slot.textColor;
 
   // This is the exact region previously owned by the animated sprite. Clearing only
   // this band removes the old pose without touching any neighboring card or metric row.
@@ -3402,7 +3422,7 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
     }
     if (rowY + 8 <= infoBottom)
     {
-      drawDetailStatRow(x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, rangeValueColor, slot.surfaceColor);
     }
   }
   else
@@ -3430,7 +3450,7 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
     if (rowY + 8 <= infoBottom)
     {
       drawDetailStatRow(x + 7, col1RightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
-      drawDetailStatRow(col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRow(col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, rangeValueColor, slot.surfaceColor);
       rowY += rowStep;
     }
     if (s.hasRaw && rowY + 8 <= infoBottom)
@@ -3568,6 +3588,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
 
   const bool signalChanged = strcmp(s.signalLabel, slot.lastDetailSignalLabel) != 0 || s.signalColor != slot.lastDetailSignalColor;
   const bool moistureValueChanged = !slot.metricsInitialized || s.stale != slot.lastMoistureStale ||
+    slot.calibrated != slot.lastMoistureCalibrated ||
     (!s.stale && (s.rawMoisture != slot.lastMoistureRaw || s.moisturePct != slot.lastMoisturePct));
   const bool moistureColorChanged = s.moistureColor != slot.lastMoistureColor;
   const bool batteryValueChanged = !slot.metricsInitialized || s.batteryPct != slot.lastBatteryPct;
@@ -3603,8 +3624,15 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   const bool lossChanged = strcmp(s.lossText, slot.lastDetailLossText) != 0;
   const bool receivedChanged = strcmp(s.receivedText, slot.lastDetailReceivedText) != 0;
   const bool missedChanged = strcmp(s.missedText, slot.lastDetailMissedText) != 0;
-  const bool rangeChanged = strcmp(s.rangeText, slot.lastDetailRangeText) != 0;
+  const bool rangeChanged = strcmp(s.rangeText, slot.lastDetailRangeText) != 0 ||
+    slot.rangeTrendWarn != slot.lastDetailRangeTrendWarn;
   const bool rawChanged = strcmp(s.rawText, slot.lastDetailRawText) != 0 || s.rawCharging != slot.lastDetailCharging;
+  // Recolors the Range row's value (instead of a whole new row) when the learned dry
+  // bound has been drifting lower window-over-window (see msv2_read_sensor_auto_calibration's
+  // bucketed trend and receiver-snapshot's deriveAutoCal) - an informational nudge, not
+  // an alert, so it reuses the diagnostic row already showing the range rather than
+  // adding a new one to the fixed row budget every card size already has to fit.
+  const uint16_t rangeValueColor = slot.rangeTrendWarn ? slot.warningColor : slot.textColor;
 
   if (w < 200)
   {
@@ -3635,7 +3663,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
     }
     if (rowY + 8 <= infoBottom)
     {
-      drawDetailStatRowIfChanged(rangeChanged, x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(rangeChanged, x + 7, rightX, rowY, "Range", s.rangeText, slot.mutedColor, rangeValueColor, slot.surfaceColor);
     }
   }
   else
@@ -3662,7 +3690,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
     if (rowY + 8 <= infoBottom)
     {
       drawDetailStatRowIfChanged(lossChanged, x + 7, col1RightX, rowY, "Loss", s.lossText, slot.mutedColor, slot.textColor, slot.surfaceColor);
-      drawDetailStatRowIfChanged(rangeChanged, col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+      drawDetailStatRowIfChanged(rangeChanged, col2X, rightX, rowY, "Range", s.rangeText, slot.mutedColor, rangeValueColor, slot.surfaceColor);
       rowY += rowStep;
     }
     if (s.hasRaw && rowY + 8 <= infoBottom)
@@ -3719,10 +3747,6 @@ bool slotNeedsBlink(PlantArtSlot& slot)
   }
   refreshSlotMoistureBounds(slot);
   uint8_t percent = moisturePercent(reading.moisture, slot.dry, slot.wet);
-  if (slot.overdue && percent < 50)
-  {
-    return true;
-  }
   return percent < 25;
 }
 
@@ -4153,9 +4177,9 @@ String sensorDataJson()
     autoCalItem["ready"] = autoCal[sensorId].ready;
     autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
     autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
-    autoCalItem["overdue"] = autoCal[sensorId].overdue;
     autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
-    autoCalItem["predictedIntervalDays"] = autoCal[sensorId].predictedIntervalDays;
+    autoCalItem["lastWateredAtMs"] = autoCal[sensorId].lastWateredAtMs;
+    autoCalItem["dryBoundTrendingLower"] = autoCal[sensorId].dryBoundTrendingLower;
   }
 
   String output;
@@ -4165,7 +4189,7 @@ String sensorDataJson()
 
 String snapshotJson()
 {
-  // Bumped from 8192: the per-sensor autoCal sub-object (6 fields, up to MAX_SENSOR_ID
+  // Bumped from 8192: the per-sensor autoCal sub-object (5 fields, up to MAX_SENSOR_ID
   // sensors) added ~140 bytes/sensor, and 8192 didn't have that much headroom to spare.
   DynamicJsonDocument doc(12288);
   doc["receiverId"] = receiverId;
@@ -4290,15 +4314,15 @@ String snapshotJson()
 
     // Same cached auto-calibration snapshot sensorDataJson() sends to the local /data
     // endpoint - without this, the cloud (and therefore the Netlify dashboard) has no way
-    // to know a sensor is auto-calibrated or overdue, and falls back to the static
-    // manual/preset dry/wet bounds even when the display itself is using learned ones.
+    // to know a sensor is auto-calibrated, and falls back to the static manual/preset
+    // dry/wet bounds even when the display itself is using learned ones.
     JsonObject autoCalItem = item.createNestedObject("autoCal");
     autoCalItem["ready"] = autoCal[sensorId].ready;
     autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
     autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
-    autoCalItem["overdue"] = autoCal[sensorId].overdue;
     autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
-    autoCalItem["predictedIntervalDays"] = autoCal[sensorId].predictedIntervalDays;
+    autoCalItem["lastWateredAtMs"] = autoCal[sensorId].lastWateredAtMs;
+    autoCalItem["dryBoundTrendingLower"] = autoCal[sensorId].dryBoundTrendingLower;
   }
 
   String output;
@@ -4910,9 +4934,9 @@ void runCloudAutoCalPull(uint32_t now)
         autoCal[sensorId].ready = sensorRow["ready"] | false;
         autoCal[sensorId].dryBound = sensorRow["dryBound"] | 0;
         autoCal[sensorId].wetBound = sensorRow["wetBound"] | 0;
-        autoCal[sensorId].overdue = sensorRow["overdue"] | false;
         autoCal[sensorId].daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
-        autoCal[sensorId].predictedIntervalDays = sensorRow["predictedIntervalDays"] | -1.0f;
+        autoCal[sensorId].lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
+        autoCal[sensorId].dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
       }
       Serial.println("[MSV2 cloud] auto-calibration updated");
     }
@@ -5605,6 +5629,25 @@ void setupServer()
       return;
     }
     resetCloudConfig();
+  });
+
+  // Nudges the ~10-minute autocal poll cadence (runCloudAutoCalPull) to run again in
+  // ~10s instead of waiting out the rest of the interval. Used by the local app right
+  // after a successful calibration reset - resetSensorCalibration() in MobileAppPage.h
+  // calls straight through to Supabase, bypassing this receiver entirely, so without this
+  // the receiver has no way to know a reset just happened and the physical display/local
+  // dashboard would keep showing the stale pre-reset range for up to ~10 minutes. No
+  // sensor-specific targeting needed - the pull re-fetches every sensor's state in one
+  // request regardless, so "refresh soon" is all this needs to communicate.
+  server.on("/autocal-refresh", HTTP_POST, []() {
+    Serial.println("[MSV2 web] POST /autocal-refresh");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
+    nextCloudAutoCalPullMs = 0;
+    server.send(200, "application/json", "{\"ok\":true}");
   });
 
   server.on("/wifi", HTTP_GET, []() {

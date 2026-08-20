@@ -184,3 +184,24 @@ The "Why move off the bit-banged GPIO oscillator" section above already names ba
 **Correction for the record: the 74HC4052 already in hand was never wrong on topology** - it's the same dual-4:1/2-select-bit architecture as TMUX1109, matches the routing table fine. The reason it needed replacing was purely electrical: RON ~70-120Ω (drags tank Q) and bandwidth in the low single-digit MHz (marginal against the ~1.3-4.1MHz sensing frequency), not an architecture mismatch. TMUX1109 keeps the identical, correct routing architecture while fixing RON (8.75Ω typ/9.75Ω max @ 3.3V) and bandwidth (155MHz). Don't revisit "does 74HC4052 do 4:1 correctly" - it does; the fix was always about RON/bandwidth, never routing.
 10. **New 2026-08-01**: reconcile this doc's FDC2212 references against the schematic's actual FDC2214RGHR - confirm the channel-count difference doesn't change the design parameters above, and decide how the three unused channels should be terminated if only one is populated.
 11. **New 2026-08-01, separate subsystem - not yet started. Corrected 2026-08-11: the charger is BQ25170DSGR, not BQ25100** (confirmed from the real LCSC order BOM - `BQ25170DSGR`, WSON-8(2x2) - the earlier "BQ25100" reference in this doc was never checked against the actual schematic/BOM and was wrong). User asked whether the charge-current-setting resistor/register is sized correctly for safe charging of a 70mAh-class LiPo (target: roughly 0.5-1C, i.e. ~35-70mA max). Still blocked on the actual netlist/resistor (or I2C register, if BQ25170 sets current digitally rather than via ISET resistor - not yet checked) values - needs a fresh review with real numbers, against the *correct* part's datasheet this time, before this board's charge path is trusted on a small cell. Also present in the same BOM: BQ25504RGTT (energy-harvesting boost converter) and a 22uH Coilcraft inductor (`LPS4018-223MRC`) - this design apparently also has a solar/harvesting input path not otherwise documented in this file - worth a dedicated review of its own before finalizing.
+
+## 2026-08-16 Ground-truth BOM check against the real LCSC order
+
+`LCSC_reorder_2026-07-31.csv` (repo root) is the actual parts order, not a researched/candidate
+BOM - full breakdown now in `docs/MSV3_PROBE_BOM.md`. Two things in this file's design-parameter
+sections above don't match what was actually bought, both worth flagging rather than silently
+correcting in place:
+
+- **Mux: this LCSC order has 74HC4052D ($0.08/unit), but that's bench/spare stock, not what's
+  populated.** User confirmed 2026-08-16: **TMUX1109 was ordered separately** (not through LCSC)
+  and is the real mux on the board - the "FINAL DECISION 2026-08-11: TMUX1109" a few paragraphs
+  up was in fact acted on, just not captured in this particular CSV.
+- **Sensing-tank inductor, as listed in this LCSC order: Chilisin LVS404018-6R8M-N (6.8µH,
+  $0.057/unit)**, picked as an LCSC in-stock substitute after the true-0805 alternatives (Pulse
+  PE-0805CLH6R8STS, Chilisin LS0805-100K-N) were out of stock there - **not** the Coilcraft
+  0805LS-682XGRC (~$2.13) priced as a candidate in "Design parameters" above. User also confirmed
+  2026-08-16 that inductor(s) were sourced outside LCSC for the same out-of-stock reason, but it's
+  not yet confirmed whether that applies to this sensing-tank part specifically or only to the
+  harvester's `LPS4018-223MRC`. Don't treat this line as final until that's confirmed - the bench
+  ring-down validation already called for in open item 3 above still needs to target whichever
+  part actually ends up populated.

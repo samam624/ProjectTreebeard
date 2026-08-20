@@ -554,12 +554,12 @@ function healthClass(pct) {
   return "ok";
 }
 
-// Mirrors the firmware's refreshSlotMoistureBounds()/resolveMoistureColor() (see
-// MSV2_ESP32_Display_Runtime.ino) and the local app's renderStatus() (MobileAppPage.h) so
-// this dashboard's colors never diverge from the physical display's: once a sensor's
-// auto-calibration is ready, the learned dry/wet bounds replace the static manual/preset
-// ones, and an "overdue" watering-schedule prediction forces red unless the live reading
-// already contradicts it.
+// Mirrors the firmware's refreshSlotMoistureBounds() (see MSV2_ESP32_Display_Runtime.ino)
+// and the local app's renderStatus() (MobileAppPage.h) so this dashboard's colors never
+// diverge from the physical display's: once a sensor's auto-calibration is ready, the
+// learned dry/wet bounds replace the static manual/preset ones. (This used to also force
+// red on a calendar-based "overdue" watering-schedule prediction - removed 2026-08-17,
+// see docs/STATUS_HANDOFF.md - so color now comes from the live reading alone.)
 function resolveMoisture(card, reading) {
   const autoEnabled = Boolean(card?.moisture?.auto);
   const autoCal = reading?.autoCal || null;
@@ -567,8 +567,7 @@ function resolveMoisture(card, reading) {
   const dry = autoReady ? autoCal.dryBound : Number(card?.moisture?.dry ?? 120);
   const wet = autoReady ? autoCal.wetBound : Number(card?.moisture?.wet ?? 175);
   const pct = percent(reading?.moisture, dry, wet);
-  const overdue = autoReady && autoCal.overdue && (pct == null || pct < 50);
-  return { pct, healthCls: overdue ? "danger" : healthClass(pct) };
+  return { pct, healthCls: healthClass(pct) };
 }
 
 function bar(pct, className) {
