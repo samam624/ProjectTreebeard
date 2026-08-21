@@ -34,6 +34,9 @@ NUS_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # PC writes here, nRF rece
 NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # nRF notifies here, PC receives.
 MSV2_COMPANY_ID = 0xFFFF
 MSV2_MAGIC = b"MSV2"
+MSV3_MAGIC = b"MSV3"  # MSV3_Probe_Bringup_Test.ino's blecycle/blestart -- distinct magic so it
+                       # can never be mistaken for real MSV2 plant data (see that sketch's BLE
+                       # section comment). Layout: sensor_id(1) wake24(3) dataCh0_u32(4) battMv(2) charging(1).
 BATTERY_LEVEL_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
 DIS_MODEL_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
 DIS_MANUFACTURER_UUID = "00002a29-0000-1000-8000-00805f9b34fb"
@@ -106,44 +109,77 @@ def parse_msv2_manufacturer_data(adv: AdvertisementData) -> tuple[int, int, int]
     return sensor_id, wake_low24, moisture
 
 
+def parse_msv3_manufacturer_data(adv: AdvertisementData) -> tuple[int, int, int, int, bool] | None:
+    payload = adv.manufacturer_data.get(MSV2_COMPANY_ID)
+    if not payload or len(payload) < 15:
+        return None
+
+    if not payload.startswith(MSV3_MAGIC):
+        return None
+
+    sensor_id = payload[4]
+    wake_low24 = payload[5] | (payload[6] << 8) | (payload[7] << 16)
+    data_ch0 = struct.unpack_from("<I", payload, 8)[0]
+    battery_mv = struct.unpack_from("<H", payload, 12)[0]
+    charging = payload[14] != 0
+    return sensor_id, wake_low24, data_ch0, battery_mv, charging
+
+
 async def monitor_advertisements(
     *,
     exact_name: str | None,
     name: str | None,
     address: str | None,
 ) -> None:
-    seen: dict[tuple[str, int], tuple[int, int, int]] = {}
-    last_wake: dict[tuple[str, int], int] = {}
+    seen: dict[tuple[str, str, int], tuple] = {}
+    last_wake: dict[tuple[str, str, int], int] = {}
 
     def handle_adv(device: BLEDevice, adv: AdvertisementData) -> None:
         if not matches_device(device, adv, name=name, exact_name=exact_name, address=address):
             return
 
-        parsed = parse_msv2_manufacturer_data(adv)
-        if parsed is None:
-            return
-
-        sensor_id, wake_count, moisture = parsed
-        key = (device.address, sensor_id)
-
-        if seen.get(key) == parsed:
-            return
-
-        seen[key] = parsed
-        previous_wake = last_wake.get(key)
-        last_wake[key] = wake_count
-
-        gap = ""
-        if previous_wake is not None:
-            missed = (wake_count - previous_wake - 1) & 0xFFFFFF
-            if missed:
-                gap = f" missed={missed}"
-
         advertised_name = adv.local_name or device.name or "(no name)"
-        print(
-            f"[{now()}] {advertised_name} {device.address} "
-            f"RSSI={adv.rssi} sensor={sensor_id} wake={wake_count} moisture={moisture}{gap}"
-        )
+
+        parsed = parse_msv2_manufacturer_data(adv)
+        if parsed is not None:
+            sensor_id, wake_count, moisture = parsed
+            key = (device.address, "v2", sensor_id)
+            if seen.get(key) == parsed:
+                return
+            seen[key] = parsed
+            previous_wake = last_wake.get(key)
+            last_wake[key] = wake_count
+            gap = ""
+            if previous_wake is not None:
+                missed = (wake_count - previous_wake - 1) & 0xFFFFFF
+                if missed:
+                    gap = f" missed={missed}"
+            print(
+                f"[{now()}] {advertised_name} {device.address} "
+                f"RSSI={adv.rssi} sensor={sensor_id} wake={wake_count} moisture={moisture}{gap}"
+            )
+            return
+
+        parsed3 = parse_msv3_manufacturer_data(adv)
+        if parsed3 is not None:
+            sensor_id, wake_count, data_ch0, battery_mv, charging = parsed3
+            key = (device.address, "v3", sensor_id)
+            if seen.get(key) == parsed3:
+                return
+            seen[key] = parsed3
+            previous_wake = last_wake.get(key)
+            last_wake[key] = wake_count
+            gap = ""
+            if previous_wake is not None:
+                missed = (wake_count - previous_wake - 1) & 0xFFFFFF
+                if missed:
+                    gap = f" missed={missed}"
+            charge_note = " (charging)" if charging else ""
+            print(
+                f"[{now()}] {advertised_name} {device.address} "
+                f"RSSI={adv.rssi} sensor={sensor_id} wake={wake_count} "
+                f"dataCh0={data_ch0} battMv={battery_mv}{charge_note}{gap}"
+            )
 
     print(f"[{now()}] Monitoring BLE advertisements. Press Ctrl+C to stop.")
     async with BleakScanner(detection_callback=handle_adv):

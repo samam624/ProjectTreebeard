@@ -1,0 +1,13 @@
+{
+  "targetRoot": "../..",
+  "leader": "claude",
+  "writer": "claude",
+  "maxReviewRounds": 2,
+  "maxProviderCalls": 10,
+  "claudeMaxTurns": 12,
+  "claudeMaxBudgetUsdPerCall": 2,
+  "claudeMaxTotalBudgetUsd": 10,
+  "testCommands": [],
+  "testTimeoutSeconds": 600,
+  "maxTestOutputChars": 200000
+}
