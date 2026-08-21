@@ -5,6 +5,10 @@
 **Firmware:** `arduino/MSV3_Probe_Bringup_Test/` — flashed and lab-ready, including `sleepbench`
 **Baseline to compare against:** `DATA_CH0` ≈ 20.33 M (dry electrodes, USB power)
 
+> Build/upload only through `scripts/arduino_msv3_probe.ps1`. A stock PCA10056 build selects a
+> nonexistent LF crystal and can watchdog-reset in `Bluefruit.begin()`. The wrapper repairs and
+> verifies LFRC, cleans stale objects, and supplies the NFC GPIO flags. See `docs/KNOWN_ISSUES.md`.
+
 Everything through Phase 6 already passes on USB power. This session closes the parts that need a
 battery, a light source, and a scope — plus the three firmware readings that have never been
 checked against physical ground truth.
@@ -67,10 +71,20 @@ charging is what proves the LOW state works too.
 The whole-board sleep sequencing is entirely datasheet-derived — no current has ever been measured
 on this board. This is the single measurement that confirms it landed.
 
-- [ ] Put the meter in series with the **battery** line (USB must be out — the CDC peripheral alone swamps µA)
-- [ ] Run `sleepbench 300`, then immediately unplug USB
-- [ ] Record the steady sleep current
-- [ ] Repeat after `blestart` to include the SoftDevice's LFRC calibration cost
+- [x] Put the meter in series with the **battery** line (USB must be out — the CDC peripheral alone swamps µA)
+- [x] Run `sleepbench 300`, then immediately unplug USB
+- [x] Record the steady sleep current
+      **Measured: ~71µA, BLE never initialized this boot.** Well above the ~10µA pass bar. Ruled
+      out by direct check: charger-status pull-up left on (code always releases it), FDC stuck in
+      Sleep not Shutdown (SD pin confirmed a clean 3.3V while asleep), mux parked on an EC-check
+      code (confirmed code 0, electrode-swap, and both tank nodes read 0V). **Root cause still
+      unidentified** — real excess above the datasheet-derived floor, not yet explained by anything
+      in the troubleshooting table above.
+- [x] Repeat after `blestart` to include the SoftDevice's LFRC calibration cost
+      **Measured: ~60-70µA** (`blestart` then `blestop` before sleeping, so SoftDevice stays
+      initialized but isn't actively advertising). Statistically the same as the BLE-off figure —
+      the SoftDevice's background idle cost isn't distinguishable from the existing ~65µA unknown
+      excess at this measurement precision.
 - [ ] Also capture peak current during a wake, and the average across one full `blecycle`
 
 | Predicted contributor | Typ |
@@ -109,7 +123,10 @@ between blips.
 The open question is whether indoor light actually outpaces the sleep budget. That's an empirical
 question about your panel in your light — measure the panel first, then the harvester.
 
-- [ ] Measure panel V_OC and I_SC **under the actual indoor light you plan to deploy in** — not at a window, not under a lamp, unless that's the real condition
+- [x] Measure panel V_OC and I_SC **under the actual indoor light you plan to deploy in** — not at a window, not under a lamp, unless that's the real condition
+      **Measured (super-low-light indoor, real deploy condition): V_OC = 2.7V, I_SC = 50mA.**
+      V_OC clears the 600mV cold-start threshold by a wide margin (4.5x) even at this light level —
+      good sign, cold start is not looking marginal here.
 - [ ] Repeat at a window and under a bright lamp for comparison
 - [ ] Confirm V_OC clears the cold-start threshold below
 - [ ] Attach the panel with no USB and watch V_STOR rise
@@ -230,12 +247,12 @@ Serial console at 115200 baud on `COM3`.
 
 **Reflash:**
 
-```
-arduino-cli upload -p COM3 --fqbn adafruit:nrf52:pca10056 arduino/MSV3_Probe_Bringup_Test
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action upload -Port COM3
 ```
 
-No SWD leads, no UF2 drag. Compiling needs `-DCONFIG_NFCT_PINS_AS_GPIOS` in **both**
-`compiler.c.extra_flags` and `compiler.cpp.extra_flags`.
+No SWD leads, no UF2 drag. The wrapper supplies `-DCONFIG_NFCT_PINS_AS_GPIOS` in **both**
+`compiler.c.extra_flags` and `compiler.cpp.extra_flags`, enforces LFRC, and cleans stale objects.
 
 ---
 

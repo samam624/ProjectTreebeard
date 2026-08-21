@@ -377,6 +377,19 @@ powershell -ExecutionPolicy Bypass -File scripts\arduino_probe.ps1 compile
 powershell -ExecutionPolicy Bypass -File scripts\arduino_probe.ps1 upload
 ```
 
+Compile or upload the custom MSV3 E73 probe firmware only through its guarded helper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action doctor
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action compile
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action upload -Port COMx
+```
+
+MSV3 has no 32.768 kHz crystal, while the stock PCA10056 Arduino variant assumes one. The helper
+reapplies/verifies the required LFRC selection after a clone or Arduino core upgrade and forces a
+clean build. The sketch refuses to compile with the unsafe clock selection. Portable toolchain
+and hardware caveats are indexed in [Known Issues](docs/KNOWN_ISSUES.md).
+
 The display helper defaults to `COM13`; the probe helper defaults to `COM5`. Override with `-Port COMx` if Windows changes the ports:
 
 ```powershell

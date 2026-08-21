@@ -1,7 +1,7 @@
 # MSV3 Bring-up Firmware Hang: LFCLK/RTC1 Root Cause
 
 **Date:** 2026-08-21
-**Status:** RESOLVED. Verified with 900 consecutive I2C+USB samples (400 + 500, two back-to-back
+**Status:** RESOLVED AND REPO-ENFORCED. Verified with 900 consecutive I2C+USB samples (400 + 500, two back-to-back
 runs) with zero hangs, on the real MSV3 probe PCB. Every attempt before the fix died at a
 strikingly consistent ~115-122 iterations, with no exceptions across many repeated tests.
 **Scope:** `arduino/MSV3_Probe_Bringup_Test/`, and by extension any future nRF52840 sketch on a
@@ -112,6 +112,11 @@ but is moot now that the actual bug is fixed at the source.
    `TASKS_LFCLKSTOP`/`LFCLKSRC`/`TASKS_LFCLKSTART` at all. It now only *verifies*, via
    `NRF_CLOCK->LFCLKSTAT`, that the variant's boot-time RC selection actually took effect, before
    arming the watchdog.
+3. **Portable enforcement added after the manual edit was found missing again:**
+   `scripts/arduino_msv3_probe.ps1` now repairs/verifies the active installed variant and always
+   performs a clean compile. The sketch has an independent preprocessor guard that rejects an
+   LFXO build. `CLAUDE.md` requires the wrapper, and `docs/KNOWN_ISSUES.md` is the portable index.
+   This matters because files under Arduino15 are outside Git and do not travel with a clone.
 
 ## Verification
 
@@ -147,12 +152,46 @@ previous test, across four different fix attempts, had died by iteration ~122 wi
   decisive step here was actually reading `port_cmsis_systick.c`'s real implementation, not further
   argument about what it probably did.
 
-## Open follow-up (not yet done)
+## Addendum (same day, second machine): the variant.h fix doesn't travel with the repo
 
-`configUSE_TICKLESS_IDLE` is currently `0` (disabled) in the installed core's
-`FreeRTOSConfig.h` -- a leftover from fix attempt #4 above, not part of the actual fix. This is
-fine for continued bench testing, but MSV3 is a battery-powered device and tickless idle's power
-savings will matter for real deployment firmware. Before any production MSV3 firmware ships:
-revert `configUSE_TICKLESS_IDLE` to `1` and re-run the same stress test to confirm it's still
-clean now that the real LFCLK bug is fixed (tickless idle should be safe again once RTC1 isn't
-being corrupted out from under it).
+This fix lives entirely in `variants/pca10056/variant.h` inside the **installed Arduino core**
+(`AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\...` on Windows) — a machine-local
+file, not tracked by git, not part of this repository. Reopening this project on a different
+machine (or after a core reinstall/update on the same machine) silently reverts to the stock
+`#define USE_LFXO`, with no error or warning of any kind.
+
+Symptom this produces is **different** from the original RTC1/delay() hang above, and easy to
+mistake for a new bug: `blestart`/`blecycle` (anything that reaches `Bluefruit.begin()`) hangs and
+watchdog-resets every time, while everything else — `wdtstatus`, `fdcstream`, `sleep`/`sleepbench`,
+plain boot — works fine, including `wdtstatus` reporting `LFCLKSTAT: running=YES src=RC`. That
+last part is what makes it a good trap: the plain application-level clock really is running
+correctly on RC at boot (this core's own init handles that fine, or the already-flashed
+bootloader leaves it that way), so it looks like the LFCLK question is already settled. It isn't —
+`Bluefruit.begin()` hands the SoftDevice its own separate clock config, compiled from the same
+`USE_LFXO`/`USE_LFRC` macro (`bluefruit.cpp`'s `begin()` is `#if defined(USE_LFXO) ... #elif
+defined(USE_LFRC)`), and the SoftDevice takes over clock management once enabled. If that compiled
+config says XTAL and this board has no crystal, enabling the SoftDevice is where it actually hangs
+— nothing before that point ever touches it.
+
+Confirmed exactly this on a second machine on 2026-08-21: `variant.h` still had the stock
+`USE_LFXO`, `blestart` hung and watchdog-reset every single time (reproduced with the battery
+fully disconnected too, ruling out a power-wiring red herring that looked plausible at first),
+`wdtstatus` showed clean `src=RC` throughout. Re-patched to `USE_LFRC`, cleared the Arduino build
+cache (`AppData\Local\arduino\sketches`, so the stale `bluefruit.cpp.o` compiled against the old
+macro couldn't be reused), rebuilt, reflashed — `blestart` came up clean immediately after.
+
+**Portable resolution:** the repository now owns the enforcement even though the upstream variant
+file remains machine-local. `scripts/arduino_msv3_probe.ps1` repairs/verifies the newest installed
+Adafruit nRF52 PCA10056 variant and forces a clean compile; the sketch separately refuses to
+compile unless `USE_LFRC` is active and `USE_LFXO` is absent. `CLAUDE.md` requires that wrapper for
+MSV3 work. A fresh clone therefore brings both the repair and a fail-closed check, and an Arduino
+core reinstall is corrected on the next guarded build. See `docs/KNOWN_ISSUES.md` for the portable
+index.
+
+## Current external-core state
+
+The installed core is back to `configUSE_TICKLESS_IDLE=1`. The earlier `0` setting was a discarded
+diagnostic experiment, not part of the fix. Likewise, the temporary local `Wire_nRF52.cpp` timeout
+patch did not address this failure and is not a required clone/setup mutation. Their current
+portable status is recorded in `docs/KNOWN_ISSUES.md` so future investigations do not confuse
+experimental machine-local edits with required fixes.

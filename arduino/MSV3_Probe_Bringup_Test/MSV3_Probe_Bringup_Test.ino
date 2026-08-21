@@ -14,14 +14,17 @@
 // N<32, P1.(N-32) for N>=32) -- so these Arduino pin numbers are exact, not
 // approximate.
 //
-// REQUIRED build flags (P0.09/P0.10 default to NFC antenna function on this
+// REQUIRED build path: use scripts/arduino_msv3_probe.ps1. It applies the
+// flags below, verifies/repairs the installed variant's LFRC selection, and
+// forces a clean build so a stale LFXO-compiled Bluefruit object cannot be
+// uploaded. Direct Arduino IDE/raw arduino-cli builds deliberately fail at
+// the compile-time guard below if the stock PCA10056 variant is still active.
+// P0.09/P0.10 default to NFC antenna function on this
 // chip, not GPIO, until this is set -- confirmed against this core's
 // system_nrf52840.c, which self-heals the UICR and reboots once on first run
 // with this flag, then behaves as plain GPIO forever after):
-//   arduino-cli compile --fqbn adafruit:nrf52:pca10056 \
-//     --build-property compiler.c.extra_flags=-DCONFIG_NFCT_PINS_AS_GPIOS \
-//     --build-property compiler.cpp.extra_flags=-DCONFIG_NFCT_PINS_AS_GPIOS \
-//     MSV3_Probe_Bringup_Test
+//   powershell -ExecutionPolicy Bypass -File \
+//     scripts/arduino_msv3_probe.ps1 -Action compile
 // Board FQBN must stay adafruit:nrf52:pca10056 to match the exact
 // bootloader/SoftDevice already flashed onto this chip (see docs/SWD_FLASHER.md).
 //
@@ -33,13 +36,21 @@
 // core. This board has no populated 32.768kHz LF crystal (P0.00/P0.01 are
 // reused as VDIV/spare per the netlist), so LFCLK source selection matters
 // a great deal and must be set correctly in the board variant (USE_LFRC,
-// patched into variants/pca10056/variant.h) BEFORE FreeRTOS/RTC1 start --
+// enforced by scripts/arduino_msv3_probe.ps1) BEFORE FreeRTOS/RTC1 start --
 // never reconfigure LFCLK from inside a sketch's setup(), which runs after
 // the scheduler is already relying on it.
 
 #include <Arduino.h>
 #include <Wire.h>
 #include <bluefruit.h>
+
+// This is a compile-time safety property, not merely documentation. Both
+// wiring.c (FreeRTOS/RTC1 boot) and Bluefruit.begin() consume these variant
+// macros. LFXO on this crystal-less PCB can hang SoftDevice initialization
+// until the watchdog resets the board and USB re-enumerates.
+#if !defined(USE_LFRC) || defined(USE_LFXO)
+#error "MSV3 requires USE_LFRC and no USE_LFXO. Build with scripts/arduino_msv3_probe.ps1; see docs/KNOWN_ISSUES.md."
+#endif
 
 // ---- Status LED (D2 via R16 470R to GND, active HIGH) ----
 #define LED_BIT (1UL << 10)  // P1.10
@@ -559,6 +570,32 @@ void printWatchdogStatus() {
   Serial.println(lfSrc == CLOCK_LFCLKSTAT_SRC_RC ? "RC" : lfSrc == CLOCK_LFCLKSTAT_SRC_Xtal ? "Xtal" : "Synth");
   Serial.print(F("  WDT RUNSTATUS: "));
   Serial.println((NRF_WDT->RUNSTATUS & WDT_RUNSTATUS_RUNSTATUS_Msk) ? "RUNNING" : "NOT RUNNING");
+
+  // 2026-08-21: chasing the ~65uA sleep-current excess (see
+  // docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 2). The nRF52840 PS is explicit
+  // (section 6.35.7.1): "software must explicitly place the USBD in low power
+  // mode through writing LowPower to register LOWPOWER" on suspend/VBUS-not-
+  // present, and the HFXO crystal likewise "must explicitly" be disabled then --
+  // neither is automatic, and nothing in this sketch touches either one.
+  // probeSleep()'s per-IC survey only covers the sensor-side ICs, never the
+  // MCU's own USB peripheral -- and every sleep-current test so far started
+  // from a boot where USB was connected at some point (required, it's the only
+  // way to get a console), so if TinyUSB doesn't fully tear this down when
+  // VBUS disappears, that's a real, unaccounted-for, BLE-independent excess.
+  // Reading ground truth here instead of guessing.
+  uint32_t hfstat = NRF_CLOCK->HFCLKSTAT;
+  bool hfRunning = (hfstat & CLOCK_HFCLKSTAT_STATE_Msk) != 0;
+  uint32_t hfSrc = hfstat & CLOCK_HFCLKSTAT_SRC_Msk;
+  Serial.print(F("  HFCLKSTAT: running="));
+  Serial.print(hfRunning ? "YES" : "NO");
+  Serial.print(F(" src="));
+  Serial.println(hfSrc == CLOCK_HFCLKSTAT_SRC_Xtal ? "Xtal(HFXO)" : "RC(HFINT)");
+  Serial.print(F("  USBD: ENABLE="));
+  Serial.print(NRF_USBD->ENABLE ? "1" : "0");
+  Serial.print(F(" LOWPOWER="));
+  Serial.print(NRF_USBD->LOWPOWER ? "1(low-power)" : "0(normal power)");
+  Serial.print(F(" USBREGSTATUS=0x"));
+  Serial.println(NRF_USBD->USBREGSTATUS, HEX);
 }
 
 void printHelp() {
@@ -574,6 +611,7 @@ void printHelp() {
   Serial.println(F("  mux <0-3>                - set TMUX1109 select code (A1 A0), report pins driven"));
   Serial.println(F("  muxsweep                 - cycle all 4 mux codes, one fdcread each (finds osc vs EC-check states)"));
   Serial.println(F("  vbat                     - read VBAT_DIV (battery divider) -- informational, no battery attached"));
+  Serial.println(F("  vbathold <secs>          - hold VBAT_DIV_EN LOW (default 120s) for manual multimeter probing, no ADC reads"));
   Serial.println(F("  chgstatus                - read BQ25170 STAT/PG charger status pins"));
   Serial.println(F("  divnode                  - digitalRead DIV_NODE (EC-check midpoint) -- informational only"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
@@ -764,7 +802,21 @@ float readVbatMv(int *rawOut) {
   // reading is taken once per wake, not streamed, so the extra ~37us costs
   // nothing measurable.
   analogSampleTime(40);
-  delay(5);                      // divider RC + reference settle
+  // 2026-08-21: the 5ms this used to wait here is exactly ONE R29||R30/C16
+  // time constant (100k||100k = 50k, C16 = 100nF -> RC = 5ms) -- only 63% of
+  // the way to the final value, not settled. VBAT_DIV_EN idles as high-Z
+  // between reads (see below), so with no current path pulling the node down
+  // it drifts toward VBAT itself while idle; every read then starts from
+  // near-VBAT and only got 1 RC constant to relax toward the true VBAT/2
+  // before being sampled, landing partway between the two and reading high --
+  // this is what was actually behind vbat reading ~5.3-5.6V while charging
+  // instead of the true ~4.2V (confirmed by holding VBAT_DIV_EN low with
+  // `vbathold` and directly probing VBAT_DIV: it measured correctly, right at
+  // VBAT/2, so the divider itself was always fine -- only this read's settle
+  // time was too short). 25ms is 5 RC constants (~99.3% settled), same
+  // "costs nothing measurable, this is once per wake" reasoning as the
+  // acquisition-time choice above.
+  delay(25);                      // divider RC + reference settle
   (void)analogRead(PIN_VBAT_DIV);  // discard first sample after a reference switch
   int raw = analogRead(PIN_VBAT_DIV);
   analogReference(AR_DEFAULT);   // restore core defaults for any other analogRead user
@@ -787,6 +839,29 @@ void doVbat() {
   Serial.println(F(" mV) -- NOT a real battery reading unless a cell is actually attached;"));
   Serial.println(F("    with the header empty this is a floating divider node, so treat it as"));
   Serial.println(F("    a chain-is-alive check only, not a voltage measurement."));
+}
+
+// Bench aid for tracing the vbat divider discrepancy by hand: hold
+// VBAT_DIV_EN LOW (the divider's ground-side return) continuously, touching
+// nothing else -- no analogReference/analogReadResolution/analogSampleTime
+// changes, no ADC reads at all -- so the node sits in a steady DC state a
+// multimeter can actually probe at VBAT (R29 top), VBAT_DIV (R29/R30
+// midpoint test point), and VBAT_DIV_EN (R30 bottom) without this firmware
+// disturbing anything mid-measurement. readVbatMv() only asserts this for a
+// few ms per read, nowhere near long enough to physically move a probe.
+void doVbatHold(int secs) {
+  Serial.print(F("  holding VBAT_DIV_EN LOW for "));
+  Serial.print(secs);
+  Serial.println(F("s -- probe now:"));
+  Serial.println(F("    VBAT        (R29 top / battery rail)"));
+  Serial.println(F("    VBAT_DIV    (R29/R30 midpoint test point) -- expect ~VBAT/2 if the divider's healthy"));
+  Serial.println(F("    VBAT_DIV_EN (R30 bottom) -- expect a clean 0V while this command is running"));
+  Serial.flush();
+  pinMode(PIN_VBAT_DIV_EN, OUTPUT);
+  digitalWrite(PIN_VBAT_DIV_EN, LOW);
+  delayFeedingWatchdog((uint32_t)secs * 1000UL);
+  pinMode(PIN_VBAT_DIV_EN, INPUT);  // back to high-Z, same idle state as everywhere else
+  Serial.println(F("  vbathold finished -- VBAT_DIV_EN released back to high-Z."));
 }
 
 // ------------------------------------------- sleep / wake power mgmt ----
@@ -1065,6 +1140,11 @@ void handleCommand(String cmd) {
     doMuxSweep();
   } else if (cmd == "vbat") {
     doVbat();
+  } else if (cmd.startsWith("vbathold")) {
+    int secs = cmd.length() > 9 ? cmd.substring(9).toInt() : 120;
+    if (secs <= 0) secs = 120;
+    if (secs > 1800) secs = 1800;
+    doVbatHold(secs);
   } else if (cmd == "chgstatus") {
     doChgStatus();
   } else if (cmd == "divnode") {
@@ -1080,15 +1160,27 @@ void handleCommand(String cmd) {
              (unsigned long)g_i2cCallCount, (unsigned long)millis());
     printLineResilient(buf);
   } else if (cmd == "blestart") {
+    // Defensive state repair: this used to call fdcReadChannel0() while the
+    // FDC could still be in Shutdown and Wire could still be ended after
+    // sleep/sleepbench. blecycle already wakes first. The USB/watchdog reset
+    // observed while this was added was later proven to occur earlier, inside
+    // Bluefruit.begin(), because the build had silently reverted to USE_LFXO;
+    // it was not evidence of an I2C hang. Keep this wake guard anyway because
+    // the old direct read was invalid from the documented asleep state.
     bleInitOnce();
-    uint32_t data = 0;
-    uint16_t status = 0;
-    fdcReadChannel0(data, status);
-    g_bleWakeCount++;
-    bleStartAdv(data, 0, false);  // one-shot reading; use blecycle for live battery/charging too
-    Serial.print(F("  advertising as \""));
-    Serial.print(BLE_DEVICE_NAME);
-    Serial.println(F("\" continuously (until blestop)"));
+    bool wokeOk = probeWake(BLE_WAKE_DISCARD_CONVERSIONS);
+    if (!wokeOk) {
+      Serial.println(F("  blestart aborted -- probeWake() failed (FDC/I2C not responding), not attempting a read"));
+    } else {
+      uint32_t data = 0;
+      uint16_t status = 0;
+      fdcReadChannel0(data, status);
+      g_bleWakeCount++;
+      bleStartAdv(data, 0, false);  // one-shot reading; use blecycle for live battery/charging too
+      Serial.print(F("  advertising as \""));
+      Serial.print(BLE_DEVICE_NAME);
+      Serial.println(F("\" continuously (until blestop)"));
+    }
   } else if (cmd == "sleep") {
     probeSleep();
     Serial.println(F("  all ICs -> low-power state:"));
