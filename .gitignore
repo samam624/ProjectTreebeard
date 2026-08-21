@@ -13,3 +13,18 @@ supabase/.branches/
 supabase/.env
 .claude/settings.local.json
 .vscode/
+.agent-runs/
+tools/agent-supervisor/.env
+tools/agent-supervisor/dist/
+
+# arduino-cli build output -- regenerable, and no build/ dir has ever been
+# tracked here (the only committed .hex files are the deliberately-kept
+# bootloader images under MSV2_ESP32_SWD_Flasher/bootloaders/).
+arduino/*/build/
+arduino/*/*.uf2
+
+# Datasheet PDFs for the PCB reference library: ~31MB of binaries vs ~1.7MB
+# for the *_extracted.txt versions that are actually grepped for specs. The
+# text, netlist and indexes ARE tracked; re-fetch the PDFs with
+# scripts/fetch_datasheet.py if a page image or figure is needed.
+hardware/*/reference/datasheets/*.pdf

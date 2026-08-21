@@ -186,45 +186,98 @@ the region it's about to write, not the rest of the chip.
 ### Flashing an application once the bootloader is installed
 
 This is the actual payoff of going through the SWD install at all: once a
-target has this bootloader, updating its application **no longer needs SWD**
-— just drag-and-drop a `.uf2` onto the drive the bootloader presents (confirmed
-working 2026-08-20: it shows up as a real removable drive labeled `NRF52BOOT`,
-matching the Adafruit VID `0x239A` on its USB identity).
-
-To build a `.uf2` for this exact bootloader/SoftDevice combo:
+target has this bootloader **and any application is already running on it**,
+updating that application again **no longer needs SWD, and doesn't even need
+manual `.uf2` handling** — just use the normal Arduino upload flow, exactly
+like a stock Feather/XIAO nRF52840:
 
 ```powershell
 $CLI = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-& $CLI compile --fqbn adafruit:nrf52:pca10056 --export-binaries path\to\your\sketch
-
-python "C:\Users\<you>\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\tools\uf2conv\uf2conv.py" `
-  -f 0xADA52840 -c -o output.uf2 path\to\your\sketch\build\adafruit.nrf52.pca10056\<sketch>.ino.hex
+& $CLI upload -p COM3 --fqbn adafruit:nrf52:pca10056 path\to\your\sketch
 ```
 
-- **Board FQBN must be `adafruit:nrf52:pca10056`** (installed via the
-  `adafruit:nrf52` core, added through the Adafruit board-manager URL
-  `https://adafruit.github.io/arduino-board-index/package_adafruit_index.json`)
-  — a different board profile could link the app at a flash address this
-  bootloader doesn't expect. `arduino-cli compile --export-binaries` doesn't
-  auto-produce a `.uf2` (that only happens as part of an `upload` recipe in
-  this platform, not `compile`); `uf2conv.py` does the same conversion by
-  hand. `0xADA52840` is this platform's nRF52840 "family ID" (from
-  `pca10056.build.uf2_family` in the core's `boards.txt`) — it's baked into
-  every `.uf2` header so the bootloader knows which chip family a block is
-  for.
-- **Sanity-check the printed start address.** `uf2conv.py` prints the address
-  it linked the app at (confirmed: `0x26000`, immediately after the
-  SoftDevice's `0x00001000-0x00025DE8` range from the table above) — if that
-  ever looks wrong for a given bootloader/SoftDevice combo, the board profile
-  doesn't actually match what's on the chip.
-- **No board-specific Arduino variant exists for the bare E73-2G4M08S1C**, so
-  there's no meaningful "Arduino pin number" for an arbitrary GPIO like P1.10
-  under this FQBN. `arduino/MSV3_E73_LED_Test` (the bench test sketch used to
-  confirm this whole path) drives it via direct nRF52840 port registers
-  (`NRF_P1->DIRSET`/`OUTSET`/`OUTCLR`) instead of `digitalWrite()`, matching
-  the pattern already used in this repo's moisture-probe sketches — the
-  port/bit is the only thing actually fixed by the hardware regardless of
-  which board profile compiled it.
+(or `--input-dir <build-dir>` to upload an already-compiled `.zip` without
+recompiling.) **Confirmed working live, 2026-08-20**, on the real MSV3 probe
+PCB with no SWD leads attached at all — output showed the whole automatic
+cycle end to end:
+
+```
+Upgrading target on COM6 with DFU package ...MSV3_Probe_Bringup_Test.ino.zip. ...
+########################################
+Activating new firmware
+Device programmed.
+New upload port: COM3 (serial)
+```
+
+**Why this works**: `pca10056.upload.protocol=nrfutil` in this core's
+`boards.txt`, with `use_1200bps_touch=true` and `wait_for_upload_port=true`.
+`arduino-cli upload` opens the board's *currently running* CDC serial port at
+1200 baud then closes it — this core's own firmware watches for that touch
+and responds by soft-resetting into the bootloader (same mechanism Feather/
+XIAO nRF52840 boards use for their "just click Upload" experience; nothing
+board-specific needed to enable it). The bootloader re-enumerates as a
+DFU-serial port, `adafruit-nrfutil` (bundled at
+`tools/adafruit-nrfutil/win32/adafruit-nrfutil.exe` in this core) pushes a
+signed `.zip` DFU package — built automatically alongside the `.hex`/`.uf2`
+during `compile`, via `recipe.objcopy.zip.pattern`'s `nrfutil dfu genpkg
+--sd-req {build.sd_fwid}`, which requires/checks the S140 6.1.1 SoftDevice
+already on the chip — then verifies, activates, and the board re-enumerates
+back on its normal port automatically. Unlike a manual `.uf2` drag, this
+reports explicit success/failure, so there's no "did that actually work?"
+ambiguity.
+
+**This only works if an application is already running to detect the touch.**
+For the very first application ever loaded after a fresh SWD bootloader
+install (bootloader resident, no app yet — nothing listening for a 1200bps
+touch), or if a bad application is hung/crashed and can't respond, fall back
+to one of:
+- **SWD, direct** (works regardless of what state the application is in —
+  the reliable universal fallback): `python scripts/swd_flash_hex.py --port
+  <adapter COM> --hex path\to\sketch\build\adafruit.nrf52.pca10056\<sketch>.ino.hex`
+  (no `--mass-erase` needed, that's only for writing a new bootloader).
+- **Manual `.uf2` drag** onto the bootloader's `NRF52BOOT` mass-storage
+  drive (confirmed working 2026-08-20 as a real removable drive matching the
+  Adafruit VID `0x239A`) — needs the bootloader to already be resident with
+  no/dead app, and needs a real double-tap of the `RST` test point (this
+  board has no physical reset button) to force DFU mode if an app is
+  currently running. Build the `.uf2` with:
+  ```powershell
+  python "C:\Users\<you>\AppData\Local\Arduino15\packages\adafruit\hardware\nrf52\1.7.0\tools\uf2conv\uf2conv.py" `
+    -f 0xADA52840 -c -o output.uf2 path\to\your\sketch\build\adafruit.nrf52.pca10056\<sketch>.ino.hex
+  ```
+  `0xADA52840` is this platform's nRF52840 "family ID"
+  (`pca10056.build.uf2_family` in `boards.txt`). This path gives **no
+  confirmation it actually took effect** beyond the drive disappearing — a
+  wrong or stale file dragged here can silently leave old firmware running
+  indefinitely, which is exactly what happened during this board's first
+  real bring-up session; prefer the two options above whenever either is
+  available.
+
+In all cases, **board FQBN must be `adafruit:nrf52:pca10056`** (installed via
+the `adafruit:nrf52` core, Adafruit board-manager URL
+`https://adafruit.github.io/arduino-board-index/package_adafruit_index.json`)
+— a different board profile could link the app at a flash address this
+bootloader doesn't expect. Confirmed link address for this bootloader/
+SoftDevice combo: `0x26000` (immediately after the SoftDevice's
+`0x00001000-0x00025DE8` range from the table above) — if a build ever links
+somewhere else, the board profile doesn't actually match what's on the chip.
+
+**Correction, 2026-08-20: the earlier claim here that "no board-specific
+Arduino variant exists ... no meaningful Arduino pin number" for this FQBN
+was wrong**, checked against the real installed core this session:
+`adafruit:nrf52`'s `pca10056` variant's `g_ADigitalPinMap[]` is a straight
+identity map (Arduino pin N = P0.N for N<32, P1.(N-32) for N>=32), so e.g.
+P1.10 is reachable as plain Arduino pin 42 via normal `pinMode()`/
+`digitalWrite()` — no raw register access needed. `arduino/MSV3_E73_LED_Test`
+still uses raw `NRF_P1->DIRSET`/`OUTSET`/`OUTCLR` (harmless, just
+unnecessary), but `arduino/MSV3_Probe_Bringup_Test` uses the standard
+Arduino API throughout, including `Wire.setPins()` for I2C on non-default
+pins. One real, separate gotcha that *is* still live: **P0.09/P0.10 default
+to NFC-antenna function, not GPIO**, on this chip regardless of variant —
+needs `-DCONFIG_NFCT_PINS_AS_GPIOS` (both `compiler.c.extra_flags` and
+`compiler.cpp.extra_flags`) at compile time the first time either pin is
+used as a GPIO; the core's `system_nrf52840.c` then self-heals the UICR and
+silently resets once, permanently, before `setup()` ever runs.
 
 ## Bring-up history (issues hit and fixed, 2026-08-20)
 
