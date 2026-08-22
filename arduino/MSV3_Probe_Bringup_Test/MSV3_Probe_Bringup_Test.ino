@@ -593,9 +593,7 @@ void printWatchdogStatus() {
   Serial.print(F("  USBD: ENABLE="));
   Serial.print(NRF_USBD->ENABLE ? "1" : "0");
   Serial.print(F(" LOWPOWER="));
-  Serial.print(NRF_USBD->LOWPOWER ? "1(low-power)" : "0(normal power)");
-  Serial.print(F(" USBREGSTATUS=0x"));
-  Serial.println(NRF_USBD->USBREGSTATUS, HEX);
+  Serial.println(NRF_USBD->LOWPOWER ? "1(low-power)" : "0(normal power)");
 }
 
 void printHelp() {
@@ -925,7 +923,16 @@ void probeSleep() {
   // 2. Park the mux off the EC-check codes (the 3V3-to-electrodes path).
   setMux(MUX_SLEEP_CODE);
   // 3. Battery divider fully released (no current through R29/R30).
-  pinMode(PIN_VBAT_DIV_EN, INPUT);
+  // 2026-08-21: this used to be pinMode(INPUT), which on this core means
+  // "high-Z direction, but input buffer still CONNECTED" -- not actually
+  // disconnected. Same class of bug already fixed for INTB/DIV_NODE below
+  // (see that comment): a floating pin with its input buffer connected can
+  // sit mid-rail and burn CMOS shoot-through current, and this divider's
+  // pins are the worst-case version of that -- both can float toward VBAT
+  // (up to ~4.2V) while the chip's own IO supply is 3.3V. gpioDisconnect()
+  // instead, matching INTB/DIV_NODE's treatment.
+  gpioDisconnect(PIN_VBAT_DIV_EN);
+  gpioDisconnect(PIN_VBAT_DIV);
   // 4. LED off.
   ledWrite(false);
   // 5. Disable the TWIM peripheral. On nRF52 an enabled TWIM keeps drawing
@@ -938,6 +945,14 @@ void probeSleep() {
   // 6. Undriven, pull-up-less inputs -> disconnect their input buffers.
   gpioDisconnect(PIN_FDC_INTB);
   gpioDisconnect(PIN_DIV_NODE);
+  // 2026-08-21: charger STAT/PG have the same gap -- readChargerPins()
+  // already gpioDisconnect()s them after every chgstatus/isBatteryCharging()
+  // call, but only after one has actually run. If sleep happens before any
+  // charger read this boot, they're still sitting in whatever plain-INPUT
+  // state setup() left them in. Disconnect explicitly here so sleep state is
+  // correct regardless of what commands ran before it.
+  gpioDisconnect(PIN_CHG_STAT);
+  gpioDisconnect(PIN_CHG_PG);
   g_probeAsleep = true;
 }
 
@@ -1212,7 +1227,42 @@ void handleCommand(String cmd) {
     Serial.flush();
     delay(300);
     probeSleep();
+    // 2026-08-21: chasing the ~65uA sleep-current excess (see
+    // docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 2). Per the nRF52840 PS
+    // section 6.35.7.1, USBD's idle current is only reduced once software
+    // explicitly writes LowPower to the LOWPOWER register -- this is not
+    // automatic, and nothing else in this sketch ever does it. Deliberately
+    // placed only here (not inside probeSleep() itself, which also runs on
+    // every blecycle iteration and plain sleep/wake -- neither of those imply
+    // USB is about to be removed the way sleepbench's whole premise does), and
+    // deliberately NOT touching HFCLK/HFXO here: the SoftDevice manages that
+    // clock itself once BLE has been initialized, and blindly stopping a
+    // clock peripheral out from under something else that depends on it is
+    // exactly the mechanism behind today's earlier LFCLK/RTC1 disaster (see
+    // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md) -- not repeating that mistake
+    // with a different clock without a lot more certainty first.
+    NRF_USBD->LOWPOWER = 1;
+    // USBD LOWPOWER alone made no measurable difference (still ~65-71uA) --
+    // ruled out. Next candidate: HFCLK/HFXO. Native USB needs the 64MHz
+    // crystal running, and nothing anywhere stops it once USB goes away.
+    // Only touching this when BLE was never initialized this boot: once the
+    // SoftDevice is enabled it manages HFXO itself for radio timing, and
+    // stopping a clock peripheral out from under something else that depends
+    // on it is exactly the mechanism behind today's earlier LFCLK/RTC1
+    // disaster (docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md) -- g_bleInited=false
+    // means there's no SoftDevice to conflict with here. FreeRTOS's own tick
+    // runs off RTC1/LFCLK, confirmed independent of HFCLK, so this shouldn't
+    // touch anything the scheduler needs either.
+    bool hfclkStoppedHere = false;
+    if (!g_bleInited) {
+      NRF_CLOCK->TASKS_HFCLKSTOP = 1;
+      hfclkStoppedHere = true;
+    }
     delayFeedingWatchdog((uint32_t)secs * 1000UL);
+    if (hfclkStoppedHere) {
+      NRF_CLOCK->TASKS_HFCLKSTART = 1;  // restart before USB needs to re-enumerate
+    }
+    NRF_USBD->LOWPOWER = 0;  // restore before the "reconnect USB" message below needs it
     Serial.println(F("  sleepbench finished -- reconnect USB to see this."));
   } else if (cmd == "wake") {
     uint32_t t0 = micros();
