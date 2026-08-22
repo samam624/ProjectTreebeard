@@ -192,9 +192,12 @@ manual `.uf2` handling** — just use the normal Arduino upload flow, exactly
 like a stock Feather/XIAO nRF52840:
 
 ```powershell
-$CLI = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-& $CLI upload -p COM3 --fqbn adafruit:nrf52:pca10056 path\to\your\sketch
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action upload -Port COM3
 ```
+
+For an MSV3 sketch other than the default bring-up console, also pass `-Sketch
+arduino/MSV3_E73_LED_Test`. Do not use a raw PCA10056 compile for MSV3: its stock variant selects
+an LF crystal that this hardware does not have. The repo wrapper enforces LFRC and a clean build.
 
 (or `--input-dir <build-dir>` to upload an already-compiled `.zip` without
 recompiling.) **Confirmed working live, 2026-08-20**, on the real MSV3 probe

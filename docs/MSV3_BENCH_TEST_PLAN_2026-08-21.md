@@ -5,6 +5,10 @@
 **Firmware:** `arduino/MSV3_Probe_Bringup_Test/` — flashed and lab-ready, including `sleepbench`
 **Baseline to compare against:** `DATA_CH0` ≈ 20.33 M (dry electrodes, USB power)
 
+> Build/upload only through `scripts/arduino_msv3_probe.ps1`. A stock PCA10056 build selects a
+> nonexistent LF crystal and can watchdog-reset in `Bluefruit.begin()`. The wrapper repairs and
+> verifies LFRC, cleans stale objects, and supplies the NFC GPIO flags. See `docs/KNOWN_ISSUES.md`.
+
 Everything through Phase 6 already passes on USB power. This session closes the parts that need a
 battery, a light source, and a scope — plus the three firmware readings that have never been
 checked against physical ground truth.
@@ -67,10 +71,57 @@ charging is what proves the LOW state works too.
 The whole-board sleep sequencing is entirely datasheet-derived — no current has ever been measured
 on this board. This is the single measurement that confirms it landed.
 
-- [ ] Put the meter in series with the **battery** line (USB must be out — the CDC peripheral alone swamps µA)
-- [ ] Run `sleepbench 300`, then immediately unplug USB
-- [ ] Record the steady sleep current
-- [ ] Repeat after `blestart` to include the SoftDevice's LFRC calibration cost
+- [x] Put the meter in series with the **battery** line (USB must be out — the CDC peripheral alone swamps µA)
+- [x] Run `sleepbench 300`, then immediately unplug USB
+- [x] Record the steady sleep current
+      **Measured: ~71µA, BLE never initialized this boot.** Well above the ~10µA pass bar. Ruled
+      out by direct check: charger-status pull-up left on (code always releases it), FDC stuck in
+      Sleep not Shutdown (SD pin confirmed a clean 3.3V while asleep), mux parked on an EC-check
+      code (confirmed code 0, electrode-swap, and both tank nodes read 0V). **Root cause still
+      unidentified** — real excess above the datasheet-derived floor, not yet explained by anything
+      in the troubleshooting table above.
+- [x] Repeat after `blestart` to include the SoftDevice's LFRC calibration cost
+      **Measured: ~60-70µA** (`blestart` then `blestop` before sleeping, so SoftDevice stays
+      initialized but isn't actively advertising). Statistically the same as the BLE-off figure —
+      the SoftDevice's background idle cost isn't distinguishable from the existing ~65µA unknown
+      excess at this measurement precision.
+
+**ROOT CAUSE FOUND AND FIXED (2026-08-21).** `probeSleep()` released `VBAT_DIV_EN` via plain
+`pinMode(PIN_VBAT_DIV_EN, INPUT)` instead of `gpioDisconnect()` — on this core, `INPUT` means
+high-Z *direction* but the digital input buffer stays **connected**. Both divider pins can float
+toward VBAT (up to ~4.2V) while the chip's IO supply is 3.3V, which is exactly the CMOS
+shoot-through condition the code's own `INTB`/`DIV_NODE` handling was already written to avoid —
+just never applied to the divider pins themselves, or to `VBAT_DIV`, or to charger `STAT`/`PG`
+(which only get `gpioDisconnect()`'d *after* a `chgstatus` call runs — sitting connected if sleep
+happens before one ever has). Fixed by explicitly `gpioDisconnect()`-ing all four
+(`VBAT_DIV_EN`, `VBAT_DIV`, `CHG_STAT`, `CHG_PG`) inside `probeSleep()`.
+
+Three prior hypotheses (charger pull-up, USBD low-power mode, HFCLK/HFXO stop) were each tested
+and cleanly ruled out by direct A/B measurement before this was found — see the negative results
+above/below. This was the actual cause.
+
+- [x] Re-measured after the fix: **10-15µA**, BLE off. Right at the ~10µA pass bar and much closer
+      to the ~4.1µA predicted floor than the prior ~65-71µA.
+
+      **Remaining ~5-10µA above the typ-component floor: plausibly explained, not a new concern.**
+      `gpioDisconnect()` disables the digital input buffer but not the pin's ESD protection diodes
+      to VDD — a separate structure. `VBAT_DIV` can still float toward VBAT through R29; once it
+      exceeds ~VDD+0.3V (~3.6V) the clamp diode conducts, giving `I ≈ (VBAT−3.6V)/100kΩ` — ~1µA at
+      3.7V, ~6µA at 4.2V, matching both the observed battery range and the residual gap. Not
+      confirmed by direct measurement (would need probing `VBAT_DIV`'s actual clamped voltage
+      during sleep), but physically sound. Rest of the gap is normal typ-vs-max/measurement-method
+      slop: the 4.1µA budget uses typical not worst-case figures, a plain DMM doesn't average
+      periodic watchdog/BQ25504 pulses as cleanly as a real current profiler would, and
+      charger/harvester max (vs typ) quiescent figures alone could add another 1-3µA.
+
+      **Solar margin correction:** comparing 10-15µA sleep draw against the 50µA dim-indoor I_SC
+      directly (as stated earlier in this doc) was wrong — those are at different voltages, and
+      50µA is *short-circuit* current (measured at V=0), not usable power. Comparing power
+      instead: sleep is ≈37-56µW at 3.7V; the panel's V_OC×I_SC = 2.7V×50µA ≈ 135µW is only a
+      theoretical ceiling, before real maximum-power-point tracking and conversion losses bring it
+      down further. Real margin is positive but much thinner than "3-5x" — solar most likely works
+      now, but isn't confirmed with real confidence until the full `blecycle` average (below) is
+      measured, since that's the actual average draw solar has to beat, not just the sleep floor.
 - [ ] Also capture peak current during a wake, and the average across one full `blecycle`
 
 | Predicted contributor | Typ |
@@ -109,7 +160,16 @@ between blips.
 The open question is whether indoor light actually outpaces the sleep budget. That's an empirical
 question about your panel in your light — measure the panel first, then the harvester.
 
-- [ ] Measure panel V_OC and I_SC **under the actual indoor light you plan to deploy in** — not at a window, not under a lamp, unless that's the real condition
+- [x] Measure panel V_OC and I_SC **under the actual indoor light you plan to deploy in** — not at a window, not under a lamp, unless that's the real condition
+      **Measured (super-low-light indoor, real deploy condition): V_OC = 2.7V, I_SC = 50µA.**
+      (Corrected 2026-08-21 — originally logged as 50mA, a units misread; it's 50µA.)
+      V_OC clears the 600mV cold-start threshold by a wide margin (4.5x) even at this light level —
+      cold start is not looking marginal. But I_SC = 50µA is *less than* the ~65-70µA sleep current
+      measured in Test 2 — at face value, under these exact real dim-indoor conditions, the panel
+      cannot currently outpace sleep draw, let alone the extra cost of wake/BLE cycles on top. This
+      makes resolving Test 2's still-unexplained sleep-current excess a hard blocker for solar
+      viability in this light level, not just a quality concern. Worth double-checking this
+      reading (confirm the meter was genuinely in µA range, not misread) given how much rides on it.
 - [ ] Repeat at a window and under a bright lamp for comparison
 - [ ] Confirm V_OC clears the cold-start threshold below
 - [ ] Attach the panel with no USB and watch V_STOR rise
@@ -230,12 +290,12 @@ Serial console at 115200 baud on `COM3`.
 
 **Reflash:**
 
-```
-arduino-cli upload -p COM3 --fqbn adafruit:nrf52:pca10056 arduino/MSV3_Probe_Bringup_Test
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\arduino_msv3_probe.ps1 -Action upload -Port COM3
 ```
 
-No SWD leads, no UF2 drag. Compiling needs `-DCONFIG_NFCT_PINS_AS_GPIOS` in **both**
-`compiler.c.extra_flags` and `compiler.cpp.extra_flags`.
+No SWD leads, no UF2 drag. The wrapper supplies `-DCONFIG_NFCT_PINS_AS_GPIOS` in **both**
+`compiler.c.extra_flags` and `compiler.cpp.extra_flags`, enforces LFRC, and cleans stale objects.
 
 ---
 
