@@ -1,6 +1,41 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-17 (see "2026-08-17 Netlify Service Worker Stale-Data Bug" immediately below for the most recent work - a real, unrelated bug found while chasing a user-reported caching complaint, fixed in the working tree but explicitly NOT deployed yet; see "2026-08-17 Auto-Calibration Redesign Implementation" further down for the auto-cal work from earlier the same day)
+Date: 2026-08-22 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-08-22 Adaptive Multi-Cycle Moisture Calibration
+
+- Migrations 024-027 and `receiver-snapshot` are deployed. History is resampled into one
+  median per five-minute bucket, so changing upload cadence cannot bias the learned range.
+- A watering is now a supported time-series event, not one upward sample: two hours of
+  pre-water context, three hours of post-water response, and 6-12 hours of retained
+  elevation are checked. The probe-3 August 9 `1202 -> 851 -> 1282` transient and probe
+  1's short square-wave plateaus are rejected; the retained August 17 probe-2/probe-3
+  watering remains.
+- `autocal.ts` combines all valid 21-day watering cycles. Five-minute distribution bounds
+  are a weak live prior, events are weighted by evidence and seven-day recency, and after
+  three cycles a median/MAD guard prevents one outlier from taking over. New events enter
+  provisionally at 25% weight and are promoted or removed when their retention window
+  fills, so every upload can improve the estimate without immediately trusting a spike.
+- Current replayed model bounds are approximately probe 2 `164-182` and probe 3
+  `888-1303`; raw readings `170` and `984` resolve to about `33%` and `23%`. Probe 3 has
+  one confirmed cycle versus probe 2's two, so their reported model confidence is still
+  intentionally moderate and will improve with additional real waterings.
+- Moisture alert semantics now match on every surface: `11-100%` normal, `1-10%` steady
+  yellow, and exactly `0%` red/flashing/buzzer. Battery thresholds are intentionally
+  separate and unchanged. The periodic battery-percentage swings remain a separate open
+  investigation; no battery correction was slipped into this moisture change.
+- Netlify production is deployed as `app.v14.js` with service-worker cache
+  `msv2-cloud-app-v14`. The receiver was compiled and flashed successfully on COM16; flash
+  hash verification passed and `/device` confirmed build `MSV2 runtime build 2026-08-21
+  watering-cycle-alerts-v1`. Live `/data` then resolved probe 1/2/3 to `15%`, `33%`, and
+  `23%`, all normal rather than the stale firmware's red/yellow states.
+- Nine auto-calibration regression tests pass, covering multi-cycle contribution,
+  continuously changing priors, provisional evidence, multi-pour clustering, outliers,
+  readiness, and shared-pot scaling. The auto-calibration response contract did not change;
+  receivers still consume `ready`, `dryBound`, and `wetBound`. The alert-threshold firmware
+  change does require a receiver flash, which the production receiver has now received.
+- Full design and operations reference:
+  `docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`.
 
 ## 2026-08-17 Netlify Service Worker Stale-Data Bug
 

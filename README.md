@@ -112,7 +112,7 @@ http://BOARD_IP_FROM_SERIAL/
 The app has three tabs:
 
 - `Status`: live plant cards using `/data` readings and the active `/ui` plant config.
-- `Setup`: configure receiver WiFi, view the receiver pairing code, and edit plant names, probe IDs, pixel-art choices, and dry/wet moisture calibration values.
+- `Setup`: configure receiver WiFi, view the receiver pairing code, edit plant names/probe IDs/pixel art, and choose adaptive or manual moisture calibration per plant.
 - `Diagnostics`: probe RSSI, wake counter, age, received packets, missed packets, and packet-loss percentage.
 
 The Setup tab includes moisture presets for common plant categories:
@@ -124,6 +124,25 @@ The Setup tab includes moisture presets for common plant categories:
 - `Dry houseplant`
 
 Saving from the phone writes the same `ui.json` used by the display, so changes appear on the TFT immediately. This is the foundation for a later cloud-backed/native app; for now it keeps setup local, fast, and friend-friendly without app store or account setup.
+
+### Adaptive moisture calibration and alerts
+
+With `cards[].moisture.auto` enabled, the receiver obtains a continuously learned range
+from the cloud instead of treating the configured `dry`/`wet` values as permanent. The
+backend gives equal time weight to five-minute history buckets, validates waterings using
+their pre-water, post-water, and retained dry-down readings, and combines all supported
+watering cycles from the trailing 21 days. New events contribute provisionally until
+later readings confirm that the rise persisted in soil.
+
+Moisture alert semantics are intentionally different from battery semantics:
+
+- `11-100%`: normal/accent color.
+- `1-10%`: steady yellow warning.
+- `0%`: red, flashing, and eligible for the receiver's watering buzzer.
+
+Battery keeps its own existing warning thresholds. See
+[MSV2 Adaptive Moisture Calibration](docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md) for the
+model, deployment, diagnostics, and reset behavior.
 
 The ESP32 also serves a web app manifest, service worker, and icon. After opening the app on your phone, use the browser's add-to-home-screen/install action if your browser offers it. Some browsers treat local `http://` device pages as shortcuts rather than full PWAs; the later cloud app will solve that with HTTPS. True remote monitoring still requires the cloud relay described in the product roadmap.
 
@@ -280,6 +299,7 @@ Live-editable JSON values:
 - `cards[].sensor`: BLE sensor ID, currently `1` through `16`.
 - `cards[].plant`: card title.
 - `cards[].art`: one of `sprout_pot`, `cup_plant`, `wide_planter`, or `cactus_cluster`. The older names `sprout`, `leafy`, and `tall` are still accepted as aliases.
+- `cards[].moisture.auto`: use cloud-learned moisture bounds when enough supported history exists.
 - `cards[].moisture.dry` and `cards[].moisture.wet`: calibration points used to convert raw moisture into a health bar.
 
 Each card shows the plant name, an animated pixel-art plant, a moisture health bar, and a battery health bar. Battery appears when the probe advertisement includes the optional battery percent byte; older probe firmware still works but shows `--%`. The included sprite choices can be swapped from JSON without reflashing, but adding new bitmap assets still requires regenerating `plant_sprites.h` and flashing the display firmware once.

@@ -634,7 +634,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       if (value == null || wet === dry) return null;
       return Math.max(0, Math.min(100, Math.round((value - dry) * 100 / (wet - dry))));
     };
-    const fillClass = (p) => p == null ? "muted" : p < 25 ? "danger" : p < 50 ? "warn" : "";
+    const batteryFillClass = (p) => p == null ? "muted" : p < 25 ? "danger" : p < 50 ? "warn" : "";
+    const moistureFillClass = (p) => p == null ? "muted" : p === 0 ? "danger" : p <= 10 ? "warn" : "";
     const labelFor = (pairs, value) => (pairs.find((p) => p[0] === value) || [value, value])[1];
     const artSrc = (value) => artImages[value] || artImages.sprout_pot;
     const artPreview = (value, className = "") => `<img class="${className}" src="${artSrc(value)}" alt="">`;
@@ -938,7 +939,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         // "calibration done" signal (mirrors the physical display - see
         // docs/STATUS_HANDOFF.md's redesign item 5).
         const moistValueText = reading.moisture == null ? "--" : (autoReady && moistPct != null ? moistPct + "%" : String(reading.moisture));
-        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct);
+        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct, false, true);
         const wateredNote = autoReady ? wateredAgoText(autoCal.lastWateredAtMs) : null;
         const trendNote = autoReady && autoCal.dryBoundTrendingLower;
 
@@ -959,8 +960,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }).join("");
     }
 
-    function metric(name, value, percent, forceDanger) {
-      const fill = forceDanger ? "danger" : fillClass(percent);
+    function metric(name, value, percent, forceDanger, isMoisture = false) {
+      const fill = forceDanger ? "danger" : (isMoisture ? moistureFillClass(percent) : batteryFillClass(percent));
       const width = percent == null ? 0 : percent;
       return `
         <div class="metric">

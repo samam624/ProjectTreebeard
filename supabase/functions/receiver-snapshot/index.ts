@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -81,124 +82,6 @@ function requireEnv(name: string, fallbackName = ""): string {
     throw new Error(fallbackName ? `${name} or ${fallbackName} is not configured` : `${name} is not configured`);
   }
   return value;
-}
-
-type AutoCalRawSensor = {
-  sensorId: number;
-  sampleCount: number;
-  oldestReadingAt: string | null;
-  dryBound: number | null;
-  wetBound: number | null;
-  anchorDryBound: number | null;
-  anchorWetBound: number | null;
-  rises: { at: string; delta: number }[];
-};
-
-const AUTOCAL_MIN_SAMPLES_READY = 50;
-const AUTOCAL_MIN_DAYS_READY = 3;
-const AUTOCAL_CLUSTER_GAP_MS = 12 * 3600_000; // merge rises within 12h into one watering event
-// Must match msv2_read_sensor_auto_calibration's p_lookback_days default (023) - the
-// window the anchor/floor-clamp gate below waits to fill before engaging at all. Deliberately
-// later than AUTOCAL_MIN_DAYS_READY's 3-day "trust the learned range for display" gate: the
-// first full lookback window is meant to run completely unclamped so several real watering
-// cycles get observed before anything about this sensor's range gets locked in.
-const AUTOCAL_LOOKBACK_DAYS = 21;
-// The learned dry bound is allowed to drop this fraction of the sensor's own *anchored*
-// (wet - dry) range below its anchor before being held in place. A percentage of each
-// sensor's own range, not a flat raw-unit number, since different probes/plants/soils sit
-// on very different raw scales - a fixed margin that's reasonable for one probe would be
-// meaningless (too tight or too loose) for another. Chronic under-watering otherwise drags
-// the rolling 5th-percentile floor down indefinitely, silently reporting a plant as
-// healthier than it is at the exact moisture level that used to read "critical". No
-// absolute ground-truth dry value exists to clamp against instead (differs per
-// plant/pot/soil), so each sensor is anchored to its own first full-window calibration.
-// Provisional - no real multi-week drift data exists yet to tune this against.
-const AUTOCAL_DRY_FLOOR_MARGIN_PCT = 0.10;
-
-// Clusters raw candidate "rise" rows (from msv2_read_sensor_auto_calibration) into
-// discrete watering events and derives days-since-last-watering - done here in
-// TypeScript rather than in SQL since clustering a sorted list is much more naturally
-// expressed as a simple loop than window-function chains. This is informational only
-// (see docs/STATUS_HANDOFF.md's 2026-08-16 redesign note) - it no longer predicts an
-// interval or forces any alert; that "overdue" behavior was removed this session because
-// it cut against the product's actual value proposition (moisture-based alerting, not a
-// calendar prediction).
-function deriveAutoCal(sensor: AutoCalRawSensor, nowMs: number) {
-  const events: number[] = [];
-  let clusterStart: number | null = null;
-  let lastAt: number | null = null;
-  for (const rise of sensor.rises) {
-    const at = new Date(rise.at).getTime();
-    if (lastAt === null || at - lastAt > AUTOCAL_CLUSTER_GAP_MS) {
-      if (clusterStart !== null) events.push(clusterStart);
-      clusterStart = at;
-    }
-    lastAt = at;
-  }
-  if (clusterStart !== null) events.push(clusterStart);
-
-  const oldestReadingAtMs = sensor.oldestReadingAt ? new Date(sensor.oldestReadingAt).getTime() : null;
-  const ready = sensor.sampleCount >= AUTOCAL_MIN_SAMPLES_READY &&
-    oldestReadingAtMs !== null &&
-    (nowMs - oldestReadingAtMs) >= AUTOCAL_MIN_DAYS_READY * 24 * 3600_000;
-
-  // lastWateredAtMs is the actual event timestamp, not just the rolling days-since
-  // float below - a rolling 24h window can't tell "watered 10 hours ago last night" from
-  // "watered 10 hours ago this morning", and only the client (which knows the viewer's
-  // real local timezone; this Deno function does not) can turn a timestamp into a
-  // correct calendar-day label ("today"/"yesterday"/"Nd ago"). See MobileAppPage.h's
-  // wateredAgoText().
-  let daysSinceLastWatering: number | null = null;
-  let lastWateredAtMs: number | null = null;
-  if (events.length > 0) {
-    lastWateredAtMs = events[events.length - 1];
-    daysSinceLastWatering = (nowMs - lastWateredAtMs) / (24 * 3600_000);
-  }
-
-  // Floor clamp (redesign item 6, revised twice): the first full lookback window
-  // (AUTOCAL_LOOKBACK_DAYS) runs completely unclamped - multiple real watering cycles
-  // need to happen before there's anything meaningful to anchor to. Once that window is
-  // full, the learned dry bound can never sit more than AUTOCAL_DRY_FLOOR_MARGIN_PCT of
-  // the sensor's own anchored range below its anchor. dryBound below is the actual value
-  // the firmware/app use for percent/color - this doesn't just flag the drift, it stops
-  // it from destroying the interval. dryBoundTrendingLower now means "the floor is
-  // actively being held up" rather than a raw trend observation - same field
-  // name/meaning-to-consumers (a "this plant's care has drifted" notice), computed
-  // differently. needsAnchor tells the caller to persist the current dry/wet reading as
-  // this sensor's anchor (first full window, or the first one after a reset wiped the old
-  // anchor) - can't be done here since this function has no DB access.
-  const fullWindowObserved = oldestReadingAtMs !== null &&
-    (nowMs - oldestReadingAtMs) >= AUTOCAL_LOOKBACK_DAYS * 24 * 3600_000;
-
-  let dryBound = sensor.dryBound;
-  let dryBoundTrendingLower = false;
-  let needsAnchor = false;
-  if (ready && fullWindowObserved && sensor.dryBound !== null && sensor.wetBound !== null) {
-    if (sensor.anchorDryBound === null || sensor.anchorWetBound === null) {
-      needsAnchor = true;
-    } else {
-      const margin = AUTOCAL_DRY_FLOOR_MARGIN_PCT * (sensor.anchorWetBound - sensor.anchorDryBound);
-      const floor = sensor.anchorDryBound - margin;
-      if (sensor.dryBound < floor) {
-        dryBound = Math.round(floor);
-        dryBoundTrendingLower = true;
-      }
-    }
-  }
-
-  return {
-    sensorId: sensor.sensorId,
-    ready,
-    sampleCount: sensor.sampleCount,
-    dryBound,
-    wetBound: sensor.wetBound,
-    daysSinceLastWatering,
-    lastWateredAtMs,
-    dryBoundTrendingLower,
-    needsAnchor,
-    rawDryBoundForAnchor: sensor.dryBound,
-    rawWetBoundForAnchor: sensor.wetBound,
-  };
 }
 
 Deno.serve(async (request) => {
@@ -291,27 +174,7 @@ Deno.serve(async (request) => {
 
         const nowMs = Date.now();
         const rawSensors = (data ?? []) as AutoCalRawSensor[];
-        const derived = rawSensors.map((sensor) => deriveAutoCal(sensor, nowMs));
-
-        // Persist an anchor the first time a sensor's calibration window is full (or the
-        // first time again after a manual reset cleared the old one) - best-effort, a
-        // failure here just means the anchor gets (re)tried on the next ~10-minute poll
-        // rather than failing this response, since the anchor is bookkeeping, not the
-        // data the caller actually asked for.
-        await Promise.all(
-          derived
-            .filter((sensor) => sensor.needsAnchor && sensor.rawDryBoundForAnchor !== null && sensor.rawWetBoundForAnchor !== null)
-            .map((sensor) =>
-              supabase.rpc("msv2_set_sensor_calibration_anchor_if_unset", {
-                p_receiver_id: cleanReceiverId,
-                p_sensor_id: sensor.sensorId,
-                p_anchor_dry_bound: sensor.rawDryBoundForAnchor,
-                p_anchor_wet_bound: sensor.rawWetBoundForAnchor,
-              })
-            ),
-        );
-
-        const sensors = derived.map(({ needsAnchor, rawDryBoundForAnchor, rawWetBoundForAnchor, ...sensor }) => sensor);
+        const sensors = rawSensors.map((sensor) => deriveAutoCal(sensor, nowMs));
         return jsonResponse({ ok: true, sensors });
       }
 

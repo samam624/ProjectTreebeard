@@ -549,8 +549,8 @@ function percent(value, dry, wet) {
 
 function healthClass(pct) {
   if (pct == null) return "";
-  if (pct < 25) return "danger";
-  if (pct < 50) return "warn";
+  if (pct === 0) return "danger";
+  if (pct <= 10) return "warn";
   return "ok";
 }
 

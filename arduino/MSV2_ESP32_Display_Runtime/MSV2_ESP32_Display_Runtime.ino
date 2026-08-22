@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-13 wifi-self-heal-card-redraw-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-21 watering-cycle-alerts-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -357,10 +357,8 @@ struct AutoCalState
   // its own local timezone - see MobileAppPage.h's wateredAgoText(). Not consumed by
   // firmware itself, just piped through to the local /data endpoint.
   double lastWateredAtMs = -1.0;
-  // True when the cloud's anchored floor clamp is actively holding dryBound up above
-  // where the raw rolling calibration would otherwise put it (see receiver-snapshot's
-  // deriveAutoCal/AUTOCAL_DRY_FLOOR_MARGIN_PCT) - dryBound above is already the clamped
-  // value either way, this just flags that clamping is happening for this sensor.
+  // Retained for compatibility with older cloud responses. Watering-cycle calibration
+  // no longer uses the rolling-percentile floor clamp, so new responses leave this false.
   bool dryBoundTrendingLower = false;
 };
 
@@ -2694,11 +2692,37 @@ uint8_t moisturePercent(uint16_t moisture, int dry, int wet)
   {
     wet = dry + 1;
   }
-  long percent = ((long)moisture - dry) * 100L / (wet - dry);
+  const long range = wet - dry;
+  const long numerator = ((long)moisture - dry) * 100L;
+  // Match the web clients' rounded percentage instead of truncating toward zero. This
+  // keeps the exact 0% red-alert boundary consistent on every display.
+  const long percent = numerator >= 0
+    ? (numerator + range / 2) / range
+    : (numerator - range / 2) / range;
   return (uint8_t)clampInt((int)percent, 0, 100);
 }
 
-uint16_t healthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
+// Moisture semantics: 11-100% is normal, 1-10% is a quiet yellow warning, and 0%
+// is the red/blinking/buzzer state meaning the soil is already as dry as (or drier
+// than) it was when the plant was last watered.
+uint16_t moistureHealthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
+{
+  if (percent == BATTERY_UNKNOWN)
+  {
+    return mutedColor;
+  }
+  if (percent == 0)
+  {
+    return dangerColor;
+  }
+  if (percent <= 10)
+  {
+    return warningColor;
+  }
+  return accentColor;
+}
+
+uint16_t batteryHealthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
 {
   if (percent == BATTERY_UNKNOWN)
   {
@@ -2715,10 +2739,7 @@ uint16_t healthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColo
   return accentColor;
 }
 
-// Turns a resolved "danger" color into a blink (alternating dangerColor/mutedColor
-// every 500ms) so a critically-low plant is an active alert on the physical display, not
-// just a static red border easy to miss at a glance - matches the probe's own
-// low-moisture LED alert. Leaves any other color (green/yellow/muted) untouched.
+// Only the 0%-moisture danger state blinks. Yellow 1-10% stays static.
 uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uint16_t mutedColor)
 {
   if (resolvedColor != dangerColor)
@@ -3060,12 +3081,12 @@ void drawPlantCard(
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = healthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
+  uint16_t moistureColor = moistureHealthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, dangerColor, mutedColor);
   }
-  uint16_t batteryColor = healthColor(batteryPct, accentColor, warningColor, dangerColor, mutedColor);
+  uint16_t batteryColor = batteryHealthColor(batteryPct, accentColor, warningColor, dangerColor, mutedColor);
 
   tft.fillRoundRect(x, y, w, h, 5, surfaceColor);
   tft.drawRoundRect(x, y, w, h, 5, stale ? mutedColor : moistureColor);
@@ -3130,12 +3151,12 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  uint16_t moistureColor = healthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  uint16_t moistureColor = moistureHealthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!stale)
   {
     moistureColor = applyLowMoistureBlink(moistureColor, slot.dangerColor, slot.mutedColor);
   }
-  uint16_t batteryColor = healthColor(batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  uint16_t batteryColor = batteryHealthColor(batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
 
   tft.drawRoundRect(x, y, w, h, 5, stale ? slot.mutedColor : moistureColor);
 
@@ -3268,12 +3289,12 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   s.rawMoisture = reading != nullptr ? reading->moisture : 0;
   s.moisturePct = s.stale ? BATTERY_UNKNOWN : moisturePercent(s.rawMoisture, slot.dry, slot.wet);
   s.batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
-  s.moistureColor = healthColor(s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  s.moistureColor = moistureHealthColor(s.moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!s.stale)
   {
     s.moistureColor = applyLowMoistureBlink(s.moistureColor, slot.dangerColor, slot.mutedColor);
   }
-  s.batteryColor = healthColor(s.batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
+  s.batteryColor = batteryHealthColor(s.batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (s.stale)
   {
     strlcpy(s.moistureText, "--", sizeof(s.moistureText));
@@ -3747,7 +3768,7 @@ bool slotNeedsBlink(PlantArtSlot& slot)
   }
   refreshSlotMoistureBounds(slot);
   uint8_t percent = moisturePercent(reading.moisture, slot.dry, slot.wet);
-  return percent < 25;
+  return percent == 0;
 }
 
 // blinkOnly redraws only the card(s) driving the 500ms blink cadence, instead of every

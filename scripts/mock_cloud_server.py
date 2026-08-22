@@ -389,7 +389,7 @@ def dashboard_summary(receivers: list[tuple[str, dict[str, Any]]]) -> str:
             config_card = config_cards.get(plant.get("sensor"), {})
             moisture_config = config_card.get("moisture", {})
             moisture_pct = percent(plant.get("moisture"), moisture_config.get("dry", 350), moisture_config.get("wet", 800))
-            if moisture_pct is not None and moisture_pct < 25:
+            if moisture_pct == 0:
                 dry_count += 1
             battery = plant.get("batteryPercent")
             if isinstance(battery, (int, float)) and battery < 20:
@@ -494,9 +494,9 @@ def percent(value: Any, dry: Any, wet: Any) -> int | None:
 def health_class(pct: int | None) -> str:
     if pct is None:
         return ""
-    if pct < 25:
+    if pct == 0:
         return "danger"
-    if pct < 50:
+    if pct <= 10:
         return "warn"
     return "ok"
 

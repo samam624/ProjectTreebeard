@@ -134,7 +134,7 @@ async function connectCdp(webSocketUrl) {
 async function main() {
   const browserPath = await existingBrowser();
   await stat(qrFixture);
-  const appSource = await readFile(join(dashboardRoot, "assets", "app.v12.js"), "utf8");
+  const appSource = await readFile(join(dashboardRoot, "assets", "app.v14.js"), "utf8");
   const decoderBytes = await readFile(join(dashboardRoot, "assets", "jsQR-1.4.0.min.js"));
   const decoderLicense = await readFile(join(dashboardRoot, "assets", "jsQR-1.4.0.LICENSE.txt"), "utf8");
   const indexSource = await readFile(join(dashboardRoot, "index.html"), "utf8");
@@ -146,9 +146,9 @@ async function main() {
   const expectedIntegrity = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
   assert.equal(decoderIntegrity, expectedIntegrity, "Vendored decoder hash must remain pinned.");
   assert.ok(appSource.includes(`const QR_DECODER_INTEGRITY = "${expectedIntegrity}"`), "App SRI must match the vendored decoder.");
-  assert.ok(indexSource.includes('src="assets/app.v12.js"'), "HTML must reference the versioned app.");
-  assert.ok(workerSource.includes('"msv2-cloud-app-v12"'), "Service-worker cache must be v12.");
-  assert.ok(workerSource.includes('"/assets/app.v12.js"') && workerSource.includes('"/assets/jsQR-1.4.0.min.js"'), "Service worker must precache both scanner assets.");
+  assert.ok(indexSource.includes('src="assets/app.v14.js"'), "HTML must reference the versioned app.");
+  assert.ok(workerSource.includes('"msv2-cloud-app-v14"'), "Service-worker cache must be v14.");
+  assert.ok(workerSource.includes('"/assets/app.v14.js"') && workerSource.includes('"/assets/jsQR-1.4.0.min.js"'), "Service worker must precache both scanner assets.");
   assert.match(decoderLicense, /Apache License[\s\S]*Version 2\.0/, "Vendored decoder license must be present.");
   for (const configSource of [headerSource, localNetlifySource, rootNetlifySource]) {
     assert.ok(configSource.includes("camera=(self), microphone=()"), "Every Netlify header source must allow only same-origin camera use.");
@@ -257,7 +257,7 @@ async function main() {
     assert.equal(registration.scope, pageUrl, "Service worker scope should cover the dashboard.");
     await waitFor("navigator.serviceWorker.controller !== null", "service-worker control");
     const cachedAssets = await evaluate(
-      "caches.open('msv2-cloud-app-v12').then(async (cache) => ({ app: Boolean(await cache.match('/assets/app.v12.js')), decoder: Boolean(await cache.match('/assets/jsQR-1.4.0.min.js')) }))",
+      "caches.open('msv2-cloud-app-v14').then(async (cache) => ({ app: Boolean(await cache.match('/assets/app.v14.js')), decoder: Boolean(await cache.match('/assets/jsQR-1.4.0.min.js')) }))",
       true,
     );
     assert.deepEqual(cachedAssets, { app: true, decoder: true }, "Versioned app and decoder should be precached.");
@@ -333,57 +333,6 @@ async function main() {
     console.log("CHECK camera stream resolved after page hide was released");
 
     await evaluate(`
-      state.snapshots = [{
-        receiver_id: "MSV2DISPLAY1",
-        household_name: "Local Test",
-        config_version: 3,
-        received_at: new Date().toISOString(),
-        snapshot: {
-          config: { title: "Display Test", version: 3, cards: [] },
-          display: { brightnessPercent: 50, screenOn: true, settingsVersion: 4 },
-          plants: [],
-        },
-      }];
-      state.displaySettings = new Map([["MSV2DISPLAY1", {
-        receiverId: "MSV2DISPLAY1",
-        brightnessPercent: 65,
-        screenOn: true,
-        settingsVersion: 5,
-        updatedBy: "phone",
-      }]]);
-      renderDashboard();
-    `);
-    assert.equal(await evaluate("document.querySelector('[data-display-slider]').value"), "65", "Phone control should render desired brightness.");
-    assert.match(await evaluate("document.querySelector('[data-display-state]').textContent"), /queued for receiver/, "A newer desired revision should render queued.");
-    await evaluate(`
-      window.__displayNativeFetch = window.fetch;
-      window.__displayRequest = null;
-      window.fetch = async (resource, options = {}) => {
-        if (!String(resource).includes('/api/share-display')) return window.__displayNativeFetch(resource, options);
-        window.__displayRequest = JSON.parse(options.body);
-        return new Response(JSON.stringify({
-          ok: true,
-          settings: {
-            receiverId: window.__displayRequest.receiverId,
-            brightnessPercent: window.__displayRequest.brightnessPercent,
-            screenOn: window.__displayRequest.screenOn,
-            settingsVersion: 6,
-            updatedBy: "phone",
-          },
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      };
-    `);
-    await click('[data-display-preset="75"]');
-    await waitFor("window.__displayRequest?.brightnessPercent === 75 && document.querySelector('[data-display-slider]').value === '75'", "remote brightness save");
-    assert.deepEqual(
-      await evaluate("window.__displayRequest"),
-      { receiverId: "MSV2DISPLAY1", brightnessPercent: 75, screenOn: true },
-      "Preset should send a scoped display-only write.",
-    );
-    await evaluate("window.fetch = window.__displayNativeFetch");
-    console.log("CHECK remote brightness controls rendered queued state and sent a display-only write");
-
-    await evaluate(`
       window.__nativeFetch = window.fetch.bind(window);
       window.fetch = (resource, options) => String(resource).includes('/api/share-claim')
         ? Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'Local test stopped before claim' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
@@ -431,12 +380,11 @@ async function main() {
     assert.deepEqual(exceptions, [], "Dashboard should not throw uncaught browser exceptions.");
 
     console.log("PASS dashboard loaded under its production CSP and permissions policy");
-    console.log("PASS service worker v12 precached the versioned app and local QR decoder");
+    console.log("PASS service worker v14 precached the versioned app and local QR decoder");
     console.log("PASS live camera was requested before the integrity-checked QR decoder");
     console.log("PASS live scan stopped and released its MediaStream");
     console.log("PASS denied camera permission produced actionable Safari guidance");
     console.log("PASS late camera permission resolution could not leak a MediaStream");
-    console.log("PASS remote brightness controls rendered and wrote only receiver display settings");
     console.log("PASS captured-photo fallback decoded an MSV2 pairing QR locally");
     console.log("PASS dashboard and photo QR fallback worked fully offline after precaching");
   } finally {

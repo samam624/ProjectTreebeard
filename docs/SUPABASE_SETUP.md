@@ -79,6 +79,10 @@ In Supabase Dashboard:
 36. Open [012_msv2_revoke_public_execute.sql](../supabase/migrations/012_msv2_revoke_public_execute.sql).
 37. Paste it into the SQL editor.
 38. Run it.
+39. Apply every remaining file in `supabase/migrations/` from `013` through `027` in
+    numerical order. In particular, 024-027 are one staged moisture-calibration rollout;
+    do not skip directly to 027 because the migration history and rollback trail are part
+    of the deployment record.
 
 CLI alternative:
 
@@ -140,6 +144,24 @@ The hosted dashboard URL should be:
 ```text
 https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/plant-dashboard
 ```
+
+### Adaptive moisture calibration
+
+`receiver-snapshot?receiverId=...&autocal=1` returns per-sensor learned bounds to an
+authenticated receiver. Migrations 024-027 make that result time-weighted and adaptive:
+
+- one median reading per five-minute bucket prevents upload-cadence bias;
+- watering candidates are checked against two-hour pre-water, three-hour post-water, and
+  6-12-hour retention windows;
+- all supported cycles in the 21-day window contribute with evidence and recency weights;
+- a new event contributes provisionally until later uploads confirm soil retention; and
+- the response keeps the existing `ready`, `dryBound`, and `wetBound` contract while adding
+  confidence/evidence diagnostics that older firmware can ignore.
+
+The RPC itself remains `service_role` only. Do not call it directly from a browser or place
+the service-role key in firmware. Operational behavior, alert thresholds, production
+evidence, and verification commands are documented in
+[MSV2 Adaptive Moisture Calibration](MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md).
 
 The claim endpoint URL should be:
 
