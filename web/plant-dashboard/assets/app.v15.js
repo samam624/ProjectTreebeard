@@ -483,7 +483,7 @@ function renderPlant(plant) {
   const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
   const art = card.art || "sprout_pot";
   return '<article class="plant"><div class="plant-head"><div class="plant-title"><h3 class="plant-name">' + escapeHtml(name) + '</h3><div class="meta">Probe ' + escapeHtml(plant.sensor ?? "--") + '</div></div><img class="plant-art" src="' + escapeHtml(artSrc(art)) + '" alt=""></div>' +
-    metric("Moisture", String(reading.moisture ?? "--") + " raw / " + String(pct ?? "--") + "%", moistureClass) +
+    metric("Moisture", String(reading.moisture ?? "--") + " display / " + String(pct ?? "--") + "%", moistureClass) +
     bar(pct, moistureClass) +
     metric("Battery", battery == null ? "--" : String(battery) + "%", batteryClass) +
     metric("RSSI", String(reading.rssi ?? "--") + " dBm") +
@@ -542,16 +542,45 @@ function artSrc(key) {
   return "assets/plant_gifs/" + (known.includes(safe) ? safe : "sprout_pot") + ".gif";
 }
 
+// 0-100 is exactly the historical dry-to-wet range, same as it has always been - 0 at the
+// driest ever learned, 100 at the wettest. Unlike the old version, this does NOT clamp
+// below zero: a reading drier than anything on record keeps counting down as a negative
+// number instead of pinning at 0 forever, so "how much drier than ever before" stays
+// visible. Still clamped at 100 on top - "more than fully watered" isn't meaningful.
+// Mirrors moisturePercent() in MSV2_ESP32_Display_Runtime.ino exactly.
 function percent(value, dry, wet) {
   if (typeof value !== "number" || wet === dry) return null;
-  return Math.max(0, Math.min(100, Math.round(((value - dry) * 100) / (wet - dry))));
+  return Math.min(100, Math.round(((value - dry) * 100) / (wet - dry)));
 }
 
+// 0 is the watering-line inflection point - literally the driest this sensor has ever
+// recorded (percent()'s own zero), not a padded-above-dry cue. 0-100 (the entire learned
+// dry-to-wet range) is normal, unchanged from how it has always displayed. Crossing below 0
+// means "drier than ever observed", which is why color/alerts only escalate there:
+// MOISTURE_DANGER_PCT is the overdue boundary - red and actually flashing (see
+// .bar.danger span's animation), not just a warning. MOISTURE_BAR_NEGATIVE_WIDTH_PCT is a
+// display-layout constant, not an alert threshold - see barPercent() below. Matches the
+// physical display's moistureHealthColor()/slotNeedsBlink()/drawBar() and the receiver's
+// local page exactly (scripts/verify_moisture_alert_thresholds.mjs).
+const MOISTURE_WATER_LINE_PCT = 0;
+const MOISTURE_DANGER_PCT = -10;
+const MOISTURE_BAR_NEGATIVE_WIDTH_PCT = 30;
 function healthClass(pct) {
   if (pct == null) return "";
-  if (pct === 0) return "danger";
-  if (pct <= 10) return "warn";
+  if (pct <= MOISTURE_DANGER_PCT) return "danger";
+  if (pct < MOISTURE_WATER_LINE_PCT) return "warn";
   return "ok";
+}
+// The bar can't render negative width, so 0-100 (percent()'s unchanged dry-to-wet range)
+// occupies the right (100 - MOISTURE_BAR_NEGATIVE_WIDTH_PCT)% of the bar's width; the left
+// MOISTURE_BAR_NEGATIVE_WIDTH_PCT% is a fixed, finite strip for the open-ended negative
+// range to render into before the bar goes fully empty ("goes off the end of the bar and
+// can't be displayed anymore") - the number itself (percent()) stays unclamped. Mirrors
+// drawBar()'s barPct calculation in MSV2_ESP32_Display_Runtime.ino exactly.
+function barPercent(pct) {
+  if (pct == null) return 0;
+  const positiveSpan = 100 - MOISTURE_BAR_NEGATIVE_WIDTH_PCT;
+  return Math.max(0, Math.min(100, MOISTURE_BAR_NEGATIVE_WIDTH_PCT + (pct * positiveSpan) / 100));
 }
 
 // Mirrors the firmware's refreshSlotMoistureBounds() (see MSV2_ESP32_Display_Runtime.ino)
@@ -566,12 +595,19 @@ function resolveMoisture(card, reading) {
   const autoReady = Boolean(autoEnabled && autoCal && autoCal.ready);
   const dry = autoReady ? autoCal.dryBound : Number(card?.moisture?.dry ?? 120);
   const wet = autoReady ? autoCal.wetBound : Number(card?.moisture?.wet ?? 175);
+  // pct is already signed (percent() is unclamped below zero).
   const pct = percent(reading?.moisture, dry, wet);
   return { pct, healthCls: healthClass(pct) };
 }
 
+// pct is signed/unclamped-below-zero - route it through barPercent() for the bar's width,
+// which can't render negative. The marker sits at a fixed visual position
+// (MOISTURE_BAR_NEGATIVE_WIDTH_PCT of the bar's width) - the same position barPercent(0)
+// computes - not at MOISTURE_WATER_LINE_PCT itself, which is now the alert-threshold VALUE
+// (0), not a bar position.
 function bar(pct, className) {
-  return '<div class="bar ' + escapeHtml(className) + '" style="--pct:' + String(pct ?? 0) + '%"><span></span></div>';
+  return '<div class="bar ' + escapeHtml(className) + '" style="--pct:' + String(barPercent(pct)) + '%">' +
+    '<span></span><div class="water-line" style="left:' + MOISTURE_BAR_NEGATIVE_WIDTH_PCT + '%"></div></div>';
 }
 
 function metric(label, value, className = "") {

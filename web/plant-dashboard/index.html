@@ -71,10 +71,22 @@
     .badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
     .metric { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
     .metric span:first-child { color: var(--muted); }
-    .bar { height: 9px; border-radius: 999px; background: #0a1015; border: 1px solid rgba(255,255,255,.08); overflow: hidden; margin: 6px 0 8px; }
+    .bar { position: relative; height: 9px; border-radius: 999px; background: #0a1015; border: 1px solid rgba(255,255,255,.08); overflow: hidden; margin: 6px 0 8px; }
     .bar span { display: block; height: 100%; width: var(--pct); background: var(--accent); }
     .bar.warn span { background: var(--warn); }
-    .bar.danger span { background: var(--danger); }
+    /* Matches the physical display's applyLowMoistureBlink() cadence exactly (500ms/500ms,
+       full color <-> muted) so the "actually overdue, not just low" alert reads the same way
+       on every surface. */
+    .bar.danger span { background: var(--danger); animation: moisture-flash 1s step-end infinite; }
+    @keyframes moisture-flash {
+      0%, 49% { background: var(--danger); }
+      50%, 100% { background: var(--muted); }
+    }
+    /* Watering-threshold marker - see MOISTURE_WATER_LINE_PERCENT in
+       MSV2_ESP32_Display_Runtime.ino and MOISTURE_WATER_LINE_PCT in MobileAppPage.h. Watered
+       lives at the wet/100% end of the bar; below this dotted line is the actual "time to
+       water" alert boundary, matching the physical display's blink/buzzer trigger exactly. */
+    .water-line { position: absolute; top: -1px; bottom: -1px; width: 0; border-left: 2px dotted rgba(255,255,255,.55); z-index: 1; }
     .ok { color: var(--accent); }
     .warn { color: var(--warn); }
     .danger { color: var(--danger); }
@@ -150,6 +162,6 @@
       </section>
     </div>
   </main>
-  <script src="assets/app.v14.js" defer></script>
+  <script src="assets/app.v15.js" defer></script>
 </body>
 </html>

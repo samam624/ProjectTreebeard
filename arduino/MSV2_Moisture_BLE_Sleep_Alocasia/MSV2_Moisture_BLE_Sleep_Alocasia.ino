@@ -453,18 +453,49 @@ bool isBatteryCharging(void)
 // the sampling rate - still one real ADC read per wake.
 float smoothedBatteryPercent = -1.0f;
 bool lastChargingState = false;
+// A candidate charging-state flip awaiting confirmation - see the debounce comment
+// inside readSmoothedBatteryPercent() below.
+bool pendingChargingState = false;
+bool chargingStatePending = false;
 
 uint8_t readSmoothedBatteryPercent()
 {
-  bool charging = isBatteryCharging();
+  bool measuredCharging = isBatteryCharging();
+  bool charging;
+
+  // isBatteryCharging() is a single un-debounced digitalRead() of the BQ25100 ~CHG pin.
+  // A misread there (noise, or the genuinely uncertain signal right at end-of-charge
+  // termination) used to be indistinguishable from a real transition below, which would
+  // discard all prior smoothing and jump straight to one fresh sample read under
+  // whatever might be the WRONG IR-compensation curve for the true battery state -
+  // producing a visible spurious jump on the History chart. Require the same new state
+  // to be observed on a second consecutive wake before treating it as real; a one-off
+  // disagreement is held as a candidate and this wake still uses the last confirmed
+  // state's curve, mirroring the moisture oscillator's watering-rise debounce.
+  if (smoothedBatteryPercent < 0 || measuredCharging == lastChargingState)
+  {
+    charging = measuredCharging;
+    chargingStatePending = false;
+  }
+  else if (chargingStatePending && pendingChargingState == measuredCharging)
+  {
+    charging = measuredCharging; // confirmed on a second consecutive wake
+  }
+  else
+  {
+    pendingChargingState = measuredCharging;
+    chargingStatePending = true;
+    charging = lastChargingState;
+  }
+
   float raw = batteryMvToPercent(readBatteryMv(), charging);
 
-  // A charge/discharge transition is a real, instantaneous jump in what the corrected
-  // curve reads (the IR-drop offset direction flips), not sensor noise - blending it
-  // through the normal EMA would just smear the jump across several wakes instead of
-  // reflecting it, and would mix samples from two different curves together. Snap
-  // straight to the new curve's reading on the wake where the state actually changes,
-  // then resume normal smoothing within that state.
+  // A confirmed charge/discharge transition is a real, instantaneous jump in what the
+  // corrected curve reads (the IR-drop offset direction flips), not sensor noise -
+  // blending it through the normal EMA would just smear the jump across several wakes
+  // instead of reflecting it, and would mix samples from two different curves together.
+  // Snap straight to the new curve's reading on the wake where the state actually
+  // changes, then resume normal smoothing within that state.
   if (smoothedBatteryPercent < 0 || charging != lastChargingState)
   {
     smoothedBatteryPercent = raw;

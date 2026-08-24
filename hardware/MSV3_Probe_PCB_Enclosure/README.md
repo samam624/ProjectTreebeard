@@ -71,6 +71,76 @@ The `output` directory contains:
 
 The STEP files open directly in Fusion 360 as editable solid bodies.
 
+## Four-screw M2 closure for the revised user assembly
+
+The current screw-fastened case variant is generated from the revised
+`MSV3_brain_enclosure_assembly.step` at the project root. It preserves the
+revised base, lid, solar parts, PCB reference, and internal PCB-pressure
+geometry while replacing the four external cantilever snap stations with four
+low-profile M2 screw stations at the original side locations (Y = 102 and 130
+mm on both sides). The insert bosses stop at the base/lid seam instead of
+rising through the electronics cavity, so the lid lifts off normally and the
+PCB removal path stays fully open.
+
+Each screw station is a 6 mm nominal semicircular pad with tangent Bezier
+transitions into the enclosure sidewall over an 11 mm span. This eliminates
+the bolted-on cylindrical-ear appearance while keeping the preferred screw
+placement. The lid portion is only 1.70 mm tall and uses a flush 90-degree
+countersink. The source's diagonal exterior corners and roof/floor edge
+chamfers are replaced with a 4.20 mm-radius rounded-rectangle exterior; the
+functional internal PCB supports and matching rim are not altered.
+
+The files are under `output/m2_blended_side_closure`:
+
+- `MSV3_brain_enclosure_case_closed_M2_blended_side.step` - separate base and
+  lid bodies in the closed position
+- `MSV3_brain_enclosure_assembly_M2_blended_side.step` - all five mechanical
+  bodies, without the PCB
+- `MSV3_brain_enclosure_fit_check_M2_blended_side.step` - all five mechanical
+  bodies plus the complete PCB reference
+- `MSV3_brain_enclosure_base_M2_blended_side_inserts.step` and
+  `MSV3_brain_enclosure_lid_M2_blended_side_countersunk.step` - individual
+  editable bodies
+- five individually oriented `*_print.stl` files for the revised base, lid,
+  left arm, right arm, and solar-panel frame; these import directly into Bambu
+  Studio or OrcaSlicer without Fusion 360
+- `MSV3_M2_blended_side_slicer_pack.zip` - the five print-ready STL files and
+  the lab print guide in one download
+- `PRINT_IN_BAMBU_OR_ORCA.md` - slicer settings, orientations, and hardware
+- `MSV3_M2_blended_side_report.json` and
+  `MSV3_M2_blended_side_validation.json`
+
+Closure hardware and modeled dimensions:
+
+- Four M2 x 5 mm 90-degree countersunk flat-head screws are preferred; M2 x
+  6 mm also clears the blind screw-tip relief. Countersunk screw length includes
+  the head.
+- Four 2.90 mm diameter x 3.20 mm long M2 heat-set inserts
+- 2.90 mm diameter x 3.20 mm deep base insert pockets
+- 2.40 mm lid clearance holes
+- 4.20 mm top diameter x 0.90 mm deep 90-degree countersinks
+- 6.00 mm nominal outside diameter at each blended side pad
+- 0.05 mm vertical gap between the base boss and lid cap
+
+Install the inserts downward into the four base bosses from the open seam before
+fitting the lid, then install the screws through the flush lid-side
+countersinks. The nearest edge of every blended boss remains 2.00 mm outside
+the PCB envelope. The boss extrema retain 0.25 mm clearance to the folding
+arms, and the existing solar-wire passages and base-owned solar-pivot insert
+entries remain open.
+
+The base STL is floor-down and the lid STL is exterior-roof-down. No supports
+are expected. Enable elephant-foot compensation or lightly deburr the four
+bed-facing countersinks after printing. Use four perimeters around the blended
+bosses and do not overtighten the M2 screws.
+
+Regenerate and validate this variant from the repository root:
+
+```powershell
+node hardware\MSV3_Probe_PCB_Enclosure\design\add_m2_case_screws.mjs
+node hardware\MSV3_Probe_PCB_Enclosure\tools\validate_m2_screw_closure.mjs
+```
+
 ## Native Fusion 360 generator
 
 To rebuild the design with a parametric Fusion timeline:

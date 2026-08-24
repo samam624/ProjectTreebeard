@@ -602,12 +602,16 @@ void printHelp() {
   Serial.println(F("  addr <hex>               - set FDC2214 I2C address (default 0x2A)"));
   Serial.println(F("  fdcid                    - read MANUFACTURER_ID/DEVICE_ID (works even before fdcinit)"));
   Serial.println(F("  fdcinit                  - configure FDC2214 for CH0 free-running conversion"));
+  Serial.println(F("  idrive <0-31>            - set DRIVE_CURRENT_CH0 (datasheet Table 7-41), reads back DATA_CH0+STATUS"));
   Serial.println(F("  fdcread                  - one-shot STATUS + DATA_CH0 read"));
   Serial.println(F("  fdcstream <n>            - stream n reads, ~150ms apart (touch electrodes live)"));
   Serial.println(F("  usbtest <n>              - isolation test: n dummy prints, same pacing as fdcstream, zero I2C"));
   Serial.println(F("  fdctest <n>              - isolation test: n real I2C reads, no per-sample output, final checksum only"));
   Serial.println(F("  mux <0-3>                - set TMUX1109 select code (A1 A0), report pins driven"));
+  Serial.println(F("  hotcold                  - toggle electrode-swap phase (codes 0/1 only), holds for multimeter bench test"));
+  Serial.println(F("  hotcoldstream <n>        - live DATA_CH0 stream tagged with orientation; 'f'=flip electrodes, 'q'=stop"));
   Serial.println(F("  muxsweep                 - cycle all 4 mux codes, one fdcread each (finds osc vs EC-check states)"));
+  Serial.println(F("  sensesweep <n>           - n cycles alternating electrode-swap phase + EC-check phase together (default 10)"));
   Serial.println(F("  vbat                     - read VBAT_DIV (battery divider) -- informational, no battery attached"));
   Serial.println(F("  vbathold <secs>          - hold VBAT_DIV_EN LOW (default 120s) for manual multimeter probing, no ADC reads"));
   Serial.println(F("  chgstatus                - read BQ25170 STAT/PG charger status pins"));
@@ -655,6 +659,52 @@ void doFdcId() {
   Serial.println();
 }
 
+// 2026-08-22: datasheet Table 7-41 IDRIVE codes in mA -- nonlinear/roughly
+// logarithmic steps, not evenly spaced, so this has to be a table (not a
+// formula) to report a real mA figure back while bench-tuning against a
+// coated (extra-loaded) sensor.
+const float IDRIVE_MA[32] = {
+  0.016, 0.018, 0.021, 0.025, 0.028, 0.033, 0.038, 0.044,
+  0.052, 0.060, 0.069, 0.081, 0.093, 0.108, 0.126, 0.146,
+  0.169, 0.196, 0.228, 0.264, 0.307, 0.356, 0.413, 0.479,
+  0.555, 0.644, 0.747, 0.867, 1.006, 1.167, 1.354, 1.571
+};
+
+// Kept in sync with fdcInit()'s DRIVE_CURRENT_CH0 starting value (0x8000 ->
+// code 16) so `idrive` reports the true setting even before it's ever been
+// called.
+uint8_t g_idriveCode = 16;
+
+void doIdrive(int code) {
+  if (code < 0 || code > 31) {
+    Serial.println(F("  code must be 0-31 (see datasheet Table 7-41, DRIVE_CURRENT_CH0)"));
+    return;
+  }
+  g_idriveCode = (uint8_t)code;
+  uint16_t regVal = (uint16_t)g_idriveCode << 11;
+  if (!fdcWriteReg(0x1E, regVal)) {
+    Serial.println(F("  I2C write failed"));
+    return;
+  }
+  Serial.print(F("  IDRIVE code="));
+  Serial.print(g_idriveCode);
+  Serial.print(F(" ("));
+  Serial.print(IDRIVE_MA[g_idriveCode], 3);
+  Serial.println(F("mA) set -- reading back one conversion:"));
+
+  uint32_t data;
+  uint16_t status;
+  char buf[160];
+  if (fdcReadChannel0(data, status)) {
+    snprintf(buf, sizeof(buf), "  DATA_CH0=%lu  ", (unsigned long)data);
+    appendFdcStatus(buf, sizeof(buf), status);
+  } else {
+    snprintf(buf, sizeof(buf), "  I2C read failed");
+  }
+  printLineResilient(buf);
+  Serial.println(F("  target: 1.2Vpk <= oscillation amplitude <= 1.8Vpk -- ERR_ALW means raise this, ERR_AHW means lower it"));
+}
+
 void setMux(uint8_t code) {
   digitalWrite(PIN_MUX_A0, (code & 0x01) ? HIGH : LOW);
   digitalWrite(PIN_MUX_A1, (code & 0x02) ? HIGH : LOW);
@@ -695,6 +745,158 @@ void doMuxSweep() {
     }
     printLineResilient(buf);
   }
+}
+
+// 2026-08-22: dedicated manual toggle for bench multimeter testing of the
+// electrode-swap function alone -- restricted to codes 0/1 only, so a
+// fat-fingered `mux 2`/`mux 3` can't land the probe on the EC-check path
+// (3V3/VDIV) by accident mid-test. g_hotColdPhase always mirrors the CURRENT
+// physical code (flip-then-apply, not apply-then-arm-next) so `hotcold` and
+// `hotcoldstream` below can share it and hand off to each other correctly.
+bool g_hotColdPhase = false;
+
+void printHotColdOrientation(uint8_t code) {
+  if (code == 0) {
+    Serial.println(F("  MS_NODE_A (electrode A) = HOT (TANK_HOT)   MS_NODE_B (electrode B) = COLD (TANK_REF)"));
+  } else {
+    Serial.println(F("  MS_NODE_A (electrode A) = COLD (TANK_REF)  MS_NODE_B (electrode B) = HOT (TANK_HOT)"));
+  }
+}
+
+void doHotColdToggle() {
+  g_hotColdPhase = !g_hotColdPhase;
+  uint8_t code = g_hotColdPhase ? 1 : 0;
+  setMux(code);
+  Serial.print(F("  code="));
+  Serial.print(code);
+  Serial.print(F("  -> "));
+  Serial.println(muxCodeLabel(code));
+  printHotColdOrientation(code);
+  Serial.println(F("  TANK_HOT/TANK_REF is an always-running LC oscillator, not a static DC level --"));
+  Serial.println(F("  meter in AC-volts (or resistance/continuity to GND) on the MS_NODE_A/MS_NODE_B"));
+  Serial.println(F("  test points should show which one is live. Send 'hotcold' again to flip back."));
+}
+
+// 2026-08-22: Step 2 of the electrode-swap bench test. `hotcold` only proves
+// the mux electrically switches; this proves the FDC2214 gives a comparable
+// moisture (DATA_CH0) reading regardless of which physical electrode is
+// wired to TANK_HOT -- which is what actually validates the swap is safe to
+// use for DC-bias cancellation in production firmware. Streams readings
+// continuously, tagged with the live orientation on every line, and polls
+// Serial for a bare 'f'/'F' (no Enter needed once typed into most terminals;
+// works either way since a trailing newline byte is just ignored) to flip
+// electrodes mid-stream, or 'q'/'Q' to stop early. This can't just be
+// `fdcstream` + `hotcold` typed by hand: fdcstream's loop blocks on delay()
+// and never drains Serial until it's done, so anything typed mid-stream
+// would just queue up and land after the last sample instead of taking
+// effect live.
+void doHotColdStream(int maxSamples) {
+  if (maxSamples <= 0) maxSamples = 100000;  // effectively "until 'q'"
+  Serial.println(F("Live hot/cold stream. Send 'f' to flip electrodes, 'q' to stop."));
+  uint8_t code = g_hotColdPhase ? 1 : 0;
+  printHotColdOrientation(code);
+  setMux(code);
+  delay(300);  // LC-tank settle margin, same as doMuxSweep/sensesweep
+
+  for (int i = 0; i < maxSamples; i++) {
+    feedWatchdog();
+
+    uint32_t data;
+    uint16_t status;
+    char buf[180];
+    int len = snprintf(buf, sizeof(buf), "%d: code=%u (A=%s B=%s) ", i, code,
+                        code == 0 ? "HOT " : "COLD", code == 0 ? "COLD" : "HOT ");
+    if (fdcReadChannel0(data, status)) {
+      len += snprintf(buf + len, sizeof(buf) - len, "DATA_CH0=%lu  ", (unsigned long)data);
+      appendFdcStatus(buf, sizeof(buf), status);
+    } else {
+      snprintf(buf + len, sizeof(buf) - len, "I2C read failed");
+    }
+    printLineResilient(buf);
+
+    delay(150);  // sample pacing, matches fdcstream's cadence
+
+    bool flip = false, stop = false;
+    while (Serial.available()) {
+      char c = (char)Serial.read();
+      if (c == 'f' || c == 'F') flip = true;
+      else if (c == 'q' || c == 'Q') stop = true;
+    }
+    if (stop) {
+      printLineResilient("  hotcoldstream: stopped by user");
+      break;
+    }
+    if (flip) {
+      g_hotColdPhase = !g_hotColdPhase;
+      code = g_hotColdPhase ? 1 : 0;
+      setMux(code);
+      printLineResilient("  >> flipped <<");
+      printHotColdOrientation(code);
+      delay(300);  // settle before trusting the next sample
+    }
+  }
+}
+
+// 2026-08-22: two real gaps found while reviewing this sketch against what's
+// actually been exercised on hardware. (1) The electrode-swap mux codes
+// (0/1) have only ever been read individually via `mux`/`muxsweep` -- never
+// actually ALTERNATED cycle-to-cycle the way MSV2's PLATE_A/PLATE_B swap is
+// (see MSV2_Moisture_BLE_Sleep.ino's driveIsPlateA), which is what actually
+// cancels any DC-bias-driven drift between the two physical electrodes over
+// time. (2) The EC-check path (codes 2/3, DIV_NODE) has NEVER been read as
+// part of any repeated/periodic cycle -- only ever a single `divnode` call
+// at rest, and never with a real conductive bridge across the electrodes
+// (still an open item from 8/20, see docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md
+// Test 5). This command exercises both gaps together in one repeated cycle,
+// specifically so both can be verified against real hardware before either
+// piece is considered proven enough to fold into production firmware.
+//
+// The mux's own address bits make the phase-pairing free: code = A1<<1|A0,
+// so tank-sensing codes (0,1) and EC-check codes (2,3) share the same A0
+// ("phase") bit -- toggling one phase bit alternates BOTH mode's polarity in
+// lockstep, matching the mux's real hardware structure rather than adding a
+// second, independent toggle.
+bool g_sensePhase = false;
+
+void doSenseSweep(int n) {
+  if (n <= 0) n = 10;
+  Serial.println(F("Alternating electrode-swap phase + EC-check phase together, one pair per cycle."));
+  Serial.println(F("(TANK_HOT/TANK_REF via the LC tank, then DIV_NODE via the resistive EC-check path)"));
+  for (int i = 0; i < n; i++) {
+    feedWatchdog();
+    uint8_t tankCode = g_sensePhase ? 1 : 0;
+    uint8_t ecCode = g_sensePhase ? 3 : 2;
+    char buf[180];
+
+    setMux(tankCode);
+    delay(300);  // same LC-tank settle margin as doMuxSweep()
+    uint32_t data;
+    uint16_t status;
+    int len = snprintf(buf, sizeof(buf), "cycle=%d tank code=%u %s: ", i, tankCode, muxCodeLabel(tankCode));
+    if (fdcReadChannel0(data, status)) {
+      len += snprintf(buf + len, sizeof(buf) - len, "DATA_CH0=%lu  ", (unsigned long)data);
+      appendFdcStatus(buf, sizeof(buf), status);
+    } else {
+      len += snprintf(buf + len, sizeof(buf) - len, "I2C read failed");
+    }
+    printLineResilient(buf);
+
+    setMux(ecCode);
+    // DIV_NODE is a plain resistive divider (R17 pulldown + mux switch
+    // resistance, no capacitor on this net per the netlist) -- settles in
+    // microseconds, not milliseconds. 20ms is generous margin, not a
+    // measured requirement the way the LC tank's 300ms is.
+    delay(20);
+    bool divHigh = digitalRead(PIN_DIV_NODE);
+    snprintf(buf, sizeof(buf), "cycle=%d EC code=%u %s: DIV_NODE=%s", i, ecCode, muxCodeLabel(ecCode),
+             divHigh ? "HIGH (bridged/conductive)" : "LOW (open/dry, expected at rest)");
+    printLineResilient(buf);
+
+    g_sensePhase = !g_sensePhase;
+  }
+  setMux(0);  // electrode-swap phase 0 -- same code MUX_SLEEP_CODE uses (defined later
+              // in this file, in the sleep/wake section, not yet visible here)
+  printLineResilient("  sensesweep: done, mux parked back on electrode-swap phase 0");
 }
 
 // New 2026-08-21: BQ25170 STAT/PG were never read before this -- resolved as
@@ -1067,6 +1269,9 @@ void handleCommand(String cmd) {
     doFdcId();
   } else if (cmd == "fdcinit") {
     Serial.println(fdcInit() ? F("  fdcinit OK, CH0 free-running") : F("  fdcinit FAILED (I2C write error)"));
+  } else if (cmd.startsWith("idrive ")) {
+    int code = cmd.substring(7).toInt();
+    doIdrive(code);
   } else if (cmd == "fdcread") {
     uint32_t data;
     uint16_t status;
@@ -1151,8 +1356,16 @@ void handleCommand(String cmd) {
       Serial.print(F("  -> "));
       Serial.println(muxCodeLabel((uint8_t)code));
     }
+  } else if (cmd == "hotcold") {
+    doHotColdToggle();
+  } else if (cmd.startsWith("hotcoldstream")) {
+    int n = cmd.length() > 14 ? cmd.substring(14).toInt() : 0;
+    doHotColdStream(n);
   } else if (cmd == "muxsweep") {
     doMuxSweep();
+  } else if (cmd.startsWith("sensesweep")) {
+    int n = cmd.length() > 11 ? cmd.substring(11).toInt() : 10;
+    doSenseSweep(n);
   } else if (cmd == "vbat") {
     doVbat();
   } else if (cmd.startsWith("vbathold")) {

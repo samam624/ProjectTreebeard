@@ -1,0 +1,224 @@
+{
+  "passed": true,
+  "errors": [],
+  "checks": {
+    "solidCounts": {
+      "base": 1,
+      "lid": 1,
+      "closedCase": 2,
+      "mechanicalAssembly": 5,
+      "fitCheckWithPcb": 574
+    },
+    "bounds": {
+      "base": [
+        [
+          -12.0000001,
+          81.99999989999792,
+          -6.350000100000001
+        ],
+        [
+          30.0000001,
+          149.0000001,
+          0.6500000999999999
+        ]
+      ],
+      "lid": [
+        [
+          -12.0000001,
+          81.99999989999792,
+          -0.7500001000000008
+        ],
+        [
+          30.0000001,
+          149.0000001,
+          7.550000100000001
+        ]
+      ]
+    },
+    "baseLidOverlapVolume": 0,
+    "fasteners": [
+      {
+        "x": -9,
+        "y": 102,
+        "insertVoidVolume": 0,
+        "tipVoidVolume": 0,
+        "baseBossMaterialVolume": 85.03113216022513,
+        "lidClearanceVoidVolume": 0,
+        "countersinkOpeningVoidVolume": 0,
+        "lidCapMaterialVolume": 28.80303774597207
+      },
+      {
+        "x": -9,
+        "y": 130,
+        "insertVoidVolume": 0,
+        "tipVoidVolume": 0,
+        "baseBossMaterialVolume": 85.03113216022511,
+        "lidClearanceVoidVolume": 0,
+        "countersinkOpeningVoidVolume": 0,
+        "lidCapMaterialVolume": 28.803037745972073
+      },
+      {
+        "x": 27,
+        "y": 102,
+        "insertVoidVolume": 0,
+        "tipVoidVolume": 0,
+        "baseBossMaterialVolume": 85.03113216022513,
+        "lidClearanceVoidVolume": 0,
+        "countersinkOpeningVoidVolume": 0,
+        "lidCapMaterialVolume": 28.803037745972066
+      },
+      {
+        "x": 27,
+        "y": 130,
+        "insertVoidVolume": 0,
+        "tipVoidVolume": 0,
+        "baseBossMaterialVolume": 85.03113216022513,
+        "lidClearanceVoidVolume": 0,
+        "countersinkOpeningVoidVolume": 0,
+        "lidCapMaterialVolume": 28.803037745972066
+      }
+    ],
+    "pcbRemovalPath": [
+      {
+        "x": -9,
+        "y": 102,
+        "baseAboveSeamVolume": 0,
+        "lidAboveLowProfileCapVolume": 0
+      },
+      {
+        "x": -9,
+        "y": 130,
+        "baseAboveSeamVolume": 0,
+        "lidAboveLowProfileCapVolume": 0
+      },
+      {
+        "x": 27,
+        "y": 102,
+        "baseAboveSeamVolume": 0,
+        "lidAboveLowProfileCapVolume": 0
+      },
+      {
+        "x": 27,
+        "y": 130,
+        "baseAboveSeamVolume": 0,
+        "lidAboveLowProfileCapVolume": 0
+      }
+    ],
+    "clearance": {
+      "bossToPcbBoardLeft": 2,
+      "bossToPcbBoardRight": 2,
+      "leftArmToBoss": 0.25,
+      "rightArmToBoss": 0.25,
+      "highestPcbComponentToLidRoof": 0.9000000000000004,
+      "seamGap": 0.050000000000000044
+    },
+    "screwLength": {
+      "countersunkLengthIncludesHead": true,
+      "screwHeadTopZ": 0.95,
+      "insertTopZ": -0.8,
+      "insertBottomZ": -4,
+      "m2x5TipZ": -4.05,
+      "m2x6TipZ": -5.05,
+      "reliefBottomZ": -5.55
+    },
+    "preservedOpenings": {
+      "leftWireEntryLow": 0,
+      "leftWireEntryHigh": 0,
+      "leftSolarInsert": 0,
+      "rightSolarInsert": 0
+    },
+    "chamferReplacement": {
+      "frontLeftRoundedCornerMaterial": 0.5772676500971244,
+      "rearRightRoundedCornerMaterial": 0.5772676500971197,
+      "flatRoofEdgeMaterial": 0.03769911184307746,
+      "flatFloorEdgeMaterial": 0.03769911184307746
+    },
+    "stl": {
+      "base": {
+        "triangleCount": 5332,
+        "byteLength": 266684,
+        "min": [
+          -12,
+          82,
+          1.0000000116860974e-7
+        ],
+        "max": [
+          30,
+          149,
+          6.99567174911499
+        ],
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "lid": {
+        "triangleCount": 5340,
+        "byteLength": 267084,
+        "min": [
+          -12,
+          82,
+          -1.7763568394002505e-15
+        ],
+        "max": [
+          30,
+          149,
+          8.300000190734863
+        ],
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "leftArm": {
+        "triangleCount": 788,
+        "byteLength": 39484,
+        "min": [
+          -5.848397731781006,
+          115.50160217285156,
+          1.0000000116860974e-7
+        ],
+        "max": [
+          18.14839744567871,
+          152.6783905029297,
+          1.6000001430511475
+        ],
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "rightArm": {
+        "triangleCount": 772,
+        "byteLength": 38684,
+        "min": [
+          -5.848397731781006,
+          115.50160217285156,
+          1.0000000116860974e-7
+        ],
+        "max": [
+          18.14839744567871,
+          152.6783905029297,
+          1.6000001430511475
+        ],
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "panelFrame": {
+        "triangleCount": 2052,
+        "byteLength": 102684,
+        "min": [
+          -12,
+          119.68000030517578,
+          0.0011910260654985905
+        ],
+        "max": [
+          30,
+          179.67999267578125,
+          4.60119104385376
+        ],
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      }
+    }
+  }
+}

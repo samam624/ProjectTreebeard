@@ -101,7 +101,7 @@ shared. Additional supported waterings now refine the estimates instead of repla
 ## Deployment and verification
 
 Production contains migrations 024-027 and the matching `receiver-snapshot` edge function.
-The cloud dashboard is the versioned `app.v14.js`/`msv2-cloud-app-v14` bundle. The physical
+The cloud dashboard is the versioned `app.v15.js`/`msv2-cloud-app-v15` bundle. The physical
 receiver `MSV2088A3104A7AC` was compiled, flashed on COM16, and verified at
 `10.0.0.35/device` with build:
 

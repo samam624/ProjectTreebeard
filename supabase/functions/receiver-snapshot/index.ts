@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
+import { observedAtIso, selectHistoryRows, validateHistoryRowIdentity } from "./history-batch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,10 +11,24 @@ const corsHeaders = {
 type PlantReading = {
   sensor?: number;
   wake?: number;
+  // Receiver-smoothed presentation value. Older receivers only send this field, so
+  // ingestion falls back to it for both history series during a rolling deployment.
   moisture?: number;
+  // Latest unsmoothed receiver-derived measurement. This remains the source for the
+  // original history column and therefore for auto-calibration.
+  measuredMoisture?: number;
+  moistureScale?: number;
+  raw?: {
+    moistureKHz?: number;
+    fdcCounts?: number;
+    batteryMv?: number;
+    charging?: boolean;
+  };
   batteryPercent?: number;
   rssi?: number;
   ageMs?: number;
+  observationId?: string;
+  queuedAgeMs?: number;
 };
 
 type Snapshot = {
@@ -24,6 +39,7 @@ type Snapshot = {
     version?: number;
   };
   plants?: PlantReading[];
+  historyBatch?: PlantReading[];
 };
 
 type DisplaySettingsRow = {
@@ -257,9 +273,13 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: receiverError.message }, 500);
     }
 
+    // historyBatch is an ingestion envelope, not current receiver state. Keeping it in
+    // the upsert-only latest snapshot would needlessly retain a large transient queue.
+    const snapshotForLatest = { ...snapshot };
+    delete snapshotForLatest.historyBatch;
     const { error: snapshotError } = await supabase.rpc("msv2_store_latest_snapshot", {
       p_receiver_id: receiverId,
-      p_snapshot: snapshot,
+      p_snapshot: snapshotForLatest,
       p_config_version: configVersion,
       p_plant_count: plantCount,
     });
@@ -267,27 +287,133 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: snapshotError.message }, 500);
     }
 
-    // Bounded to well above the firmware's real 16-card cap (MobileAppPage.h's
-    // MAX_PLANTS): an untrusted/buggy sender otherwise controls how many sequential
-    // per-plant RPC round-trips this request makes, with no cap.
-    const MAX_HISTORY_PLANTS_PER_SNAPSHOT = 32;
-    if (Array.isArray(snapshot.plants)) {
-      for (const plant of snapshot.plants.slice(0, MAX_HISTORY_PLANTS_PER_SNAPSHOT)) {
+    // Batch-capable receivers send every unique BLE wake accumulated since the last
+    // HTTPS sync. An explicit empty historyBatch is meaningful: do not fall back to the
+    // latest plants and create duplicate/stale history rows. Receivers without the field
+    // retain the old one-row-per-latest-plant behavior during rolling deployment.
+    const historySelection = selectHistoryRows(snapshot);
+    const historyServerNowMs = Date.now();
+    let historyAccepted = 0;
+    if (historySelection.usesBatch && historySelection.rows.length > 0) {
+      // A malformed row must not block every OTHER row in the same batch. The receiver's
+      // ack model (acknowledgeHistoryUploadBatch()) removes a contiguous PREFIX of its
+      // queue sized by the historyAccepted count we return - so as long as we account for
+      // every row in the original batch (either stored, or deliberately dropped here as
+      // unrecoverably malformed), it's safe to report the full original row count and let
+      // the receiver advance past all of them. Retrying a malformed row would never
+      // succeed anyway (it's a wire-format problem, not a transient one), so dropping it
+      // is strictly better than the previous behavior of rejecting the whole batch with a
+      // 400 and retrying the same poisoned prefix forever.
+      let malformedDropped = 0;
+      const readings = [];
+      for (const plant of historySelection.rows) {
+        const identity = validateHistoryRowIdentity(plant);
+        if (!identity) {
+          malformedDropped++;
+          console.error(
+            `dropping malformed history row for receiver ${receiverId}: ` +
+              `sensor=${plant?.sensor} observationId=${plant?.observationId}`,
+          );
+          continue;
+        }
+        const { sensorId, observationId } = identity;
+
+        const displayMoisture = Number(plant?.moisture);
+        const measuredMoisture = Number(plant?.measuredMoisture);
+        readings.push({
+          sensorId,
+          wake: Number.isFinite(Number(plant?.wake)) ? Number(plant.wake) : null,
+          moisture: Number.isFinite(measuredMoisture)
+            ? measuredMoisture
+            : Number.isFinite(displayMoisture) ? displayMoisture : null,
+          displayMoisture: Number.isFinite(displayMoisture) ? displayMoisture : null,
+          moistureScale: Number.isInteger(Number(plant?.moistureScale)) && Number(plant?.moistureScale) > 0
+            ? Number(plant.moistureScale)
+            : 1,
+          rawMoistureKHz: Number.isFinite(Number(plant?.raw?.moistureKHz))
+            ? Number(plant.raw.moistureKHz)
+            : null,
+          rawFdcCounts: Number.isFinite(Number(plant?.raw?.fdcCounts))
+            ? Number(plant.raw.fdcCounts)
+            : null,
+          batteryPercent: Number.isFinite(Number(plant?.batteryPercent)) ? Number(plant.batteryPercent) : null,
+          // Raw battery voltage/charging alongside the receiver's own smoothed percent, so
+          // the History chart can re-derive/re-tune battery presentation from the original
+          // signal instead of only ever seeing what the ingest-time filter already baked in.
+          rawBatteryMv: Number.isFinite(Number(plant?.raw?.batteryMv)) ? Number(plant.raw.batteryMv) : null,
+          rawCharging: typeof plant?.raw?.charging === "boolean" ? plant.raw.charging : null,
+          rssi: Number.isFinite(Number(plant?.rssi)) ? Number(plant.rssi) : null,
+          ageMs: Number.isFinite(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
+          observationId,
+          receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs),
+        });
+      }
+
+      let stored = 0;
+      if (readings.length > 0) {
+        const { data, error: historyError } = await supabase.rpc("msv2_store_sensor_reading_batch", {
+          p_receiver_id: receiverId,
+          p_readings: readings,
+        });
+        if (historyError) {
+          console.error(`sensor history batch insert failed: ${historyError.message}`);
+          // A DB/RPC-level failure is a different, likely-transient problem from a
+          // malformed row - fail the whole request so the receiver retries the valid
+          // rows too, rather than reporting a partial success we can't actually stand
+          // behind. malformedDropped rows already logged above are not recoverable by a
+          // retry either way.
+          return jsonResponse({ ok: false, error: historyError.message, historyAccepted }, 500);
+        }
+        stored = Number(data);
+        if (!Number.isInteger(stored) || stored !== readings.length) {
+          return jsonResponse({ ok: false, error: "history batch acknowledgement mismatch", historyAccepted }, 500);
+        }
+      }
+      // Every row in the original batch is now accounted for: stored, or dropped as
+      // unrecoverably malformed. Reporting the full prefix count lets the receiver
+      // advance past the malformed rows too instead of retrying them forever.
+      historyAccepted = stored + malformedDropped;
+    } else if (!historySelection.usesBatch && historySelection.rows.length > 0) {
+      for (const plant of historySelection.rows) {
         const sensorId = Number(plant?.sensor);
         if (!Number.isFinite(sensorId) || sensorId <= 0) continue;
+
+        const displayMoisture = Number(plant?.moisture);
+        const measuredMoisture = Number(plant?.measuredMoisture);
 
         const { error: historyError } = await supabase.rpc("msv2_store_sensor_reading", {
           p_receiver_id: receiverId,
           p_sensor_id: sensorId,
           p_wake: Number.isFinite(Number(plant?.wake)) ? Number(plant.wake) : null,
-          p_moisture: Number.isFinite(Number(plant?.moisture)) ? Number(plant.moisture) : null,
+          // Keep `moisture` scientifically honest/backward compatible: it is the real
+          // unsmoothed derived reading and remains the auto-calibration input. Old
+          // receiver firmware has no measuredMoisture, so fall back without data loss.
+          p_moisture: Number.isFinite(measuredMoisture)
+            ? measuredMoisture
+            : Number.isFinite(displayMoisture) ? displayMoisture : null,
+          p_display_moisture: Number.isFinite(displayMoisture) ? displayMoisture : null,
+          p_moisture_scale: Number.isInteger(Number(plant?.moistureScale)) && Number(plant?.moistureScale) > 0
+            ? Number(plant.moistureScale)
+            : 1,
+          p_raw_moisture_khz: Number.isFinite(Number(plant?.raw?.moistureKHz))
+            ? Number(plant.raw.moistureKHz)
+            : null,
+          p_raw_fdc_counts: Number.isFinite(Number(plant?.raw?.fdcCounts))
+            ? Number(plant.raw.fdcCounts)
+            : null,
           p_battery_percent: Number.isFinite(Number(plant?.batteryPercent)) ? Number(plant.batteryPercent) : null,
           p_rssi: Number.isFinite(Number(plant?.rssi)) ? Number(plant.rssi) : null,
           p_age_ms: Number.isFinite(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
+          p_observation_id: null,
+          p_received_at: null,
+          p_raw_battery_mv: Number.isFinite(Number(plant?.raw?.batteryMv)) ? Number(plant.raw.batteryMv) : null,
+          p_raw_charging: typeof plant?.raw?.charging === "boolean" ? plant.raw.charging : null,
         });
         if (historyError) {
           console.error(`sensor history insert failed for sensor ${sensorId}: ${historyError.message}`);
+          continue;
         }
+        historyAccepted++;
       }
     }
 
@@ -295,6 +421,7 @@ Deno.serve(async (request) => {
       ok: true,
       acceptedConfigVersion: configVersion,
       plantCount,
+      historyAccepted,
       serverTimeMs: Date.now(),
     });
   } catch (error) {

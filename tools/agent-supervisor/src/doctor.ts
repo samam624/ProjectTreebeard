@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SupervisorConfig } from "./config.js";
+import { activeMeteredAuthVariables, subscriptionOnlyEnvironment } from "./billing-safety.js";
 import { ensureGitRepository } from "./host.js";
 
 const execFileAsync = promisify(execFile);
@@ -20,6 +21,14 @@ export async function doctor(config: SupervisorConfig): Promise<DoctorCheck[]> {
     ok: Number(process.versions.node.split(".")[0]) >= 18,
     detail: process.version,
   });
+  const claudeModel = process.env.CLAUDE_MODEL;
+  checks.push({
+    name: "Subscription-safe model selection",
+    ok: !claudeModel?.toLowerCase().includes("[1m]"),
+    detail: claudeModel?.toLowerCase().includes("[1m]")
+      ? "CLAUDE_MODEL selects paid 1M context; choose a standard-context model."
+      : "No paid Claude 1M context alias is selected.",
+  });
 
   try {
     await ensureGitRepository(config.targetRoot);
@@ -35,29 +44,29 @@ export async function doctor(config: SupervisorConfig): Promise<DoctorCheck[]> {
   checks.push(packageCheck("Codex SDK", "@openai/codex-sdk"));
   checks.push(packageCheck("Claude Agent SDK", "@anthropic-ai/claude-agent-sdk"));
 
-  const codexKey = Boolean(process.env.CODEX_API_KEY ?? process.env.OPENAI_API_KEY);
+  const meteredVariables = activeMeteredAuthVariables();
+  checks.push({
+    name: "Subscription-only billing safety",
+    ok: meteredVariables.length === 0,
+    detail: meteredVariables.length
+      ? `Clear metered configuration: ${meteredVariables.join(", ")}.`
+      : "No metered API or cloud-provider configuration is active.",
+  });
+
   const codexLogin = await commandResult("codex", ["login", "status"]);
   checks.push({
     name: "Codex authentication",
-    ok: codexKey || codexLogin.ok,
-    detail: codexKey ? "API key environment variable is present." : codexLogin.detail,
+    ok: codexLogin.ok,
+    detail: codexLogin.detail,
   });
 
-  const claudeAuth = Boolean(
-    process.env.ANTHROPIC_API_KEY ??
-      process.env.CLAUDE_CODE_USE_BEDROCK ??
-      process.env.CLAUDE_CODE_USE_VERTEX ??
-      process.env.CLAUDE_CODE_USE_FOUNDRY,
-  );
   const claudeLogin = await firstWorkingCommand(claudeExecutableCandidates(), ["auth", "status", "--text"]);
   checks.push({
     name: "Claude authentication",
-    ok: claudeAuth || claudeLogin.ok,
-    detail: claudeAuth
-      ? "A supported Claude provider environment variable is present."
-      : claudeLogin.ok
-        ? "Claude Code login is active."
-        : "Run `claude auth login`, set ANTHROPIC_API_KEY, or configure Bedrock, Vertex, or Foundry.",
+    ok: claudeLogin.ok,
+    detail: claudeLogin.ok
+      ? "Claude Code subscription login is active."
+      : "Run `claude auth login` and choose your Claude subscription account.",
   });
 
   return checks;
@@ -85,7 +94,10 @@ function packageCheck(name: string, packageName: string): DoctorCheck {
 
 async function commandResult(command: string, args: string[]): Promise<{ ok: boolean; detail: string }> {
   try {
-    const { stdout, stderr } = await execFileAsync(command, args, { windowsHide: true });
+    const { stdout, stderr } = await execFileAsync(command, args, {
+      windowsHide: true,
+      env: subscriptionOnlyEnvironment(),
+    });
     const detail = `${stdout}${stderr}`.trim();
     return { ok: !/not logged in/i.test(detail), detail: detail || "available" };
   } catch (error) {

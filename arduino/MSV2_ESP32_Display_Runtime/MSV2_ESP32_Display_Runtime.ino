@@ -33,13 +33,14 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-21 watering-cycle-alerts-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-23 watering-line-model-v3"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
 #endif
 
 #include <Arduino.h>
+#include "esp_heap_caps.h"
 
 #if MSV2_ENABLE_WIFI
 #include <FS.h>
@@ -244,6 +245,24 @@ const uint8_t MAX_SENSOR_ID = 16;
 // still running pre-rework firmware send the shorter legacy packet with already-calibrated
 // values, handled as a fallback in Msv2AdvertisedDeviceCallbacks::onResult().
 const size_t MSV2_RAW_PACKET_MIN_LEN = 15;
+// 2026-08-22: MSV3 probes (arduino/MSV3_Moisture_BLE_Sleep/) send a real
+// sensor - the FDC2214, a 28-bit LC-tank frequency counter - instead of
+// MSV2's RC-oscillator kHz count, so the raw field at byte 10 is widened
+// from 2 bytes to 4 (real values on the bench are ~18-22 million, nowhere
+// near fitting in uint16_t). Same magic/company-id/sensorId/wake layout as
+// the narrow raw packet (bytes 0-9 identical), just a wider raw-value field
+// and battery mV/charging shifted two bytes later - see
+// Msv2AdvertisedDeviceCallbacks::onResult() below, which MUST check this
+// (wider) length threshold before MSV2_RAW_PACKET_MIN_LEN, since a wide
+// packet also satisfies the narrower >= check and would otherwise be
+// misparsed with the old field offsets.
+const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
+// Version the receiver-derived numeric scale written to history. Scale 1 covers the
+// existing legacy/MSV2 mappings. Scale 2 is MSV3's 100-FDC-count high-resolution window
+// introduced below. The cloud uses a version change to start a fresh calibration epoch
+// without deleting older measurements or mixing incompatible numeric ranges.
+const uint8_t MSV2_MOISTURE_SCALE_VERSION = 1;
+const uint8_t MSV3_MOISTURE_SCALE_VERSION = 2;
 const uint32_t BLE_SCAN_SECONDS = 3;
 const uint32_t BLE_SCAN_IDLE_MS = 250;
 // 2026-08-13: back down from 3900s (65 min). That value was sized for a 30-minute
@@ -261,9 +280,64 @@ const uint32_t SENSOR_RENDER_INTERVAL_MS = 2000;
 const uint32_t CLOUD_BOOTSTRAP_FIRST_TRY_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_RETRY_MS = 300000;
 const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
+// The production default before the 2026-08-23 latency fix. loadCloudConfig() always
+// prefers a stored value over the compiled default, so lowering CLOUD_SYNC_DEFAULT_SECONDS
+// alone would never reach a receiver that already persisted 300 to /cloud.json - see the
+// one-time migration in loadCloudConfig().
+const uint32_t CLOUD_SYNC_LEGACY_DEFAULT_SECONDS = 300;
 const uint32_t CLOUD_SYNC_SOON_MS = 5000;
+// Preserve every unique BLE reading between the deliberately slower HTTPS snapshot
+// uploads. At four normal one-advertise-per-minute production probes, 512 entries provide
+// roughly two hours of network-outage headroom. Fast bench firmware reduces that duration
+// proportionally (sensor 3 currently advertises about every three seconds), but a backlog
+// drains in additional five-second-spaced batches without moving the normal TLS cadence
+// back onto every BLE packet.
+const size_t HISTORY_QUEUE_CAPACITY = 512;
+// The 32-row body worked intermittently but failed again in the live 2026-08-23 recovery
+// with HTTPClient's `send payload failed`, after which the 512-row queue refilled. Keep
+// enough throughput for the fast sensor-3 bench transmitter while cutting the appended
+// body roughly in half for the non-PSRAM TLS path.
+const size_t HISTORY_UPLOAD_BATCH_SIZE = 16;
+const uint32_t HISTORY_BACKLOG_DRAIN_MS = 5000;
+// Deliberately not 30s: config/display pulls also run every 30s, and matching retry
+// periods phase-locked a failed history connection directly behind another TLS call.
+const uint32_t HISTORY_UPLOAD_RETRY_MS = 17000;
+// Absolute floor between the start of one snapshot-upload TLS connection and the next,
+// regardless of any backlog nudge below. This intentionally matches the minimum allowed
+// by the syncIntervalSeconds clamp so a freshly-queued reading can be nudged forward but
+// can never recreate the packet-triggered ~15-35s cadence measured to cause BLE/cloud
+// task contention on shared core 0 (see docs/BLE_CLOUD_CONTENTION_FIX_2026-08-11.md).
+const uint32_t CLOUD_MIN_UPLOAD_SPACING_MS = 60000;
+// 2026-08-23 hardening: live /device telemetry caught each failed snapshot-upload attempt
+// costing real, unrecovered heap (observed 11-44KB per attempt, before/after readings taken
+// around the actual POST call) rather than failing cleanly - a known ESP32 WiFiClientSecure/
+// mbedTLS behavior when a TLS connection is attempted but never completes its handshake.
+// Below this floor, skip the attempt entirely rather than risk losing more ground - the
+// queue is untouched either way, only delayed.
+//
+// First deployed at 40960 (40KB); a live soak then showed "connection refused" failures at
+// freeHeapNow values from 26KB up through 91KB, while successes were ALSO observed across
+// that same 26-90KB range (e.g. one success at 90384 with largestFreeBlockBytes=31732,
+// immediately followed by a failure at 91436 with an essentially identical largestBlock of
+// 31732) - total free heap and largest-free-block do NOT cleanly separate success from
+// failure here, so this is very likely not primarily a heap problem, despite the real
+// per-attempt heap cost measured separately. Raising this blindly to "be safer" (tried:
+// 122880) instead blocked 100% of attempts, because normal steady-state free heap on this
+// receiver apparently never climbs that high - worse than the failures it was meant to
+// prevent. Left at the original conservative floor pending real evidence of what actually
+// distinguishes success from failure (see the sibling-function cleanup fix below for the
+// current best lead: TCP/TLS session leakage from OTHER cloud calls, not this one's heap).
+const uint32_t CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES = 40960;
+const uint32_t CLOUD_LOW_HEAP_RETRY_MS = 15000;
+// Exponential backoff on CONSECUTIVE upload failures (any cause, not just low-heap skips) -
+// the fixed 17s retry alone let five-plus failures in a row hammer a connection that was
+// already failing, each one compounding the same heap pressure that caused it. Resets to 0
+// on the next success. Capped well below cloudSyncIntervalSeconds's own ceiling so a bad
+// patch backs off but still eventually retries on its own.
+const uint32_t CLOUD_UPLOAD_BACKOFF_MAX_MS = 180000;
 const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 30000;
 const uint32_t CLOUD_DISPLAY_PULL_INTERVAL_MS = 30000;
+const uint32_t CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS = 300000;
 const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned range/schedule changes slowly
 // Cloud HTTP/TLS and BLE scanning intentionally stay off the render/WebServer core.
 // BLE gets the higher application-task priority so a due cloud request cannot delay the
@@ -320,7 +394,27 @@ struct SensorReading
 {
   bool seen = false;
   uint32_t wake = 0;
+  // Presentation moisture is deliberately separate from the latest real measurement.
+  // Every display/web surface uses moisture; measuredMoisture remains untouched by the
+  // drying filter and is what the cloud stores in the original history column for
+  // diagnostics and auto-calibration. The filter state is receiver-local and therefore
+  // applies uniformly to legacy, MSV2 raw-kHz, and MSV3 FDC packet formats.
   uint16_t moisture = 0;
+  uint16_t measuredMoisture = 0;
+  uint16_t previousMeasuredMoisture = 0;
+  uint16_t moistureNoise = 0;
+  uint8_t moistureFilterSamples = 0;
+  // Counts qualifying unique packets where the drying filter had a real, blocked-by-
+  // deadband downward move pending. Ordinary sub-watering upward noise preserves this
+  // progress; otherwise symmetric jitter could reset the counter forever. A real move,
+  // confirmed watering rise, or exact convergence resets it.
+  uint8_t moistureStalledWakes = 0;
+  // Set when exactly one packet has cleared the watering threshold in
+  // smoothMoistureForDisplay() but has not yet been confirmed by a second consecutive
+  // one. Every dry-side move is guarded by a deadband and a step cap, but a single
+  // upward packet previously had no such protection and could snap the display on one
+  // noisy outlier; this flag defers the snap until the rise persists for two packets.
+  bool moistureWateringPending = false;
   uint8_t batteryPercent = BATTERY_UNKNOWN;
   int rssi = 0;
   uint32_t lastSeenMs = 0;
@@ -337,7 +431,51 @@ struct SensorReading
   uint16_t rawMoistureKHz = 0;
   uint16_t rawBatteryMv = 0;
   bool rawCharging = false;
+  // 2026-08-22: MSV3's FDC2214 raw reading (~18-22 million on this board) -
+  // does not fit in rawMoistureKHz (uint16_t, and that field's own display
+  // formatting hardcodes a "kHz" suffix that would be actively wrong for an
+  // LC-tank frequency-counter value). wideRaw distinguishes which of the two
+  // raw fields is populated; moisture/batteryPercent above are always the
+  // calibrated values regardless of which wire format produced them.
+  bool wideRaw = false;
+  uint32_t rawFdcCounts = 0;
 };
+
+// Immutable copy of one unique probe wake as received by BLE. The live sensors[] array
+// remains the latest-value cache used by the display; this separate queue prevents each
+// new wake from overwriting history before the next cloud snapshot. capturedMs is turned
+// into queuedAgeMs at upload time, allowing the Edge Function to reconstruct the actual
+// observation timestamp instead of assigning every row in a batch the same server time.
+struct PendingHistoryReading
+{
+  uint32_t sequence = 0;
+  uint32_t capturedMs = 0;
+  uint32_t wake = 0;
+  uint32_t rawFdcCounts = 0;
+  uint16_t moisture = 0;
+  uint16_t measuredMoisture = 0;
+  uint16_t rawMoistureKHz = 0;
+  // Raw battery voltage/charging-state as sent by the probe, alongside the receiver's own
+  // presentation percent above - lets the History chart re-derive/re-tune battery smoothing
+  // from the original signal instead of only ever seeing what the receiver's filter baked in
+  // at ingest time. Only meaningful when hasRaw is true, same as rawMoistureKHz/rawFdcCounts.
+  uint16_t rawBatteryMv = 0;
+  bool rawCharging = false;
+  int16_t rssi = 0;
+  uint8_t sensorId = 0;
+  uint8_t moistureScale = MSV2_MOISTURE_SCALE_VERSION;
+  uint8_t batteryPercent = BATTERY_UNKNOWN;
+  bool hasRaw = false;
+  bool wideRaw = false;
+};
+
+// Arduino's sketch preprocessor otherwise emits these prototypes above the custom
+// struct definitions, where their parameter types do not exist yet.
+bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading);
+size_t copyHistoryUploadBatch(PendingHistoryReading* destination, size_t capacity);
+size_t acknowledgeHistoryUploadBatch(const PendingHistoryReading* uploaded, size_t count);
+String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t historyCount);
+bool copySensorReading(uint8_t sensorId, SensorReading& destination);
 
 // Cached result of the periodic /autocal cloud pull (see runCloudAutoCalPull) - a
 // self-learned moisture range per sensor, replacing manually-guessed dry/wet
@@ -363,6 +501,7 @@ struct AutoCalState
 };
 
 AutoCalState autoCal[MAX_SENSOR_ID + 1];
+bool copyAutoCalState(uint8_t sensorId, AutoCalState& destination);
 
 #if MSV2_ENABLE_DISPLAY
 const int TFT_SCK = 12;
@@ -438,6 +577,158 @@ BLEScan* bleScan = nullptr;
 TaskHandle_t bleScanTaskHandle = nullptr;
 #endif
 SensorReading sensors[MAX_SENSOR_ID + 1];
+PendingHistoryReading pendingHistory[HISTORY_QUEUE_CAPACITY];
+uint16_t pendingHistoryHead = 0;
+uint16_t pendingHistoryCount = 0;
+uint32_t pendingHistorySequence = 0;
+uint32_t pendingHistoryDropped = 0;
+uint16_t pendingHistoryHighWaterMark = 0;
+uint32_t historyQueueBootId = 0;
+portMUX_TYPE historyQueueMux = portMUX_INITIALIZER_UNLOCKED;
+// Guards every sensors[] read/write. Readers take a short value copy and release the
+// lock before rendering or JSON allocation; the BLE callback publishes one complete
+// record while holding the same lock. This prevents logical packet tearing without
+// keeping interrupts disabled around slow display/network operations.
+portMUX_TYPE sensorsMux = portMUX_INITIALIZER_UNLOCKED;
+// runCloudAutoCalPull() writes on the cloud task while rendering, /data serialization,
+// and BLE presentation filtering read on other tasks/cores. Treat each state as one
+// record for the same reason as sensors[].
+portMUX_TYPE autoCalMux = portMUX_INITIALIZER_UNLOCKED;
+
+bool copySensorReading(uint8_t sensorId, SensorReading& destination)
+{
+  if (sensorId == 0 || sensorId > MAX_SENSOR_ID)
+  {
+    return false;
+  }
+  portENTER_CRITICAL(&sensorsMux);
+  destination = sensors[sensorId];
+  portEXIT_CRITICAL(&sensorsMux);
+  return true;
+}
+
+bool copyAutoCalState(uint8_t sensorId, AutoCalState& destination)
+{
+  if (sensorId == 0 || sensorId > MAX_SENSOR_ID)
+  {
+    return false;
+  }
+  portENTER_CRITICAL(&autoCalMux);
+  destination = autoCal[sensorId];
+  portEXIT_CRITICAL(&autoCalMux);
+  return true;
+}
+
+static_assert(HISTORY_UPLOAD_BATCH_SIZE <= HISTORY_QUEUE_CAPACITY,
+              "history upload batch must fit inside the receiver queue");
+
+size_t queuedHistoryCount()
+{
+  portENTER_CRITICAL(&historyQueueMux);
+  size_t count = pendingHistoryCount;
+  portEXIT_CRITICAL(&historyQueueMux);
+  return count;
+}
+
+uint32_t droppedHistoryCount()
+{
+  portENTER_CRITICAL(&historyQueueMux);
+  uint32_t count = pendingHistoryDropped;
+  portEXIT_CRITICAL(&historyQueueMux);
+  return count;
+}
+
+uint16_t historyQueueHighWaterMark()
+{
+  portENTER_CRITICAL(&historyQueueMux);
+  uint16_t mark = pendingHistoryHighWaterMark;
+  portEXIT_CRITICAL(&historyQueueMux);
+  return mark;
+}
+
+bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
+{
+  PendingHistoryReading pending;
+  pending.capturedMs = reading.lastSeenMs;
+  pending.wake = reading.wake;
+  pending.rawFdcCounts = reading.rawFdcCounts;
+  pending.moisture = reading.moisture;
+  pending.measuredMoisture = reading.measuredMoisture;
+  pending.rawMoistureKHz = reading.rawMoistureKHz;
+  pending.rawBatteryMv = reading.rawBatteryMv;
+  pending.rawCharging = reading.rawCharging;
+  pending.rssi = (int16_t)constrain(reading.rssi, -32768, 32767);
+  pending.sensorId = sensorId;
+  pending.moistureScale = reading.wideRaw
+      ? MSV3_MOISTURE_SCALE_VERSION
+      : MSV2_MOISTURE_SCALE_VERSION;
+  pending.batteryPercent = reading.batteryPercent;
+  pending.hasRaw = reading.hasRaw;
+  pending.wideRaw = reading.wideRaw;
+
+  portENTER_CRITICAL(&historyQueueMux);
+  if (pendingHistoryCount >= HISTORY_QUEUE_CAPACITY)
+  {
+    pendingHistoryDropped++;
+    portEXIT_CRITICAL(&historyQueueMux);
+    return false;
+  }
+
+  pending.sequence = ++pendingHistorySequence;
+  uint16_t tail = (pendingHistoryHead + pendingHistoryCount) % HISTORY_QUEUE_CAPACITY;
+  pendingHistory[tail] = pending;
+  pendingHistoryCount++;
+  if (pendingHistoryCount > pendingHistoryHighWaterMark)
+  {
+    pendingHistoryHighWaterMark = pendingHistoryCount;
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
+  return true;
+}
+
+size_t copyHistoryUploadBatch(PendingHistoryReading* destination, size_t capacity)
+{
+  if (destination == nullptr || capacity == 0)
+  {
+    return 0;
+  }
+
+  portENTER_CRITICAL(&historyQueueMux);
+  size_t count = min((size_t)pendingHistoryCount, capacity);
+  for (size_t i = 0; i < count; i++)
+  {
+    destination[i] = pendingHistory[(pendingHistoryHead + i) % HISTORY_QUEUE_CAPACITY];
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
+  return count;
+}
+
+// Only acknowledge the exact prefix copied for this request. New BLE readings may be
+// appended while HTTPS is in flight, but they never move the head and therefore remain
+// queued for the next batch.
+size_t acknowledgeHistoryUploadBatch(const PendingHistoryReading* uploaded, size_t count)
+{
+  if (uploaded == nullptr || count == 0)
+  {
+    return 0;
+  }
+
+  size_t acknowledged = 0;
+  portENTER_CRITICAL(&historyQueueMux);
+  while (acknowledged < count && pendingHistoryCount > 0)
+  {
+    const PendingHistoryReading& current = pendingHistory[pendingHistoryHead];
+    if (current.sequence != uploaded[acknowledged].sequence)
+    {
+      break;
+    }
+    pendingHistoryHead = (pendingHistoryHead + 1) % HISTORY_QUEUE_CAPACITY;
+    pendingHistoryCount--;
+    acknowledged++;
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
+  return acknowledged;
+}
 
 struct PlantArtSlot
 {
@@ -480,7 +771,7 @@ struct PlantArtSlot
   bool metricsInitialized = false;
   bool lastMoistureStale = true;
   uint16_t lastMoistureRaw = 0;
-  uint8_t lastMoisturePct = 0;
+  int16_t lastMoisturePct = 0;
   bool lastMoistureCalibrated = false;
   uint16_t lastMoistureColor = 0;
   uint8_t lastBatteryPct = 0;
@@ -511,13 +802,12 @@ struct PlantArtSlot
 struct PlantDetailStats
 {
   bool stale;
-  uint8_t moisturePct;
+  int16_t moisturePct;
   uint8_t batteryPct;
   uint16_t moistureColor;
   uint16_t batteryColor;
   uint16_t rawMoisture;
   char moistureText[8];
-  char batteryText[8];
   bool hasSignal;
   uint16_t signalColor;
   const char* signalLabel;
@@ -605,6 +895,19 @@ bool wifiSetupScreenDrawn = false;
 uint32_t lastSensorRenderMs = 0;
 volatile uint32_t staleSeconds = DEFAULT_STALE_SECONDS;
 RTC_DATA_ATTR char lastCheckpoint[48] = "fresh boot";
+// Separate per-subsystem checkpoints (2026-08-23 telemetry) - the original lastCheckpoint
+// above only ever recorded boot/setup and the main-loop render path (verified: every prior
+// call site is in setup() or the render section of loop()), so a crash inside the BLE-scan
+// or cloud-sync tasks - which run on their own FreeRTOS tasks - left no trace distinct from
+// whatever render happened to be doing. All three survive a reset (RTC memory), same as
+// lastCheckpoint, but not a full power loss - see the one-time LittleFS boot record in
+// setup() for that case.
+RTC_DATA_ATTR char lastCheckpointBle[48] = "fresh boot";
+RTC_DATA_ATTR char lastCheckpointCloud[48] = "fresh boot";
+// Set immediately before every ESP.restart() call site (WiFi-retry-exhausted, pending
+// config-change) and consumed/cleared at the top of the next setup(), so a genuine
+// crash/watchdog/brownout reset can be told apart from a deliberate one in /device.
+RTC_DATA_ATTR bool intentionalRestartPending = false;
 volatile bool wifiStationConnected = false;
 volatile bool wifiStationDesired = false;
 bool wifiLocalOnly = false;
@@ -680,10 +983,17 @@ uint32_t cloudBootstrapLastSuccessMs = 0;
 int cloudBootstrapLastHttpStatus = 0;
 char cloudBootstrapLastError[96] = "";
 uint32_t pendingRestartMs = 0;
+// 2026-08-23 telemetry (diagnostic only, no behavior change). Plain (non-RTC) globals reset
+// each boot on purpose - these describe the CURRENT session's memory health, not something
+// that needs to survive a reset. minFreeHeapEverBytes starts at UINT32_MAX so the first
+// loop()/cloud-task sample always records a real value.
+uint32_t minFreeHeapEverBytes = UINT32_MAX;
+uint32_t lastCloudUploadFreeHeapBeforeBytes = 0;
+uint32_t lastCloudUploadFreeHeapAfterBytes = 0;
+uint16_t cloudConsecutiveUploadFailures = 0;
 uint8_t currentRotation = 1;
 uint32_t lastArtFrameMs = 0;
-const uint32_t ART_FRAME_INTERVAL_MS = 500;
-const uint32_t ART_FRAME_JITTER_MS = 120;
+const uint16_t ART_FRAME_DEFAULT_MS = 500;
 const uint32_t ART_RENDER_POLL_MS = 25;
 const uint8_t ART_FRAME_STEP = 1;
 DisplaySettings displaySettings;
@@ -709,6 +1019,7 @@ uint32_t cloudDisplayLastSuccessMs = 0;
 int cloudDisplayLastHttpStatus = 0;
 char cloudDisplayLastError[96] = "";
 bool cloudDisplayApiReady = false;
+uint16_t cloudDisplayConsecutiveFailures = 0;
 
 bool soundEnabled = true;
 bool buzzerReady = false;
@@ -767,6 +1078,16 @@ const char* resetReasonName(esp_reset_reason_t reason)
       return "brownout";
     case ESP_RST_SDIO:
       return "SDIO reset";
+    case ESP_RST_USB:
+      return "USB peripheral reset";
+    case ESP_RST_JTAG:
+      return "JTAG reset";
+    case ESP_RST_EFUSE:
+      return "efuse error";
+    case ESP_RST_PWR_GLITCH:
+      return "power glitch";
+    case ESP_RST_CPU_LOCKUP:
+      return "CPU lockup (double exception)";
     default:
       return "unknown";
   }
@@ -775,6 +1096,16 @@ const char* resetReasonName(esp_reset_reason_t reason)
 void setCheckpoint(const char* message)
 {
   strlcpy(lastCheckpoint, message, sizeof(lastCheckpoint));
+}
+
+void setBleCheckpoint(const char* message)
+{
+  strlcpy(lastCheckpointBle, message, sizeof(lastCheckpointBle));
+}
+
+void setCloudCheckpoint(const char* message)
+{
+  strlcpy(lastCheckpointCloud, message, sizeof(lastCheckpointCloud));
 }
 
 void bootLog(const char* message)
@@ -1223,12 +1554,26 @@ bool loadCloudConfig()
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
   nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
   nextCloudDisplaySyncMs = cloudEnabled ? millis() + 7000UL : 0;
+
+  // One-time migration: a receiver that saved /cloud.json before this firmware only ever
+  // knew the old 300s production default. Only touch the value if it still exactly matches
+  // that old default - a user who deliberately configured some other interval (including
+  // 300, on purpose) must not be silently overridden. Any file saved by this-or-newer
+  // firmware carries syncIntervalMigratedV2 and is never touched again.
+  if (!(doc["syncIntervalMigratedV2"] | false))
+  {
+    if (cloudSyncIntervalSeconds == CLOUD_SYNC_LEGACY_DEFAULT_SECONDS)
+    {
+      cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
+    }
+    persistCloudConfig();
+  }
   return true;
 }
 
 String cloudConfigJson()
 {
-  StaticJsonDocument<1792> doc;
+  StaticJsonDocument<2048> doc;
   doc["enabled"] = cloudEnabled;
   doc["uploadUrl"] = cloudUploadUrl;
   doc["syncIntervalSeconds"] = cloudSyncIntervalSeconds;
@@ -1243,6 +1588,11 @@ String cloudConfigJson()
   upload["nextAttemptMs"] = cloudEnabled ? nextCloudSyncMs : 0;
   upload["packetTriggered"] = false;
   upload["stateChangeDelayMs"] = CLOUD_SYNC_SOON_MS;
+  JsonObject historyQueue = upload.createNestedObject("historyQueue");
+  historyQueue["queued"] = queuedHistoryCount();
+  historyQueue["capacity"] = HISTORY_QUEUE_CAPACITY;
+  historyQueue["batchSize"] = HISTORY_UPLOAD_BATCH_SIZE;
+  historyQueue["dropped"] = droppedHistoryCount();
   JsonObject tasking = doc.createNestedObject("tasking");
   tasking["core"] = 0;
   tasking["cloudPriority"] = CLOUD_SYNC_TASK_PRIORITY;
@@ -1260,6 +1610,7 @@ String cloudConfigJson()
   displaySync["lastError"] = cloudDisplayLastError;
   displaySync["nextAttemptMs"] = cloudEnabled ? nextCloudDisplaySyncMs : 0;
   displaySync["apiReady"] = cloudDisplayApiReady;
+  displaySync["consecutiveFailures"] = cloudDisplayConsecutiveFailures;
   JsonObject bootstrap = doc.createNestedObject("bootstrap");
   bootstrap["configured"] = strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0;
   bootstrap["url"] = MSV2_CLOUD_BOOTSTRAP_URL;
@@ -1281,6 +1632,7 @@ bool persistCloudConfig()
   stored["uploadUrl"] = cloudUploadUrl;
   stored["apiToken"] = cloudApiToken;
   stored["syncIntervalSeconds"] = cloudSyncIntervalSeconds;
+  stored["syncIntervalMigratedV2"] = true;
 
   File file = LittleFS.open(CLOUD_CONFIG_PATH, "w");
   if (!file)
@@ -2626,10 +2978,12 @@ void resolveMoistureBounds(
   bool autoEnabled = moistureConfig["auto"] | false;
   bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
 
-  if (autoEnabled && validSensor && autoCal[sensorId].ready)
+  AutoCalState learned;
+  const bool hasLearnedState = validSensor && copyAutoCalState(sensorId, learned);
+  if (autoEnabled && hasLearnedState && learned.ready)
   {
-    outDry = autoCal[sensorId].dryBound;
-    outWet = autoCal[sensorId].wetBound;
+    outDry = learned.dryBound;
+    outWet = learned.wetBound;
     outCalibrated = true;
     outPending = false;
     return;
@@ -2670,12 +3024,14 @@ void resolveMoistureBounds(
 void refreshSlotMoistureBounds(PlantArtSlot& slot)
 {
   bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
-  if (slot.autoEnabled && validSensor && autoCal[slot.sensorId].ready)
+  AutoCalState learned;
+  const bool hasLearnedState = validSensor && copyAutoCalState(slot.sensorId, learned);
+  if (slot.autoEnabled && hasLearnedState && learned.ready)
   {
-    slot.dry = autoCal[slot.sensorId].dryBound;
-    slot.wet = autoCal[slot.sensorId].wetBound;
+    slot.dry = learned.dryBound;
+    slot.wet = learned.wetBound;
     slot.calibrated = true;
-    slot.rangeTrendWarn = autoCal[slot.sensorId].dryBoundTrendingLower;
+    slot.rangeTrendWarn = learned.dryBoundTrendingLower;
     slot.pending = false;
     return;
   }
@@ -2686,7 +3042,14 @@ void refreshSlotMoistureBounds(PlantArtSlot& slot)
   slot.pending = slot.autoEnabled;
 }
 
-uint8_t moisturePercent(uint16_t moisture, int dry, int wet)
+// 0-100 is exactly the historical dry-to-wet range, same as it has always been - 0 at the
+// driest ever learned, 100 at the wettest. Unlike the old version, this does NOT clamp
+// below zero: a reading drier than anything on record keeps counting down as a negative
+// number instead of pinning at 0 forever, so "how much drier than ever before" stays
+// visible. Still clamped at 100 on top - "more than fully watered" isn't meaningful. Signed
+// return type reflects this; BATTERY_UNKNOWN (255) remains a safe stale-data sentinel since
+// it's far outside any real percent this can produce.
+int16_t moisturePercent(uint16_t moisture, int dry, int wet)
 {
   if (wet <= dry)
   {
@@ -2695,27 +3058,45 @@ uint8_t moisturePercent(uint16_t moisture, int dry, int wet)
   const long range = wet - dry;
   const long numerator = ((long)moisture - dry) * 100L;
   // Match the web clients' rounded percentage instead of truncating toward zero. This
-  // keeps the exact 0% red-alert boundary consistent on every display.
+  // keeps the exact alert boundaries consistent on every display.
   const long percent = numerator >= 0
     ? (numerator + range / 2) / range
     : (numerator - range / 2) / range;
-  return (uint8_t)clampInt((int)percent, 0, 100);
+  return (int16_t)min(100L, percent);
 }
 
-// Moisture semantics: 11-100% is normal, 1-10% is a quiet yellow warning, and 0%
-// is the red/blinking/buzzer state meaning the soil is already as dry as (or drier
-// than) it was when the plant was last watered.
-uint16_t moistureHealthColor(uint8_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
+// 0 is the watering-line inflection point - literally the driest this sensor has ever
+// recorded (moisturePercent()'s own zero), not a padded-above-dry cue. 0-100 (this sensor's
+// entire learned dry-to-wet range) is normal, unchanged from how it has always displayed.
+// Crossing below 0 means "drier than ever observed" and is genuinely new information, which
+// is why color/alerts only escalate there: MOISTURE_DANGER_PERCENT is the overdue boundary -
+// red and actually blinking/buzzing (slotNeedsBlink()), not just a warning. Between 0 and
+// the danger threshold is a quiet yellow warning. MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT is a
+// display-layout constant, not an alert threshold: the bar's dotted marker (drawBar()) and
+// the boundary between its "0-100" region and its open-ended negative region both sit at
+// this fraction of the bar's width, so the unbounded negative range has a fixed, finite
+// strip of the bar to render into before the bar goes fully empty. All of this is shared by
+// the moisture color, the blink/buzzer trigger, and the bar so every alert on this display -
+// and both web clients, see scripts/verify_moisture_alert_thresholds.mjs - fires at exactly
+// the same points and renders the same layout.
+const int16_t MOISTURE_WATER_LINE_PERCENT = 0;
+const int16_t MOISTURE_DANGER_PERCENT = -10;
+const uint8_t MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT = 30;
+
+// Moisture semantics: 0-100 (the full learned dry-to-wet range) is normal, exactly as it has
+// always been. Below 0 is new territory - drier than ever recorded - so color escalates:
+// a quiet yellow warning until the danger threshold, then red/blinking/buzzer overdue.
+uint16_t moistureHealthColor(int16_t percent, uint16_t accentColor, uint16_t warningColor, uint16_t dangerColor, uint16_t mutedColor)
 {
   if (percent == BATTERY_UNKNOWN)
   {
     return mutedColor;
   }
-  if (percent == 0)
+  if (percent <= MOISTURE_DANGER_PERCENT)
   {
     return dangerColor;
   }
-  if (percent <= 10)
+  if (percent < MOISTURE_WATER_LINE_PERCENT)
   {
     return warningColor;
   }
@@ -2739,7 +3120,8 @@ uint16_t batteryHealthColor(uint8_t percent, uint16_t accentColor, uint16_t warn
   return accentColor;
 }
 
-// Only the 0%-moisture danger state blinks. Yellow 1-10% stays static.
+// Only the at-or-below-MOISTURE_DANGER_PERCENT red state blinks. The yellow warning band
+// between the danger threshold and the water line stays static.
 uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uint16_t mutedColor)
 {
   if (resolvedColor != dangerColor)
@@ -2750,16 +3132,49 @@ uint16_t applyLowMoistureBlink(uint16_t resolvedColor, uint16_t dangerColor, uin
   return blinkOn ? dangerColor : mutedColor;
 }
 
-void drawBar(int x, int y, int w, int h, uint8_t percent, uint16_t fillColor, uint16_t trackColor)
+void drawBar(int x, int y, int w, int h, int16_t percent, uint16_t fillColor, uint16_t trackColor)
 {
-  uint8_t clamped = percent == BATTERY_UNKNOWN ? 0 : (uint8_t)clampInt(percent, 0, 100);
-  int fillW = (w - 4) * clamped / 100;
+  // 0-100 (the learned dry-to-wet range) occupies the right (100 - NEGATIVE_WIDTH)% of the
+  // bar's width; the left MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT is reserved for the open-ended
+  // "drier than ever recorded" extension. percent itself is unclamped below zero (see
+  // moisturePercent()) so the number keeps counting down - only this visual width is
+  // clamped, since a bar obviously can't render negative width. That's the fixed floor
+  // "goes off the end of the bar and can't be displayed anymore".
+  int barPct;
+  if (percent == BATTERY_UNKNOWN)
+  {
+    barPct = 0;
+  }
+  else
+  {
+    const long positiveSpan = 100L - MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT;
+    const long scaled = MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT + (long)percent * positiveSpan / 100L;
+    barPct = clampInt((int)scaled, 0, 100);
+  }
+  int fillW = (w - 4) * barPct / 100;
 
   tft.drawRoundRect(x, y, w, h, 3, trackColor);
   tft.fillRoundRect(x + 2, y + 2, w - 4, h - 4, 2, trackColor);
   if (fillW > 0)
   {
     tft.fillRoundRect(x + 2, y + 2, fillW, h - 4, 2, fillColor);
+  }
+
+  // Watering-threshold marker at percent=0 (the driest ever recorded) - i.e. at a fixed
+  // MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT of the bar's width regardless of the current
+  // reading. Every current caller of drawBar() draws a moisture bar - there is no battery
+  // bar on this display, battery is a text/color indicator only (see drawCardHeader()) - so
+  // this couples directly to the moisture layout constant rather than taking it as a
+  // parameter that would only ever be called with one value. Drawn last, on top of the
+  // track/fill, via alternating pixels (TFT_eSPI has no dashed-line primitive) so it reads
+  // as a thin marker rather than a solid full-height divider at this bar's ~5-8px height.
+  // Already covered by drawBar()'s existing "only redraw when value/color changed" callers -
+  // see drawPlantCardDataOnly()'s moistureValueChanged/moistureColorChanged gate - so this
+  // adds no new unconditional repaint of its own.
+  int lineX = x + 2 + (w - 4) * MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT / 100;
+  for (int dy = y + 1; dy < y + h - 1; dy += 2)
+  {
+    tft.drawPixel(lineX, dy, TFT_WHITE);
   }
 }
 
@@ -2776,29 +3191,41 @@ const int PLANT_SPRITE_MAX_DRAW_W = 480;
 // safe and keeps a 960-byte array off the call stack.
 uint16_t plantSpriteRowBuffer[PLANT_SPRITE_MAX_DRAW_W];
 
-void spriteDrawGeometry(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t& scaleMul, uint8_t& scaleDiv, int& drawW, int& drawH, int& startX, int& startY)
+void spriteDrawGeometry(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, int& drawW, int& drawH, int& startX, int& startY)
 {
-  scaleMul = 1;
-  scaleDiv = 1;
-  while (scaleMul < 3 && (sprite.w * (scaleMul + 1)) <= maxW && (sprite.h * (scaleMul + 1)) <= maxH)
+  if (maxW <= 0 || maxH <= 0 || sprite.w == 0 || sprite.h == 0)
   {
-    scaleMul++;
-  }
-  while (scaleMul == 1 && scaleDiv < 5 && ((sprite.w / scaleDiv) > maxW || (sprite.h / scaleDiv) > maxH))
-  {
-    scaleDiv++;
+    drawW = 0;
+    drawH = 0;
+    startX = centerX;
+    startY = topY;
+    return;
   }
 
-  drawW = (sprite.w * scaleMul) / scaleDiv;
-  drawH = (sprite.h * scaleMul) / scaleDiv;
+  // Aspect-fit directly into the available art rectangle. The old whole-number
+  // multiplier/divisor scheme reduced an 84px sprite to 42px when the region was 80px
+  // tall, wasting almost three quarters of the usable area. Direct source-coordinate
+  // mapping remains nearest-neighbor and, because every pose shares one source canvas,
+  // cannot move a pose's anchor between frames.
+  if ((uint32_t)sprite.w * (uint32_t)maxH >= (uint32_t)sprite.h * (uint32_t)maxW)
+  {
+    drawW = maxW;
+    drawH = max(1, (int)((uint32_t)sprite.h * (uint32_t)maxW / sprite.w));
+  }
+  else
+  {
+    drawH = maxH;
+    drawW = max(1, (int)((uint32_t)sprite.w * (uint32_t)maxH / sprite.h));
+  }
+
   startX = centerX - drawW / 2;
   startY = topY + max(0, (maxH - drawH) / 2);
 }
 
-uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, uint8_t scaleMul, uint8_t scaleDiv, int x, int y)
+uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, int drawW, int drawH, int x, int y)
 {
-  const int sourceX = (x * scaleDiv) / scaleMul;
-  const int sourceY = (y * scaleDiv) / scaleMul;
+  const int sourceX = (int)((uint32_t)x * sprite.w / drawW);
+  const int sourceY = (int)((uint32_t)y * sprite.h / drawH);
   return pgm_read_word(&bitmap[sourceY * sprite.w + sourceX]);
 }
 
@@ -2823,13 +3250,15 @@ uint16_t spriteScaledPixel(const PlantSprite& sprite, const uint16_t* bitmap, ui
 // out.
 void drawPlantSpriteComposited(const PlantSprite& sprite, int centerX, int topY, int maxW, int maxH, uint8_t frame, uint16_t backgroundColor)
 {
-  uint8_t scaleMul = 1;
-  uint8_t scaleDiv = 1;
   int drawW = 0;
   int drawH = 0;
   int spriteStartX = 0;
   int spriteStartY = 0;
-  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, scaleMul, scaleDiv, drawW, drawH, spriteStartX, spriteStartY);
+  spriteDrawGeometry(sprite, centerX, topY, maxW, maxH, drawW, drawH, spriteStartX, spriteStartY);
+  if (drawW <= 0 || drawH <= 0)
+  {
+    return;
+  }
   const uint8_t pose = pgm_read_byte(&sprite.sequence[frame % sprite.frameCount]);
   const uint16_t* bitmap = (const uint16_t*)pgm_read_ptr(&sprite.frames[pose]);
 
@@ -2859,7 +3288,7 @@ void drawPlantSpriteComposited(const PlantSprite& sprite, int centerX, int topY,
       const int localSpriteX = screenX - spriteStartX;
       if (rowInSprite && localSpriteX >= 0 && localSpriteX < drawW)
       {
-        const uint16_t c = spriteScaledPixel(sprite, bitmap, scaleMul, scaleDiv, localSpriteX, localSpriteY);
+        const uint16_t c = spriteScaledPixel(sprite, bitmap, drawW, drawH, localSpriteX, localSpriteY);
         if (c != PLANT_TRANSPARENT)
         {
           color = c;
@@ -2897,13 +3326,14 @@ void drawAsciiPlantArt(int x, int y, const char* art, uint16_t color, uint16_t b
   drawTextCenter(line3, x, y + 30, 1, color, backgroundColor);
 }
 
-uint16_t randomizedArtInterval()
+uint16_t artFrameInterval(const char* art, uint8_t frame)
 {
-  uint32_t base = ART_FRAME_INTERVAL_MS;
-  uint32_t jitter = ART_FRAME_JITTER_MS;
-  uint32_t minInterval = base > jitter ? base - jitter : 40;
-  uint32_t maxInterval = base + jitter + 1;
-  return (uint16_t)random(minInterval, maxInterval);
+  const PlantSprite* sprite = spriteForArt(art);
+  if (sprite == nullptr || sprite->durationsMs == nullptr || sprite->frameCount == 0)
+  {
+    return ART_FRAME_DEFAULT_MS;
+  }
+  return pgm_read_word(&sprite->durationsMs[frame % sprite->frameCount]);
 }
 
 void drawPlantArt(int x, int y, int maxW, int maxH, const char* art, uint16_t color, uint16_t backgroundColor, uint8_t frame)
@@ -2927,7 +3357,7 @@ void drawPlantArtInCard(int x, int y, int w, int h, const char* art, uint16_t co
   const int artY = y + (compact ? 15 : 24);
   const int inset = compact ? 5 : 7;
   const int artW = w - inset * 2;
-  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
+  const int artH = compact ? max(10, h - 29) : max(24, h - 57);
 
   drawPlantArt(x + w / 2, artY, artW, artH, art, color, surfaceColor, frame);
 }
@@ -2953,7 +3383,7 @@ void drawPlantArtDiffInCard(int x, int y, int w, int h, const char* art, uint16_
   const int artY = y + (compact ? 15 : 24);
   const int inset = compact ? 5 : 7;
   const int artW = w - inset * 2;
-  const int artH = compact ? max(10, h - 29) : max(24, h - 91);
+  const int artH = compact ? max(10, h - 29) : max(24, h - 57);
   drawPlantArt(x + w / 2, artY, artW, artH, art, color, surfaceColor, newFrame);
 }
 
@@ -3002,8 +3432,74 @@ void cachePlantArtSlot(
   slot.warningColor = warningColor;
   slot.dangerColor = dangerColor;
   slot.frame = 0;
-  slot.frameIntervalMs = randomizedArtInterval();
-  slot.nextFrameMs = millis() + random(0, ART_FRAME_INTERVAL_MS + ART_FRAME_JITTER_MS + 1);
+  slot.frameIntervalMs = artFrameInterval(slot.art, slot.frame);
+  // Randomize only the starting phase so multiple cards do not switch on the same SPI
+  // tick. Once started, every pose keeps the source GIF's own deterministic duration.
+  slot.nextFrameMs = millis() + random(0, (uint32_t)slot.frameIntervalMs + 1U);
+}
+
+void formatBatteryPercent(uint8_t batteryPct, char* out, size_t outSize)
+{
+  if (batteryPct == BATTERY_UNKNOWN)
+  {
+    strlcpy(out, "--%", outSize);
+  }
+  else
+  {
+    snprintf(out, outSize, "%u%%", batteryPct);
+  }
+}
+
+void formatBatteryHeader(uint8_t batteryPct, char* out, size_t outSize)
+{
+  char percent[8];
+  formatBatteryPercent(batteryPct, percent, sizeof(percent));
+  snprintf(out, outSize, "Batt: %s", percent);
+}
+
+int cardHeaderInset(int h)
+{
+  return h < 76 ? 5 : 7;
+}
+
+void drawCardBatteryHeader(int x, int y, int w, int h, uint8_t batteryPct, uint16_t batteryColor, uint16_t surfaceColor, bool clearFirst)
+{
+  char batteryHeader[16];
+  formatBatteryHeader(batteryPct, batteryHeader, sizeof(batteryHeader));
+  const int inset = cardHeaderInset(h);
+  const int rightX = x + w - inset;
+  if (clearFirst)
+  {
+    // Fixed width covers the longest possible value ("Batt: 100%"), so a transition
+    // to a shorter value cannot leave stale pixels behind.
+    tft.fillRect(max(x + inset, rightX - 60), y + 5, min(60, w - inset * 2), 10, surfaceColor);
+  }
+  drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
+}
+
+void drawCardHeader(int x, int y, int w, int h, const char* plant, uint8_t batteryPct, uint16_t textColor, uint16_t batteryColor, uint16_t surfaceColor)
+{
+  char batteryHeader[16];
+  formatBatteryHeader(batteryPct, batteryHeader, sizeof(batteryHeader));
+  const int inset = cardHeaderInset(h);
+  const int leftX = x + inset;
+  const int rightX = x + w - inset;
+  // Always reserve the maximum header width, even while the current value is the
+  // shorter "Batt: --%" form. A later data-only update to 100% must not grow leftward
+  // across a plant-name glyph painted during the full render.
+  const int nameWidth = max(0, rightX - 60 - 4 - leftX);
+  const size_t maxChars = min((size_t)23, (size_t)(nameWidth / 6));
+  char clippedPlant[24];
+  if (maxChars == 0 || plant == nullptr)
+  {
+    clippedPlant[0] = '\0';
+  }
+  else
+  {
+    strlcpy(clippedPlant, plant, maxChars + 1);
+  }
+  drawTextLeft(clippedPlant, leftX, y + 6, 1, textColor, surfaceColor);
+  drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
 }
 
 void drawCompactCardMetrics(
@@ -3012,40 +3508,28 @@ void drawCompactCardMetrics(
   int w,
   int h,
   const char* moistureText,
-  const char* batteryText,
   uint8_t moisturePct,
-  uint8_t batteryPct,
   uint16_t moistureColor,
-  uint16_t batteryColor,
   uint16_t mutedColor,
   uint16_t surfaceColor,
   uint16_t backgroundColor
 )
 {
-  int moistY = y + max(18, h - 43);
+  int moistY = y + max(18, h - 25);
   int moistBarY = moistY + 13;
-  int battY = moistBarY + 8;
-  int battBarY = battY + 13;
-  if (battBarY + 5 > y + h - 4)
+  if (moistBarY + 5 > y + h - 4)
   {
-    int shift = battBarY + 5 - (y + h - 4);
+    int shift = moistBarY + 5 - (y + h - 4);
     moistY -= shift;
     moistBarY -= shift;
-    battY -= shift;
-    battBarY -= shift;
   }
   moistY = max(y + 17, moistY);
   moistBarY = max(moistY + 11, moistBarY);
-  battY = max(moistBarY + 6, battY);
-  battBarY = max(battY + 11, battBarY);
 
-  tft.fillRect(x + 5, moistY - 1, w - 10, min(h - (moistY - y) - 3, 46), surfaceColor);
-  drawTextLeft("Moist", x + 5, moistY, 1, mutedColor, surfaceColor);
+  tft.fillRect(x + 5, moistY - 1, w - 10, min(h - (moistY - y) - 3, 22), surfaceColor);
+  drawTextLeft("Moisture", x + 5, moistY, 1, mutedColor, surfaceColor);
   drawTextRight(moistureText, x + w - 5, moistY, 1, moistureColor, surfaceColor);
   drawBar(x + 5, moistBarY, w - 10, 5, moisturePct, moistureColor, backgroundColor);
-  drawTextLeft("Batt", x + 5, battY, 1, mutedColor, surfaceColor);
-  drawTextRight(batteryText, x + w - 5, battY, 1, batteryColor, surfaceColor);
-  drawBar(x + 5, battBarY, w - 10, 5, batteryPct, batteryColor, backgroundColor);
 }
 
 void drawPlantCard(
@@ -3077,9 +3561,10 @@ void drawPlantCard(
   resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, calibrated, pending);
 
   const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
-  const SensorReading* reading = validSensor ? &sensors[sensorId] : nullptr;
+  SensorReading readingSnapshot;
+  const SensorReading* reading = validSensor && copySensorReading(sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
-  uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
+  int16_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, dry, wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
   uint16_t moistureColor = moistureHealthColor(moisturePct, accentColor, warningColor, dangerColor, mutedColor);
   if (!stale)
@@ -3091,17 +3576,7 @@ void drawPlantCard(
   tft.fillRoundRect(x, y, w, h, 5, surfaceColor);
   tft.drawRoundRect(x, y, w, h, 5, stale ? mutedColor : moistureColor);
 
-  drawTextLeft(plant, x + 7, y + 6, 1, textColor, surfaceColor);
-
-  char batteryText[8];
-  if (batteryPct == BATTERY_UNKNOWN)
-  {
-    strlcpy(batteryText, "--%", sizeof(batteryText));
-  }
-  else
-  {
-    snprintf(batteryText, sizeof(batteryText), "%u%%", batteryPct);
-  }
+  drawCardHeader(x, y, w, h, plant, batteryPct, textColor, batteryColor, surfaceColor);
 
   char moistureText[8];
   if (stale)
@@ -3112,7 +3587,8 @@ void drawPlantCard(
   {
     // Auto-cal-derived bounds in use: show percent instead of the raw sensor value, as
     // a visual "calibration done" signal (see docs/STATUS_HANDOFF.md's redesign item 5).
-    snprintf(moistureText, sizeof(moistureText), "%u%%", moisturePct);
+    // moisturePct is already signed (moisturePercent() is unclamped below zero).
+    snprintf(moistureText, sizeof(moistureText), "%d%%", moisturePct);
   }
   else
   {
@@ -3121,7 +3597,7 @@ void drawPlantCard(
 
   if (h < 76)
   {
-    drawCompactCardMetrics(x, y, w, h, moistureText, batteryText, moisturePct, batteryPct, moistureColor, batteryColor, mutedColor, surfaceColor, backgroundColor);
+    drawCompactCardMetrics(x, y, w, h, moistureText, moisturePct, moistureColor, mutedColor, surfaceColor, backgroundColor);
     return;
   }
 
@@ -3130,13 +3606,9 @@ void drawPlantCard(
     drawPlantArtInCard(x, y, w, h, art, stale ? mutedColor : accentColor, surfaceColor, 0);
   }
 
-  drawTextLeft("Moist", x + 7, y + h - 62, 1, mutedColor, surfaceColor);
-  drawTextRight(moistureText, x + w - 7, y + h - 62, 1, moistureColor, surfaceColor);
-  drawBar(x + 7, y + h - 47, w - 14, 9, moisturePct, moistureColor, backgroundColor);
-
-  drawTextLeft("Batt", x + 7, y + h - 29, 1, mutedColor, surfaceColor);
-  drawTextRight(batteryText, x + w - 7, y + h - 29, 1, batteryColor, surfaceColor);
-  drawBar(x + 7, y + h - 14, w - 14, 8, batteryPct, batteryColor, backgroundColor);
+  drawTextLeft("Moisture", x + 7, y + h - 29, 1, mutedColor, surfaceColor);
+  drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, surfaceColor);
+  drawBar(x + 7, y + h - 14, w - 14, 8, moisturePct, moistureColor, backgroundColor);
 }
 
 void drawPlantCardDataOnly(PlantArtSlot& slot)
@@ -3147,9 +3619,10 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   const int w = slot.w;
   const int h = slot.h;
   const bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
-  const SensorReading* reading = validSensor ? &sensors[slot.sensorId] : nullptr;
+  SensorReading readingSnapshot;
+  const SensorReading* reading = validSensor && copySensorReading(slot.sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
-  uint8_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
+  int16_t moisturePct = stale ? BATTERY_UNKNOWN : moisturePercent(reading->moisture, slot.dry, slot.wet);
   uint8_t batteryPct = (reading == nullptr || reading->batteryPercent == BATTERY_UNKNOWN) ? BATTERY_UNKNOWN : reading->batteryPercent;
   uint16_t moistureColor = moistureHealthColor(moisturePct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
   if (!stale)
@@ -3167,32 +3640,40 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   }
   else if (slot.calibrated)
   {
-    snprintf(moistureText, sizeof(moistureText), "%u%%", moisturePct);
+    // moisturePct is already signed (moisturePercent() is unclamped below zero).
+    snprintf(moistureText, sizeof(moistureText), "%d%%", moisturePct);
   }
   else
   {
     snprintf(moistureText, sizeof(moistureText), "%u", reading->moisture);
   }
 
-  char batteryText[8];
-  if (batteryPct == BATTERY_UNKNOWN)
-  {
-    strlcpy(batteryText, "--%", sizeof(batteryText));
-  }
-  else
-  {
-    snprintf(batteryText, sizeof(batteryText), "%u%%", batteryPct);
-  }
+  const bool moistureValueChanged = !slot.metricsInitialized || stale != slot.lastMoistureStale ||
+    slot.calibrated != slot.lastMoistureCalibrated ||
+    (!stale && (reading->moisture != slot.lastMoistureRaw || moisturePct != slot.lastMoisturePct));
+  const bool moistureColorChanged = moistureColor != slot.lastMoistureColor;
+  const bool batteryValueChanged = !slot.metricsInitialized || batteryPct != slot.lastBatteryPct;
 
   if (h < 76)
   {
-    drawCompactCardMetrics(x, y, w, h, moistureText, batteryText, moisturePct, batteryPct, moistureColor, batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    if (batteryValueChanged)
+    {
+      drawCardBatteryHeader(x, y, w, h, batteryPct, batteryColor, slot.surfaceColor, true);
+    }
+    drawCompactCardMetrics(x, y, w, h, moistureText, moisturePct, moistureColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    slot.metricsInitialized = true;
+    slot.lastMoistureStale = stale;
+    slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
+    slot.lastMoisturePct = moisturePct;
+    slot.lastMoistureCalibrated = slot.calibrated;
+    slot.lastMoistureColor = moistureColor;
+    slot.lastBatteryPct = batteryPct;
     return;
   }
 
   // Only touch a row if something about it actually needs to change. Without this, every
-  // low-moisture blink tick (every 500ms, see anyLowMoistureCardVisible) repainted BOTH
-  // rows in full - including the battery row, which has nothing to do with the moisture
+  // low-moisture blink tick (every 500ms, see anyLowMoistureCardVisible) repainted every
+  // metric field in full - including battery, which has nothing to do with the moisture
   // alert - producing a visible flash on fields whose values hadn't moved at all.
   //
   // The moist row's *color* legitimately needs to update every blink tick (that's the
@@ -3201,39 +3682,25 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   // could have changed width (new value or stale-state flip, e.g. "175" -> "88" or "--") -
   // skipping it on a color-only blink tick avoids the clear-then-redraw flash entirely,
   // since drawTextRight/drawBar always fully repaint their own fixed-size cells anyway.
-  const bool moistureValueChanged = !slot.metricsInitialized || stale != slot.lastMoistureStale ||
-    slot.calibrated != slot.lastMoistureCalibrated ||
-    (!stale && (reading->moisture != slot.lastMoistureRaw || moisturePct != slot.lastMoisturePct));
-  const bool moistureColorChanged = moistureColor != slot.lastMoistureColor;
-  const bool batteryValueChanged = !slot.metricsInitialized || batteryPct != slot.lastBatteryPct;
-
   if (moistureValueChanged || moistureColorChanged)
   {
     if (moistureValueChanged)
     {
-      // See the art-gap comment history: this clear must reach exactly up to the art
-      // region's own bottom edge (same artY/artH formula as drawPlantArtInCard) and down
-      // to exactly where the batt row's own clear starts, or a stray pixel in the
-      // uncovered band between them can never self-heal.
-      const int artBottomY = y + 24 + max(24, h - 91);
-      const int moistRowBottom = y + h - 37;
-      const int moistRowTop = min(y + h - 63, artBottomY);
+      // Reach exactly to the art band's bottom edge so no uncovered strip can retain a
+      // stale sprite pixel after a value-width change.
+      const int artBottomY = y + 24 + max(24, h - 57);
+      const int moistRowBottom = y + h - 6;
+      const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
-      drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
+      drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
     }
-    drawTextRight(moistureText, x + w - 7, y + h - 62, 1, moistureColor, slot.surfaceColor);
-    drawBar(x + 7, y + h - 47, w - 14, 9, moisturePct, moistureColor, slot.backgroundColor);
+    drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 14, w - 14, 8, moisturePct, moistureColor, slot.backgroundColor);
   }
 
   if (batteryValueChanged)
   {
-    const int moistRowBottom = y + h - 37;
-    const int battRowBottom = y + h - 6;
-    const int battRowTop = min(y + h - 30, moistRowBottom);
-    tft.fillRect(x + 7, battRowTop, w - 14, max(1, battRowBottom - battRowTop), slot.surfaceColor);
-    drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
-    drawTextRight(batteryText, x + w - 7, y + h - 29, 1, batteryColor, slot.surfaceColor);
-    drawBar(x + 7, y + h - 14, w - 14, 8, batteryPct, batteryColor, slot.backgroundColor);
+    drawCardBatteryHeader(x, y, w, h, batteryPct, batteryColor, slot.surfaceColor, true);
   }
 
   slot.metricsInitialized = true;
@@ -3284,7 +3751,8 @@ void drawDetailStatRowIfChanged(bool changed, int leftX, int rightX, int y, cons
 void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
 {
   const bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
-  const SensorReading* reading = validSensor ? &sensors[slot.sensorId] : nullptr;
+  SensorReading readingSnapshot;
+  const SensorReading* reading = validSensor && copySensorReading(slot.sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
   s.stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   s.rawMoisture = reading != nullptr ? reading->moisture : 0;
   s.moisturePct = s.stale ? BATTERY_UNKNOWN : moisturePercent(s.rawMoisture, slot.dry, slot.wet);
@@ -3301,21 +3769,13 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   }
   else if (slot.calibrated)
   {
-    snprintf(s.moistureText, sizeof(s.moistureText), "%u%%", s.moisturePct);
+    // s.moisturePct is already signed (moisturePercent() is unclamped below zero).
+    snprintf(s.moistureText, sizeof(s.moistureText), "%d%%", s.moisturePct);
   }
   else
   {
     snprintf(s.moistureText, sizeof(s.moistureText), "%u", s.rawMoisture);
   }
-  if (s.batteryPct == BATTERY_UNKNOWN)
-  {
-    strlcpy(s.batteryText, "--%", sizeof(s.batteryText));
-  }
-  else
-  {
-    snprintf(s.batteryText, sizeof(s.batteryText), "%u%%", s.batteryPct);
-  }
-
   s.hasSignal = reading != nullptr && reading->seen;
   const int rssi = s.hasSignal ? reading->rssi : 0;
   s.signalColor = !s.hasSignal ? slot.mutedColor : (rssi >= -75 ? slot.activeColor : (rssi >= -90 ? slot.warningColor : slot.dangerColor));
@@ -3351,7 +3811,12 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   snprintf(s.probeText, sizeof(s.probeText), "%u", slot.sensorId);
   snprintf(s.rangeText, sizeof(s.rangeText), "%d-%d", slot.dry, slot.wet);
   s.hasRaw = reading != nullptr && reading->hasRaw;
-  if (s.hasRaw)
+  if (s.hasRaw && reading->wideRaw)
+  {
+    // MSV3: FDC2214 raw counts, not an oscillator kHz - no "kHz" suffix here.
+    snprintf(s.rawText, sizeof(s.rawText), "%lu", (unsigned long)reading->rawFdcCounts);
+  }
+  else if (s.hasRaw)
   {
     snprintf(s.rawText, sizeof(s.rawText), "%ukHz", reading->rawMoistureKHz);
   }
@@ -3394,8 +3859,8 @@ void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
 }
 
 // Paints only the region that changes when a normal plant card flips to diagnostics:
-// the former sprite band plus the small signal label at the right of the existing name
-// row. The card background, border, name, moisture row, and battery row stay untouched.
+// the former sprite band. The card background, border, header, and moisture row stay
+// untouched.
 void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
 {
   const int x = slot.x;
@@ -3403,7 +3868,7 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
   const int w = slot.w;
   const int h = slot.h;
   const int infoY = y + 24;
-  const int infoH = max(24, h - 91);
+  const int infoH = max(24, h - 57);
   const int infoBottom = infoY + infoH;
   const int rightX = x + w - 7;
   // See drawPlantCardDetailDataOnly()'s matching comment: recolors the Range row's
@@ -3413,13 +3878,11 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
   // This is the exact region previously owned by the animated sprite. Clearing only
   // this band removes the old pose without touching any neighboring card or metric row.
   tft.fillRect(x + 7, infoY, w - 14, infoH, slot.surfaceColor);
-  drawTextRight(s.signalLabel, rightX, y + 6, 1, s.signalColor, slot.surfaceColor);
-
   if (w < 200)
   {
     const int rowStep = clampInt(infoH / 7, 12, 20);
     int rowY = infoY;
-    drawDetailStatRow(x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    drawDetailStatRow(x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, s.signalColor, slot.surfaceColor);
     rowY += rowStep;
     if (rowY + 8 <= infoBottom)
     {
@@ -3454,7 +3917,7 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
     const int rowStep = clampInt(infoH / 5, 14, 30);
     int rowY = infoY + 2;
     drawDetailStatRow(x + 7, col1RightX, rowY, "Probe", s.probeText, slot.mutedColor, slot.textColor, slot.surfaceColor);
-    drawDetailStatRow(col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    drawDetailStatRow(col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, s.signalColor, slot.surfaceColor);
     rowY += rowStep;
     if (rowY + 8 <= infoBottom)
     {
@@ -3485,7 +3948,7 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s)
 // Tap-to-expand detail view, full paint: replaces one plant card in place with a richer
 // readout (signal, age, wake/loss counters, moisture range) similar to the phone app's
 // Diagnostics tab - see handleDashboardSingleTap(). Reuses the exact art-region geometry
-// drawPlantArtInCard() would have used (y + 24, height max(24, h - 91)) so the extra rows
+// drawPlantArtInCard() would have used (y + 24, height max(24, h - 57)) so the extra rows
 // sit exactly where the sprite used to be, instead of inventing a separate layout system -
 // the same "more room at this card size" scaling drawPlantArtInCard/drawCompactCardMetrics
 // already rely on is what decides how many diagnostic rows fit here too.
@@ -3507,15 +3970,15 @@ void drawPlantCardDetail(PlantArtSlot& slot)
 
   tft.fillRoundRect(x, y, w, h, 5, slot.surfaceColor);
   tft.drawRoundRect(x, y, w, h, 5, s.stale ? slot.mutedColor : s.moistureColor);
-  drawTextLeft(slot.plant, x + 7, y + 6, 1, slot.textColor, slot.surfaceColor);
+  drawCardHeader(x, y, w, h, slot.plant, s.batteryPct, slot.textColor, s.batteryColor, slot.surfaceColor);
 
   if (h < 76)
   {
     // Too small for extra rows - same layout as the normal compact card, plus a small
     // signal-quality dot in the corner where the name row would otherwise leave blank
     // space, so even the smallest grid size shows *something* extra on tap.
-    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
-    tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+    drawCompactCardMetrics(x, y, w, h, s.moistureText, s.moisturePct, s.moistureColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    tft.fillCircle(x + w - 8, y + 22, 3, s.signalColor);
     seedDetailCache(slot, s);
     return;
   }
@@ -3523,13 +3986,9 @@ void drawPlantCardDetail(PlantArtSlot& slot)
   const int rightX = x + w - 7;
   drawPlantCardDetailInfoBand(slot, s);
 
-  drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
-  drawTextRight(s.moistureText, rightX, y + h - 62, 1, s.moistureColor, slot.surfaceColor);
-  drawBar(x + 7, y + h - 47, w - 14, 9, s.moisturePct, s.moistureColor, slot.backgroundColor);
-
-  drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
-  drawTextRight(s.batteryText, rightX, y + h - 29, 1, s.batteryColor, slot.surfaceColor);
-  drawBar(x + 7, y + h - 14, w - 14, 8, s.batteryPct, s.batteryColor, slot.backgroundColor);
+  drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+  drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);
+  drawBar(x + 7, y + h - 14, w - 14, 8, s.moisturePct, s.moistureColor, slot.backgroundColor);
 
   seedDetailCache(slot, s);
 }
@@ -3544,13 +4003,13 @@ void expandPlantCardInPlace(PlantArtSlot& slot)
   {
     // Compact cards have no sprite band to replace; the diagnostic view adds only
     // this small signal dot, so that is the only region touched on expansion.
-    tft.fillCircle(slot.x + slot.w - 8, slot.y + 8, 3, s.signalColor);
+    tft.fillCircle(slot.x + slot.w - 8, slot.y + 22, 3, s.signalColor);
     seedDetailDiagnosticCache(slot, s);
     return;
   }
 
   drawPlantCardDetailInfoBand(slot, s);
-  // Moisture/battery cache fields already describe the unchanged normal-card rows.
+  // Moisture/battery cache fields already describe the unchanged normal-card fields.
   // Seed only the newly painted diagnostic fields so pending sensor data still causes
   // those existing rows to update on the next data-only pass.
   seedDetailDiagnosticCache(slot, s);
@@ -3565,22 +4024,21 @@ void collapsePlantCardInPlace(PlantArtSlot& slot)
 
   if (h < 76)
   {
-    tft.fillCircle(x + w - 8, y + 8, 3, slot.surfaceColor);
+    tft.fillCircle(x + w - 8, y + 22, 3, slot.surfaceColor);
     return;
   }
 
   const int infoY = y + 24;
-  const int infoH = max(24, h - 91);
-  const int rightX = x + w - 7;
+  const int infoH = max(24, h - 57);
 
-  // Remove only the two regions diagnostics owned, then restore the sprite into its
-  // original band. All normal-card chrome and metrics remain exactly as drawn.
-  tft.fillRect(rightX - 54, y + 5, 54, 10, slot.surfaceColor);
+  // Remove the one region diagnostics owned, then restore the sprite into its original
+  // band. All normal-card chrome and metrics remain exactly as drawn.
   tft.fillRect(x + 7, infoY, w - 14, infoH, slot.surfaceColor);
   if (slot.artEnabled)
   {
     const bool validSensor = slot.sensorId > 0 && slot.sensorId <= MAX_SENSOR_ID;
-    const SensorReading* reading = validSensor ? &sensors[slot.sensorId] : nullptr;
+    SensorReading readingSnapshot;
+    const SensorReading* reading = validSensor && copySensorReading(slot.sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
     const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
     drawPlantArtInCard(x, y, w, h, slot.art, stale ? slot.mutedColor : slot.activeColor, slot.surfaceColor, slot.frame);
   }
@@ -3618,26 +4076,24 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   {
     if (moistureValueChanged || moistureColorChanged || batteryValueChanged)
     {
-      drawCompactCardMetrics(x, y, w, h, s.moistureText, s.batteryText, s.moisturePct, s.batteryPct, s.moistureColor, s.batteryColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+      drawCompactCardMetrics(x, y, w, h, s.moistureText, s.moisturePct, s.moistureColor, slot.mutedColor, slot.surfaceColor, slot.backgroundColor);
+    }
+    if (batteryValueChanged)
+    {
+      drawCardBatteryHeader(x, y, w, h, s.batteryPct, s.batteryColor, slot.surfaceColor, true);
     }
     if (signalChanged)
     {
-      tft.fillCircle(x + w - 8, y + 8, 3, s.signalColor);
+      tft.fillCircle(x + w - 8, y + 22, 3, s.signalColor);
     }
     seedDetailCache(slot, s);
     return;
   }
 
   const int infoY = y + 24;
-  const int infoH = max(24, h - 91);
+  const int infoH = max(24, h - 57);
   const int infoBottom = infoY + infoH;
   const int rightX = x + w - 7;
-
-  if (signalChanged)
-  {
-    tft.fillRect(rightX - 54, y + 5, 54, 10, slot.surfaceColor);
-    drawTextRight(s.signalLabel, rightX, y + 6, 1, s.signalColor, slot.surfaceColor);
-  }
 
   const bool rssiChanged = strcmp(s.rssiText, slot.lastDetailRssiText) != 0;
   const bool ageChanged = strcmp(s.ageText, slot.lastDetailAgeText) != 0;
@@ -3659,7 +4115,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   {
     const int rowStep = clampInt(infoH / 7, 12, 20);
     int rowY = infoY;
-    drawDetailStatRowIfChanged(rssiChanged, x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    drawDetailStatRowIfChanged(rssiChanged || signalChanged, x + 7, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, s.signalColor, slot.surfaceColor);
     rowY += rowStep;
     if (rowY + 8 <= infoBottom)
     {
@@ -3694,7 +4150,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
     const int col1RightX = x + 7 + colW - 6;
     const int rowStep = clampInt(infoH / 5, 14, 30);
     int rowY = infoY + 2;
-    drawDetailStatRowIfChanged(rssiChanged, col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, slot.textColor, slot.surfaceColor);
+    drawDetailStatRowIfChanged(rssiChanged || signalChanged, col2X, rightX, rowY, "RSSI", s.rssiText, slot.mutedColor, s.signalColor, slot.surfaceColor);
     rowY += rowStep;
     if (rowY + 8 <= infoBottom)
     {
@@ -3721,32 +4177,25 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
     }
   }
 
-  // Moist/Batt rows: identical diff-and-redraw idiom (and the same cache fields) as
-  // drawPlantCardDataOnly() - see that function's comments for why the clear itself is
-  // also conditional, not just the text/bar content.
+  // Moisture row and battery header use the same diff-and-redraw idiom as
+  // drawPlantCardDataOnly(); neither touches the expanded diagnostic band.
   if (moistureValueChanged || moistureColorChanged)
   {
     if (moistureValueChanged)
     {
-      const int artBottomY = y + 24 + max(24, h - 91);
-      const int moistRowBottom = y + h - 37;
-      const int moistRowTop = min(y + h - 63, artBottomY);
+      const int artBottomY = y + 24 + max(24, h - 57);
+      const int moistRowBottom = y + h - 6;
+      const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
-      drawTextLeft("Moist", x + 7, y + h - 62, 1, slot.mutedColor, slot.surfaceColor);
+      drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
     }
-    drawTextRight(s.moistureText, rightX, y + h - 62, 1, s.moistureColor, slot.surfaceColor);
-    drawBar(x + 7, y + h - 47, w - 14, 9, s.moisturePct, s.moistureColor, slot.backgroundColor);
+    drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);
+    drawBar(x + 7, y + h - 14, w - 14, 8, s.moisturePct, s.moistureColor, slot.backgroundColor);
   }
 
   if (batteryValueChanged)
   {
-    const int moistRowBottom = y + h - 37;
-    const int battRowBottom = y + h - 6;
-    const int battRowTop = min(y + h - 30, moistRowBottom);
-    tft.fillRect(x + 7, battRowTop, w - 14, max(1, battRowBottom - battRowTop), slot.surfaceColor);
-    drawTextLeft("Batt", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
-    drawTextRight(s.batteryText, rightX, y + h - 29, 1, s.batteryColor, slot.surfaceColor);
-    drawBar(x + 7, y + h - 14, w - 14, 8, s.batteryPct, s.batteryColor, slot.backgroundColor);
+    drawCardBatteryHeader(x, y, w, h, s.batteryPct, s.batteryColor, slot.surfaceColor, true);
   }
 
   seedDetailCache(slot, s);
@@ -3760,15 +4209,19 @@ bool slotNeedsBlink(PlantArtSlot& slot)
   {
     return false;
   }
-  SensorReading& reading = sensors[slot.sensorId];
+  SensorReading reading;
+  if (!copySensorReading(slot.sensorId, reading))
+  {
+    return false;
+  }
   bool stale = !reading.seen || (millis() - reading.lastSeenMs > staleSeconds * 1000UL);
   if (stale)
   {
     return false;
   }
   refreshSlotMoistureBounds(slot);
-  uint8_t percent = moisturePercent(reading.moisture, slot.dry, slot.wet);
-  return percent == 0;
+  int16_t percent = moisturePercent(reading.moisture, slot.dry, slot.wet);
+  return percent <= MOISTURE_DANGER_PERCENT;
 }
 
 // blinkOnly redraws only the card(s) driving the 500ms blink cadence, instead of every
@@ -3835,7 +4288,8 @@ void drawLegacyRow(
 )
 {
   const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
-  const SensorReading* reading = validSensor ? &sensors[sensorId] : nullptr;
+  SensorReading readingSnapshot;
+  const SensorReading* reading = validSensor && copySensorReading(sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
   const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
   const uint16_t valueColor = stale ? mutedColor : (reading->moisture < warnBelow ? warningColor : accentColor);
 
@@ -4142,12 +4596,13 @@ void renderAnimatedPlantArt()
 
     uint16_t sensorId = slot.sensorId;
     const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
-    const SensorReading* reading = validSensor ? &sensors[sensorId] : nullptr;
+    SensorReading readingSnapshot;
+    const SensorReading* reading = validSensor && copySensorReading(sensorId, readingSnapshot) ? &readingSnapshot : nullptr;
     const bool stale = reading == nullptr || !reading->seen || (millis() - reading->lastSeenMs > staleSeconds * 1000UL);
 
     uint8_t oldFrame = slot.frame;
     slot.frame += ART_FRAME_STEP;
-    slot.frameIntervalMs = randomizedArtInterval();
+    slot.frameIntervalMs = artFrameInterval(slot.art, slot.frame);
     slot.nextFrameMs = now + slot.frameIntervalMs;
     drawPlantArtDiffInCard(slot.x, slot.y, slot.w, slot.h, slot.art, stale ? slot.mutedColor : slot.activeColor, slot.surfaceColor, oldFrame, slot.frame);
   }
@@ -4159,48 +4614,74 @@ String sensorDataJson()
   JsonArray readings = doc.createNestedArray("sensors");
   for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
   {
-    if (!sensors[sensorId].seen)
+    // Copy the whole record inside a short critical section instead of reading its
+    // fields one at a time. onResult() (BLE-scan task, core 0) publishes this same record
+    // under sensorsMux; using that lock here prevents a torn mix of an old and a new
+    // packet (e.g. new moisture paired with a stale wake/raw field).
+    portENTER_CRITICAL(&sensorsMux);
+    SensorReading r = sensors[sensorId];
+    portEXIT_CRITICAL(&sensorsMux);
+
+    if (!r.seen)
     {
       continue;
     }
 
     JsonObject item = readings.createNestedObject();
     item["sensor"] = sensorId;
-    item["wake"] = sensors[sensorId].wake;
-    item["moisture"] = sensors[sensorId].moisture;
-    if (sensors[sensorId].batteryPercent != BATTERY_UNKNOWN)
+    item["wake"] = r.wake;
+    // `moisture` is the presentation value used by every UI. Keep the latest
+    // unsmoothed receiver-derived reading beside it for diagnostics and cloud history.
+    item["moisture"] = r.moisture;
+    item["measuredMoisture"] = r.measuredMoisture;
+    item["moistureScale"] = r.wideRaw
+        ? MSV3_MOISTURE_SCALE_VERSION
+        : MSV2_MOISTURE_SCALE_VERSION;
+    if (r.batteryPercent != BATTERY_UNKNOWN)
     {
-      item["batteryPercent"] = sensors[sensorId].batteryPercent;
+      item["batteryPercent"] = r.batteryPercent;
     }
-    item["rssi"] = sensors[sensorId].rssi;
-    item["ageMs"] = millis() - sensors[sensorId].lastSeenMs;
-    item["missed"] = sensors[sensorId].missed;
-    item["received"] = sensors[sensorId].received;
-    item["missedTotal"] = sensors[sensorId].missedTotal;
+    item["rssi"] = r.rssi;
+    item["ageMs"] = millis() - r.lastSeenMs;
+    item["missed"] = r.missed;
+    item["received"] = r.received;
+    item["missedTotal"] = r.missedTotal;
 
     // Raw, uncalibrated values as transmitted by 2026-07-28-rework probes - see the
     // SensorReading.hasRaw comment. Only present for probes that actually sent them;
     // omitted (not just zeroed) for probes still on pre-rework legacy firmware so this
     // field's presence itself signals which protocol a given sensor is on.
-    if (sensors[sensorId].hasRaw)
+    if (r.hasRaw)
     {
       JsonObject rawItem = item.createNestedObject("raw");
-      rawItem["moistureKHz"] = sensors[sensorId].rawMoistureKHz;
-      rawItem["batteryMv"] = sensors[sensorId].rawBatteryMv;
-      rawItem["charging"] = sensors[sensorId].rawCharging;
+      // wideRaw (MSV3/FDC2214) sensors report fdcCounts instead of moistureKHz -
+      // omitted rather than zeroed, same "presence signals the protocol" reasoning
+      // as the hasRaw/legacy split above, so a client can tell the two apart.
+      if (r.wideRaw)
+      {
+        rawItem["fdcCounts"] = r.rawFdcCounts;
+      }
+      else
+      {
+        rawItem["moistureKHz"] = r.rawMoistureKHz;
+      }
+      rawItem["batteryMv"] = r.rawBatteryMv;
+      rawItem["charging"] = r.rawCharging;
     }
 
     // Cached result of the periodic cloud auto-calibration pull (see
     // runCloudAutoCalPull) - lets the browser use the same learned range/schedule the
     // physical display uses, without minting its own share token or hitting the cloud
     // directly (this data changes slowly, so a receiver-cached copy is plenty fresh).
+    AutoCalState learned;
+    copyAutoCalState(sensorId, learned);
     JsonObject autoCalItem = item.createNestedObject("autoCal");
-    autoCalItem["ready"] = autoCal[sensorId].ready;
-    autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
-    autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
-    autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
-    autoCalItem["lastWateredAtMs"] = autoCal[sensorId].lastWateredAtMs;
-    autoCalItem["dryBoundTrendingLower"] = autoCal[sensorId].dryBoundTrendingLower;
+    autoCalItem["ready"] = learned.ready;
+    autoCalItem["dryBound"] = learned.dryBound;
+    autoCalItem["wetBound"] = learned.wetBound;
+    autoCalItem["daysSinceLastWatering"] = learned.daysSinceLastWatering;
+    autoCalItem["lastWateredAtMs"] = learned.lastWateredAtMs;
+    autoCalItem["dryBoundTrendingLower"] = learned.dryBoundTrendingLower;
   }
 
   String output;
@@ -4208,15 +4689,19 @@ String sensorDataJson()
   return output;
 }
 
-String snapshotJson()
+String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t historyCount)
 {
-  // Bumped from 8192: the per-sensor autoCal sub-object (5 fields, up to MAX_SENSOR_ID
-  // sensors) added ~140 bytes/sensor, and 8192 didn't have that much headroom to spare.
-  DynamicJsonDocument doc(12288);
+  // Keep the ArduinoJson document limited to the already-proven latest-state snapshot.
+  // Queue rows are numeric plus a generated hex ID, so they are appended below after
+  // serialization. Building 32 nested JsonObjects here required a ~30KB temporary heap
+  // allocation immediately before TLS connect and caused repeat connections to fail on
+  // the non-PSRAM build even though total free heap remained adequate.
+  DynamicJsonDocument doc(18432);
+  const uint32_t serializedAtMs = millis();
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
   doc["build"] = MSV2_BUILD_TAG;
-  doc["sentAtMs"] = millis();
+  doc["sentAtMs"] = serializedAtMs;
 
   JsonObject config = doc.createNestedObject("config");
   config["schema"] = 1;
@@ -4315,40 +4800,140 @@ String snapshotJson()
   JsonArray plants = doc.createNestedArray("plants");
   for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
   {
-    if (!sensors[sensorId].seen)
+    SensorReading r;
+    copySensorReading(sensorId, r);
+    if (!r.seen)
     {
       continue;
     }
 
     JsonObject item = plants.createNestedObject();
     item["sensor"] = sensorId;
-    item["wake"] = sensors[sensorId].wake;
-    item["moisture"] = sensors[sensorId].moisture;
-    if (sensors[sensorId].batteryPercent != BATTERY_UNKNOWN)
+    item["wake"] = r.wake;
+    // The cloud latest snapshot should render the same clean value as the receiver,
+    // while receiver-snapshot stores measuredMoisture in the original history series.
+    item["moisture"] = r.moisture;
+    item["measuredMoisture"] = r.measuredMoisture;
+    item["moistureScale"] = r.wideRaw
+        ? MSV3_MOISTURE_SCALE_VERSION
+        : MSV2_MOISTURE_SCALE_VERSION;
+    if (r.batteryPercent != BATTERY_UNKNOWN)
     {
-      item["batteryPercent"] = sensors[sensorId].batteryPercent;
+      item["batteryPercent"] = r.batteryPercent;
     }
-    item["rssi"] = sensors[sensorId].rssi;
-    item["ageMs"] = millis() - sensors[sensorId].lastSeenMs;
-    item["received"] = sensors[sensorId].received;
-    item["missedTotal"] = sensors[sensorId].missedTotal;
+    item["rssi"] = r.rssi;
+    item["ageMs"] = millis() - r.lastSeenMs;
+    item["received"] = r.received;
+    item["missedTotal"] = r.missedTotal;
+
+    // Preserve the original probe wire value in the cloud snapshot/history as well as
+    // locally under /data. The display transform can then be revised or audited without
+    // throwing away any FDC/oscillator resolution.
+    if (r.hasRaw)
+    {
+      JsonObject rawItem = item.createNestedObject("raw");
+      if (r.wideRaw)
+      {
+        rawItem["fdcCounts"] = r.rawFdcCounts;
+      }
+      else
+      {
+        rawItem["moistureKHz"] = r.rawMoistureKHz;
+      }
+      rawItem["batteryMv"] = r.rawBatteryMv;
+      rawItem["charging"] = r.rawCharging;
+    }
 
     // Same cached auto-calibration snapshot sensorDataJson() sends to the local /data
     // endpoint - without this, the cloud (and therefore the Netlify dashboard) has no way
     // to know a sensor is auto-calibrated, and falls back to the static manual/preset
     // dry/wet bounds even when the display itself is using learned ones.
+    AutoCalState learned;
+    copyAutoCalState(sensorId, learned);
     JsonObject autoCalItem = item.createNestedObject("autoCal");
-    autoCalItem["ready"] = autoCal[sensorId].ready;
-    autoCalItem["dryBound"] = autoCal[sensorId].dryBound;
-    autoCalItem["wetBound"] = autoCal[sensorId].wetBound;
-    autoCalItem["daysSinceLastWatering"] = autoCal[sensorId].daysSinceLastWatering;
-    autoCalItem["lastWateredAtMs"] = autoCal[sensorId].lastWateredAtMs;
-    autoCalItem["dryBoundTrendingLower"] = autoCal[sensorId].dryBoundTrendingLower;
+    autoCalItem["ready"] = learned.ready;
+    autoCalItem["dryBound"] = learned.dryBound;
+    autoCalItem["wetBound"] = learned.wetBound;
+    autoCalItem["daysSinceLastWatering"] = learned.daysSinceLastWatering;
+    autoCalItem["lastWateredAtMs"] = learned.lastWateredAtMs;
+    autoCalItem["dryBoundTrendingLower"] = learned.dryBoundTrendingLower;
+  }
+
+  if (doc.overflowed())
+  {
+    Serial.println("[MSV2 cloud] snapshot JSON capacity exceeded; retaining history queue");
+    return "";
   }
 
   String output;
   serializeJson(doc, output);
+  // Presence of historyBatch (even when empty) tells the cloud this receiver supports
+  // lossless event ingestion. All appended string content is fixed JSON syntax, integers,
+  // or our own hexadecimal observation ID, so no untrusted string escaping is bypassed.
+  if (output.length() == 0 || output[output.length() - 1] != '}' ||
+      !output.reserve(output.length() + historyCount * 256 + 24))
+  {
+    Serial.println("[MSV2 cloud] could not reserve history batch payload");
+    return "";
+  }
+  output.remove(output.length() - 1);
+  output += F(",\"historyBatch\":[");
+  for (size_t i = 0; historyBatch != nullptr && i < historyCount; i++)
+  {
+    const PendingHistoryReading& pending = historyBatch[i];
+    if (i > 0) output += ',';
+    char observationId[24];
+    snprintf(observationId, sizeof(observationId), "%08lX-%08lX",
+             (unsigned long)historyQueueBootId, (unsigned long)pending.sequence);
+    output += F("{\"observationId\":\"");
+    output += observationId;
+    output += F("\",\"queuedAgeMs\":");
+    output += (unsigned long)(serializedAtMs - pending.capturedMs);
+    output += F(",\"sensor\":");
+    output += pending.sensorId;
+    output += F(",\"wake\":");
+    output += (unsigned long)pending.wake;
+    output += F(",\"moisture\":");
+    output += pending.moisture;
+    output += F(",\"measuredMoisture\":");
+    output += pending.measuredMoisture;
+    output += F(",\"moistureScale\":");
+    output += pending.moistureScale;
+    if (pending.batteryPercent != BATTERY_UNKNOWN)
+    {
+      output += F(",\"batteryPercent\":");
+      output += pending.batteryPercent;
+    }
+    output += F(",\"rssi\":");
+    output += pending.rssi;
+    output += F(",\"ageMs\":0");
+    if (pending.hasRaw)
+    {
+      if (pending.wideRaw)
+      {
+        output += F(",\"raw\":{\"fdcCounts\":");
+        output += (unsigned long)pending.rawFdcCounts;
+      }
+      else
+      {
+        output += F(",\"raw\":{\"moistureKHz\":");
+        output += pending.rawMoistureKHz;
+      }
+      output += F(",\"batteryMv\":");
+      output += pending.rawBatteryMv;
+      output += F(",\"charging\":");
+      output += pending.rawCharging ? F("true") : F("false");
+      output += '}';
+    }
+    output += '}';
+  }
+  output += F("]}");
   return output;
+}
+
+String snapshotJson()
+{
+  return snapshotJsonWithHistory(nullptr, 0);
 }
 
 #if MSV2_ENABLE_WIFI
@@ -4401,6 +4986,19 @@ bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
   displayDirty = true;
   scheduleCloudSnapshotAfterStateChange();
   return true;
+}
+
+// A failed HTTPClient::begin() (the `!began` branch in each of the five cloud functions
+// below) has been observed to leave real resources (heap, and possibly a TCP/TLS session)
+// unrecovered without an explicit stop() on both possible underlying clients - see the
+// 2026-08-23 receiver-reliability investigation. Each function declares its own local
+// WiFiClient/WiFiClientSecure pair (not shared globals, since a request can be plain HTTP
+// or HTTPS depending on the configured URL's scheme), so this takes them by reference
+// rather than assuming fixed global names.
+void stopCloudClients(WiFiClientSecure& secureClient, WiFiClient& plainClient)
+{
+  secureClient.stop();
+  plainClient.stop();
 }
 
 void runCloudBootstrap(uint32_t now)
@@ -4468,6 +5066,11 @@ void runCloudBootstrap(uint32_t now)
   cloudBootstrapLastHttpStatus = 0;
   if (!began)
   {
+    // 2026-08-23: same defensive cleanup as runCloudSnapshotUploader() - a failed connect
+    // attempt has been observed to leave real resources (heap, and possibly a TCP/TLS
+    // session) unrecovered without an explicit stop(), across every one of these five
+    // cloud call sites, not just the snapshot uploader.
+    stopCloudClients(secureClient, plainClient);
     setCloudBootstrapLastError("could not start HTTP client");
     nextCloudBootstrapMs = now + CLOUD_BOOTSTRAP_RETRY_MS;
     return;
@@ -4561,6 +5164,7 @@ void runCloudBootstrap(uint32_t now)
   }
 
   http.end();
+  stopCloudClients(secureClient, plainClient);
 }
 
 void runCloudConfigPull(uint32_t now)
@@ -4626,6 +5230,7 @@ void runCloudConfigPull(uint32_t now)
   cloudConfigLastHttpStatus = 0;
   if (!began)
   {
+    stopCloudClients(secureClient, plainClient);
     setCloudConfigLastError("could not start HTTP client");
     nextCloudConfigPullMs = now + CLOUD_CONFIG_PULL_INTERVAL_MS;
     return;
@@ -4684,6 +5289,7 @@ void runCloudConfigPull(uint32_t now)
   }
 
   http.end();
+  stopCloudClients(secureClient, plainClient);
   nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
 }
 
@@ -4759,6 +5365,7 @@ void runCloudDisplaySettings(uint32_t now)
   cloudDisplayLastHttpStatus = 0;
   if (!began)
   {
+    stopCloudClients(secureClient, plainClient);
     setCloudDisplayLastError("could not start HTTP client");
     nextCloudDisplaySyncMs = now + CLOUD_DISPLAY_PULL_INTERVAL_MS;
     return;
@@ -4786,10 +5393,14 @@ void runCloudDisplaySettings(uint32_t now)
     status = http.GET();
   }
   cloudDisplayLastHttpStatus = status;
+  // Always retain the Edge Function's structured error body. The old path reduced every
+  // HTTP failure to just "HTTP 400", which made the deployed display-settings RPC failure
+  // impossible to distinguish from payload/auth/version errors at the receiver.
+  String response = status > 0 ? http.getString() : "";
+  bool displaySyncSucceeded = false;
 
   if (status >= 200 && status < 300)
   {
-    String response = http.getString();
     StaticJsonDocument<1024> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, response);
     JsonObject settings = responseDoc["settings"].as<JsonObject>();
@@ -4810,6 +5421,7 @@ void runCloudDisplaySettings(uint32_t now)
       cloudDisplayApiReady = true;
       setCloudDisplayLastError("");
       cloudDisplayLastSuccessMs = millis();
+      displaySyncSucceeded = true;
     }
     else
     {
@@ -4840,6 +5452,7 @@ void runCloudDisplaySettings(uint32_t now)
       }
       setCloudDisplayLastError("");
       cloudDisplayLastSuccessMs = millis();
+      displaySyncSucceeded = true;
       Serial.print("[MSV2 cloud] display settings v");
       Serial.println(version);
     }
@@ -4848,6 +5461,17 @@ void runCloudDisplaySettings(uint32_t now)
   {
     String error = "HTTP ";
     error += status;
+    if (response.length() > 0)
+    {
+      StaticJsonDocument<384> errorDoc;
+      DeserializationError parseError = deserializeJson(errorDoc, response);
+      const char* backendError = parseError ? nullptr : errorDoc["error"] | nullptr;
+      if (backendError != nullptr && backendError[0] != '\0')
+      {
+        error += ": ";
+        error += backendError;
+      }
+    }
     setCloudDisplayLastError(error.c_str());
   }
   else
@@ -4857,13 +5481,42 @@ void runCloudDisplaySettings(uint32_t now)
   }
 
   http.end();
+  stopCloudClients(secureClient, plainClient);
   bool stillPending;
   portENTER_CRITICAL(&displaySettingsMux);
   stillPending = displaySettings.pendingCloudUpdate;
   portEXIT_CRITICAL(&displaySettingsMux);
-  nextCloudDisplaySyncMs = millis() +
-    (stillPending && cloudDisplayApiReady ? 1000UL :
-      (cloudDisplayApiReady ? CLOUD_DISPLAY_PULL_INTERVAL_MS : CLOUD_BOOTSTRAP_RETRY_MS));
+  if (displaySyncSucceeded)
+  {
+    cloudDisplayConsecutiveFailures = 0;
+    nextCloudDisplaySyncMs = millis() +
+      (stillPending && cloudDisplayApiReady ? 1000UL :
+        (cloudDisplayApiReady ? CLOUD_DISPLAY_PULL_INTERVAL_MS : CLOUD_BOOTSTRAP_RETRY_MS));
+  }
+  else
+  {
+    // A pending local update used to retry every second even after an HTTP error. When
+    // migration 033 was missing, that produced a continuous HTTP 400/TLS loop which
+    // starved snapshot uploads until the 512-row history queue filled. Back off failures
+    // independently of pending state; the fast 1s follow-up is only for successful writes
+    // where a newer local touch arrived while the request was in flight.
+    if (cloudDisplayConsecutiveFailures < 0xFFFF)
+    {
+      cloudDisplayConsecutiveFailures++;
+    }
+    uint32_t backoffMs = CLOUD_DISPLAY_PULL_INTERVAL_MS;
+    for (uint16_t i = 1;
+         i < cloudDisplayConsecutiveFailures && backoffMs < CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS;
+         i++)
+    {
+      backoffMs *= 2;
+    }
+    if (backoffMs > CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS)
+    {
+      backoffMs = CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS;
+    }
+    nextCloudDisplaySyncMs = millis() + backoffMs;
+  }
 }
 
 // Pulls the self-learned per-sensor moisture range + watering schedule (see
@@ -4927,6 +5580,7 @@ void runCloudAutoCalPull(uint32_t now)
 
   if (!began)
   {
+    stopCloudClients(secureClient, plainClient);
     nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
     return;
   }
@@ -4952,18 +5606,23 @@ void runCloudAutoCalPull(uint32_t now)
         {
           continue;
         }
-        autoCal[sensorId].ready = sensorRow["ready"] | false;
-        autoCal[sensorId].dryBound = sensorRow["dryBound"] | 0;
-        autoCal[sensorId].wetBound = sensorRow["wetBound"] | 0;
-        autoCal[sensorId].daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
-        autoCal[sensorId].lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
-        autoCal[sensorId].dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
+        AutoCalState learned;
+        learned.ready = sensorRow["ready"] | false;
+        learned.dryBound = sensorRow["dryBound"] | 0;
+        learned.wetBound = sensorRow["wetBound"] | 0;
+        learned.daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
+        learned.lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
+        learned.dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
+        portENTER_CRITICAL(&autoCalMux);
+        autoCal[sensorId] = learned;
+        portEXIT_CRITICAL(&autoCalMux);
       }
       Serial.println("[MSV2 cloud] auto-calibration updated");
     }
   }
 
   http.end();
+  stopCloudClients(secureClient, plainClient);
   nextCloudAutoCalPullMs = millis() + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
 }
 
@@ -4981,6 +5640,27 @@ void runCloudSnapshotUploader(uint32_t now)
     return;
   }
 
+  // Backlog-triggered nudge: if the history queue just transitioned from empty to
+  // non-empty while the uploader was idle waiting out the full syncIntervalSeconds
+  // interval, pull the next attempt forward so a freshly-queued reading does not sit
+  // for up to five minutes. Never nudge sooner than CLOUD_MIN_UPLOAD_SPACING_MS after
+  // the previous attempt started, so this cannot recreate the removed packet-triggered
+  // fast path.
+  static bool historyQueueWasEmptyLastCheck = true;
+  size_t pendingHistoryNow = queuedHistoryCount();
+  if (pendingHistoryNow > 0 && historyQueueWasEmptyLastCheck)
+  {
+    uint32_t earliestAllowedMs = (cloudLastAttemptMs == 0)
+                                      ? now
+                                      : cloudLastAttemptMs + CLOUD_MIN_UPLOAD_SPACING_MS;
+    uint32_t nudgedTargetMs = ((int32_t)(now - earliestAllowedMs) > 0) ? now : earliestAllowedMs;
+    if ((int32_t)(nextCloudSyncMs - nudgedTargetMs) > 0)
+    {
+      nextCloudSyncMs = nudgedTargetMs;
+    }
+  }
+  historyQueueWasEmptyLastCheck = (pendingHistoryNow == 0);
+
   if ((int32_t)(now - nextCloudSyncMs) < 0)
   {
     return;
@@ -4991,6 +5671,15 @@ void runCloudSnapshotUploader(uint32_t now)
   {
     setCloudLastError("waiting for station WiFi");
     nextCloudSyncMs = now + 10000UL;
+    return;
+  }
+
+  uint32_t freeHeapBeforeAttempt = ESP.getFreeHeap();
+  if (freeHeapBeforeAttempt < minFreeHeapEverBytes) minFreeHeapEverBytes = freeHeapBeforeAttempt;
+  if (freeHeapBeforeAttempt < CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES)
+  {
+    setCloudLastError("skipped: low heap");
+    nextCloudSyncMs = now + CLOUD_LOW_HEAP_RETRY_MS;
     return;
   }
 
@@ -5026,6 +5715,12 @@ void runCloudSnapshotUploader(uint32_t now)
   cloudLastHttpStatus = 0;
   if (!began)
   {
+    // Defensive cleanup even on this early-exit path: a TLS connect attempt that fails
+    // before http.begin() itself returns true has still been observed to leave real heap
+    // unrecovered (see CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES above) - explicit stop() rather
+    // than relying solely on these stack objects' destructors, which is the standard
+    // mitigation for this class of ESP32 WiFiClientSecure behavior.
+    stopCloudClients(secureClient, plainClient);
     setCloudLastError("could not start HTTP client");
     nextCloudSyncMs = now + cloudSyncIntervalSeconds * 1000UL;
     return;
@@ -5040,23 +5735,96 @@ void runCloudSnapshotUploader(uint32_t now)
     http.addHeader("Authorization", auth);
   }
 
-  String payload = snapshotJson();
-  int status = http.POST(payload);
-  cloudLastHttpStatus = status;
-  if (status >= 200 && status < 300)
+  // Heap telemetry (2026-08-23, diagnostic only): this is the single largest, most
+  // frequent allocation burst on the whole receiver - a fresh TLS session plus the
+  // snapshot/history JSON payload, every cloudSyncIntervalSeconds. Bracketing it lets
+  // /device show whether free heap is actually trending down around cloud activity,
+  // instead of guessing from the reboot symptom alone.
+  uint32_t heapBeforeUpload = ESP.getFreeHeap();
+  if (heapBeforeUpload < minFreeHeapEverBytes) minFreeHeapEverBytes = heapBeforeUpload;
+  setCloudCheckpoint("snapshot upload: building payload");
+
+  PendingHistoryReading historyBatch[HISTORY_UPLOAD_BATCH_SIZE];
+  size_t historyCount = copyHistoryUploadBatch(historyBatch, HISTORY_UPLOAD_BATCH_SIZE);
+  String payload = snapshotJsonWithHistory(historyBatch, historyCount);
+  if (payload.length() == 0)
   {
+    http.end();
+    stopCloudClients(secureClient, plainClient);
+    setCloudLastError("could not serialize snapshot/history batch");
+    nextCloudSyncMs = millis() + HISTORY_UPLOAD_RETRY_MS;
+    return;
+  }
+
+  setCloudCheckpoint("snapshot upload: posting");
+  int status = http.POST(payload);
+  uint32_t heapAfterUpload = ESP.getFreeHeap();
+  if (heapAfterUpload < minFreeHeapEverBytes) minFreeHeapEverBytes = heapAfterUpload;
+  lastCloudUploadFreeHeapBeforeBytes = heapBeforeUpload;
+  lastCloudUploadFreeHeapAfterBytes = heapAfterUpload;
+  setCloudCheckpoint("snapshot upload: posted");
+  cloudLastHttpStatus = status;
+  bool uploadAccepted = status >= 200 && status < 300;
+  size_t historyAccepted = historyCount == 0 ? 0 : SIZE_MAX;
+  if (uploadAccepted && historyCount > 0)
+  {
+    String responseBody = http.getString();
+    StaticJsonDocument<384> responseDoc;
+    DeserializationError responseError = deserializeJson(responseDoc, responseBody);
+    int accepted = responseError ? -1 : (responseDoc["historyAccepted"] | -1);
+    if (accepted < 0 || (size_t)accepted != historyCount)
+    {
+      uploadAccepted = false;
+      setCloudLastError("history batch was not fully acknowledged");
+      Serial.print("[MSV2 cloud] history acknowledgement mismatch: sent=");
+      Serial.print(historyCount);
+      Serial.print(" accepted=");
+      Serial.println(accepted);
+    }
+    else
+    {
+      historyAccepted = (size_t)accepted;
+    }
+  }
+
+  if (uploadAccepted)
+  {
+    size_t removed = acknowledgeHistoryUploadBatch(historyBatch, historyAccepted);
+    if (removed != historyAccepted)
+    {
+      uploadAccepted = false;
+      setCloudLastError("history queue acknowledgement race");
+      Serial.print("[MSV2 cloud] queue acknowledgement mismatch: accepted=");
+      Serial.print(historyAccepted);
+      Serial.print(" removed=");
+      Serial.println(removed);
+    }
+  }
+
+  if (uploadAccepted)
+  {
+    cloudConsecutiveUploadFailures = 0;
     cloudLastSuccessMs = millis();
     setCloudLastError("");
     Serial.print("[MSV2 cloud] upload ok: HTTP ");
-    Serial.println(status);
+    Serial.print(status);
+    Serial.print(" history=");
+    Serial.print(historyAccepted);
+    Serial.print(" queued=");
+    Serial.println(queuedHistoryCount());
   }
   else if (status > 0)
   {
-    String error = "HTTP ";
-    error += status;
-    setCloudLastError(error.c_str());
-    Serial.print("[MSV2 cloud] upload failed: HTTP ");
-    Serial.println(status);
+    // Preserve the more specific acknowledgement/queue error set above for a 2xx
+    // response. Non-2xx responses still report their HTTP status as before.
+    if (!(status >= 200 && status < 300))
+    {
+      String error = "HTTP ";
+      error += status;
+      setCloudLastError(error.c_str());
+      Serial.print("[MSV2 cloud] upload failed: HTTP ");
+      Serial.println(status);
+    }
   }
   else
   {
@@ -5067,7 +5835,38 @@ void runCloudSnapshotUploader(uint32_t now)
   }
 
   http.end();
-  nextCloudSyncMs = millis() + cloudSyncIntervalSeconds * 1000UL;
+  stopCloudClients(secureClient, plainClient);
+  size_t remainingHistory = queuedHistoryCount();
+  if (!uploadAccepted)
+  {
+    // Exponential backoff on consecutive failures (2026-08-23): the fixed 17s retry alone
+    // let a bad patch retry fast enough to compound the same heap pressure that caused it in
+    // the first place (observed 7+ failures in a row, 17s apart, before this was added).
+    // Doubles per additional failure, capped at CLOUD_UPLOAD_BACKOFF_MAX_MS, resets to the
+    // base interval the moment an upload succeeds again.
+    if (cloudConsecutiveUploadFailures < 0xFFFF)
+    {
+      cloudConsecutiveUploadFailures++;
+    }
+    uint32_t backoffMs = HISTORY_UPLOAD_RETRY_MS;
+    for (uint16_t i = 1; i < cloudConsecutiveUploadFailures && backoffMs < CLOUD_UPLOAD_BACKOFF_MAX_MS; i++)
+    {
+      backoffMs *= 2;
+    }
+    if (backoffMs > CLOUD_UPLOAD_BACKOFF_MAX_MS)
+    {
+      backoffMs = CLOUD_UPLOAD_BACKOFF_MAX_MS;
+    }
+    nextCloudSyncMs = millis() + backoffMs;
+  }
+  else if (remainingHistory > 0)
+  {
+    nextCloudSyncMs = millis() + HISTORY_BACKLOG_DRAIN_MS;
+  }
+  else
+  {
+    nextCloudSyncMs = millis() + cloudSyncIntervalSeconds * 1000UL;
+  }
 }
 
 #endif
@@ -5088,7 +5887,7 @@ String configMetaJson()
 
 String deviceInfoJson()
 {
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<2304> doc;
   doc["name"] = "MSV2 Display";
   doc["build"] = MSV2_BUILD_TAG;
   doc["receiverId"] = receiverId;
@@ -5103,6 +5902,54 @@ String deviceInfoJson()
   cloud["enabled"] = cloudEnabled;
   cloud["configured"] = cloudUploadUrl[0] != '\0';
   cloud["syncIntervalSeconds"] = cloudSyncIntervalSeconds;
+  cloud["queuedHistory"] = queuedHistoryCount();
+  cloud["historyQueueCapacity"] = HISTORY_QUEUE_CAPACITY;
+  cloud["historyQueueDropped"] = droppedHistoryCount();
+  cloud["historyQueueHighWaterMark"] = historyQueueHighWaterMark();
+
+  // 2026-08-23 telemetry (diagnostic only): reset-reason/checkpoint/heap/stack visibility
+  // that previously existed only as a Serial print at boot, per the reboot investigation.
+  JsonObject health = doc.createNestedObject("health");
+  health["resetReason"] = resetReasonName(esp_reset_reason());
+  health["lastCheckpointMain"] = lastCheckpoint;
+  health["lastCheckpointBle"] = lastCheckpointBle;
+  health["lastCheckpointCloud"] = lastCheckpointCloud;
+  health["freeHeapNowBytes"] = ESP.getFreeHeap();
+  health["minFreeHeapEverBytes"] = minFreeHeapEverBytes;
+  health["largestFreeBlockBytes"] = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  health["cloudUploadFreeHeapBeforeBytes"] = lastCloudUploadFreeHeapBeforeBytes;
+  health["cloudUploadFreeHeapAfterBytes"] = lastCloudUploadFreeHeapAfterBytes;
+  health["cloudConsecutiveUploadFailures"] = cloudConsecutiveUploadFailures;
+#if MSV2_ENABLE_WIFI
+  health["cloudTaskStackHighWaterBytes"] = cloudSyncTaskHandle != nullptr
+      ? (uint32_t)uxTaskGetStackHighWaterMark(cloudSyncTaskHandle) * sizeof(StackType_t)
+      : 0;
+#endif
+#if MSV2_ENABLE_BLE
+  health["bleTaskStackHighWaterBytes"] = bleScanTaskHandle != nullptr
+      ? (uint32_t)uxTaskGetStackHighWaterMark(bleScanTaskHandle) * sizeof(StackType_t)
+      : 0;
+#endif
+  // Previous boot's RTC state, persisted once at the top of setup() before this boot
+  // overwrote it - survives a full power loss, unlike the live lastCheckpoint* fields above.
+  if (LittleFS.exists("/boot-record.json"))
+  {
+    File bootRecordFile = LittleFS.open("/boot-record.json", "r");
+    if (bootRecordFile)
+    {
+      StaticJsonDocument<384> prevBoot;
+      if (!deserializeJson(prevBoot, bootRecordFile))
+      {
+        JsonObject previousBoot = health.createNestedObject("previousBoot");
+        previousBoot["resetReason"] = prevBoot["resetReason"].as<const char*>();
+        previousBoot["wasIntentionalRestart"] = prevBoot["wasIntentionalRestart"].as<bool>();
+        previousBoot["checkpointMain"] = prevBoot["prevCheckpointMain"].as<const char*>();
+        previousBoot["checkpointBle"] = prevBoot["prevCheckpointBle"].as<const char*>();
+        previousBoot["checkpointCloud"] = prevBoot["prevCheckpointCloud"].as<const char*>();
+      }
+      bootRecordFile.close();
+    }
+  }
 
 #if MSV2_ENABLE_WIFI
   IPAddress ip = wifiStationConnected ? WiFi.localIP() : WiFi.softAPIP();
@@ -5159,6 +6006,30 @@ const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
           // (ESP32 ADC's practical max) - tighten once a real dry-air baseline is logged.
 };
 
+// Map the useful MSV3 FDC window into uint16 without first compressing the absolute
+// ~20-million-count reading. Bench/nail-polish tests show roughly 20M dry -> 19M wet:
+// this mapping produces 40,000 -> 50,000, retaining 10,000 steps across that real 1M
+// signal span. The observed ~3,000-count noise becomes ~30 derived steps and is handled
+// by the receiver presentation filter, while rawFdcCounts itself is preserved unchanged
+// in /data, cloud snapshots, and Supabase history.
+//
+// The 24M reference and 100-count divisor cover raw inputs from 24M (derived 0) down to
+// 17,446,500 (derived 65,535), comfortably enclosing the observed ~18-22M operating
+// window. Out-of-window readings clamp instead of wrapping.
+const uint32_t MSV3_FDC_MOISTURE_REFERENCE_COUNTS = 24000000UL;
+const uint32_t MSV3_FDC_COUNTS_PER_MOISTURE_UNIT = 100UL;
+
+uint16_t calibrateMsv3Moisture(uint32_t rawFdcCounts)
+{
+  if (rawFdcCounts >= MSV3_FDC_MOISTURE_REFERENCE_COUNTS)
+  {
+    return 0;
+  }
+  uint32_t moisture = (MSV3_FDC_MOISTURE_REFERENCE_COUNTS - rawFdcCounts) /
+      MSV3_FDC_COUNTS_PER_MOISTURE_UNIT;
+  return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
+}
+
 uint16_t moistureCeilingForSensor(uint8_t sensorId)
 {
   if (sensorId <= MAX_SENSOR_ID && MOISTURE_INVERT_CEILING_BY_SENSOR[sensorId] != 0)
@@ -5177,6 +6048,174 @@ uint16_t calibrateRawMoisture(uint8_t sensorId, uint16_t rawKHz)
 {
   uint16_t ceiling = moistureCeilingForSensor(sensorId);
   return rawKHz >= ceiling ? 0 : (ceiling - rawKHz);
+}
+
+// Estimate the useful signal span without assuming one probe generation's numeric scale.
+// Once auto-calibration is ready its learned range is the best available scale. Before
+// that, use 20% of the current signal with a small absolute floor so legacy low-valued
+// sensors and MSV3's much larger FDC-derived value both receive proportionate thresholds.
+uint16_t moisturePresentationSpan(uint8_t sensorId, uint16_t measuredMoisture)
+{
+  AutoCalState learned;
+  if (copyAutoCalState(sensorId, learned) && learned.ready &&
+      learned.wetBound > learned.dryBound)
+  {
+    uint32_t learnedSpan = (uint32_t)(learned.wetBound - learned.dryBound);
+    return learnedSpan > 0xFFFF ? 0xFFFF : (uint16_t)learnedSpan;
+  }
+
+  uint16_t estimatedSpan = measuredMoisture / 5U;
+  return estimatedSpan < 20U ? 20U : estimatedSpan;
+}
+
+uint16_t maxMoistureThreshold(uint16_t left, uint16_t right)
+{
+  return left > right ? left : right;
+}
+
+// Dry-side evidence escape hatch: after this many qualifying blocked dry-side packets,
+// force one capped convergence step. The evidence survives ordinary sub-watering upward
+// jitter, so symmetric noise cannot indefinitely erase a genuine slow dry-down.
+const uint8_t MOISTURE_MAX_STALLED_WAKES = 20;
+
+// Display-only drying ratchet:
+// - train on two packets before moving, so the receiver observes this sensor's scale/noise;
+// - ignore normal upward jitter, keeping an easy-to-read monotonic drying curve;
+// - follow lower readings through an adaptive 3x-noise deadband with a capped step;
+// - snap to a sufficiently large upward change once it persists for two consecutive
+//   packets, which is treated as watering (a single such packet only arms the pending
+//   flag, so one noisy outlier on a spiky sensor can't snap the display by itself).
+//
+// The actual derived reading is always retained in measuredMoisture and sent to the
+// original Supabase `moisture` history column. This function only controls presentation.
+uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, uint16_t span)
+{
+  SensorReading& reading = sensors[sensorId];
+
+  if (reading.moistureFilterSamples == 0)
+  {
+    reading.moisture = measuredMoisture;
+    reading.previousMeasuredMoisture = measuredMoisture;
+    reading.moistureNoise = maxMoistureThreshold(1U, span / 100U);
+    reading.moistureFilterSamples = 1;
+    return reading.moisture;
+  }
+
+  uint16_t sampleDelta = measuredMoisture >= reading.previousMeasuredMoisture
+      ? measuredMoisture - reading.previousMeasuredMoisture
+      : reading.previousMeasuredMoisture - measuredMoisture;
+
+  // Use the second packet exclusively to seed the observed packet-to-packet noise.
+  // If watering happened immediately after receiver boot it is accepted on packet three,
+  // after one stable repeat, rather than risking a false watering step from startup noise.
+  if (reading.moistureFilterSamples == 1)
+  {
+    reading.moistureNoise = maxMoistureThreshold(1U, sampleDelta);
+    reading.previousMeasuredMoisture = measuredMoisture;
+    reading.moistureFilterSamples = 2;
+    return reading.moisture;
+  }
+
+  uint16_t wateringThreshold = maxMoistureThreshold(4U, (uint16_t)(((uint32_t)span * 12U + 99U) / 100U));
+  wateringThreshold = maxMoistureThreshold(wateringThreshold, reading.moisture / 50U);
+  uint32_t noiseWateringThreshold = (uint32_t)reading.moistureNoise * 4U;
+  if (noiseWateringThreshold > 0xFFFF)
+  {
+    noiseWateringThreshold = 0xFFFF;
+  }
+  wateringThreshold = maxMoistureThreshold(wateringThreshold, (uint16_t)noiseWateringThreshold);
+
+  bool wateringRise = measuredMoisture > reading.moisture &&
+      (uint32_t)(measuredMoisture - reading.moisture) >= wateringThreshold;
+
+  if (wateringRise && reading.moistureWateringPending)
+  {
+    // Second consecutive packet clearing the threshold: the rise persisted, so this is
+    // a real watering event rather than one noisy outlier. Snap immediately - blending
+    // would turn it into an artificial slow climb and make the user's most important
+    // transition harder to recognize.
+    reading.moisture = measuredMoisture;
+    reading.moistureStalledWakes = 0;
+    reading.moistureWateringPending = false;
+  }
+  else if (wateringRise)
+  {
+    // First packet to clear the watering threshold. Unlike every dry-side move (guarded
+    // by a deadband and a per-packet step cap), a single upward packet had no protection
+    // against a one-off noisy outlier snapping the display early - hold steady and require
+    // one more unique packet to confirm the rise before committing to it.
+    reading.moistureWateringPending = true;
+    reading.moistureStalledWakes = 0;
+  }
+  else
+  {
+    reading.moistureWateringPending = false;
+
+    // Only ordinary-size packet deltas teach the noise estimate. Large real drying steps
+    // and one-off outliers must not inflate the deadband for hours afterward.
+    if (sampleDelta <= wateringThreshold)
+    {
+      reading.moistureNoise = (uint16_t)(((uint32_t)reading.moistureNoise * 7U + sampleDelta + 4U) / 8U);
+      if (reading.moistureNoise == 0)
+      {
+        reading.moistureNoise = 1;
+      }
+    }
+
+    uint16_t deadband = maxMoistureThreshold(2U, span / 100U);
+    uint32_t noiseDeadband = (uint32_t)reading.moistureNoise * 3U;
+    if (noiseDeadband > 0xFFFF)
+    {
+      noiseDeadband = 0xFFFF;
+    }
+    deadband = maxMoistureThreshold(deadband, (uint16_t)noiseDeadband);
+
+    bool pendingDryDown = measuredMoisture < reading.moisture;
+    // Bounded hold-time escape hatch (see MOISTURE_MAX_STALLED_WAKES above): once a real
+    // dry-side difference has been blocked by the deadband for too many consecutive
+    // unique packets, open the deadband for this packet only so the display keeps
+    // converging instead of holding a value indefinitely. The per-packet step cap below
+    // still applies, so this stays a gentle nudge, not a jump.
+    bool releaseDryDeadband = pendingDryDown &&
+        (uint16_t)reading.moistureStalledWakes + 1U >= MOISTURE_MAX_STALLED_WAKES;
+    uint16_t effectiveDeadband = releaseDryDeadband ? 0U : deadband;
+
+    if (pendingDryDown && (uint32_t)measuredMoisture + effectiveDeadband < reading.moisture)
+    {
+      uint16_t excess = reading.moisture - measuredMoisture - effectiveDeadband;
+      uint16_t step = (excess + 1U) / 2U;
+      uint16_t maxStep = maxMoistureThreshold(1U, span / 20U);
+      if (step > maxStep)
+      {
+        step = maxStep;
+      }
+      reading.moisture -= step;
+      reading.moistureStalledWakes = 0;
+    }
+    else if (pendingDryDown)
+    {
+      // A real dry-side difference exists but is still within the deadband - count it
+      // toward the bounded hold instead of resetting, so a persistent slow trend is
+      // eventually recognized even though no single packet ever clears the deadband.
+      if (reading.moistureStalledWakes < 0xFF)
+      {
+        reading.moistureStalledWakes++;
+      }
+    }
+    else if (measuredMoisture == reading.moisture)
+    {
+      reading.moistureStalledWakes = 0;
+    }
+    // Preserve accumulated dry-side evidence across ordinary upward jitter. A rise large
+    // enough to be watering is handled above and resets the counter explicitly.
+  }
+
+  reading.previousMeasuredMoisture = measuredMoisture;
+  if (reading.moistureFilterSamples < 0xFF)
+  {
+    reading.moistureFilterSamples++;
+  }
+  return reading.moisture;
 }
 
 // Generic 1S LiPo open-circuit-voltage -> percent curve (a commonly cited hobbyist
@@ -5274,21 +6313,51 @@ uint8_t batteryMvToPercent(float mvolts, bool isCharging)
 float smoothedBatteryPercent[MAX_SENSOR_ID + 1];
 bool smoothedBatteryReady[MAX_SENSOR_ID + 1];
 bool lastChargingStateBySensor[MAX_SENSOR_ID + 1];
+// A candidate charging-state flip awaiting confirmation - see the debounce comment
+// inside calibrateRawBattery() below.
+bool pendingChargingStateBySensor[MAX_SENSOR_ID + 1];
+bool chargingStatePendingBySensor[MAX_SENSOR_ID + 1];
 
-// A charge/discharge transition is a real, instantaneous jump in what the corrected curve
-// reads (the IR-drop offset direction flips), not sensor noise - blending it through the
-// normal EMA would just smear the jump across several readings instead of reflecting it.
-// Snap straight to the new curve's reading on the packet where the state actually changes,
-// then resume normal smoothing within that state.
+// A confirmed charge/discharge transition is a real, instantaneous jump in what the
+// corrected curve reads (the IR-drop offset direction flips), not sensor noise - blending
+// it through the normal EMA would just smear the jump across several readings instead of
+// reflecting it. Snap straight to the new curve's reading on the packet where the state
+// actually changes, then resume normal smoothing within that state.
 uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool charging)
 {
-  float raw = batteryMvToPercent(rawMv, charging);
   if (sensorId > MAX_SENSOR_ID)
   {
-    return (uint8_t)(raw + 0.5f);
+    return (uint8_t)(batteryMvToPercent(rawMv, charging) + 0.5f);
   }
 
-  if (!smoothedBatteryReady[sensorId] || charging != lastChargingStateBySensor[sensorId])
+  // The probe's ~CHG-pin read is a single un-debounced digitalRead() - a misread there
+  // (noise, or the genuinely uncertain signal right at end-of-charge termination) used to
+  // be indistinguishable from a real transition below, discarding all prior smoothing and
+  // jumping straight to one fresh packet's reading under whatever might be the WRONG
+  // IR-compensation curve for the true battery state. Require the same new state on a
+  // second consecutive unique packet before treating it as real; a one-off disagreement is
+  // held as a candidate and this packet still uses the last confirmed state's curve -
+  // mirrors smoothMoistureForDisplay()'s watering-rise debounce.
+  bool useCharging;
+  if (!smoothedBatteryReady[sensorId] || charging == lastChargingStateBySensor[sensorId])
+  {
+    useCharging = charging;
+    chargingStatePendingBySensor[sensorId] = false;
+  }
+  else if (chargingStatePendingBySensor[sensorId] && pendingChargingStateBySensor[sensorId] == charging)
+  {
+    useCharging = charging; // confirmed on a second consecutive packet
+  }
+  else
+  {
+    pendingChargingStateBySensor[sensorId] = charging;
+    chargingStatePendingBySensor[sensorId] = true;
+    useCharging = lastChargingStateBySensor[sensorId];
+  }
+
+  float raw = batteryMvToPercent(rawMv, useCharging);
+
+  if (!smoothedBatteryReady[sensorId] || useCharging != lastChargingStateBySensor[sensorId])
   {
     smoothedBatteryPercent[sensorId] = raw;
     smoothedBatteryReady[sensorId] = true;
@@ -5298,7 +6367,7 @@ uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool charging)
     smoothedBatteryPercent[sensorId] += 0.2f * (raw - smoothedBatteryPercent[sensorId]);
   }
 
-  lastChargingStateBySensor[sensorId] = charging;
+  lastChargingStateBySensor[sensorId] = useCharging;
   return (uint8_t)(smoothedBatteryPercent[sensorId] + 0.5f);
 }
 
@@ -5342,24 +6411,33 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                     ((uint32_t)buffer[8] << 8) |
                     ((uint32_t)buffer[9] << 16);
 
-    // len >= MSV2_RAW_PACKET_MIN_LEN doubles as the format-version check described above
-    // that constant: probes running the 2026-07-28 raw-values rework send the wider
-    // packet (raw kHz + raw mV + charging flag) and get calibrated here; any probe still
-    // on pre-rework firmware sends the shorter legacy packet with already-calibrated
-    // values and is passed through unchanged, same as before this rework.
+    // len threshold doubles as the format-version check: MSV3_RAW_PACKET_WIDE_LEN
+    // MUST be checked before MSV2_RAW_PACKET_MIN_LEN, since a wide packet also
+    // satisfies the narrower >= check - checking narrow first would misparse a wide
+    // packet's shifted battery-mV/charging bytes as part of a 2-byte raw field. See
+    // the MSV2_RAW_PACKET_WIDE_LEN comment above for the full field-layout story.
     uint16_t moisture;
-    uint8_t batteryPercent;
-    bool hasRaw = len >= MSV2_RAW_PACKET_MIN_LEN;
+    uint8_t batteryPercent = BATTERY_UNKNOWN;
+    bool wideRaw = len >= MSV2_RAW_PACKET_WIDE_LEN;
+    bool hasRaw = wideRaw || len >= MSV2_RAW_PACKET_MIN_LEN;
     uint16_t rawMoistureKHz = 0;
     uint16_t rawBatteryMv = 0;
     bool rawCharging = false;
-    if (hasRaw)
+    uint32_t rawFdcCounts = 0;
+    if (wideRaw)
+    {
+      rawFdcCounts = ((uint32_t)buffer[10]) | ((uint32_t)buffer[11] << 8) |
+                     ((uint32_t)buffer[12] << 16) | ((uint32_t)buffer[13] << 24);
+      rawBatteryMv = buffer[14] | (buffer[15] << 8);
+      rawCharging = (buffer[16] & 0x01) != 0;
+      moisture = calibrateMsv3Moisture(rawFdcCounts);
+    }
+    else if (hasRaw)
     {
       rawMoistureKHz = buffer[10] | (buffer[11] << 8);
       rawBatteryMv = buffer[12] | (buffer[13] << 8);
       rawCharging = (buffer[14] & 0x01) != 0;
       moisture = calibrateRawMoisture(sensorId, rawMoistureKHz);
-      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, rawCharging);
     }
     else
     {
@@ -5367,12 +6445,36 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       batteryPercent = len >= 13 ? buffer[12] : BATTERY_UNKNOWN;
     }
 
+    const int packetRssi = advertisedDevice.getRSSI();
+    const uint32_t receivedAtMs = millis();
+    // Snapshot calibration before entering sensorsMux so the packet path never nests
+    // sensorsMux and autoCalMux. smoothMoistureForDisplay() only touches this sensor's
+    // SensorReading and therefore runs under the single lock below.
+    const uint16_t presentationSpan = moisturePresentationSpan(sensorId, moisture);
+    SensorReading publishedReading;
+    portENTER_CRITICAL(&sensorsMux);
     SensorReading& reading = sensors[sensorId];
 
     if (reading.seen && wake == reading.wake)
     {
+      portEXIT_CRITICAL(&sensorsMux);
       return;
     }
+
+    // A probe generation/packet-format change under the same sensor ID also changes its
+    // numeric scale. Do not blend across those incompatible scales.
+    if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw))
+    {
+      reading.moistureFilterSamples = 0;
+    }
+    // Battery calibration is stateful too. Keep it after duplicate rejection and inside
+    // the same packet transaction so repeated advertisement frames cannot overweight one
+    // physical wake in the EMA or race another callback for this sensor's filter state.
+    if (hasRaw)
+    {
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, rawCharging);
+    }
+    uint16_t displayMoisture = smoothMoistureForDisplay(sensorId, moisture, presentationSpan);
 
     // wake going DOWN (rather than up) means the probe rebooted and its wake counter
     // reset to a small value, not that ~16 million packets were dropped - computing
@@ -5384,19 +6486,38 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // via a corrupted value reaching the blocking HTTPClient cloud-sync call, not fully
     // confirmed, but worth fixing either way regardless of whether it was the cause here.
     reading.missed = (reading.seen && wake > reading.wake) ? (wake - reading.wake - 1) : 0;
+    // Publish the whole record inside the critical section begun before duplicate/filter
+    // handling. smoothMoistureForDisplay() mutates the filter fields in this same record,
+    // so placing the lock after that call would still expose a half-updated packet.
     reading.missedTotal += reading.missed;
     reading.received++;
     reading.seen = true;
     reading.wake = wake;
-    reading.moisture = moisture;
+    reading.moisture = displayMoisture;
+    reading.measuredMoisture = moisture;
     reading.batteryPercent = batteryPercent;
     reading.hasRaw = hasRaw;
+    reading.wideRaw = wideRaw;
     reading.rawMoistureKHz = rawMoistureKHz;
+    reading.rawFdcCounts = rawFdcCounts;
     reading.rawBatteryMv = rawBatteryMv;
     reading.rawCharging = rawCharging;
-    reading.rssi = advertisedDevice.getRSSI();
-    reading.lastSeenMs = millis();
+    reading.rssi = packetRssi;
+    reading.lastSeenMs = receivedAtMs;
+    publishedReading = reading;
+    portEXIT_CRITICAL(&sensorsMux);
     sensorDataDirty = true;
+
+    // Queue this immutable wake before another advertisement can overwrite sensors[].
+    // Duplicate BLE packets for the same wake returned above, so each queued item is one
+    // real receiver-observed sample rather than one row per repeated advertisement frame.
+    if (!enqueueHistoryReading(sensorId, publishedReading))
+    {
+      Serial.print("[MSV2 cloud] history queue full; dropped sensor ");
+      Serial.print(sensorId);
+      Serial.print(" wake ");
+      Serial.println(wake);
+    }
 
     // 2026-07-28: temporary debug print for live erratic-battery-reading investigation -
     // remove once resolved (see chat log / scindapsus_probe memory for context).
@@ -5414,12 +6535,16 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.print(batteryPercent);
     Serial.print(" rawMoistureKHz=");
     Serial.print(rawMoistureKHz);
-    Serial.print(" moisture=");
-    Serial.println(moisture);
+    Serial.print(" rawFdcCounts=");
+    Serial.print(rawFdcCounts);
+    Serial.print(" measuredMoisture=");
+    Serial.print(moisture);
+    Serial.print(" displayMoisture=");
+    Serial.println(displayMoisture);
 
-    // Do not schedule cloud work from packet reception. The periodic uploader will include
-    // this fresh value at the configured cloudSyncIntervalSeconds cadence; accelerating it
-    // here previously turned frequent advertisements into a TLS request every ~15-35s.
+    // Do not schedule cloud work from packet reception. The periodic uploader drains all
+    // queued wakes at cloudSyncIntervalSeconds cadence, so retaining every sample no longer
+    // requires turning frequent BLE advertisements into frequent TLS handshakes.
   }
 };
 
@@ -5430,8 +6555,10 @@ void bleScanTask(void* parameter)
   {
     if (bleScan != nullptr)
     {
+      setBleCheckpoint("ble task: scan start");
       bleScan->start(BLE_SCAN_SECONDS, false);
       bleScan->clearResults();
+      setBleCheckpoint("ble task: scan done");
     }
     vTaskDelay(pdMS_TO_TICKS(BLE_SCAN_IDLE_MS));
   }
@@ -5453,13 +6580,10 @@ void bleScanTask(void* parameter)
 // bleScanTask runs one priority level higher, preventing this task's blocking TLS work from
 // delaying scan-window scheduling. Packet reception no longer accelerates snapshot uploads.
 //
-// Known, accepted simplification (not new risk introduced by this change): this task
-// reads/writes cloudUploadUrl/cloudApiToken/wifiStationConnected and the sensors[]/
-// autoCal[] arrays without a mutex, same as the existing BLE scan callback already does
-// from its own context today - no new class of race condition, just one more reader/
-// writer of state that was already being touched across task boundaries. The one thing
-// that could have been a real hazard - applyCloudUiConfig() rewriting artSlots[] out
-// from under a mid-render read - isn't actually a risk here: that function only writes
+// Shared sensor and auto-calibration records are copied/published under sensorsMux and
+// autoCalMux respectively. Other small connectivity/config flags remain single-word
+// volatile values. applyCloudUiConfig() cannot rewrite artSlots[] out
+// from under a mid-render read: that function only writes
 // ui.json to LittleFS and sets displayDirty, and renderUi() (which owns rebuilding
 // artSlots[] from that file) only ever runs from the main loop, so this task never
 // touches artSlots[] directly.
@@ -5469,14 +6593,31 @@ void cloudSyncTask(void* parameter)
   for (;;)
   {
     uint32_t now = millis();
+    setCloudCheckpoint("cloud task: iteration start");
     if (wifiStationConnected)
     {
-      runCloudBootstrap(now);
-      runCloudDisplaySettings(now);
-      runCloudConfigPull(now);
-      runCloudAutoCalPull(now);
+      // History is the only irreplaceable cloud work: config/display state can be fetched
+      // again, but a full queue eventually has to drop new readings. Give snapshot upload
+      // the first TLS connection whenever several periodic jobs become due together.
       runCloudSnapshotUploader(now);
+      runCloudBootstrap(now);
+      // At 75% full, reserve the cloud task's TLS budget for lossless history recovery.
+      // Bootstrap still runs above because an unconfigured receiver cannot upload at all;
+      // display/config/auto-cal state is recoverable on a later poll. This also prevents a
+      // failing auxiliary endpoint from repeatedly fragmenting heap while history is in
+      // the only state where delay causes permanent data loss.
+      if (queuedHistoryCount() < (HISTORY_QUEUE_CAPACITY * 3U) / 4U)
+      {
+        runCloudDisplaySettings(now);
+        runCloudConfigPull(now);
+        runCloudAutoCalPull(now);
+      }
+      else
+      {
+        setCloudCheckpoint("cloud task: history recovery priority");
+      }
     }
+    setCloudCheckpoint("cloud task: iteration done");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -5953,6 +7094,7 @@ void setupWifi()
         renderWifiRetryScreen(stationSsid, retryCount, WIFI_CONNECT_REBOOT_RETRIES);
         Serial.flush();
         delay(1500);
+        intentionalRestartPending = true;
         ESP.restart();
       }
       clearWifiRetryState();
@@ -6029,16 +7171,55 @@ void setup()
   Serial.println(lastCheckpoint);
   Serial.print("[MSV2 boot] reset reason: ");
   Serial.println(resetReasonName(resetReason));
+
+  // 2026-08-23 telemetry: snapshot the prior boot's RTC-held state before this boot's own
+  // setCheckpoint()/bootLog() calls below overwrite it, so it can be persisted to LittleFS
+  // (see the one-time boot record after LittleFS mounts). RTC memory survives any reset but
+  // not a full power loss, which is exactly the gap that LittleFS record covers.
+  char prevCheckpointMain[48];
+  char prevCheckpointBle[48];
+  char prevCheckpointCloud[48];
+  strlcpy(prevCheckpointMain, lastCheckpoint, sizeof(prevCheckpointMain));
+  strlcpy(prevCheckpointBle, lastCheckpointBle, sizeof(prevCheckpointBle));
+  strlcpy(prevCheckpointCloud, lastCheckpointCloud, sizeof(prevCheckpointCloud));
+  bool wasIntentionalRestart = intentionalRestartPending;
+  intentionalRestartPending = false;
+
   randomSeed(esp_random());
+  historyQueueBootId = esp_random();
+  if (historyQueueBootId == 0)
+  {
+    historyQueueBootId = 1;
+  }
   bootLog("serial ready");
 
   adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
   displaySettingsFileMutex = xSemaphoreCreateMutex();
 
   bootLog("mounting LittleFS");
-  if (!LittleFS.begin(true))
+  bool littleFsMounted = LittleFS.begin(true);
+  if (!littleFsMounted)
   {
     bootLog("LittleFS mount failed");
+  }
+  else
+  {
+    // One compact record per boot, overwritten each time (not a periodic heartbeat, which
+    // would wear the flash for no benefit) - captures what the PREVIOUS boot's RTC state
+    // was, so a full power loss (which clears RTC memory, unlike a plain reset) still
+    // leaves one prior data point instead of none.
+    StaticJsonDocument<384> bootRecord;
+    bootRecord["resetReason"] = resetReasonName(resetReason);
+    bootRecord["wasIntentionalRestart"] = wasIntentionalRestart;
+    bootRecord["prevCheckpointMain"] = prevCheckpointMain;
+    bootRecord["prevCheckpointBle"] = prevCheckpointBle;
+    bootRecord["prevCheckpointCloud"] = prevCheckpointCloud;
+    File bootRecordFile = LittleFS.open("/boot-record.json", "w");
+    if (bootRecordFile)
+    {
+      serializeJson(bootRecord, bootRecordFile);
+      bootRecordFile.close();
+    }
   }
   ensureDefaultUi();
   ensureUiMetadata();
@@ -6235,6 +7416,11 @@ void setup()
 void loop()
 {
   uint32_t now = millis();
+  uint32_t freeHeapNow = ESP.getFreeHeap();
+  if (freeHeapNow < minFreeHeapEverBytes)
+  {
+    minFreeHeapEverBytes = freeHeapNow;
+  }
   serviceBuzzer(now);
 
 #if MSV2_ENABLE_WIFI
@@ -6249,6 +7435,7 @@ void loop()
     Serial.println("[MSV2 wifi] restarting after WiFi config change");
     Serial.flush();
     delay(50);
+    intentionalRestartPending = true;
     ESP.restart();
   }
   // Cloud bootstrap/config-pull/auto-cal-pull/snapshot-upload now run on their own task

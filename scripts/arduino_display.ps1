@@ -13,6 +13,14 @@ if (!(Test-Path $CliPath)) {
   throw "arduino-cli.exe not found at $CliPath"
 }
 
+function Invoke-ArduinoCli {
+  param([string[]]$Arguments)
+  & $CliPath @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "arduino-cli failed with exit code $LASTEXITCODE"
+  }
+}
+
 $Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
 $BuildArgs = @()
 $BuildName = if ($ForceWifiSetup) { "display-force-wifi-setup" } else { "display-normal" }
@@ -26,16 +34,16 @@ if ($ForceWifiSetup) {
 
 switch ($Action) {
   "compile" {
-    & $CliPath compile --fqbn $Fqbn --build-path $BuildPath @BuildArgs $Sketch
+    Invoke-ArduinoCli (@("compile", "--fqbn", $Fqbn, "--build-path", $BuildPath) + $BuildArgs + @($Sketch))
   }
   "upload" {
-    & $CliPath compile --fqbn $Fqbn --build-path $BuildPath @BuildArgs $Sketch
-    & $CliPath upload -p $Port --fqbn $Fqbn --input-dir $BuildPath $Sketch
+    Invoke-ArduinoCli (@("compile", "--fqbn", $Fqbn, "--build-path", $BuildPath) + $BuildArgs + @($Sketch))
+    Invoke-ArduinoCli @("upload", "-p", $Port, "--fqbn", $Fqbn, "--input-dir", $BuildPath, $Sketch)
   }
   "monitor" {
-    & $CliPath monitor -p $Port -c baudrate=115200
+    Invoke-ArduinoCli @("monitor", "-p", $Port, "-c", "baudrate=115200")
   }
   "board-list" {
-    & $CliPath board list
+    Invoke-ArduinoCli @("board", "list")
   }
 }

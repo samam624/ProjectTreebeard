@@ -92,9 +92,9 @@ Useful endpoints:
 - `GET http://192.168.4.1/ui` returns the current UI JSON.
 - `POST http://192.168.4.1/ui` replaces the UI JSON and redraws the display.
 - `GET http://192.168.4.1/data` returns the latest probe readings.
-- `GET http://192.168.4.1/snapshot` returns the future cloud snapshot payload without uploading it.
+- `GET http://192.168.4.1/snapshot` returns the current cloud snapshot payload without uploading it.
 - `GET http://192.168.4.1/device` returns receiver identity, firmware build, network mode, IP, and endpoint paths.
-- `GET http://192.168.4.1/claim` returns the receiver ID and local claim code for future app/cloud pairing.
+- `GET http://192.168.4.1/claim` returns the receiver ID and local claim code used for app/cloud pairing.
 - `GET http://192.168.4.1/config-meta` returns the active UI config schema/version/source metadata.
 - `GET/POST/DELETE http://192.168.4.1/cloud` reads, saves, or resets optional cloud settings and upload status.
 - `GET http://192.168.4.1/manifest.webmanifest`, `/sw.js`, and `/app-icon.svg` support the installable web-app shell.
@@ -302,7 +302,7 @@ Live-editable JSON values:
 - `cards[].moisture.auto`: use cloud-learned moisture bounds when enough supported history exists.
 - `cards[].moisture.dry` and `cards[].moisture.wet`: calibration points used to convert raw moisture into a health bar.
 
-Each card shows the plant name, an animated pixel-art plant, a moisture health bar, and a battery health bar. Battery appears when the probe advertisement includes the optional battery percent byte; older probe firmware still works but shows `--%`. The included sprite choices can be swapped from JSON without reflashing, but adding new bitmap assets still requires regenerating `plant_sprites.h` and flashing the display firmware once.
+Each card shows the plant name, a compact `Batt: 100%`-style reading at the top right, an animated pixel-art plant, and a `Moisture` health bar. Older probe firmware without battery data shows `Batt: --%`. The included sprite choices can be swapped from JSON without reflashing, but adding new bitmap assets still requires regenerating `plant_sprites.h` and flashing the display firmware once.
 
 The ESP32 local setup app automatically recalculates `layout.columns` and `layout.rows` when plants are added or deleted. Current defaults are 6 plants as `3x2`, 7 plants as `4x2` with the bottom row centered, and 8 plants as `4x2`.
 
@@ -337,6 +337,12 @@ The generator writes:
 - `generated/plant_sprites/mobile_art_catalog_snippet.js`
 
 The firmware automatically uses `PlantSpriteCatalog.h` for display-side sprite lookup. The generator also updates the phone app art picker in `MobileAppPage.h`, so future GIFs added to `assets/plant_gifs/` appear in the mobile dropdown after regenerating and reflashing the ESP32.
+
+Animation frames keep the source GIF's shared logical-canvas coordinates and per-frame durations. The generator preserves every unique pose by default, applies one union crop to every pose instead of trimming and re-centering poses independently, and ignores tiny detached specks that would otherwise control the crop. Use `--max-poses N` only when intentionally trading animation detail for flash space. Run the sprite geometry regression tests with:
+
+```powershell
+python -m unittest discover -s scripts -p "test_generate_plant_sprites.py" -v
+```
 
 If you ever want to generate the preview snippet without touching the embedded phone app:
 

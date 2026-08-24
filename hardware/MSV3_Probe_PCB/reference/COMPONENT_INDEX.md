@@ -169,9 +169,39 @@ leakage 0.5/2nA max, charge injection 1pC, CON 38pF.
 | 15 | VSTOR | VSTOR (boost output, decoupled via C10/C11) |
 | 16 | LBST | LBST (harvester inductor L1, other end) |
 
-**Not yet tested** (as of 8/21): no solar panel/daylight available during bring-up. Charger,
-harvester, and the Q1 power-source mux are the three subsystems still unverified on real hardware
-— see `docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md`'s parent bring-up plan for status.
+**Real programmed thresholds** (derived 2026-08-21 from the actual populated R9-R15 and the
+datasheet's own Equations 2/3, cross-checked against TI's own worked design examples): VBIAS =
+1.25V typ (confirmed from the Electrical Characteristics table, not the unrelated 1.21V MPPT-
+disable threshold nearby — easy to grab the wrong constant from this datasheet).
+
+| Threshold | Formula | Resistors (this board) | Value |
+|---|---|---|---|
+| VBAT_OV | 1.5·VBIAS·(1+R11/R14) | R11=5.62MΩ (VRDIV-side, "R_OV2" in TI's convention), R14=4.42MΩ (GND-side, "R_OV1") | ≈4.26V |
+| VBAT_UV | VBIAS·(1+R12/R15) | R12=5.90MΩ (VRDIV-side), R15=4.12MΩ (GND-side) | ≈3.04V |
+| MPP/VOC ratio | (R10+R13)/(R9+R10+R13) | R9=4.42MΩ top, R10=10MΩ+R13=5.6MΩ bottom | ≈78% |
+| VBAT_OK | — | pin 11 floating, OK_HYST/OK_PROG tied GND | disabled on this board |
+
+Note the top/bottom resistor naming: TI's schematic figures consistently put the *larger* resistor
+on the VRDIV side and the *smaller* one on the GND side for both the OV and UV dividers — verify
+this orientation against a real schematic figure (not the equation text alone) before reusing this
+pattern elsewhere, since the datasheet's OCR'd/scanned equation text has inconsistent ROV1/ROV2
+variable-name ordering between design examples and needs the actual figure to disambiguate.
+
+**Partially tested, 2026-08-21 (nighttime bench session, real hardware)**: real solar panel wired
+to SP+/GND for the first time. Cold start confirmed working — starting from a fully dead board (no
+battery, no USB), VSTOR climbed 0V→2.53-2.67V under a single bright LED held over the panel, then
+decayed back to 0V when the light was removed. Panel's true open-circuit V_OC under that LED
+measured 4.62V (disconnected, direct multimeter read), but loaded VIN_DC (SP+) was only 0.74V —
+consistent with a point-source LED delivering very little photocurrent despite a high V_OC, not a
+circuit fault (VSTOR responded correctly and proportionally to light intensity). The VSTOR plateau
+stayed below the ~3.04V VBAT_UV threshold above, so no charge-through to a battery would have
+occurred yet under this specific light source. See `docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md` Test 3
+for the full writeup. **Still open**: an in-series current measurement at SP+ (needs a soldering
+iron to add a break point) and a repeat test under real daylight/sun instead of a point-source LED.
+The battery/harvester path and VSTOR↔VBAT latch behavior have since been exercised (see the later
+2026-08-22 bench-plan results), so “no battery has ever been attached” is historical. The BQ25170
+USB charger's STAT/PG behavior and actual charge current still need a recorded physical Test 1
+result; resistor-derived configuration alone is not a substitute for that measurement.
 
 ## USB_IC — BQ25170DSGR (LiPo linear charger)
 
@@ -187,10 +217,11 @@ harvester, and the Q1 power-source mux are the three subsystems still unverified
 | 8 | OUT | VBAT |
 | — | Thermal pad | GND |
 
-**Not yet verified**: whether ISET/VSET resistor values (R7/R8) are actually sized for a safe
-charge rate on the real battery cell — flagged as an open item since 2026-08-01, still open as of
-8/21 (needs the real resistor values pulled from the schematic and checked against the datasheet's
-`ICHG = KISET / RISET` formula).
+**Verified 2026-08-21** (open item since 2026-08-01, now closed): R8=27kΩ on VSET → Table 7-1's
+exact "1-cell LiIon: 4.20V" entry, the standard safe LiPo target. R7=10kΩ on ISET → ICHG =
+KISET/RISET = 300Ω·A (typ, from the Electrical Characteristics table) / 10kΩ ≈ 30mA — a
+conservative, safe charge rate. Both resistors are within the datasheet's valid ranges (RVSET
+18-100kΩ, RISET 0.375-30kΩ). No bug; sized correctly.
 
 ## 3V3_LDO — TPS7A0233PDBVR (SOT-23-5, DBV package)
 

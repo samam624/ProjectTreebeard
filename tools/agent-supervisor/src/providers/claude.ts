@@ -3,6 +3,11 @@ import {
   type Options,
   type SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  assertSubscriptionOnlyBilling,
+  assertSubscriptionSafeModels,
+  subscriptionOnlyEnvironment,
+} from "../billing-safety.js";
 import type { AgentProvider, ProviderRequest, ProviderResponse } from "./types.js";
 
 const READ_TOOLS = ["Read", "Glob", "Grep"];
@@ -29,10 +34,18 @@ export class ClaudeProvider implements AgentProvider {
   private spentUsd = 0;
 
   constructor(options: ClaudeProviderOptions) {
+    // Previously only enforced once at the CLI entrypoint (index.ts) - anything that
+    // constructs a ClaudeProvider directly (a test, a future script, another entrypoint)
+    // got zero preemptive billing protection, just the passive env-scrubbing fallback in
+    // subscriptionOnlyEnvironment() below. Enforcing it here means every real construction
+    // path is covered regardless of caller.
+    assertSubscriptionOnlyBilling();
+    assertSubscriptionSafeModels(options.model);
     this.options = options;
   }
 
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    request.signal.throwIfAborted();
     const remainingBudget = this.options.maxTotalBudgetUsd - this.spentUsd;
     if (remainingBudget <= 0) {
       throw new Error(
@@ -42,7 +55,11 @@ export class ClaudeProvider implements AgentProvider {
     }
 
     const tools = request.access === "write" ? WRITE_TOOLS : READ_TOOLS;
+    const abortController = new AbortController();
+    const relayAbort = (): void => abortController.abort(request.signal.reason);
+    request.signal.addEventListener("abort", relayAbort, { once: true });
     const sdkOptions: Options = {
+      abortController,
       cwd: this.options.cwd,
       maxTurns: this.options.maxTurns,
       maxBudgetUsd: Math.min(this.options.maxBudgetUsdPerCall, remainingBudget),
@@ -52,6 +69,7 @@ export class ClaudeProvider implements AgentProvider {
       disallowedTools: ["Bash", "WebFetch", "WebSearch", "Agent"],
       settingSources: [],
       skills: [],
+      env: subscriptionOnlyEnvironment(),
       systemPrompt: SYSTEM_PROMPT,
       outputFormat: {
         type: "json_schema",
@@ -62,10 +80,14 @@ export class ClaudeProvider implements AgentProvider {
     };
 
     let result: SDKResultMessage | null = null;
-    for await (const message of query({ prompt: request.prompt, options: sdkOptions })) {
-      if (message.type === "result") {
-        result = message;
+    try {
+      for await (const message of query({ prompt: request.prompt, options: sdkOptions })) {
+        if (message.type === "result") {
+          result = message;
+        }
       }
+    } finally {
+      request.signal.removeEventListener("abort", relayAbort);
     }
 
     if (!result) {

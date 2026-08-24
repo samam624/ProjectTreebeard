@@ -1,6 +1,133 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-22 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-08-23 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-08-23 Full-Directory Review Remediation and Live History Recovery
+
+- **Live recovery at 17:00 PDT:** the History chart stall was ingestion, not rendering. The live
+  receiver had a full `512/512` RAM queue, 2,186 dropped readings, repeated snapshot
+  `connection refused`/`send payload failed` errors, and a pending display write retrying through
+  the migration-019 HTTP 400 bug.
+- Applied migration 033 to the linked Supabase project. Display sync immediately changed to HTTP
+  200 and the old queue began draining, proving the one-second failing display/TLS loop was a
+  direct contributor.
+- Reduced receiver history batches from 32 to 16 rows, added exponential display-sync failure
+  backoff, and reserve cloud TLS work for history whenever the queue is at least 75% full. Flashed
+  `MSV2 runtime build 2026-08-23 live-history-recovery-v2` to COM16 with LittleFS preserved.
+- Post-flash `/cloud` reported snapshot HTTP 200, display HTTP 200, zero drops, the 16-row batch
+  size, and roughly 82-85KB free heap. A direct share-history read returned sensor-3 rows through
+  `2026-08-24T00:00:31.187Z` (17:00:31 PDT); its temporary verification token was revoked.
+- The 2,186 readings dropped before recovery and the remaining stale RAM queue discarded by the
+  approved flash cannot be reconstructed. Current ingestion is live again.
+
+- Closed the receiver's partial `sensors[]`/`autoCal[]` synchronization fix: BLE now publishes
+  filter state and packet fields as one update, while render, `/data`, cloud, and auto-calibration
+  callers take short value snapshots under the matching mutex. Duplicate advertisement frames are
+  rejected before either the moisture or battery filter mutates.
+- Fixed the moisture dry-side escape hatch so ordinary sub-watering upward jitter preserves
+  accumulated dry-side evidence. The capped convergence step now occurs on the twentieth
+  qualifying packet, with a host regression verifier covering symmetric alternating noise.
+- Bumped the receiver identity to `2026-08-23 live-history-recovery-v2`; this source can no longer
+  masquerade as the already-flashed `retroactive-history-smoothing-v1` binary.
+- Root-caused the continuous display-setting POST HTTP 400 to the PL/pgSQL upsert's ambiguous
+  `on conflict (receiver_id)` target. Migration 033 uses the named primary-key constraint;
+  receiver telemetry now also includes the Edge Function error text on failures.
+- MSV3 production defaults now disable serial logging/USB-host wait and the temporary overnight
+  LED load. Real wet-soil threshold/IDRIVE tuning remains a physical validation gate.
+- Automation now fails closed: Arduino wrappers throw on CLI failures and compile before upload,
+  the orphaned SD helper no longer names a nonexistent default sketch, the agent supervisor cannot
+  approve failed/timed-out required tests, dashboard verifiers discover the active bundle, and fresh
+  Supabase setup runs through the highest migration (currently 033).
+- **Deployment state:** migration 033 and the receiver recovery build are live. The separate MSV3
+  production firmware has not been reflashed; wet-soil plus 24-48-hour soak checks remain external
+  work.
+
+## Historical: 2026-08-23 Receiver Cloud Reliability, Telemetry, and History Raw Overlay
+
+- User reported periodic reboots, History-tab lag, and stuck moisture values. A same-day
+  Claude+Codex collaboration session (`tools/agent-supervisor`) synthesized a 7-step plan
+  but both implementation attempts died from `billing-safety.ts`'s `$2`/call budget cap —
+  too low for a task this size. Worth raising before trying that route again.
+- Of the plan, 3 steps were already correctly implemented in the working tree from the
+  aborted run (cross-core `sensors[]` race fix, 60s upload-latency default with a backlog
+  nudge, and the moisture filter's bounded stalled-wake escape hatch). Found and fixed one
+  real bug in that work: a persisted `syncIntervalSeconds: 300` would never pick up the new
+  60s default on reflash — added a one-time migration.
+- Added step-2 telemetry: per-subsystem RTC checkpoints, an intentional-restart marker,
+  live/min free-heap and largest-free-block tracking, BLE/cloud task stack high-water
+  marks, a history-queue high-water mark, and a one-time-per-boot LittleFS boot record —
+  all exposed under a new `health` object in `/device`. Fixed `resetReasonName()` missing
+  ESP32-S3-specific reset reasons (first real reset came back "unknown" without this).
+- Root-caused the live "connection refused" upload failures using that telemetry: all five
+  cloud-network functions (bootstrap, display-settings, config-pull, auto-cal-pull,
+  snapshot-upload) share a limited TCP/TLS resource pool, and only one of the five had any
+  cleanup (`http.end()`/`stop()`) on its failed-connection path. Fixed all five; added
+  exponential backoff on consecutive failures. A first attempt at a low-heap guard was
+  raised too high (122880 bytes) without checking it against the receiver's real ~80-95KB
+  normal operating range, and blocked 100% of uploads for a few minutes before being caught
+  and reverted — documented in full in the detailed doc below, including the mistake.
+- Confirmed Netlify (`msv2-plants.netlify.app`) is already serving the fixed `v15` service
+  worker from the 2026-08-17 stale-cache bug — not a deploy gap. The screenshots in this
+  investigation were actually the receiver's own local page (`MobileAppPage.h` at
+  `10.0.0.35`), a separate frontend from the Netlify dashboard.
+- Diagnosed (not yet fixed) a real weakness in the moisture filter's escape hatch: it resets
+  its stalled-wake counter on any upward tick, even sub-deadband noise, so it can take far
+  longer than "20 wakes" to fire against symmetric noise.
+- Added a raw-value diagnostic overlay to the receiver's local History chart
+  (`MobileAppPage.h`) — dashed line showing the unsmoothed `moisture` value alongside the
+  existing smoothed `display_moisture` line, same timestamps, shared tooltip.
+- Current live build: `MSV2 runtime build 2026-08-23 history-raw-overlay-v1`, flashed to
+  `COM16`/`10.0.0.35`, compiled at 2,160,164 bytes flash / 74,940 bytes RAM.
+- **Not done**: `displaySync`'s HTTP 400 (failing continuously, never investigated), the
+  History tab's incremental-polling backend work (step 6, needs its own deploy sign-off),
+  the escape-hatch fix itself, a real regression test for the filter, and — most
+  importantly — a real multi-day soak. Only ~15 minutes of clean post-fix data exists as of
+  this handoff.
+- Full write-up, including the mistake made and corrected mid-session:
+  `docs/RECEIVER_CLOUD_RELIABILITY_2026-08-23.md`.
+
+## 2026-08-22 MSV3 High-Resolution Moisture Follow-Up
+
+- Replaced the initial `(25M - raw) / 1000`-equivalent receiver mapping with
+  `clamp_u16((24,000,000 - rawFdcCounts) / 100)`. The nail-polish-covered probe's measured
+  20M dry -> 19M wet span now produces 40,000 -> 50,000: 10,000 useful derived steps rather
+  than 1,000. The roughly 3,000-count bench noise becomes roughly 30 derived steps for the
+  receiver presentation filter to suppress.
+- Migration 029 adds `raw_fdc_counts`, `raw_moisture_khz`, and `moisture_scale` to durable
+  history. The original 28-bit FDC value is now retained in Supabase, not just BLE/serial/
+  local `/data`.
+- Scale transitions are isolated automatically: the history insert RPC starts a fresh
+  per-sensor calibration epoch when `moisture_scale` changes, and history readers chart only
+  the latest scale. Old rows are preserved but cannot masquerade as a watering jump.
+- Migration 029 and `receiver-snapshot` are deployed. Receiver build
+  `MSV2 runtime build 2026-08-22 msv3-hires-moisture-v2` compiled at 2,133,296 bytes flash /
+  58,508 bytes RAM and was flashed successfully to COM16 with hash verification.
+- Live receiver verification: MSV3 raw `20,243,803` maps to measured/display `37,561` at
+  scale 2, exactly matching the new formula.
+- Live end-to-end verification after the scheduled cloud upload: HTTP 200; raw FDC
+  `20,243,185` produced measured `37,568` while the smoothed display held at `37,561`.
+  A forced normal auto-cal refresh then changed sensor 4's cloud-derived bounds from the
+  old ~4,760 scale to `37,574`, proving the scale-2 history insert and automatic reset both
+  executed successfully in production.
+
+## 2026-08-22 Global Receiver Moisture Smoothing
+
+- All probe generations now share one receiver-side presentation filter after protocol
+  conversion: legacy calibrated packets, MSV2 raw-kHz packets, and MSV3 wide FDC packets.
+  Normal upward jitter is ignored, drying follows downward through a learned deadband and
+  capped step, and a significant rise snaps immediately as watering.
+- Measurement truth is preserved. Receiver/API `moisture` is the smoothed display value and
+  `measuredMoisture` is the unsmoothed derived value. Supabase history keeps the latter in
+  its existing `moisture` column (so auto-calibration is unchanged) and migration 028 adds
+  `display_moisture` for the user-facing curve. Old rows/firmware fall back compatibly.
+- Migration 028 is applied, `receiver-snapshot` is deployed, and Netlify production is
+  deployed as `app.v15.js` / `msv2-cloud-app-v15`.
+- Receiver firmware `MSV2 runtime build 2026-08-22 receiver-moisture-smoothing-v1` compiled
+  at 2,132,916 bytes flash / 58,508 bytes RAM and was flashed successfully to COM16 with
+  hash verification. Live `/device`, `/data`, and `/cloud` checks passed; both cloud upload
+  and display sync returned HTTP 200.
+- Full design, threshold, data-contract, and rollout details:
+  `docs/RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md`.
 
 ## 2026-08-22 Adaptive Multi-Cycle Moisture Calibration
 
@@ -81,8 +208,8 @@ section below).
 - ESP32 display runtime renders the plant grid, animated pixel art, BLE readings, diagnostics, and phone setup app.
 - ESP32 display runtime was last flashed successfully to the display receiver on `COM16` (port numbering shifts between sessions - always run `arduino_display.ps1 -Action board-list` first) with:
   - `.\scripts\arduino_display.ps1 -Action upload -Port COM16`
-  - Firmware build tag constant is still `MSV2_BUILD_TAG "MSV2 runtime build 2026-08-11 display-touch-brightness-v1"` (not bumped despite the 2026-08-12 fixes below - the string wasn't touched, so don't rely on it to distinguish pre/post-fix builds).
-  - Build size after flash: 2,090,044 bytes, 66% of program storage; 57,948 bytes (17%) of dynamic memory.
+  - Firmware build tag: `MSV2 runtime build 2026-08-22 msv3-hires-moisture-v2`.
+  - Build size after flash: 2,133,296 bytes, 67% of program storage; 58,508 bytes (17%) of dynamic memory.
   - The header sun-button single-tap has been replaced (Codex, same day) with a double-tap-anywhere-on-dashboard gesture to open the brightness overlay - `TOUCH_DOUBLE_TAP_MIN_GAP_MS`/`TOUCH_DOUBLE_TAP_WINDOW_MS` in the `.ino`. `drawBrightnessButton()`/the header sun icon are gone. This freed up plain single-tap for the new tap-to-expand card detail view below. `docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md` still describes the old single-tap-header-button scheme and needs a pass to catch up.
   - Local uncommitted working tree - none of the 2026-08-12 firmware/doc changes are committed yet (see `git status`/`git diff`).
 - Phone app supports:
@@ -1097,3 +1224,37 @@ http://BOARD_IP/snapshot
 http://BOARD_IP/device
 http://BOARD_IP/config-meta
 ```
+# 2026-08-22: receiver lossless history batching deployed
+
+- Fixed the lossy five-minute history path. The receiver now queues every unique BLE wake and
+  uploads acknowledged 32-row batches while retaining the existing 300-second normal HTTPS
+  cadence. New readings no longer overwrite the previous four minute-cadence readings before a
+  snapshot.
+- Migration 030 adds exact observation timestamps and receiver-scoped idempotency IDs; migration
+  031 adds atomic batch ingestion. The batch-aware `receiver-snapshot` Edge Function is deployed.
+- Receiver build `MSV2 runtime build 2026-08-22 lossless-history-batch-v1` is live on COM16.
+  Live full-batch retries/draining succeeded with zero queue drops. MSV3 wakes 135-138 are separate
+  Supabase rows spaced 69.5-70.4 seconds apart with full raw FDC counts.
+- Queue capacity is 512 receiver-observed wakes and is RAM-resident. See
+  `docs/RECEIVER_LOSSLESS_HISTORY_BATCHING_2026-08-22.md` for protocol, retry behavior, outage
+  headroom, and the reset/power-loss limitation.
+
+## 2026-08-23: display card and animation pipeline repair
+
+- Replaced each card's battery bar with a compact color-coded `Batt: N%` value in the top-right
+  header and renamed the visible `Moist` label to `Moisture` in full, compact, expanded, and
+  data-only redraw paths.
+- Reclaimed the old battery row for artwork: a 137px-tall four-card layout now provides an 80px
+  art band instead of 46px. Runtime scaling now aspect-fits directly; the former integer-divisor
+  path turned an 84px sprite into only 42px whenever the available height was 43-83px.
+- Repaired `generate_plant_sprites.py` so every GIF pose uses one shared crop and retains logical
+  canvas coordinates. The old per-frame trim/re-center path made pose-dependent bounds look like
+  random motion. `cactus_cluster.gif` also contained a detached 231px source artifact 33px below
+  its main plant; crop selection now prevents that speck from shrinking/lifting only pose 3.
+- Source GIF durations are emitted into `plant_sprites.h` and honored by the receiver. The old
+  random 380-620ms interval is gone; only the initial phase is staggered. All unique poses are
+  preserved by default instead of silently capping them at three.
+- Verification: five sprite geometry/timing tests pass, the 1-16-card layout contract passes, and
+  the final normal display firmware compiles at 2,197,400 bytes flash / 77,044 bytes RAM. Upload to
+  COM16 is intentionally pending explicit approval because flashing reboots the receiver and can
+  discard any rows still in its RAM-only history queue.

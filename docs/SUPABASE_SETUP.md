@@ -79,10 +79,14 @@ In Supabase Dashboard:
 36. Open [012_msv2_revoke_public_execute.sql](../supabase/migrations/012_msv2_revoke_public_execute.sql).
 37. Paste it into the SQL editor.
 38. Run it.
-39. Apply every remaining file in `supabase/migrations/` from `013` through `027` in
-    numerical order. In particular, 024-027 are one staged moisture-calibration rollout;
-    do not skip directly to 027 because the migration history and rollback trail are part
-    of the deployment record.
+39. Apply every remaining file in `supabase/migrations/` from `013` through the
+    highest-numbered migration present (currently `034`) in numerical order. In particular,
+    024-027 are one staged moisture-calibration rollout;
+    030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
+    upserts; and 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
+    extracts the scale-transition-reset logic into a shared helper. Do not skip directly to
+    the latest file because the migration history and rollback trail are part of the
+    deployment record.
 
 CLI alternative:
 
@@ -282,7 +286,7 @@ Invoke-RestMethod http://BOARD_IP/claim | ConvertTo-Json -Depth 5
 5. The latest uploaded snapshot should appear.
 6. Refresh or reopen the app; it should stay connected because the browser saved the household share token.
 
-The future QR code should open:
+The receiver QR code opens:
 
 ```text
 https://msv2-plants.netlify.app/?receiverId=MSV2...&claimCode=ABCD-1234&autoConnect=1
@@ -356,9 +360,13 @@ The static app now uses the dark Plant Status Center palette and animated plant 
 web/plant-dashboard/assets/plant_gifs/
 ```
 
-Remote editing is the next backend milestone. The receiver currently pushes snapshots up to Supabase; to give the hosted app the same controls as the ESP32 webpage, add a cloud config command table/API and have the receiver periodically pull and apply pending config updates.
+The backend and receiver already support versioned cloud display settings: Supabase stores the
+settings and the ESP32 periodically pulls and applies a newer version. The hosted Netlify app keeps
+those write controls hidden for now, so normal plant setup remains on the receiver's local app. Do
+not add a second command-table API for this; extend the existing display-settings path when hosted
+editing is intentionally enabled.
 
-## 8. Future Zero-Touch Receiver Bootstrap
+## 8. Zero-Touch Receiver Bootstrap
 
 **2026-08-14 update**: as of migration `021_msv2_register_receiver_race_mitigation.sql`,
 `claimCode` in the body below is no longer just conventionally included - it's

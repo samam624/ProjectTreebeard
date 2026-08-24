@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageChops, ImageSequence
+    from PIL import Image, ImageSequence
 except ImportError as exc:  # pragma: no cover - user-facing dependency guard
     raise SystemExit("Pillow is required. Install with: python -m pip install Pillow") from exc
 
@@ -42,6 +42,7 @@ class Sprite:
     label: str
     frames: list[Image.Image]
     sequence: list[int]
+    durations_ms: list[int]
 
 
 def slugify(value: str) -> str:
@@ -64,15 +65,7 @@ def rgb565(r: int, g: int, b: int) -> int:
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def trim_transparent(image: Image.Image) -> Image.Image:
-    alpha = image.getchannel("A")
-    bbox = alpha.getbbox()
-    if not bbox:
-        return image
-    return image.crop(bbox)
-
-
-def normalize_frame(image: Image.Image, *, white_threshold: int, scale: float) -> Image.Image:
+def make_background_transparent(image: Image.Image, *, white_threshold: int) -> Image.Image:
     frame = image.convert("RGBA")
     if white_threshold >= 0:
         pixels = frame.load()
@@ -81,13 +74,112 @@ def normalize_frame(image: Image.Image, *, white_threshold: int, scale: float) -
                 r, g, b, a = pixels[x, y]
                 if a and r >= white_threshold and g >= white_threshold and b >= white_threshold:
                     pixels[x, y] = (255, 0, 255, 0)
-
-    frame = trim_transparent(frame)
-    if scale != 1.0:
-        width = max(1, round(frame.width * scale))
-        height = max(1, round(frame.height * scale))
-        frame = frame.resize((width, height), Image.Resampling.NEAREST)
     return frame
+
+
+def alpha_components(image: Image.Image) -> list[tuple[int, tuple[int, int, int, int]]]:
+    """Return opaque 4-connected components as ``(area, bbox)`` pairs.
+
+    Component metadata is used only to choose a stable crop. Pixel data is never
+    rewritten here, so legitimate disconnected leaves or highlights that fall inside
+    the chosen crop remain byte-for-byte present.
+    """
+
+    width, height = image.size
+    alpha = image.getchannel("A")
+    mask = bytearray(1 if value else 0 for value in alpha.getdata())
+    seen = bytearray(width * height)
+    components: list[tuple[int, tuple[int, int, int, int]]] = []
+
+    for start, opaque in enumerate(mask):
+        if not opaque or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        area = 0
+        left = width
+        top = height
+        right = -1
+        bottom = -1
+        while stack:
+            current = stack.pop()
+            y, x = divmod(current, width)
+            area += 1
+            left = min(left, x)
+            top = min(top, y)
+            right = max(right, x)
+            bottom = max(bottom, y)
+            for next_index in (current - 1, current + 1, current - width, current + width):
+                if next_index < 0 or next_index >= len(mask) or seen[next_index] or not mask[next_index]:
+                    continue
+                next_y, next_x = divmod(next_index, width)
+                if abs(next_x - x) + abs(next_y - y) != 1:
+                    continue
+                seen[next_index] = 1
+                stack.append(next_index)
+        components.append((area, (left, top, right + 1, bottom + 1)))
+
+    components.sort(reverse=True)
+    return components
+
+
+def bbox_contains(outer: tuple[int, int, int, int], inner: tuple[int, int, int, int]) -> bool:
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[2] >= inner[2] and outer[3] >= inner[3]
+
+
+def union_bbox(boxes: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
+    return (
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    )
+
+
+def stable_content_bbox(frames: list[Image.Image]) -> tuple[int, int, int, int]:
+    """Find one crop shared by every pose while rejecting crop-expanding specks.
+
+    The previous generator trimmed and re-centered every frame independently. That
+    discarded the GIF's logical-canvas coordinates and made animation poses jump. A
+    detached 231-pixel artifact below cactus_cluster's third pose also enlarged only
+    that pose, shrinking and lifting the actual cactus.
+
+    Every component already inside the largest component's bounds is harmless to the
+    crop and is preserved. A component outside those bounds is included when it is at
+    least one percent as large as the main component; this keeps intentionally separate
+    stems/clumps while preventing tiny, distant specks from controlling the crop.
+    """
+
+    frame_boxes: list[tuple[int, int, int, int]] = []
+    for frame in frames:
+        components = alpha_components(frame)
+        if not components:
+            continue
+        largest_area, largest_box = components[0]
+        kept_boxes = [largest_box]
+        for area, box in components[1:]:
+            if bbox_contains(largest_box, box) or area * 100 >= largest_area:
+                kept_boxes.append(box)
+        frame_boxes.append(union_bbox(kept_boxes))
+
+    if not frame_boxes:
+        width, height = frames[0].size
+        return (0, 0, width, height)
+    return union_bbox(frame_boxes)
+
+
+def normalize_frames(images: list[Image.Image], *, white_threshold: int, scale: float) -> list[Image.Image]:
+    """Normalize poses without discarding their shared coordinate system."""
+
+    frames = [make_background_transparent(image, white_threshold=white_threshold) for image in images]
+    crop = stable_content_bbox(frames)
+    frames = [frame.crop(crop) for frame in frames]
+
+    if scale != 1.0:
+        width = max(1, round(frames[0].width * scale))
+        height = max(1, round(frames[0].height * scale))
+        frames = [frame.resize((width, height), Image.Resampling.NEAREST) for frame in frames]
+    return frames
 
 
 def image_signature(image: Image.Image) -> bytes:
@@ -135,7 +227,7 @@ def choose_poses(frames: list[Image.Image], max_poses: int) -> tuple[list[Image.
             unique.append(frame)
         original_sequence.append(unique_by_sig[sig])
 
-    if len(unique) <= max_poses:
+    if max_poses <= 0 or len(unique) <= max_poses:
         return unique, original_sequence
 
     if max_poses == 1:
@@ -151,10 +243,14 @@ def choose_poses(frames: list[Image.Image], max_poses: int) -> tuple[list[Image.
 
 def load_sprite(path: Path, *, scale: float, max_poses: int, white_threshold: int, target_width: int, target_height: int) -> Sprite:
     key = slugify(path.stem)
-    raw_frames = [
-        normalize_frame(frame, white_threshold=white_threshold, scale=scale)
-        for frame in ImageSequence.Iterator(Image.open(path))
-    ]
+    with Image.open(path) as image:
+        source_frames = []
+        durations_ms = []
+        for frame in ImageSequence.Iterator(image):
+            source_frames.append(frame.copy())
+            duration = int(frame.info.get("duration", image.info.get("duration", 0)) or 0)
+            durations_ms.append(min(60000, max(40, duration or 500)))
+    raw_frames = normalize_frames(source_frames, white_threshold=white_threshold, scale=scale)
     raw_frames = [frame for frame in raw_frames if frame.width and frame.height]
     if not raw_frames:
         raise ValueError(f"{path} did not contain usable frames")
@@ -165,7 +261,13 @@ def load_sprite(path: Path, *, scale: float, max_poses: int, white_threshold: in
         target_height=target_height,
     )
     poses, sequence = choose_poses(fitted, max_poses)
-    return Sprite(key=key, label=label_from_key(key), frames=poses, sequence=sequence)
+    return Sprite(
+        key=key,
+        label=label_from_key(key),
+        frames=poses,
+        sequence=sequence,
+        durations_ms=durations_ms,
+    )
 
 
 def frame_to_rgb565_values(frame: Image.Image) -> list[int]:
@@ -200,6 +302,7 @@ def write_sprite_header(path: Path, sprites: list[Sprite]) -> None:
         "  uint8_t frameCount;",
         "  const uint16_t * const *frames;",
         "  const uint8_t *sequence;",
+        "  const uint16_t *durationsMs;",
         "};",
         "",
     ]
@@ -221,11 +324,16 @@ def write_sprite_header(path: Path, sprites: list[Sprite]) -> None:
         lines.append(f"const uint8_t {sprite.key}_sequence[] PROGMEM = {{ {sequence} }};")
         lines.append("")
 
+        durations = ", ".join(str(value) for value in sprite.durations_ms)
+        lines.append(f"const uint16_t {sprite.key}_durations_ms[] PROGMEM = {{ {durations} }};")
+        lines.append("")
+
         ident = c_ident(sprite.key)
         width, height = sprite.frames[0].size
         lines.append(
             f"const PlantSprite SPRITE_{ident} = {{ {width}, {height}, "
-            f"{len(sprite.sequence)}, {sprite.key}_frames, {sprite.key}_sequence }};"
+            f"{len(sprite.sequence)}, {sprite.key}_frames, {sprite.key}_sequence, "
+            f"{sprite.key}_durations_ms }};"
         )
         lines.append("")
 
@@ -356,7 +464,7 @@ def main() -> int:
     parser.add_argument("--scale", type=float, default=0.5, help="Nearest-neighbor scale applied to GIF frames.")
     parser.add_argument("--target-width", type=int, default=84, help="Transparent output canvas width for every sprite. Use 0 to keep per-sprite widths.")
     parser.add_argument("--target-height", type=int, default=84, help="Transparent output canvas height for every sprite. Use 0 to keep per-sprite heights.")
-    parser.add_argument("--max-poses", type=int, default=3, help="Maximum unique bitmap poses per GIF.")
+    parser.add_argument("--max-poses", type=int, default=0, help="Maximum unique bitmap poses per GIF. Default 0 preserves every pose.")
     parser.add_argument("--white-threshold", type=int, default=245, help="Make near-white pixels transparent. Use -1 to disable.")
     parser.add_argument("--skip-mobile-app", action="store_true", help="Do not update MobileAppPage.h art picker.")
     args = parser.parse_args()

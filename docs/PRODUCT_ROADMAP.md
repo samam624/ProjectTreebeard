@@ -24,7 +24,9 @@ The goal is a plant monitor that a friend or family member can set up without Ar
 - `/snapshot` exposes the cloud upload payload locally, and `scripts/mock_cloud_server.py` provides a tiny local API test harness.
 - The receiver serves PWA metadata, icon, and a service worker route. Some browsers still treat local `http://` receiver pages as home-screen shortcuts rather than full PWAs because full PWA installability generally expects HTTPS.
 
-Current limitation: remote monitoring only works while the phone is on the same network as the receiver. Real remote access needs a cloud relay or user-managed VPN/tunnel.
+Remote monitoring is implemented through the Supabase relay and hosted Netlify dashboard. Local
+receiver pages still require the same LAN (or the receiver setup AP); cloud sharing/history uses
+the receiver claim/share-token flow documented in `SUPABASE_SETUP.md`.
 
 ## Product Architecture
 
@@ -63,9 +65,11 @@ The ESP32 receiver is wall-powered and should do the heavier work:
 
 ### Phone App
 
-Near-term: installable PWA served by the receiver.
+Current: a local PWA-style app served by the receiver plus a cloud-backed, installable Netlify
+dashboard. The cloud dashboard intentionally keeps configuration read-only while setup remains in
+the local receiver app.
 
-Long-term: cloud-backed PWA or native app using the same screens:
+Possible later expansion of those same screens:
 
 - Household dashboard.
 - Plant setup.
@@ -84,56 +88,38 @@ Long-term: cloud-backed PWA or native app using the same screens:
 6. Receiver saves that choice and reboots to either the home network or the local `MSV2-Display` dashboard.
 7. If home WiFi is enabled, the receiver bootstraps to the hosted backend using its built-in receiver ID and private receiver secret.
 8. If home WiFi is enabled, the receiver saves the returned cloud upload URL/token and starts uploading snapshots.
-9. App shows a claim code or QR code.
-10. User signs into app and claims the receiver.
+9. The receiver shows a QR code containing its receiver ID and one-time claim code.
+10. The hosted app creates a household share token in the browser and claims the receiver; no user
+    account is required for the normal flow.
 11. Probes appear as unassigned sensors when they are first heard.
 12. User assigns each probe to a plant, art, and moisture preset.
 
 ## Remote Monitoring Flow
 
-The receiver should push small snapshots to a backend:
+The receiver pushes small snapshots and lossless history batches to Supabase. The first API sketch
+is retained in [MSV2 Cloud API Draft](CLOUD_API_DRAFT.md) as historical design context; the deployed
+Edge Functions and migrations are authoritative.
 
-The first API sketch is in [MSV2 Cloud API Draft](CLOUD_API_DRAFT.md).
-
-```json
-{
-  "deviceId": "display-abc123",
-  "sentAt": 1234567890,
-  "plants": [
-    {
-      "sensor": 1,
-      "moisture": 512,
-      "batteryPercent": 94,
-      "rssi": -68,
-      "ageMs": 1000,
-      "received": 120,
-      "missedTotal": 1
-    }
-  ],
-  "configVersion": 7
-}
-```
-
-The phone app reads the latest snapshot from the backend. The receiver remains the source of truth for local BLE readings.
+The hosted app reads the latest snapshot and history from the backend. The receiver remains the
+source of truth for local BLE readings and local setup.
 
 ## Backend Requirements
 
-Minimum useful backend:
+Implemented backend foundation:
 
-- User accounts.
-- Household/device ownership.
-- Claim code flow.
+- Share-token household/device ownership.
+- Account-free claim code and QR flow.
 - Receiver bootstrap endpoint.
 - Latest device snapshot storage.
+- Lossless timestamped moisture/battery history.
 - Plant config storage.
-- Receiver API token.
-- App API token/session.
+- Versioned receiver display-setting storage/pull.
+- Per-receiver API tokens and browser household share tokens.
 
-Later:
+Optional later additions:
 
 - Push notifications.
-- Historical moisture charts.
-- Shared household access.
+- User-account sign-in in addition to the account-free flow.
 - OTA firmware metadata.
 - Sensor/probe manufacturing records.
 
@@ -148,12 +134,14 @@ Later:
 
 ## Next Implementation Steps
 
-1. Test the static no-login household Connect flow with the real receiver claim code.
-2. Deploy the static cloud app to a webpage host.
-3. Keep the hosted Netlify app read-only for now to conserve hosting/backend usage: clean plant status, summary, and pairing only.
-4. Use the ESP32 local app as the plant setup surface for names, art, probe IDs, and calibration.
-5. Re-enable hosted config editing later only after the UX and backend write budget are ready.
-6. Make the phone app able to switch between local receiver mode and cloud account mode.
-7. Add OTA/update-channel metadata.
+1. Apply migration 033 and deploy the remediated receiver/display-settings function before
+   treating remote display-setting writes as healthy.
+2. Flash the review-remediated receiver and probe builds, then complete the wet-soil and 24-48-hour
+   soak gates recorded in `STATUS_HANDOFF.md`.
+3. Keep the hosted Netlify app read-only for now to conserve hosting/backend usage: plant status,
+   history, summary, and pairing only.
+4. Keep names, art, probe IDs, and calibration in the ESP32 local app until hosted editing is an
+   explicit product decision.
+5. Add OTA/update-channel metadata if remote fleet maintenance becomes necessary.
 
 The next best code milestone is polishing the read-only hosted plant dashboard while keeping setup local-first on the ESP32.

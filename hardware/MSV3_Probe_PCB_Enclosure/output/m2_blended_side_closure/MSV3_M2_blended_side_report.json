@@ -1,0 +1,134 @@
+{
+  "version": "user-revision-m2-blended-side-closure-3",
+  "units": "mm",
+  "source": "MSV3_brain_enclosure_assembly.step",
+  "sourceMechanicalBodiesPreserved": [
+    "revised brain enclosure base",
+    "revised brain enclosure lid",
+    "left solar arm",
+    "right solar arm",
+    "revised solar panel frame"
+  ],
+  "closure": {
+    "fastener": "M2 x 5-6 mm 90-degree countersunk flat-head screw",
+    "insertPocketDiameter": 2.9,
+    "insertPocketDepth": 3.2,
+    "screwClearanceDiameter": 2.4,
+    "screwTipReliefDiameter": 2.4,
+    "countersinkTopDiameter": 4.2,
+    "countersinkBottomDiameter": 2.4,
+    "countersinkDepth": 0.9,
+    "blendedBossNominalDiameter": 6,
+    "blendedBossTransitionLength": 5.5,
+    "baseBottomZ": -6.35,
+    "baseFloorTopZ": -4.25,
+    "baseTopZ": -0.8,
+    "lidBottomZ": -0.75,
+    "lidBossTopZ": 0.95,
+    "lidInnerRoofZ": 5.7,
+    "lidTopZ": 7.55,
+    "screwTipReliefBottomZ": -5.55,
+    "caseLeftX": -7,
+    "caseRightX": 25,
+    "caseFrontY": 82,
+    "caseBackY": 149,
+    "caseCornerRadius": 4.2,
+    "caseCenterX": 9,
+    "caseCenterY": 115.5,
+    "screwCenters": [
+      {
+        "id": "left-front",
+        "side": "left",
+        "x": -9,
+        "y": 102
+      },
+      {
+        "id": "left-rear",
+        "side": "left",
+        "x": -9,
+        "y": 130
+      },
+      {
+        "id": "right-front",
+        "side": "right",
+        "x": 27,
+        "y": 102
+      },
+      {
+        "id": "right-rear",
+        "side": "right",
+        "x": 27,
+        "y": 130
+      }
+    ]
+  },
+  "behavior": {
+    "referenceStyle": "four low-profile flush side screws in smoothly blended enclosure scallops",
+    "preferredSideLocationsRestored": true,
+    "directVerticalClamping": true,
+    "oldExternalSnapArmsRemoved": true,
+    "oldBaseSnapBumpsRemoved": true,
+    "isolatedRoundEars": false,
+    "tallInternalPillars": false,
+    "pcbRemovalPathFullyOpen": true,
+    "exteriorDiagonalChamfersReplacedByRoundedCorners": true,
+    "exteriorRoofAndFloorEdgeChamfersRemoved": true,
+    "pcbAndInternalPressureGeometryOtherwiseUnchanged": true,
+    "heatSetInsertInstallationDirection": "downward into the four base bosses from the open seam",
+    "screwInstallationDirection": "downward through the four flush lid-side countersinks",
+    "screwLengthNote": "Countersunk screw length includes the head; M2 x 5 uses the complete insert and M2 x 6 enters the modeled tip relief."
+  },
+  "checks": {
+    "sourceSolidCount": 574,
+    "outputMechanicalSolidCount": 5,
+    "base": {
+      "type": "Compound",
+      "min": [
+        -12.000000100000001,
+        81.99999989999793,
+        -6.350000100000002
+      ],
+      "max": [
+        30.0000001,
+        149.0000001,
+        0.6500001000000007
+      ],
+      "volume": 6969.532840496836
+    },
+    "lid": {
+      "type": "Compound",
+      "min": [
+        -12.00000015,
+        81.99999984999792,
+        -0.7500001500000009
+      ],
+      "max": [
+        30.00000015,
+        149.00000015000015,
+        7.550000150000001
+      ],
+      "volume": 6998.197614887148
+    },
+    "baseLidOverlapVolume": 0,
+    "leftArmToBossClearance": 0.2499999000000006,
+    "rightArmToBossClearance": 0.24999989999999883,
+    "pcbBoardXBounds": [
+      -4.000000100000001,
+      22.0000001
+    ],
+    "componentXBounds": [
+      -3.7249999999999996,
+      21.10745788002225
+    ],
+    "bossToPcbBoardSideClearance": 2,
+    "lidRoofToHighestPcbComponentClearance": 0.9
+  },
+  "printGuidance": {
+    "baseOrientation": "floor down; already oriented in STL",
+    "lidOrientation": "exterior roof down; already oriented in STL",
+    "supports": "none expected",
+    "countersinkNote": "Enable elephant-foot compensation or lightly deburr the four bed-facing countersinks.",
+    "suggestedPerimeters": 4,
+    "suggestedLayerHeight": 0.2
+  }
+}

@@ -4,9 +4,9 @@
   "writer": "claude",
   "maxReviewRounds": 2,
   "maxProviderCalls": 10,
-  "claudeMaxTurns": 12,
-  "claudeMaxBudgetUsdPerCall": 2,
-  "claudeMaxTotalBudgetUsd": 10,
+  "claudeMaxTurns": 50,
+  "claudeMaxBudgetUsdPerCall": 8,
+  "claudeMaxTotalBudgetUsd": 40,
   "testCommands": [],
   "testTimeoutSeconds": 600,
   "maxTestOutputChars": 200000

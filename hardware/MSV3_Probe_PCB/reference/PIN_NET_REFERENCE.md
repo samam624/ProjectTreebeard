@@ -51,7 +51,7 @@ Refdes key: U1=E73 module, MS_IC=FDC2214, MUX=TMUX1109, SP_IC=BQ25504, USB_IC=BQ
 | `VBAT_OV` | R11-1, R14-2, SP_IC-6 | BQ25504 overvoltage threshold divider |
 | `VBAT_UV` | R12-1, R15-2, SP_IC-8 | BQ25504 undervoltage threshold divider |
 | `VBUS` | C5-2, C14-2, D1-1, ESD1-5, Q1-1, R1-2, U1-27, USB-A4_B9, USB-B4_A9, USB_IC-1 | USB-C VBUS — feeds E73 directly, charger IN, and the power-mux |
-| `VDIV` | MUX-7, MUX-11, R17-2, U1-11 | EC-check divider midpoint (the "DIV_NODE" in the design docs) ← E73 P0.00 (no crystal populated, so free for this) |
+| `VDIV` | MUX-7, MUX-11, R17-2, U1-11 | EC-check divider midpoint (the "DIV_NODE" in the design docs) ← E73 P0.00 (no crystal populated, so free for this). **KNOWN REWORK NEEDED (2026-08-22): P0.00 has no ADC path (SAADC/COMP/LPCOMP all restricted to AIN0-7), so this can only ever be digitalRead — the design intent was analog soil-EC/salt-content measurement, which this pin cannot deliver. Fix: bodge VDIV to module pin 3 (P0.03/AIN1, castellated edge pad, reachable) — module pin 18 (P0.04/AIN2, the other free AIN) is unreachable, routed under the SMD module. Next PCB rev should route VDIV to P0.03 directly. See docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 5.** |
 | `VOC_SAMP` | R9-1, R10-2, SP_IC-3 | BQ25504 MPPT sample divider |
 | `VRDIV` | R11-2, R12-2, SP_IC-7 | BQ25504 resistor-divider bias output |
 | `VREF_SAMP` | C9-2, SP_IC-4 | BQ25504 MPPT reference storage cap |

@@ -35,11 +35,29 @@ runs. Check readiness without revealing credential values:
 npm.cmd run doctor
 ```
 
-For Codex, either run `codex login` or provide `CODEX_API_KEY` for the supervisor process. For
-Claude, your own authenticated Claude Code installation can supply the login; alternatively provide
-`ANTHROPIC_API_KEY` or configure one of its supported cloud providers. Do not put credentials in
-this repository. A product offered to other users should follow Anthropic's separate Agent SDK
-authentication policy rather than reusing an individual's Claude subscription login.
+Run `codex login` and `claude auth login` with the subscription accounts you intend to use. Live
+runs intentionally reject API keys, Anthropic Console authentication, Bedrock, Vertex, Foundry,
+custom billing endpoints, and other known metered routes. Do not put credentials in this repository.
+
+## Billing safety
+
+The supervisor is subscription-only and fails closed:
+
+- Known metered authentication variables cause the run to stop before either provider starts.
+- Metered credentials are also removed from each provider child process environment.
+- Codex is forced to standard speed with Fast mode disabled.
+- Claude's paid-only 1M context aliases are rejected, and the child process disables both 1M
+  context and the command for enabling usage credits.
+- One shared cancellation signal covers both providers. Any provider failure, including usage,
+  quota, credit, rate, or budget errors, aborts concurrent work and prevents every later phase.
+- Claude's per-call and total client-side budget estimates remain enabled as a secondary stop.
+
+The runner cannot read or override billing choices stored in your Claude or ChatGPT account. For a
+no-extra-charge guarantee, disable Claude usage credits from `/usage-credits` in a normal interactive
+Claude session and make sure additional Codex credits or automatic credit purchases are disabled in
+your ChatGPT/Codex billing settings. If provider-side paid credits remain enabled, the provider may
+consume them without sending the runner a usage-limit error, which no local process can detect in
+advance.
 
 ## First run
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { parseArgs, type ParsedArgs } from "./cli-args.js";
+import { assertSubscriptionOnlyBilling, assertSubscriptionSafeModels } from "./billing-safety.js";
 import { loadConfig, SupervisorConfigSchema, type SupervisorConfig } from "./config.js";
 import { doctor } from "./doctor.js";
 import { ProviderNameSchema } from "./domain.js";
@@ -38,6 +39,10 @@ async function main(): Promise<void> {
   }
 
   const mock = args.flags.has("mock");
+  if (!mock) {
+    assertSubscriptionOnlyBilling();
+    assertSubscriptionSafeModels(process.env.CLAUDE_MODEL);
+  }
   const claude = mock
     ? new MockProvider("claude")
     : new ClaudeProvider({

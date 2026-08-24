@@ -101,11 +101,21 @@ async function waitForDebugTarget(debugPort, pageUrl, timeout = 15000) {
   throw new Error("Timed out waiting for the headless browser.");
 }
 
-async function connectCdp(webSocketUrl) {
+async function connectCdp(webSocketUrl, timeout = 10000) {
   const socket = new WebSocket(webSocketUrl);
   await new Promise((resolveOpen, rejectOpen) => {
-    socket.addEventListener("open", resolveOpen, { once: true });
-    socket.addEventListener("error", rejectOpen, { once: true });
+    const timer = setTimeout(() => {
+      socket.close();
+      rejectOpen(new Error("Timed out opening the browser debugging WebSocket."));
+    }, timeout);
+    socket.addEventListener("open", () => {
+      clearTimeout(timer);
+      resolveOpen();
+    }, { once: true });
+    socket.addEventListener("error", () => {
+      clearTimeout(timer);
+      rejectOpen(new Error("Browser debugging WebSocket failed to open."));
+    }, { once: true });
   });
   let nextId = 1;
   const pending = new Map();
@@ -113,8 +123,9 @@ async function connectCdp(webSocketUrl) {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) {
-      const { resolveCommand, rejectCommand } = pending.get(message.id);
+      const { resolveCommand, rejectCommand, timer } = pending.get(message.id);
       pending.delete(message.id);
+      clearTimeout(timer);
       if (message.error) rejectCommand(new Error(message.error.message));
       else resolveCommand(message.result);
       return;
@@ -123,9 +134,20 @@ async function connectCdp(webSocketUrl) {
       exceptions.push(message.params.exceptionDetails.text || "Uncaught browser exception");
     }
   });
+  socket.addEventListener("close", () => {
+    for (const { rejectCommand, timer } of pending.values()) {
+      clearTimeout(timer);
+      rejectCommand(new Error("Browser debugging WebSocket closed before the command completed."));
+    }
+    pending.clear();
+  });
   const command = (method, params = {}) => new Promise((resolveCommand, rejectCommand) => {
     const id = nextId++;
-    pending.set(id, { resolveCommand, rejectCommand });
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      rejectCommand(new Error(`Timed out waiting for browser command ${method}.`));
+    }, timeout);
+    pending.set(id, { resolveCommand, rejectCommand, timer });
     socket.send(JSON.stringify({ id, method, params }));
   });
   return { socket, command, exceptions };
@@ -134,11 +156,16 @@ async function connectCdp(webSocketUrl) {
 async function main() {
   const browserPath = await existingBrowser();
   await stat(qrFixture);
-  const appSource = await readFile(join(dashboardRoot, "assets", "app.v14.js"), "utf8");
   const decoderBytes = await readFile(join(dashboardRoot, "assets", "jsQR-1.4.0.min.js"));
   const decoderLicense = await readFile(join(dashboardRoot, "assets", "jsQR-1.4.0.LICENSE.txt"), "utf8");
   const indexSource = await readFile(join(dashboardRoot, "index.html"), "utf8");
   const workerSource = await readFile(join(dashboardRoot, "sw.js"), "utf8");
+  const appMatch = indexSource.match(/src="assets\/(app\.v(\d+)\.js)"/);
+  assert.ok(appMatch, "HTML must reference a versioned app.vN.js bundle.");
+  const appAsset = appMatch[1];
+  const appVersion = appMatch[2];
+  const cacheName = `msv2-cloud-app-v${appVersion}`;
+  const appSource = await readFile(join(dashboardRoot, "assets", appAsset), "utf8");
   const headerSource = await readFile(join(dashboardRoot, "_headers"), "utf8");
   const localNetlifySource = await readFile(join(dashboardRoot, "netlify.toml"), "utf8");
   const rootNetlifySource = await readFile(join(repoRoot, "netlify.toml"), "utf8");
@@ -146,9 +173,8 @@ async function main() {
   const expectedIntegrity = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
   assert.equal(decoderIntegrity, expectedIntegrity, "Vendored decoder hash must remain pinned.");
   assert.ok(appSource.includes(`const QR_DECODER_INTEGRITY = "${expectedIntegrity}"`), "App SRI must match the vendored decoder.");
-  assert.ok(indexSource.includes('src="assets/app.v14.js"'), "HTML must reference the versioned app.");
-  assert.ok(workerSource.includes('"msv2-cloud-app-v14"'), "Service-worker cache must be v14.");
-  assert.ok(workerSource.includes('"/assets/app.v14.js"') && workerSource.includes('"/assets/jsQR-1.4.0.min.js"'), "Service worker must precache both scanner assets.");
+  assert.ok(workerSource.includes(`"${cacheName}"`), "Service-worker cache version must match the HTML app bundle.");
+  assert.ok(workerSource.includes(`"/assets/${appAsset}"`) && workerSource.includes('"/assets/jsQR-1.4.0.min.js"'), "Service worker must precache both scanner assets.");
   assert.match(decoderLicense, /Apache License[\s\S]*Version 2\.0/, "Vendored decoder license must be present.");
   for (const configSource of [headerSource, localNetlifySource, rootNetlifySource]) {
     assert.ok(configSource.includes("camera=(self), microphone=()"), "Every Netlify header source must allow only same-origin camera use.");
@@ -257,7 +283,7 @@ async function main() {
     assert.equal(registration.scope, pageUrl, "Service worker scope should cover the dashboard.");
     await waitFor("navigator.serviceWorker.controller !== null", "service-worker control");
     const cachedAssets = await evaluate(
-      "caches.open('msv2-cloud-app-v14').then(async (cache) => ({ app: Boolean(await cache.match('/assets/app.v14.js')), decoder: Boolean(await cache.match('/assets/jsQR-1.4.0.min.js')) }))",
+      `caches.open('${cacheName}').then(async (cache) => ({ app: Boolean(await cache.match('/assets/${appAsset}')), decoder: Boolean(await cache.match('/assets/jsQR-1.4.0.min.js')) }))`,
       true,
     );
     assert.deepEqual(cachedAssets, { app: true, decoder: true }, "Versioned app and decoder should be precached.");
@@ -380,7 +406,7 @@ async function main() {
     assert.deepEqual(exceptions, [], "Dashboard should not throw uncaught browser exceptions.");
 
     console.log("PASS dashboard loaded under its production CSP and permissions policy");
-    console.log("PASS service worker v14 precached the versioned app and local QR decoder");
+    console.log(`PASS service worker v${appVersion} precached the versioned app and local QR decoder`);
     console.log("PASS live camera was requested before the integrity-checked QR decoder");
     console.log("PASS live scan stopped and released its MediaStream");
     console.log("PASS denied camera permission produced actionable Safari guidance");

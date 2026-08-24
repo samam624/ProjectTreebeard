@@ -81,7 +81,10 @@ begin
     now(),
     left(coalesce(nullif(p_updated_by, ''), 'receiver'), 32)
   )
-  on conflict (receiver_id) do update
+  -- Use the named constraint instead of `on conflict (receiver_id)`. In PL/pgSQL this
+  -- function's RETURNS TABLE output also defines a `receiver_id` variable, making the
+  -- unqualified conflict target ambiguous at runtime on PostgreSQL.
+  on conflict on constraint msv2_receiver_display_settings_pkey do update
     set brightness_percent = excluded.brightness_percent,
         screen_on = excluded.screen_on,
         settings_version = excluded.settings_version,

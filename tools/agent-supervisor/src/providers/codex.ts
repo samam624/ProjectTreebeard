@@ -1,4 +1,5 @@
 import { Codex, type ThreadOptions } from "@openai/codex-sdk";
+import { assertSubscriptionOnlyBilling, subscriptionOnlyEnvironment } from "../billing-safety.js";
 import type { AgentProvider, ProviderRequest, ProviderResponse } from "./types.js";
 
 export type CodexProviderOptions = {
@@ -14,12 +15,19 @@ export class CodexProvider implements AgentProvider {
   private threadId: string | null = null;
 
   constructor(options: CodexProviderOptions) {
+    // See the identical guard in ClaudeProvider's constructor - previously only enforced
+    // once at the CLI entrypoint, so anything constructing a CodexProvider directly got no
+    // preemptive billing protection.
+    assertSubscriptionOnlyBilling();
     this.cwd = options.cwd;
     this.model = options.model;
 
-    const apiKey = process.env.CODEX_API_KEY ?? process.env.OPENAI_API_KEY;
     this.codex = new Codex({
-      ...(apiKey ? { apiKey } : {}),
+      env: subscriptionOnlyEnvironment(),
+      config: {
+        service_tier: "default",
+        features: { fast_mode: false },
+      },
     });
   }
 
@@ -38,6 +46,7 @@ export class CodexProvider implements AgentProvider {
       : this.codex.startThread(threadOptions);
     const result = await thread.run(request.prompt, {
       outputSchema: request.outputSchema,
+      signal: request.signal,
     });
 
     this.threadId = thread.id ?? this.threadId;

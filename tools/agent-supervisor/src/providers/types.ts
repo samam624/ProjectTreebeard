@@ -12,6 +12,7 @@ export type ProviderRequest = {
   prompt: string;
   access: AccessMode;
   outputSchema: Record<string, unknown>;
+  signal: AbortSignal;
 };
 
 export type ProviderResponse = {

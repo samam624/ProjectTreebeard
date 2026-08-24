@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUsageOrBillingLimit } from "./billing-safety.js";
 import {
   CritiqueSchema,
   ImplementationReportSchema,
@@ -70,6 +71,7 @@ export class Orchestrator {
   private readonly providers: Record<"claude" | "codex", AgentProvider>;
   private calls = 0;
   private log!: RunLog;
+  private readonly abortController = new AbortController();
 
   constructor(options: OrchestratorOptions) {
     this.options = options;
@@ -244,13 +246,38 @@ export class Orchestrator {
         diffStat: await gitDiff(config.targetRoot),
         patch: await gitPatch(config.targetRoot),
       };
-      const review = await this.call(
+      let review = await this.call(
         reviewer,
         "review",
         "read",
         reviewPrompt(task, plan, implementation, tests, repositoryEvidence, round),
         ReviewSchema,
       );
+      const failedTests = tests.filter((test) => test.timedOut || test.exitCode !== 0);
+      if (failedTests.length > 0) {
+        review = {
+          ...review,
+          approved: false,
+          summary: review.approved
+            ? `Supervisor overrode reviewer approval because ${failedTests.length} required test command(s) failed or timed out. ${review.summary}`
+            : review.summary,
+          findings: [
+            ...review.findings,
+            {
+              severity: "critical",
+              file: "",
+              issue: `${failedTests.length} required test command(s) failed or timed out: ${failedTests.map((test) => test.command).join(", ")}`,
+              recommendation: "Fix the implementation or test environment and rerun every required test successfully before approval.",
+            },
+          ],
+        };
+        this.progress(
+          "review",
+          "supervisor",
+          "failed",
+          `Approval blocked: ${failedTests.length} required test command(s) failed or timed out.`,
+        );
+      }
       reviews.push(review);
 
       if (review.approved) {
@@ -302,6 +329,7 @@ export class Orchestrator {
     prompt: string,
     schema: z.ZodType<T>,
   ): Promise<T> {
+    this.abortController.signal.throwIfAborted();
     this.calls += 1;
     if (this.calls > this.options.config.maxProviderCalls) {
       throw new Error(`Provider call limit exceeded (${this.options.config.maxProviderCalls}).`);
@@ -341,6 +369,7 @@ export class Orchestrator {
         prompt,
         access,
         outputSchema: jsonSchemaFor(schema),
+        signal: this.abortController.signal,
       });
 
       const payload = response.structured ?? parseJsonText(response.text);
@@ -361,6 +390,9 @@ export class Orchestrator {
       return parsed;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (!this.abortController.signal.aborted) {
+        this.abortController.abort(error);
+      }
       await this.log.event({
         phase,
         actor: provider.name,
@@ -373,6 +405,14 @@ export class Orchestrator {
         "failed",
         `${capitalize(provider.name)} failed while ${action}: ${message}`,
         Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+      );
+      this.progress(
+        phase,
+        "supervisor",
+        "failed",
+        isUsageOrBillingLimit(message)
+          ? "Usage or billing limit detected. All active provider work was cancelled; no further phases will run."
+          : "A provider failed. All active provider work was cancelled; no further phases will run.",
       );
       throw error;
     } finally {

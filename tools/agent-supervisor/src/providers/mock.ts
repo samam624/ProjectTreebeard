@@ -9,6 +9,7 @@ export class MockProvider implements AgentProvider {
   }
 
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    request.signal.throwIfAborted();
     this.calls.push(request);
     const structured = this.responseFor(request);
     return {
