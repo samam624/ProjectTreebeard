@@ -1,5 +1,9 @@
 # Repository instructions
 
+Codex auto-loads the equivalent `AGENTS.md` at the same path instead of this file (its own
+auto-loaded convention) -- keep the two in sync when either changes; they must state the same
+rules.
+
 ## MSV3 nRF52840 builds
 
 The MSV3 E73-2G4M08S1C PCB has no 32.768 kHz crystal. Its `P0.00`/`P0.01` pins are used by the PCB, so every MSV3 build must select the internal LFRC before FreeRTOS and the SoftDevice start.

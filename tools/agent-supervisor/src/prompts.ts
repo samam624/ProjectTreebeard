@@ -35,8 +35,8 @@ export function synthesisPrompt(
   task: string,
   claudeProposal: Proposal,
   codexProposal: Proposal,
-  claudeCritique: Critique,
-  codexCritique: Critique,
+  claudeCritique: Critique | null,
+  codexCritique: Critique | null,
   writer: "claude" | "codex",
 ): string {
   return `PHASE: PLAN SYNTHESIS
@@ -54,10 +54,28 @@ CODEX PROPOSAL:
 ${json(codexProposal)}
 
 CLAUDE CRITIQUE OF CODEX:
-${json(claudeCritique)}
+${claudeCritique ? json(claudeCritique) : "Not available this run - Claude's critique call did not complete. Use your own judgement in its place."}
 
 CODEX CRITIQUE OF CLAUDE:
-${json(codexCritique)}`;
+${codexCritique ? json(codexCritique) : "Not available this run - Codex's critique call did not complete. Use your own judgement in its place."}`;
+}
+
+// Used only when the peer provider's own proposal call failed outright (see
+// Orchestrator.runPaired()/the solo-mode branch in runPhases()) - there is no second proposal
+// to reconcile against, so this skips straight from one independent proposal to a plan instead
+// of paying for a critique/synthesis round that has nothing to critique.
+export function soloPlanPrompt(task: string, proposal: Proposal, providerName: "claude" | "codex"): string {
+  return `PHASE: PLAN SYNTHESIS (SOLO)
+Task:
+${task}
+
+The other collaborating agent was unavailable this run, so you are producing the final plan
+alone from your own independent proposal below. Turn it into a final implementation plan: keep
+it narrow and verifiable, note any risk that would normally have been caught by peer critique,
+and assign every step to yourself (${providerName}) as the writer. Do not edit files.
+
+YOUR PROPOSAL:
+${json(proposal)}`;
 }
 
 export function implementationPrompt(task: string, plan: CollaborationPlan): string {

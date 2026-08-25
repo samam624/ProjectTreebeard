@@ -11,6 +11,7 @@ import { Orchestrator, type ProgressUpdate } from "./orchestrator.js";
 import { ClaudeProvider } from "./providers/claude.js";
 import { CodexProvider } from "./providers/codex.js";
 import { MockProvider } from "./providers/mock.js";
+import { findMostRecentClaudeSession, findMostRecentCodexThread } from "./session-discovery.js";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -43,6 +44,20 @@ async function main(): Promise<void> {
     assertSubscriptionOnlyBilling();
     assertSubscriptionSafeModels(process.env.CLAUDE_MODEL);
   }
+
+  const resumeClaude = await resolveResumeId(
+    args,
+    "resume-claude",
+    "Claude",
+    () => findMostRecentClaudeSession(config.targetRoot),
+  );
+  const resumeCodex = await resolveResumeId(
+    args,
+    "resume-codex",
+    "Codex",
+    () => findMostRecentCodexThread(config.targetRoot),
+  );
+
   const claude = mock
     ? new MockProvider("claude")
     : new ClaudeProvider({
@@ -51,12 +66,14 @@ async function main(): Promise<void> {
         maxBudgetUsdPerCall: config.claudeMaxBudgetUsdPerCall,
         maxTotalBudgetUsd: config.claudeMaxTotalBudgetUsd,
         ...(process.env.CLAUDE_MODEL ? { model: process.env.CLAUDE_MODEL } : {}),
+        ...(resumeClaude ? { resumeSessionId: resumeClaude } : {}),
       });
   const codex = mock
     ? new MockProvider("codex")
     : new CodexProvider({
         cwd: config.targetRoot,
         ...(process.env.CODEX_MODEL ? { model: process.env.CODEX_MODEL } : {}),
+        ...(resumeCodex ? { resumeThreadId: resumeCodex } : {}),
       });
 
   const result = await new Orchestrator({
@@ -104,6 +121,28 @@ function lastValue(args: ParsedArgs, key: string): string | undefined {
   return args.values.get(key)?.at(-1);
 }
 
+// --resume-claude/--resume-codex accept either an explicit session/thread id, or the bare
+// flag (or the literal word "auto") to have session-discovery.ts find your most recent real
+// conversation on this repo automatically. Omitting the flag entirely starts blank, as before.
+async function resolveResumeId(
+  args: ParsedArgs,
+  flag: string,
+  label: string,
+  findAuto: () => Promise<string | null>,
+): Promise<string | undefined> {
+  const explicit = lastValue(args, flag);
+  const wantsAuto = explicit === undefined ? args.flags.has(flag) : explicit === "auto";
+  if (!wantsAuto) return explicit;
+
+  const found = await findAuto();
+  if (found) {
+    console.error(`Resuming ${label} conversation ${found} (auto-detected).`);
+  } else {
+    console.error(`--${flag} auto found no existing ${label} conversation for this repo; starting blank.`);
+  }
+  return found ?? undefined;
+}
+
 async function confirm(question: string): Promise<boolean> {
   if (!input.isTTY || !output.isTTY) return false;
   const terminal = createInterface({ input, output });
@@ -127,7 +166,12 @@ Options:
   --leader claude|codex         Plan synthesizer (default: claude)
   --writer claude|codex         Only provider allowed to edit (default: claude)
   --test <command>              Trusted host-run test command; repeatable
-  --max-review-rounds <1-5>     Reviewer/correction cycles (default: 2)
+  --max-review-rounds <1-5>     Reviewer/correction cycles (default: 1)
+  --resume-claude [id|auto]     Resume an existing Claude session instead of starting blank.
+                                 Bare flag or "auto" finds your most recent real conversation
+                                 on this repo (excludes ones a prior supervisor run created).
+  --resume-codex [id|auto]      Same, for Codex (finds a codex_vscode/CLI thread, not one
+                                 this supervisor created).
   --allow-write                 Enable the gated implementation phase
   --allow-dirty                 Permit writes in an already-dirty worktree
   --yes                         Approve the synthesized plan non-interactively

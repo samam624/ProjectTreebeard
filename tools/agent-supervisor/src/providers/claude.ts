@@ -17,7 +17,13 @@ const SYSTEM_PROMPT = `You are one participant in a bounded two-agent engineerin
 Follow the requested phase exactly. Never commit, push, deploy, install dependencies, use the
 network, access paths outside the working directory, or ask another agent to work. In read mode,
 inspect and reason only. In write mode, edit only files necessary for the approved plan. The host
-process runs tests separately. Return only the requested structured output.`;
+process runs tests separately. Return only the requested structured output.
+
+This call is bounded by a real turn/time/spend budget shared with a live user session - do not
+re-read files you have already read this call, do not glob the whole repository when a targeted
+Grep for the relevant symbol/path will do, and do not re-derive project conventions already
+covered by CLAUDE.md. Prefer the smallest amount of investigation that lets you answer the
+current phase's question correctly.`;
 
 export type ClaudeProviderOptions = {
   cwd: string;
@@ -25,12 +31,23 @@ export type ClaudeProviderOptions = {
   maxBudgetUsdPerCall: number;
   maxTotalBudgetUsd: number;
   model?: string;
+  // Seeds the session this provider resumes on its very first call, instead of starting
+  // blank. Meant for an existing real conversation (this interactive session, or another
+  // Claude Code session on this repo) so the collaboration continues from context you've
+  // already built up rather than rediscovering it -- see src/session-discovery.ts for how
+  // --resume-claude auto finds one. A resumed session's already-processed prefix is eligible
+  // for prompt caching same as any other resume, so this is not the same cost as reprocessing
+  // the whole transcript at full price on every call, but it's still real extra input size
+  // versus a blank session -- pick a specific id (not auto) if you want predictable reuse
+  // across multiple supervisor runs, since a resumed session gets excluded from future "auto"
+  // picks once it appears in this run's own .agent-runs log.
+  resumeSessionId?: string;
 };
 
 export class ClaudeProvider implements AgentProvider {
   readonly name = "claude" as const;
   private readonly options: ClaudeProviderOptions;
-  private sessionId: string | null = null;
+  private sessionId: string | null;
   private spentUsd = 0;
 
   constructor(options: ClaudeProviderOptions) {
@@ -42,6 +59,7 @@ export class ClaudeProvider implements AgentProvider {
     assertSubscriptionOnlyBilling();
     assertSubscriptionSafeModels(options.model);
     this.options = options;
+    this.sessionId = options.resumeSessionId ?? null;
   }
 
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
@@ -67,10 +85,21 @@ export class ClaudeProvider implements AgentProvider {
       tools,
       allowedTools: tools,
       disallowedTools: ["Bash", "WebFetch", "WebSearch", "Agent"],
-      settingSources: [],
+      // 2026-08-24: was `[]` ("SDK isolation mode"), which silently discards CLAUDE.md --
+      // the SDK docs are explicit that 'project' is *required* to load it. That left every
+      // call blind to this repo's own instructions (the MSV3 clock/build guardrails, the
+      // "never raw arduino-cli" rule, etc.), forcing the model to rediscover repo
+      // conventions from scratch via tool calls on every single phase instead of reading
+      // them for free -- a real driver of both the turn/budget exhaustion seen in
+      // .agent-runs/ and outright wrong recommendations that ignore project rules.
+      settingSources: ["project"],
       skills: [],
       env: subscriptionOnlyEnvironment(),
-      systemPrompt: SYSTEM_PROMPT,
+      // Preset form (not a bare string) so Claude Code's own default system prompt still
+      // loads -- a bare string fully replaces it, which also does NOT stop CLAUDE.md from
+      // loading (that's settingSources' job above) but does throw away the model's normal
+      // tool-use framing for no benefit here.
+      systemPrompt: { type: "preset", preset: "claude_code", append: SYSTEM_PROMPT },
       outputFormat: {
         type: "json_schema",
         schema: request.outputSchema,

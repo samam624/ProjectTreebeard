@@ -97,6 +97,16 @@ async function commandResult(command: string, args: string[]): Promise<{ ok: boo
     const { stdout, stderr } = await execFileAsync(command, args, {
       windowsHide: true,
       env: subscriptionOnlyEnvironment(),
+      // 2026-08-24: on Windows, `codex` (and some npm-installed CLIs generally) resolves via
+      // PATH to a `.cmd` shim, not a real executable. A Node security fix (Node no longer
+      // implicitly runs .cmd/.bat through a shell without `shell: true`, to prevent argument
+      // injection - see CVE-2024-27980) turned that into a hard `spawn ... ENOENT` here, which
+      // was previously misreported as "Codex authentication" failing outright even when the
+      // actual CLI (and codex-sdk's own runtime invocation, which spawns a real vendored .exe,
+      // not this PATH shim) works fine. Every call site passes a fixed, hardcoded args array
+      // (never external/user input), so shell:true's usual argument-injection risk does not
+      // apply here.
+      shell: true,
     });
     const detail = `${stdout}${stderr}`.trim();
     return { ok: !/not logged in/i.test(detail), detail: detail || "available" };

@@ -11,8 +11,19 @@ export const SupervisorConfigSchema = z.object({
   targetRoot: z.string().min(1).default(DEFAULT_TARGET_ROOT),
   leader: ProviderNameSchema.default("claude"),
   writer: ProviderNameSchema.default("claude"),
-  maxReviewRounds: z.number().int().min(1).max(5).default(2),
+  // 2026-08-24: lowered from 2 -> 1. Every extra round costs up to 2 more full-repo-context
+  // provider calls (review + fix), and most tasks either get approved on the first review or
+  // need a human look anyway. Still overridable with --max-review-rounds for a task that
+  // genuinely warrants more back-and-forth.
+  maxReviewRounds: z.number().int().min(1).max(5).default(1),
   maxProviderCalls: z.number().int().min(4).max(30).default(10),
+  // 2026-08-24: neither provider previously had any wall-clock ceiling on a single call --
+  // Claude was bounded only by turns/USD-budget and Codex had no bound at all, so a stalled
+  // or runaway call could sit indefinitely, silently consuming the subscription's session
+  // window. This is a hard per-call timeout enforced by the orchestrator itself (works for
+  // both providers identically, independent of whatever cost/turn accounting each SDK does
+  // internally).
+  providerCallTimeoutSeconds: z.number().int().min(30).max(3600).default(900),
   // Repository analysis regularly needs more than the SDK's small-turn default,
   // especially when Claude follows documentation and inspects firmware plus cloud code.
   // Use the schema's full supported allowance so a healthy analysis is not cancelled

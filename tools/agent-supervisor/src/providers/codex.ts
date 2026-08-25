@@ -5,6 +5,11 @@ import type { AgentProvider, ProviderRequest, ProviderResponse } from "./types.j
 export type CodexProviderOptions = {
   cwd: string;
   model?: string;
+  // Seeds the thread this provider resumes on its first call -- see the identical option on
+  // ClaudeProviderOptions for the reasoning and the caching/cost caveat. src/session-discovery.ts's
+  // --resume-codex auto finds a real codex_vscode/CLI thread for this repo, distinct from any
+  // thread this supervisor itself created on a previous run (tagged originator "codex_sdk_ts").
+  resumeThreadId?: string;
 };
 
 export class CodexProvider implements AgentProvider {
@@ -12,7 +17,7 @@ export class CodexProvider implements AgentProvider {
   private readonly codex: Codex;
   private readonly cwd: string;
   private readonly model: string | undefined;
-  private threadId: string | null = null;
+  private threadId: string | null;
 
   constructor(options: CodexProviderOptions) {
     // See the identical guard in ClaudeProvider's constructor - previously only enforced
@@ -21,6 +26,7 @@ export class CodexProvider implements AgentProvider {
     assertSubscriptionOnlyBilling();
     this.cwd = options.cwd;
     this.model = options.model;
+    this.threadId = options.resumeThreadId ?? null;
 
     this.codex = new Codex({
       env: subscriptionOnlyEnvironment(),

@@ -2,11 +2,12 @@
   "targetRoot": "../..",
   "leader": "claude",
   "writer": "claude",
-  "maxReviewRounds": 2,
+  "maxReviewRounds": 1,
   "maxProviderCalls": 10,
   "claudeMaxTurns": 50,
   "claudeMaxBudgetUsdPerCall": 8,
   "claudeMaxTotalBudgetUsd": 40,
+  "providerCallTimeoutSeconds": 900,
   "testCommands": [],
   "testTimeoutSeconds": 600,
   "maxTestOutputChars": 200000

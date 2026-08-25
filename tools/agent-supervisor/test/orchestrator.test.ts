@@ -37,6 +37,19 @@ class UsageLimitProvider implements AgentProvider {
   }
 }
 
+class AlwaysFailsProvider implements AgentProvider {
+  readonly name = "claude" as const;
+  calls = 0;
+
+  async invoke(): Promise<ProviderResponse> {
+    this.calls += 1;
+    await setTimeout(5);
+    // Deliberately not a billing/session-limit message -- an ordinary failure (turn limit,
+    // malformed output, etc.) must not be treated as a fatal, run-wide stop.
+    throw new Error("Reached maximum number of turns (12)");
+  }
+}
+
 class AbortWaitingProvider implements AgentProvider {
   readonly name = "codex" as const;
   calls = 0;
@@ -156,6 +169,37 @@ test("long provider calls emit working heartbeats", async () => {
 
   assert.equal(result.status, "planned");
   assert.ok(updates.includes("working"));
+});
+
+test("a non-billing failure on one provider degrades to solo mode instead of aborting the run", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agent-supervisor-degrade-"));
+  execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
+
+  const claude = new AlwaysFailsProvider();
+  const codex = new MockProvider("codex");
+
+  const result = await new Orchestrator({
+    task: "Add focused input validation.",
+    config: SupervisorConfigSchema.parse({ targetRoot: root, testCommands: [] }),
+    claude,
+    codex,
+    allowWrite: true,
+    allowDirty: true,
+    autoApprove: true,
+    confirm: async () => true,
+  }).run();
+
+  // Codex's independent proposal must survive Claude's failure -- this is the exact regression
+  // the old all-or-nothing Promise.all abort caused (Codex's concurrent call used to be
+  // cancelled the instant Claude's rejected, even for a non-billing error).
+  assert.equal(codex.calls.some((call) => call.phase === "proposal"), true);
+  assert.equal(codex.calls.some((call) => call.access === "write"), true);
+  // Claude failed proposal *and* the later review call, but neither failure aborted the run.
+  assert.equal(claude.calls, 2);
+  assert.equal(result.status, "needs_attention");
+  assert.notEqual(result.implementation, null);
+  assert.match(result.reviews.at(-1)?.summary ?? "", /could not be completed/i);
+  assert.match(await readFile(path.join(result.runDirectory, "summary.md"), "utf8"), /Status: \*\*needs_attention\*\*/);
 });
 
 test("a usage-limit failure aborts concurrent work and prevents later phases", async () => {

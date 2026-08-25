@@ -10,6 +10,7 @@
     "doctor": "tsx src/index.ts doctor",
     "start": "tsx src/index.ts run",
     "demo": "tsx src/index.ts run --mock --allow-write --allow-dirty --yes --task \"Add input validation without changing public behavior\"",
+    "live": "tsx src/live-server.ts",
     "test": "tsx --test test/**/*.test.ts"
   },
   "dependencies": {
