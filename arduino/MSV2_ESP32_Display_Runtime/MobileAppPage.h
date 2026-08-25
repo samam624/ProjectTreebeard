@@ -571,8 +571,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
 
           <div class="smoothing-sub">Moisture</div>
           <div class="smoothing-grid">
-            <label>Deadband (x noise)
-              <input type="number" id="smNoiseDeadbandMult" min="0" step="0.5">
+            <label>Robust center window (odd packets)
+              <input type="number" id="smCenterWindowPackets" min="3" max="31" step="2">
+            </label>
+            <label>Center tracking (EMA alpha)
+              <input type="number" id="smMoistureAlpha" min="0.01" max="1" step="0.025">
             </label>
             <label>Watering trigger (x noise)
               <input type="number" id="smNoiseWateringMult" min="0" step="0.5">
@@ -580,17 +583,11 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
             <label>Watering trigger (% of span)
               <input type="number" id="smWateringSpanPct" min="0" step="1">
             </label>
-            <label>Max dry-down step (% of span)
+            <label>Max tracking step (% of span)
               <input type="number" id="smMaxStepSpanPct" min="0.1" step="0.5">
             </label>
             <label>Watering confirm (packets)
               <input type="number" id="smConfirmPackets" min="1" step="1">
-            </label>
-            <label>Dry-down stall escape (packets)
-              <input type="number" id="smStalledMaxWakes" min="1" step="1">
-            </label>
-            <label>Wet-side stall escape (packets, 0=off)
-              <input type="number" id="smWetStalledMaxWakes" min="0" step="1">
             </label>
           </div>
 
@@ -1186,7 +1183,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     }
 
     // Client-side, retroactive presentation smoothing (2026-08-23) ---------------------------
-    // Ports the receiver firmware's own moisture drying-ratchet (smoothMoistureForDisplay(),
+    // Ports the receiver firmware's robust centered moisture filter (smoothMoistureForDisplay(),
     // MSV2_ESP32_Display_Runtime.ino) and battery EMA + charge-state debounce
     // (calibrateRawBattery()) so the History chart recomputes "displayed" from the stored RAW
     // signal every time it renders, instead of only ever showing whatever the receiver's
@@ -1195,25 +1192,23 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // with no refetch and no reflash. Defaults mirror the firmware constants; the chart remains
     // a window-local simulation because history does not contain pre-window/reboot filter state.
     const SMOOTHING_DEFAULTS = {
-      noiseDeadbandMult: 3,
+      centerWindowPackets: 5,
+      moistureAlpha: 0.125,
       noiseWateringMult: 4,
       wateringSpanPct: 12,
       maxStepSpanPct: 5,
       confirmPackets: 2,
-      stalledMaxWakes: 20,
-      wetStalledMaxWakes: 0, // 0 = disabled; firmware has no symmetric wet-side escape hatch
       batteryAlpha: 0.2,
       chargeConfirmPackets: 2,
     };
-    const SMOOTHING_STORAGE_KEY = "msv2.historySmoothingParams.v1";
+    const SMOOTHING_STORAGE_KEY = "msv2.historySmoothingParams.v2";
     const SMOOTHING_FIELD_IDS = {
-      noiseDeadbandMult: "smNoiseDeadbandMult",
+      centerWindowPackets: "smCenterWindowPackets",
+      moistureAlpha: "smMoistureAlpha",
       noiseWateringMult: "smNoiseWateringMult",
       wateringSpanPct: "smWateringSpanPct",
       maxStepSpanPct: "smMaxStepSpanPct",
       confirmPackets: "smConfirmPackets",
-      stalledMaxWakes: "smStalledMaxWakes",
-      wetStalledMaxWakes: "smWetStalledMaxWakes",
       batteryAlpha: "smBatteryAlpha",
       chargeConfirmPackets: "smChargeConfirmPackets",
     };
@@ -1239,10 +1234,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     function readSmoothingFormValues() {
       const bounds = {
-        noiseDeadbandMult: [0, 100, false], noiseWateringMult: [0, 100, false],
+        centerWindowPackets: [3, 31, true], moistureAlpha: [0.01, 1, false],
+        noiseWateringMult: [0, 100, false],
         wateringSpanPct: [0, 100, false], maxStepSpanPct: [0.1, 100, false],
-        confirmPackets: [1, 255, true], stalledMaxWakes: [1, 255, true],
-        wetStalledMaxWakes: [0, 255, true], batteryAlpha: [0.01, 1, false],
+        confirmPackets: [1, 255, true], batteryAlpha: [0.01, 1, false],
         chargeConfirmPackets: [1, 255, true],
       };
       const params = {};
@@ -1257,6 +1252,9 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         let value = Number.isFinite(raw) ? raw : SMOOTHING_DEFAULTS[key];
         value = Math.min(maximum, Math.max(minimum, value));
         params[key] = integer ? Math.round(value) : value;
+        if (key === "centerWindowPackets" && params[key] % 2 === 0) {
+          params[key] += params[key] < maximum ? 1 : -1;
+        }
       }
       return params;
     }
@@ -1268,108 +1266,69 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return Math.max(20, Math.floor(measured / 5));
     }
 
-    // Faithful port of smoothMoistureForDisplay() in MSV2_ESP32_Display_Runtime.ino,
-    // generalized so the watering-confirm packet count is a parameter rather than firmware's
-    // fixed 2 (pass confirmPackets: 1 to reproduce the original un-debounced behavior for
-    // comparison), plus an optional symmetric wet-side stall escape hatch the firmware does
-    // not have (default disabled). That escape hatch is the live tool for the "MSV3 stuck for
-    // 10 minutes" gap noted in docs/RECEIVER_CLOUD_RELIABILITY_2026-08-23.md - ordinary
-    // upward jitter is otherwise ignored forever, not just until it's confirmed real.
+    function medianOfValues(values) {
+      const sorted = values.slice().sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    }
+
+    // Browser port of smoothMoistureForDisplay() in MSV2_ESP32_Display_Runtime.ino.
+    // The robust median center rejects isolated spikes before a symmetric low-pass tracks
+    // it in both directions. The old drying ratchet accepted low excursions while ignoring
+    // equal high excursions, which inevitably pulled a stationary signal below its centroid
+    // and later misclassified the accumulated gap as watering.
     function smoothMoistureSeries(rawPoints, p) {
       const out = [];
-      let displayed = null, prevMeasured = null, noise = 1, samples = 0;
-      let wateringStreak = 0, wetStreak = 0, dryStalledWakes = 0;
+      const centerWindow = [];
+      const windowPackets = Math.max(3, Math.round(p.centerWindowPackets) | 1);
+      let displayed = null, filteredQ8 = null, wateringStreak = 0;
 
       for (const point of rawPoints) {
         const measured = point.raw;
         if (measured == null) continue;
 
-        if (samples === 0) {
+        centerWindow.push(measured);
+        if (centerWindow.length > windowPackets) centerWindow.shift();
+
+        if (displayed === null) {
           displayed = measured;
-          prevMeasured = measured;
-          noise = Math.max(1, Math.floor(moisturePresentationSpan(measured, p.learnedSpan) / 100));
-          samples = 1;
+          filteredQ8 = measured * 256;
           out.push({ t: point.t, v: displayed, raw: measured });
           continue;
         }
 
-        const sampleDelta = Math.abs(measured - prevMeasured);
-
-        if (samples === 1) {
-          noise = Math.max(1, sampleDelta);
-          prevMeasured = measured;
-          samples = 2;
+        // Do not let a two-sample pseudo-center move the startup value. The first full
+        // window is the earliest point with the promised two-outlier rejection.
+        if (centerWindow.length < windowPackets) {
           out.push({ t: point.t, v: displayed, raw: measured });
           continue;
         }
 
-        const span = moisturePresentationSpan(measured, p.learnedSpan);
+        const center = medianOfValues(centerWindow);
+        const robustNoise = Math.max(1, medianOfValues(centerWindow.map((value) => Math.abs(value - center))));
+        const span = moisturePresentationSpan(center, p.learnedSpan);
         let wateringThreshold = Math.max(4, Math.ceil((span * p.wateringSpanPct) / 100));
         wateringThreshold = Math.max(wateringThreshold, Math.floor(displayed / 50));
-        wateringThreshold = Math.max(wateringThreshold, noise * p.noiseWateringMult);
+        wateringThreshold = Math.max(wateringThreshold, robustNoise * p.noiseWateringMult);
 
-        const wateringRise = measured > displayed && measured - displayed >= wateringThreshold;
+        const wateringRise = center > displayed && center - displayed >= wateringThreshold;
 
         if (wateringRise) {
           wateringStreak++;
-          wetStreak = 0;
-          dryStalledWakes = 0;
           if (wateringStreak >= Math.max(1, p.confirmPackets)) {
-            displayed = measured;
+            displayed = center;
+            filteredQ8 = center * 256;
             wateringStreak = 0;
           }
         } else {
           wateringStreak = 0;
-
-          if (sampleDelta <= wateringThreshold) {
-            // The +4 is firmware's round-half-up bias (half of the /8 divisor) applied
-            // BEFORE a truncating division - Math.floor matches that C uint32_t divide
-            // exactly. Math.round here would double-round on top of an already-biased
-            // value, diverging from firmware on roughly half of all packets.
-            noise = Math.floor((noise * 7 + sampleDelta + 4) / 8);
-            if (noise === 0) noise = 1;
-          }
-
-          let deadband = Math.max(2, Math.floor(span / 100));
-          deadband = Math.max(deadband, noise * p.noiseDeadbandMult);
-
-          const pendingDryDown = measured < displayed;
-          const releaseDryDeadband = pendingDryDown && dryStalledWakes + 1 >= p.stalledMaxWakes;
-          const effectiveDeadband = releaseDryDeadband ? 0 : deadband;
-
-          if (pendingDryDown && measured + effectiveDeadband < displayed) {
-            const excess = displayed - measured - effectiveDeadband;
-            let step = Math.floor((excess + 1) / 2);
-            const maxStep = Math.max(1, Math.floor((span * p.maxStepSpanPct) / 100));
-            if (step > maxStep) step = maxStep;
-            displayed -= step;
-            dryStalledWakes = 0;
-            wetStreak = 0;
-          } else if (pendingDryDown) {
-            dryStalledWakes = Math.min(255, dryStalledWakes + 1);
-            wetStreak = 0;
-          } else if (measured > displayed) {
-            // Preserve dry-side evidence across ordinary sub-watering upward jitter, matching
-            // firmware. A real watering-sized rise resets it in the branch above.
-            if (p.wetStalledMaxWakes > 0) {
-              wetStreak++;
-              if (wetStreak >= p.wetStalledMaxWakes) {
-                const excess = measured - displayed;
-                let step = Math.floor((excess + 1) / 2);
-                const maxStep = Math.max(1, Math.floor((span * p.maxStepSpanPct) / 100));
-                if (step > maxStep) step = maxStep;
-                displayed += step;
-                wetStreak = 0;
-              }
-            }
-          } else {
-            dryStalledWakes = 0;
-            wetStreak = 0;
-          }
+          const targetQ8 = center * 256;
+          let stepQ8 = Math.trunc((targetQ8 - filteredQ8) * p.moistureAlpha);
+          const maxStepQ8 = Math.max(1, Math.floor((span * p.maxStepSpanPct) / 100)) * 256;
+          stepQ8 = Math.max(-maxStepQ8, Math.min(maxStepQ8, stepQ8));
+          filteredQ8 += stepQ8;
+          displayed = Math.floor((filteredQ8 + 128) / 256);
         }
 
-        prevMeasured = measured;
-        samples++;
         out.push({ t: point.t, v: displayed, raw: measured });
       }
 
@@ -1802,11 +1761,27 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // call captures its own id and checks it's still current before touching the DOM;
     // a superseded call just quietly stops.
     let historyRequestId = 0;
+    // Set for the duration of any in-flight loadHistory() call (any caller - tab open,
+    // sensor/range change, or the 30s auto-refresh below), cleared only by whichever call
+    // is still current when it finishes. A wide range (14-30 days) can take many sequential
+    // Supabase pages to walk and may run past 30s; without this flag the auto-refresh timer
+    // would fire mid-load, bump historyRequestId, and restart pagination from scratch every
+    // tick - never letting a wide-range load finish (it looked like the view kept resetting
+    // and reloading forever).
+    let historyLoadInFlight = false;
 
     async function loadHistory() {
       const requestId = ++historyRequestId;
       const isCurrent = () => requestId === historyRequestId;
+      historyLoadInFlight = true;
+      try {
+        await loadHistoryInner(isCurrent);
+      } finally {
+        if (isCurrent()) historyLoadInFlight = false;
+      }
+    }
 
+    async function loadHistoryInner(isCurrent) {
       populateHistorySensorSelect();
       const sensor = $("historySensorSelect").value;
       const hours = $("historyRangeSelect").value;
@@ -2217,7 +2192,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         await loadSound();
         setInterval(loadReadings, 3000);
         setInterval(() => {
-          if (!$("historyView").classList.contains("hidden")) loadHistory();
+          if (!$("historyView").classList.contains("hidden") && !historyLoadInFlight) loadHistory();
         }, 30000);
       } catch (error) {
         $("statusText").textContent = "Could not load board";
