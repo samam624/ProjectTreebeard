@@ -2,6 +2,12 @@
 
 Date: 2026-08-22
 
+> **Superseded on 2026-08-24:** the asymmetric drying ratchet documented below was proven to
+> bias stationary Alocasia GP noise toward its lower envelope. It has been replaced by a
+> five-packet robust center plus symmetric EMA. See
+> `docs/MOISTURE_CENTERED_FILTER_FIX_2026-08-24.md`. The raw/presentation data separation and
+> storage contract described here remain current.
+
 ## Outcome
 
 Moisture smoothing now happens once, on the ESP32 display receiver, after every supported

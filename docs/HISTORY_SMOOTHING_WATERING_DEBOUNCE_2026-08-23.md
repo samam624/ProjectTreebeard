@@ -1,5 +1,9 @@
 # History Chart: Watering Snap False-Triggered by Single-Packet Noise (2026-08-23)
 
+> **Superseded on 2026-08-24:** two-packet confirmation fixed the single-outlier symptom but
+> could not fix the drying ratchet's directional bias. The receiver and History simulation now
+> use a robust centered filter; see `docs/MOISTURE_CENTERED_FILTER_FIX_2026-08-24.md`.
+
 ## Symptom
 
 User-reported on the Alocasia GP History chart (Moisture, "Last 3 days"): the displayed

@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
 import { observedAtIso, selectHistoryRows, validateHistoryRowIdentity } from "./history-batch.ts";
+import { parseMsv3Diagnostics } from "./msv3-diagnostics.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +24,13 @@ type PlantReading = {
     fdcCounts?: number;
     batteryMv?: number;
     charging?: boolean;
+    // MSV3 software-only board-temperature/bare-tank-reference diagnostics (2026-08-25) - two
+    // independent raw observables, not a computed/compensated moisture value. See
+    // msv3-diagnostics.ts's parseMsv3Diagnostics() for validation and MSV3_Moisture_BLE_Sleep.ino
+    // for where these originate.
+    boardTempQuarterC?: number;
+    bareTankFdcCounts?: number;
+    tankPhase?: number;
   };
   batteryPercent?: number;
   rssi?: number;
@@ -346,6 +354,7 @@ Deno.serve(async (request) => {
           ageMs: Number.isFinite(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
           observationId,
           receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs),
+          ...parseMsv3Diagnostics(plant?.raw),
         });
       }
 
@@ -380,6 +389,7 @@ Deno.serve(async (request) => {
 
         const displayMoisture = Number(plant?.moisture);
         const measuredMoisture = Number(plant?.measuredMoisture);
+        const msv3Diagnostics = parseMsv3Diagnostics(plant?.raw);
 
         const { error: historyError } = await supabase.rpc("msv2_store_sensor_reading", {
           p_receiver_id: receiverId,
@@ -408,6 +418,9 @@ Deno.serve(async (request) => {
           p_received_at: null,
           p_raw_battery_mv: Number.isFinite(Number(plant?.raw?.batteryMv)) ? Number(plant.raw.batteryMv) : null,
           p_raw_charging: typeof plant?.raw?.charging === "boolean" ? plant.raw.charging : null,
+          p_board_temp_quarter_c: msv3Diagnostics.boardTempQuarterC,
+          p_bare_tank_fdc_counts: msv3Diagnostics.bareTankFdcCounts,
+          p_tank_phase: msv3Diagnostics.tankPhase,
         });
         if (historyError) {
           console.error(`sensor history insert failed for sensor ${sensorId}: ${historyError.message}`);

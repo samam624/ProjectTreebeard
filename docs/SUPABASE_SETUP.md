@@ -80,13 +80,15 @@ In Supabase Dashboard:
 37. Paste it into the SQL editor.
 38. Run it.
 39. Apply every remaining file in `supabase/migrations/` from `013` through the
-    highest-numbered migration present (currently `034`) in numerical order. In particular,
+    highest-numbered migration present (currently `035`) in numerical order. In particular,
     024-027 are one staged moisture-calibration rollout;
     030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
-    upserts; and 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
-    extracts the scale-transition-reset logic into a shared helper. Do not skip directly to
-    the latest file because the migration history and rollback trail are part of the
-    deployment record.
+    upserts; 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
+    extracts the scale-transition-reset logic into a shared helper; and 035 adds nullable
+    MSV3 board-temperature/bare-tank-reference history columns (no compensation formula
+    enabled yet - see docs/MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md). Do not
+    skip directly to the latest file because the migration history and rollback trail are
+    part of the deployment record.
 
 CLI alternative:
 

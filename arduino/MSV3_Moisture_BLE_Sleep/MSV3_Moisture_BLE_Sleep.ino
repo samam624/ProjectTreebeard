@@ -142,6 +142,16 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 
 #define WDT_TIMEOUT_MS 5000UL
 
+// sd_temp_get()'s native units (die temperature in 0.25 degC, confirmed against the installed
+// SoftDevice's own nrf_soc.h doc comment) and the nRF52840 PS v1.1 TEMP peripheral's specified
+// operating range (-40 to +85 degC). Anything outside this range from a "successful" SVC call is
+// treated as untrustworthy, not clamped.
+#define BOARD_TEMP_MIN_Q4C (-160)
+#define BOARD_TEMP_MAX_Q4C 340
+// Bounded poll for sd_clock_hfclk_is_running() after sd_clock_hfclk_request() -- HFXO start is
+// normally much faster than this on this board; this is a safety ceiling, not a tuned value.
+#define BOARD_TEMP_HFCLK_POLL_TIMEOUT_MS 5
+
 // =================================================================== FDC ==
 uint8_t fdcAddr = 0x2A;  // ADDR (pin 4, WQFN-16) tied to GND per netlist.
 
@@ -260,6 +270,54 @@ bool isBatteryCharging()
   bool stat, pg;
   readChargerPins(stat, pg);
   return stat == LOW;
+}
+
+// ========================================================= Board temp ====
+// nRF52840 die temperature via the SoftDevice's sd_temp_get(), NOT the raw NRF_TEMP peripheral
+// directly (that path is only safe when the SoftDevice is disabled -- see wiring.c's
+// readCPUTemperature(), which branches on sd_softdevice_is_enabled()). This sketch always has
+// the SoftDevice enabled once bleInit() has run, so the SVC path is the only correct one here.
+//
+// The installed core's own readCPUTemperature() helper calls sd_temp_get() with no HFXO request
+// around it at all. Per the nRF52840 datasheet, TEMP's specified accuracy assumes HFXO is
+// running; the SoftDevice's own sd_temp_get() doc only promises a blocking measurement, not that
+// it requests HFXO for you. Requesting/releasing HFXO here is ordinary SoftDevice clock-request
+// API usage (sd_clock_hfclk_request/is_running/release) -- a different mechanism entirely from
+// LFCLK/RTC1, and does NOT touch NRF_CLOCK directly. See docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md
+// for why direct NRF_CLOCK manipulation from a sketch is the thing that must never happen again;
+// this function never does that.
+bool readBoardTempQuarterC(int16_t &result)
+{
+  if (sd_clock_hfclk_request() != NRF_SUCCESS) return false;
+
+  bool hfclkRunning = false;
+  uint32_t pollStart = millis();
+  do
+  {
+    uint32_t isRunning = 0;
+    if (sd_clock_hfclk_is_running(&isRunning) == NRF_SUCCESS && isRunning)
+    {
+      hfclkRunning = true;
+      break;
+    }
+  } while (millis() - pollStart < BOARD_TEMP_HFCLK_POLL_TIMEOUT_MS);
+
+  bool ok = false;
+  if (hfclkRunning)
+  {
+    int32_t tempQ4C = 0;
+    if (sd_temp_get(&tempQ4C) == NRF_SUCCESS &&
+        tempQ4C >= BOARD_TEMP_MIN_Q4C && tempQ4C <= BOARD_TEMP_MAX_Q4C)
+    {
+      result = (int16_t)tempQ4C;
+      ok = true;
+    }
+  }
+
+  // Balances the successful request above unconditionally -- every return path from this point
+  // down (timeout, out-of-range reading, success) must still release what it acquired.
+  sd_clock_hfclk_release();
+  return ok;
 }
 
 // ======================================================= Sleep / wake =====
@@ -398,7 +456,22 @@ void delayFeedingWatchdog(uint32_t ms)
 // [7-9]   wake, 24-bit LE
 // [10-13] raw FDC2214 DATA_CH0, 32-bit LE
 // [14-15] raw battery mV, 16-bit LE
-// [16]    charging, 1 byte
+// [16]    flags: bit0=charging (existing meaning, unchanged), bit1=moisture/reference phase
+//         used (0/1), bit2=board temp valid, bit3=bare-tank reference valid, bits4-7=reserved/0
+// [17-18] board temperature, signed int16 LE, quarter-degrees C (sd_temp_get() native units;
+//         0/invalid when bit2 is clear) -- see readBoardTempQuarterC(). This is nRF52840 die
+//         temperature, NOT soil or blade temperature.
+// [19-22] bare-tank FDC2214 DATA_CH0, uint32 LE (0/invalid when bit3 is clear) -- reading taken
+//         with the mux on EC-check code 2|phase, disconnecting the electrodes so the FDC is
+//         oscillating on the bare L2/C17 tank alone. Board/tank-adjacent reference, NOT soil
+//         temperature or a moisture reading.
+//
+// 23 total bytes. First 17 bytes are byte-for-byte unchanged from the prior wire format --
+// MSV2_ESP32_Display_Runtime.ino's existing MSV2_RAW_PACKET_WIDE_LEN=17 parse path (including
+// its `flags & 0x01` charging read) still works unmodified against this packet; only a receiver
+// that specifically checks for length>=23 sees the new fields. Sized to exactly fill the 31-byte
+// legacy advertising-data payload alongside the Flags (3B) and TX Power (3B) AD structures
+// already added below: 3+3+(2+23)=31.
 bool g_bleInited = false;
 uint32_t wakeCount = 0;
 
@@ -419,10 +492,20 @@ void bleInit()
   g_bleInited = true;
 }
 
-void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging)
+// Flag bits for mfg[16] -- bit0 (charging) is the original, unchanged meaning.
+#define ADV_FLAG_CHARGING        (1U << 0)
+#define ADV_FLAG_PHASE           (1U << 1)
+#define ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
+#define ADV_FLAG_BARE_TANK_OK    (1U << 3)
+
+void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, uint8_t phaseUsed,
+              bool boardTempValid, int16_t boardTempQuarterC,
+              bool bareTankValid, uint32_t bareTankDataCh0)
 {
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
-  uint8_t mfg[17];
+  uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
+  uint32_t bareTankField = bareTankValid ? bareTankDataCh0 : 0;
+  uint8_t mfg[23];
 
   mfg[0] = lowByte(BLE_COMPANY_ID);
   mfg[1] = highByte(BLE_COMPANY_ID);
@@ -437,13 +520,36 @@ void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging)
   mfg[13] = (uint8_t)((rawDataCh0 >> 24) & 0xFF);
   mfg[14] = (uint8_t)(batteryMvRounded & 0xFF);
   mfg[15] = (uint8_t)((batteryMvRounded >> 8) & 0xFF);
-  mfg[16] = isCharging ? 0x01 : 0x00;
+  mfg[16] = (isCharging ? ADV_FLAG_CHARGING : 0) |
+            (phaseUsed ? ADV_FLAG_PHASE : 0) |
+            (boardTempValid ? ADV_FLAG_BOARD_TEMP_OK : 0) |
+            (bareTankValid ? ADV_FLAG_BARE_TANK_OK : 0);
+  mfg[17] = (uint8_t)(boardTempField & 0xFF);
+  mfg[18] = (uint8_t)((boardTempField >> 8) & 0xFF);
+  mfg[19] = (uint8_t)(bareTankField & 0xFF);
+  mfg[20] = (uint8_t)((bareTankField >> 8) & 0xFF);
+  mfg[21] = (uint8_t)((bareTankField >> 16) & 0xFF);
+  mfg[22] = (uint8_t)((bareTankField >> 24) & 0xFF);
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
-  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-  Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
+  bool ok = true;
+  ok &= Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  ok &= Bluefruit.Advertising.addTxPower();
+  ok &= Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
+  if (!ok)
+  {
+    // A silently-truncated/missing manufacturer-data AD structure would advertise with no
+    // sensor payload at all -- make that loud rather than letting an empty-looking advertisement
+    // go unnoticed. sizeof(mfg)=23 plus Flags(3B)+TxPower(3B) is designed to exactly fill the
+    // 31-byte legacy limit; a failure here almost certainly means that arithmetic is wrong for
+    // whatever data was actually added above, not a transient condition.
+    if (ENABLE_SERIAL_LOGS)
+    {
+      Serial.println(F("[ERROR] Advertising data failed to fit (Flags/TxPower/manufacturer data) -- advertising WITHOUT sensor payload"));
+      Serial.flush();
+    }
+  }
   Bluefruit.ScanResponse.addName();
   Bluefruit.Advertising.restartOnDisconnect(false);
   Bluefruit.Advertising.setInterval(32, 32);  // 20-30ms while awake, same as MSV2
@@ -513,6 +619,13 @@ void setup()
 void loop()
 {
   feedWatchdog();
+
+  // Board (die) temperature -- sampled first, before anything FDC/battery/BLE-related, per
+  // readBoardTempQuarterC()'s own requirement that HFCLK be requested/released around a single
+  // clean measurement rather than interleaved with other peripheral activity.
+  int16_t boardTempQuarterC = 0;
+  bool boardTempValid = readBoardTempQuarterC(boardTempQuarterC);
+
   uint32_t cycleStartMs = millis();
 
   // Select this wake's electrode-swap phase while the FDC is still in
@@ -578,20 +691,66 @@ void loop()
 
   if (shouldAdvertise)
   {
+    // Bare-tank (EC-check) reference reading -- only on advertising wakes, so this stays
+    // temporally paired with every transmitted moisture sample while limiting extra FDC energy
+    // and electrode DC exposure. The FDC is already in shutdown (probeSleep() just ran above)
+    // and the mux at MUX_SLEEP_CODE(0); this switches to the EC-check code for the phase just
+    // used, takes one reading, then unconditionally returns to shutdown/code-0 before doing
+    // anything else -- including on any failure path, so mux code 2/3 is never left selected
+    // across sleep, BLE advertising, or an early return (there is none here; this block always
+    // runs straight through to its own probeSleep() call below).
+    uint8_t bareTankMuxCode = 2 | phaseUsed;  // phase 0 -> code 2, phase 1 -> code 3
+    setMux(bareTankMuxCode);
+    bool bareWakeOk = probeWake(WAKE_DISCARD_CONVERSIONS);
+    uint32_t bareTankData = 0;
+    uint16_t bareTankStatus = 0;
+    bool bareReadOk = bareWakeOk && fdcReadChannel0(bareTankData, bareTankStatus);
+    bool bareErrWd = bareReadOk && (bareTankStatus & (1 << 11)) != 0;
+    bool bareTankValid = bareReadOk && !bareErrWd;
+    if (!bareTankValid) bareTankData = 0;
+
+    if (ENABLE_SERIAL_LOGS && bareReadOk)
+    {
+      bool bareErrAhw = (bareTankStatus & (1 << 10)) != 0;
+      bool bareErrAlw = (bareTankStatus & (1 << 9)) != 0;
+      if (bareErrAhw || bareErrAlw)
+      {
+        // Logged only, per spec: amplitude flags do not invalidate the bare-tank reading --
+        // retained for initial characterization unless bench evidence shows it's unusable.
+        Serial.print(F("[WARN] Bare-tank FDC status"));
+        if (bareErrAhw) Serial.print(F(" ERR_AHW(amplitude-too-high)"));
+        if (bareErrAlw) Serial.print(F(" ERR_ALW(amplitude-too-low)"));
+        Serial.println(F(" -- retaining raw result"));
+        Serial.flush();
+      }
+    }
+
+    // Unconditional, even on failure -- immediately returns the mux to code 0 and shuts the FDC
+    // back down. Reuses the exact same safety-critical sequence probeSleep() already performs
+    // for the normal moisture reading (see its own comment on the ~33uA EC-check-code leak risk
+    // in wet soil).
+    probeSleep();
+
     wakeCount++;
 
     if (ENABLE_SERIAL_LOGS)
     {
-      char buf[144];
+      char buf[220];
       snprintf(buf, sizeof(buf),
-               "[DIAG] wake=%lu%s phase=%d DATA_CH0=%lu vbat_mV=%d charging=%d status=0x%X",
+               "[DIAG] wake=%lu%s phase=%d DATA_CH0=%lu status=0x%X "
+               "tempQ4C=%d tempValid=%d bareDATA_CH0=%lu bareStatus=0x%X bareValid=%d "
+               "vbat_mV=%d charging=%d",
                (unsigned long)wakeCount, bigSwing ? " (swing)" : "", (int)phaseUsed,
-               (unsigned long)rawData, (int)(batteryMv + 0.5f), charging ? 1 : 0, fdcStatus);
+               (unsigned long)rawData, fdcStatus,
+               (int)boardTempQuarterC, boardTempValid ? 1 : 0,
+               (unsigned long)bareTankData, bareTankStatus, bareTankValid ? 1 : 0,
+               (int)(batteryMv + 0.5f), charging ? 1 : 0);
       Serial.println(buf);
       Serial.flush();
     }
 
-    startAdv(rawData, batteryMv, charging);
+    startAdv(rawData, batteryMv, charging, phaseUsed, boardTempValid, boardTempQuarterC,
+             bareTankValid, bareTankData);
     delayFeedingWatchdog(ADVERTISE_MS);
     Bluefruit.Advertising.stop();
 

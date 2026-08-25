@@ -1,6 +1,27 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-23 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-08-24 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-08-24 Centered Moisture Presentation Filter
+
+- Root-caused Alocasia GP's blue line repeatedly falling below the raw centroid and later
+  popping upward. Live sensor-3 history showed raw hourly medians around 898-903 while the
+  presentation fell to 879-882. This was the asymmetric drying ratchet accepting low-side
+  excursions while ignoring equivalent high-side samples; the later jump was the filter
+  correcting its own accumulated bias.
+- Replaced the receiver and browser-history implementations with a five-packet median, median
+  absolute deviation, symmetric Q8 1/8 EMA, and symmetric 5%-of-span step cap. A robust-center
+  watering rise still snaps after two confirmations, but snaps to the median rather than a raw
+  transient peak.
+- Replaced the obsolete deadband/stall History controls with robust-center-window and moisture-EMA
+  controls. Bumped browser settings storage to `.v2`, so old ratchet settings cannot carry over.
+- Expanded `scripts/verify_receiver_moisture_filter.mjs` with Alocasia-derived stationary-noise,
+  symmetric-noise, isolated-spike, watering-step, and dry-down regressions. It and the battery
+  parity verifier pass.
+- Compiled at 2,202,076 bytes flash / 77,252 bytes RAM and flashed COM16 with LittleFS preserved.
+  `/device` confirmed `MSV2 runtime build 2026-08-24 centered-moisture-filter-v1`, BLE scanning,
+  cloud sync healthy, zero queue drops, and zero consecutive upload failures.
+- Full analysis: `docs/MOISTURE_CENTERED_FILTER_FIX_2026-08-24.md`.
 
 ## 2026-08-23 Full-Directory Review Remediation and Live History Recovery
 
@@ -1258,3 +1279,67 @@ http://BOARD_IP/config-meta
   the final normal display firmware compiles at 2,197,400 bytes flash / 77,044 bytes RAM. Upload to
   COM16 is intentionally pending explicit approval because flashing reboots the receiver and can
   discard any rows still in its RAM-only history queue.
+
+## 2026-08-25: MSV3 software-only board temperature + bare-tank reference (compile-verified, not flashed)
+
+- Added two raw observables with no hardware change: nRF52840 die temperature (SoftDevice
+  `sd_temp_get()` with a balanced HFXO request, never touching LFCLK/RTC1) and a bare-tank FDC
+  reference reading (EC-check mux codes 2/3, disconnecting the electrodes) taken once per
+  advertising wake. Neither is soil temperature; neither is compensated/computed anywhere yet -
+  both are raw values carried through to Supabase. Full design and verification details in
+  `docs/MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md`.
+- MSV3 probe packet widened 17->23 bytes (first 17 bytes unchanged); receiver, cloud Edge
+  Function, and migration 035 updated to match, all backward compatible with older/shorter
+  packets.
+- Probe and receiver compile clean; migration/tests verified locally (`node
+  scripts/verify_supabase_migrations.mjs`, `node --test supabase/functions/receiver-snapshot/
+  *.test.ts`, 23/23). Nothing flashed or deployed - all three require separate explicit
+  authorization.
+
+## 2026-08-25: MobileAppPage.h History tab infinite-reload fix (flashed, live)
+
+- Root cause: the History tab's 30s auto-refresh `setInterval` fired unconditionally, including
+  while a previous `loadHistory()` call was still mid-pagination. A >14-day range needs up to
+  14-30 sequential Supabase page fetches; if that took longer than 30s (routine for a wide
+  range), the timer restarted the whole fetch from scratch every tick - a >14-day load could
+  never finish, which looked like the History view resetting and reloading forever.
+- Fix: a `historyLoadInFlight` flag, set for the duration of any `loadHistory()` call and
+  cleared only by whichever call is still current when it finishes. The 30s auto-refresh now
+  skips its tick while a load is already running instead of stacking a new one on top.
+  Manual triggers (tab click, sensor/range dropdown change) are unaffected - they still
+  cancel-and-restart immediately via the existing `historyRequestId` guard, which is correct UX.
+- Verified: both embedded `<script>` blocks in `MobileAppPage.h` parse clean (`node -e
+  "new Function(...)"` on each extracted block). Compiled and flashed to the ESP32 display
+  receiver on COM16; hash-verified.
+
+## 2026-08-25: agent-supervisor (Claude+Codex coop) root-cause fix + new live-pairing tool
+
+- `tools/agent-supervisor/` (the batch Claude-Codex planning CLI) was root-caused from real
+  `.agent-runs/` logs - 6 of the last 16 real runs ended in a bare error with nothing else, and
+  every run started with zero awareness of `CLAUDE.md`. Fixed the same day: `settingSources: []`
+  (which silently disabled CLAUDE.md loading) corrected to `["project"]`; a repo-root `AGENTS.md`
+  added so Codex gets equivalent grounding (its own auto-loaded-instructions convention,
+  confirmed via web search); the shared `AbortController` no longer aborts the whole run on an
+  ordinary (non-billing) failure - it degrades to solo-provider mode instead of discarding the
+  other provider's completed work; added a per-call wall-clock timeout (Codex had none before);
+  fixed a false-negative in `doctor` (a Windows/Node security change broke its own Codex-auth
+  check, not an actual auth problem - confirmed Codex really is logged in and working). 20/20
+  tests pass, two full live validation runs completed with real API calls.
+- Added `--resume-claude`/`--resume-codex [id|auto]` (`src/session-discovery.ts`): finds and
+  resumes an existing real Claude/Codex conversation for this repo automatically, confirmed live
+  against this exact interactive session and a real Codex VSCode-tab session. Real constraint
+  found live: a Codex thread can't be resumed while it's simultaneously open in another window
+  (single-writer lock) - the orchestrator's solo-mode degrade (above) handles that gracefully.
+- Built a second, separate tool in response to "I want to watch both agents work in real time and
+  keep talking to them afterward": `src/live-server.ts`, a local-only HTTP+SSE server + browser
+  page (`public/live.html`) with two live-streaming panels (Claude/Codex side by side), each in a
+  real resumable session, each shown the other's last reply on every round after the first so
+  they build on each other rather than answering in isolation. Read-only by design (discussion
+  tool, not an implementation one - use the batch CLI with `--allow-write` for that). Smoke-tested
+  live end-to-end (real streaming, real tool calls, real cost tracking). First real use: the
+  design session that produced the MSV3 board-temperature/bare-tank-reference feature above.
+- Full detail in `tools/agent-supervisor/README.md` (updated) and memory
+  `msv2_agent_supervisor_fix_and_resume`. Launch note: `npm.cmd`/`npx.cmd` mangle arguments when
+  run through a Git-Bash-backed shell on this machine (`'C:\Program' is not recognized...`) -
+  invoke `node node_modules/tsx/dist/cli.mjs src/index.ts run ...` (or `src/live-server.ts`)
+  directly, or use a native PowerShell/cmd terminal where `npm run ...` works fine.

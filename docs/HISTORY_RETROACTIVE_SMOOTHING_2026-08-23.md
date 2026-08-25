@@ -1,5 +1,10 @@
 # History Chart: Retroactive, On-the-Fly Presentation Smoothing (2026-08-23)
 
+> **Algorithm update, 2026-08-24:** retroactive recomputation remains current, but the moisture
+> implementation and controls described below have changed from an asymmetric drying ratchet to a
+> five-packet robust center plus symmetric EMA. See
+> `docs/MOISTURE_CENTERED_FILTER_FIX_2026-08-24.md`. Battery behavior is unchanged.
+
 ## What changed
 
 Previously, both History-chart series were baked in at ingest time by the receiver and

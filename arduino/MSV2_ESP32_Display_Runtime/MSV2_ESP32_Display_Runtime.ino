@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-23 watering-line-model-v3"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-24 centered-moisture-filter-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -257,6 +257,16 @@ const size_t MSV2_RAW_PACKET_MIN_LEN = 15;
 // packet also satisfies the narrower >= check and would otherwise be
 // misparsed with the old field offsets.
 const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
+// 2026-08-25: MSV3_Moisture_BLE_Sleep.ino's software-only board-temperature/bare-tank-reference
+// addition widens the wide packet again, 17 -> 23 bytes (byte 16 gains phase/validity flag bits,
+// bytes 17-18 are signed board temp in quarter-degrees C, bytes 19-22 are the bare-tank FDC
+// count) - see that file's own wire-format comment above startAdv() for the exact layout. A
+// packet is wideRaw at length>=17 same as before (first 17 bytes are unchanged, so an older
+// receiver parses those fields identically); it additionally carries these diagnostics only at
+// length>=23. Named "diagnostic" rather than folded into wideRaw's own meaning because a shorter
+// wide packet (an MSV3 probe running older firmware) must keep working exactly as today with no
+// diagnostics, not be misparsed or rejected.
+const size_t MSV3_DIAGNOSTIC_PACKET_LEN = 23;
 // Version the receiver-derived numeric scale written to history. Scale 1 covers the
 // existing legacy/MSV2 mappings. Scale 2 is MSV3's 100-FDC-count high-resolution window
 // introduced below. The cloud uses a version change to start a fresh calibration epoch
@@ -390,31 +400,31 @@ uint16_t buzzerDutyRaw()
   return (uint16_t)((BUZZER_PWM_MAX * BUZZER_DUTY_PERCENT + 50U) / 100U);
 }
 
+// Five samples are enough to reject two isolated spikes while adding only four packets
+// of warm-up. The center, not either envelope of the noise cloud, feeds the low-pass.
+constexpr uint8_t MOISTURE_CENTER_WINDOW = 5;
+
 struct SensorReading
 {
   bool seen = false;
   uint32_t wake = 0;
   // Presentation moisture is deliberately separate from the latest real measurement.
   // Every display/web surface uses moisture; measuredMoisture remains untouched by the
-  // drying filter and is what the cloud stores in the original history column for
+  // centered presentation filter and is what the cloud stores in the original history column for
   // diagnostics and auto-calibration. The filter state is receiver-local and therefore
   // applies uniformly to legacy, MSV2 raw-kHz, and MSV3 FDC packet formats.
   uint16_t moisture = 0;
   uint16_t measuredMoisture = 0;
-  uint16_t previousMeasuredMoisture = 0;
-  uint16_t moistureNoise = 0;
-  uint8_t moistureFilterSamples = 0;
-  // Counts qualifying unique packets where the drying filter had a real, blocked-by-
-  // deadband downward move pending. Ordinary sub-watering upward noise preserves this
-  // progress; otherwise symmetric jitter could reset the counter forever. A real move,
-  // confirmed watering rise, or exact convergence resets it.
-  uint8_t moistureStalledWakes = 0;
-  // Set when exactly one packet has cleared the watering threshold in
-  // smoothMoistureForDisplay() but has not yet been confirmed by a second consecutive
-  // one. Every dry-side move is guarded by a deadband and a step cap, but a single
-  // upward packet previously had no such protection and could snap the display on one
-  // noisy outlier; this flag defers the snap until the rise persists for two packets.
-  bool moistureWateringPending = false;
+  uint16_t moistureCenterWindow[MOISTURE_CENTER_WINDOW] = {};
+  uint8_t moistureCenterCount = 0;
+  uint8_t moistureCenterNext = 0;
+  // Q8 fixed point prevents a symmetric 1/8 EMA from rounding every small correction
+  // toward one side. `moisture` is the rounded integer presentation of this accumulator.
+  uint32_t moistureFilteredQ8 = 0;
+  // Counts consecutive robust-center readings above the watering threshold. The robust
+  // center already needs three of the last five packets to move, and this second gate
+  // prevents a short burst from being presented as watering.
+  uint8_t moistureWateringStreak = 0;
   uint8_t batteryPercent = BATTERY_UNKNOWN;
   int rssi = 0;
   uint32_t lastSeenMs = 0;
@@ -439,6 +449,18 @@ struct SensorReading
   // calibrated values regardless of which wire format produced them.
   bool wideRaw = false;
   uint32_t rawFdcCounts = 0;
+  // 2026-08-25: present only on a >=23-byte MSV3 diagnostic packet (see
+  // MSV3_DIAGNOSTIC_PACKET_LEN). Board (die) temperature and bare-tank FDC reference are
+  // separate raw observables, NOT a computed/compensated moisture value - never derive or
+  // display a "soil temperature" from these here; that interpretation is deliberately deferred
+  // to the receiver/cloud side later. validity booleans, not zero, represent an invalid/absent
+  // reading, since 0 is itself a plausible raw value for either field.
+  bool hasMsv3Diagnostics = false;
+  bool boardTempValid = false;
+  int16_t rawBoardTempQuarterC = 0;
+  bool bareTankValid = false;
+  uint32_t rawBareTankFdcCounts = 0;
+  uint8_t tankPhase = 0;
 };
 
 // Immutable copy of one unique probe wake as received by BLE. The live sensors[] array
@@ -467,6 +489,13 @@ struct PendingHistoryReading
   uint8_t batteryPercent = BATTERY_UNKNOWN;
   bool hasRaw = false;
   bool wideRaw = false;
+  // Same meaning/validity convention as SensorReading's fields of the same name - see there.
+  bool hasMsv3Diagnostics = false;
+  bool boardTempValid = false;
+  int16_t rawBoardTempQuarterC = 0;
+  bool bareTankValid = false;
+  uint32_t rawBareTankFdcCounts = 0;
+  uint8_t tankPhase = 0;
 };
 
 // Arduino's sketch preprocessor otherwise emits these prototypes above the custom
@@ -665,6 +694,12 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   pending.batteryPercent = reading.batteryPercent;
   pending.hasRaw = reading.hasRaw;
   pending.wideRaw = reading.wideRaw;
+  pending.hasMsv3Diagnostics = reading.hasMsv3Diagnostics;
+  pending.boardTempValid = reading.boardTempValid;
+  pending.rawBoardTempQuarterC = reading.rawBoardTempQuarterC;
+  pending.bareTankValid = reading.bareTankValid;
+  pending.rawBareTankFdcCounts = reading.rawBareTankFdcCounts;
+  pending.tankPhase = reading.tankPhase;
 
   portENTER_CRITICAL(&historyQueueMux);
   if (pendingHistoryCount >= HISTORY_QUEUE_CAPACITY)
@@ -4660,6 +4695,16 @@ String sensorDataJson()
       if (r.wideRaw)
       {
         rawItem["fdcCounts"] = r.rawFdcCounts;
+        // Two independent raw observables, not a computed/compensated value - see
+        // SensorReading's own comment. Each is omitted (not zeroed) when invalid/absent, same
+        // convention as fdcCounts/moistureKHz above; tankPhase is included whenever this probe
+        // sends diagnostics at all, valid or not, since the phase itself isn't a measurement.
+        if (r.hasMsv3Diagnostics)
+        {
+          if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
+          if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          rawItem["tankPhase"] = r.tankPhase;
+        }
       }
       else
       {
@@ -4835,6 +4880,12 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
       if (r.wideRaw)
       {
         rawItem["fdcCounts"] = r.rawFdcCounts;
+        if (r.hasMsv3Diagnostics)
+        {
+          if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
+          if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          rawItem["tankPhase"] = r.tankPhase;
+        }
       }
       else
       {
@@ -4913,6 +4964,21 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
       {
         output += F(",\"raw\":{\"fdcCounts\":");
         output += (unsigned long)pending.rawFdcCounts;
+        if (pending.hasMsv3Diagnostics)
+        {
+          if (pending.boardTempValid)
+          {
+            output += F(",\"boardTempQuarterC\":");
+            output += pending.rawBoardTempQuarterC;
+          }
+          if (pending.bareTankValid)
+          {
+            output += F(",\"bareTankFdcCounts\":");
+            output += (unsigned long)pending.rawBareTankFdcCounts;
+          }
+          output += F(",\"tankPhase\":");
+          output += pending.tankPhase;
+        }
       }
       else
       {
@@ -6073,18 +6139,37 @@ uint16_t maxMoistureThreshold(uint16_t left, uint16_t right)
   return left > right ? left : right;
 }
 
-// Dry-side evidence escape hatch: after this many qualifying blocked dry-side packets,
-// force one capped convergence step. The evidence survives ordinary sub-watering upward
-// jitter, so symmetric noise cannot indefinitely erase a genuine slow dry-down.
-const uint8_t MOISTURE_MAX_STALLED_WAKES = 20;
+const uint8_t MOISTURE_WATERING_CONFIRM_PACKETS = 2;
+const uint8_t MOISTURE_TRACKING_DIVISOR = 8; // symmetric EMA alpha = 1/8
 
-// Display-only drying ratchet:
-// - train on two packets before moving, so the receiver observes this sensor's scale/noise;
-// - ignore normal upward jitter, keeping an easy-to-read monotonic drying curve;
-// - follow lower readings through an adaptive 3x-noise deadband with a capped step;
-// - snap to a sufficiently large upward change once it persists for two consecutive
-//   packets, which is treated as watering (a single such packet only arms the pending
-//   flag, so one noisy outlier on a spiky sensor can't snap the display by itself).
+uint16_t medianMoistureValue(const uint16_t* values, uint8_t count)
+{
+  uint16_t sorted[MOISTURE_CENTER_WINDOW];
+  for (uint8_t i = 0; i < count; ++i)
+  {
+    sorted[i] = values[i];
+  }
+  for (uint8_t i = 1; i < count; ++i)
+  {
+    uint16_t value = sorted[i];
+    uint8_t j = i;
+    while (j > 0 && sorted[j - 1] > value)
+    {
+      sorted[j] = sorted[j - 1];
+      --j;
+    }
+    sorted[j] = value;
+  }
+  return sorted[count / 2U];
+}
+
+// Display-only robust center tracker:
+// - a median of the latest five unique packets rejects as many as two isolated spikes;
+// - a symmetric 1/8 EMA follows that median in BOTH directions, so stationary noise cannot
+//   ratchet the display toward its lower envelope;
+// - Q8 fixed point keeps small upward and downward corrections equally representable;
+// - normal tracking is capped to 5% of span per packet;
+// - a watering-sized robust-center rise must persist twice, then snaps to the center.
 //
 // The actual derived reading is always retained in measuredMoisture and sent to the
 // original Supabase `moisture` history column. This function only controls presentation.
@@ -6092,129 +6177,84 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
 {
   SensorReading& reading = sensors[sensorId];
 
-  if (reading.moistureFilterSamples == 0)
+  reading.moistureCenterWindow[reading.moistureCenterNext] = measuredMoisture;
+  reading.moistureCenterNext = (uint8_t)((reading.moistureCenterNext + 1U) % MOISTURE_CENTER_WINDOW);
+  if (reading.moistureCenterCount < MOISTURE_CENTER_WINDOW)
+  {
+    reading.moistureCenterCount++;
+  }
+
+  if (reading.moistureCenterCount == 1U)
   {
     reading.moisture = measuredMoisture;
-    reading.previousMeasuredMoisture = measuredMoisture;
-    reading.moistureNoise = maxMoistureThreshold(1U, span / 100U);
-    reading.moistureFilterSamples = 1;
+    reading.moistureFilteredQ8 = (uint32_t)measuredMoisture << 8;
+    reading.moistureWateringStreak = 0;
     return reading.moisture;
   }
 
-  uint16_t sampleDelta = measuredMoisture >= reading.previousMeasuredMoisture
-      ? measuredMoisture - reading.previousMeasuredMoisture
-      : reading.previousMeasuredMoisture - measuredMoisture;
-
-  // Use the second packet exclusively to seed the observed packet-to-packet noise.
-  // If watering happened immediately after receiver boot it is accepted on packet three,
-  // after one stable repeat, rather than risking a false watering step from startup noise.
-  if (reading.moistureFilterSamples == 1)
+  // Hold the first real reading until the robust window is full. Letting a two-sample
+  // "median" move at boot would merely reintroduce startup sensitivity to one packet.
+  if (reading.moistureCenterCount < MOISTURE_CENTER_WINDOW)
   {
-    reading.moistureNoise = maxMoistureThreshold(1U, sampleDelta);
-    reading.previousMeasuredMoisture = measuredMoisture;
-    reading.moistureFilterSamples = 2;
     return reading.moisture;
   }
 
-  uint16_t wateringThreshold = maxMoistureThreshold(4U, (uint16_t)(((uint32_t)span * 12U + 99U) / 100U));
+  uint16_t center = medianMoistureValue(reading.moistureCenterWindow, MOISTURE_CENTER_WINDOW);
+  uint16_t deviations[MOISTURE_CENTER_WINDOW];
+  for (uint8_t i = 0; i < MOISTURE_CENTER_WINDOW; ++i)
+  {
+    uint16_t sample = reading.moistureCenterWindow[i];
+    deviations[i] = sample >= center ? sample - center : center - sample;
+  }
+  uint16_t robustNoise = maxMoistureThreshold(
+      1U, medianMoistureValue(deviations, MOISTURE_CENTER_WINDOW));
+
+  uint16_t wateringThreshold = maxMoistureThreshold(
+      4U, (uint16_t)(((uint32_t)span * 12U + 99U) / 100U));
   wateringThreshold = maxMoistureThreshold(wateringThreshold, reading.moisture / 50U);
-  uint32_t noiseWateringThreshold = (uint32_t)reading.moistureNoise * 4U;
+  uint32_t noiseWateringThreshold = (uint32_t)robustNoise * 4U;
   if (noiseWateringThreshold > 0xFFFF)
   {
     noiseWateringThreshold = 0xFFFF;
   }
-  wateringThreshold = maxMoistureThreshold(wateringThreshold, (uint16_t)noiseWateringThreshold);
+  wateringThreshold = maxMoistureThreshold(
+      wateringThreshold, (uint16_t)noiseWateringThreshold);
 
-  bool wateringRise = measuredMoisture > reading.moisture &&
-      (uint32_t)(measuredMoisture - reading.moisture) >= wateringThreshold;
-
-  if (wateringRise && reading.moistureWateringPending)
+  bool wateringRise = center > reading.moisture &&
+      (uint32_t)(center - reading.moisture) >= wateringThreshold;
+  if (wateringRise)
   {
-    // Second consecutive packet clearing the threshold: the rise persisted, so this is
-    // a real watering event rather than one noisy outlier. Snap immediately - blending
-    // would turn it into an artificial slow climb and make the user's most important
-    // transition harder to recognize.
-    reading.moisture = measuredMoisture;
-    reading.moistureStalledWakes = 0;
-    reading.moistureWateringPending = false;
-  }
-  else if (wateringRise)
-  {
-    // First packet to clear the watering threshold. Unlike every dry-side move (guarded
-    // by a deadband and a per-packet step cap), a single upward packet had no protection
-    // against a one-off noisy outlier snapping the display early - hold steady and require
-    // one more unique packet to confirm the rise before committing to it.
-    reading.moistureWateringPending = true;
-    reading.moistureStalledWakes = 0;
-  }
-  else
-  {
-    reading.moistureWateringPending = false;
-
-    // Only ordinary-size packet deltas teach the noise estimate. Large real drying steps
-    // and one-off outliers must not inflate the deadband for hours afterward.
-    if (sampleDelta <= wateringThreshold)
+    if (reading.moistureWateringStreak < 0xFF)
     {
-      reading.moistureNoise = (uint16_t)(((uint32_t)reading.moistureNoise * 7U + sampleDelta + 4U) / 8U);
-      if (reading.moistureNoise == 0)
-      {
-        reading.moistureNoise = 1;
-      }
+      reading.moistureWateringStreak++;
     }
-
-    uint16_t deadband = maxMoistureThreshold(2U, span / 100U);
-    uint32_t noiseDeadband = (uint32_t)reading.moistureNoise * 3U;
-    if (noiseDeadband > 0xFFFF)
+    if (reading.moistureWateringStreak >= MOISTURE_WATERING_CONFIRM_PACKETS)
     {
-      noiseDeadband = 0xFFFF;
+      // Snap to the robust center, not the newest raw packet. This preserves the useful
+      // watering edge without overshooting to the insertion/pour transient's highest spike.
+      reading.moisture = center;
+      reading.moistureFilteredQ8 = (uint32_t)center << 8;
+      reading.moistureWateringStreak = 0;
     }
-    deadband = maxMoistureThreshold(deadband, (uint16_t)noiseDeadband);
-
-    bool pendingDryDown = measuredMoisture < reading.moisture;
-    // Bounded hold-time escape hatch (see MOISTURE_MAX_STALLED_WAKES above): once a real
-    // dry-side difference has been blocked by the deadband for too many consecutive
-    // unique packets, open the deadband for this packet only so the display keeps
-    // converging instead of holding a value indefinitely. The per-packet step cap below
-    // still applies, so this stays a gentle nudge, not a jump.
-    bool releaseDryDeadband = pendingDryDown &&
-        (uint16_t)reading.moistureStalledWakes + 1U >= MOISTURE_MAX_STALLED_WAKES;
-    uint16_t effectiveDeadband = releaseDryDeadband ? 0U : deadband;
-
-    if (pendingDryDown && (uint32_t)measuredMoisture + effectiveDeadband < reading.moisture)
-    {
-      uint16_t excess = reading.moisture - measuredMoisture - effectiveDeadband;
-      uint16_t step = (excess + 1U) / 2U;
-      uint16_t maxStep = maxMoistureThreshold(1U, span / 20U);
-      if (step > maxStep)
-      {
-        step = maxStep;
-      }
-      reading.moisture -= step;
-      reading.moistureStalledWakes = 0;
-    }
-    else if (pendingDryDown)
-    {
-      // A real dry-side difference exists but is still within the deadband - count it
-      // toward the bounded hold instead of resetting, so a persistent slow trend is
-      // eventually recognized even though no single packet ever clears the deadband.
-      if (reading.moistureStalledWakes < 0xFF)
-      {
-        reading.moistureStalledWakes++;
-      }
-    }
-    else if (measuredMoisture == reading.moisture)
-    {
-      reading.moistureStalledWakes = 0;
-    }
-    // Preserve accumulated dry-side evidence across ordinary upward jitter. A rise large
-    // enough to be watering is handled above and resets the counter explicitly.
+    return reading.moisture;
   }
 
-  reading.previousMeasuredMoisture = measuredMoisture;
-  if (reading.moistureFilterSamples < 0xFF)
+  reading.moistureWateringStreak = 0;
+  int32_t targetQ8 = (int32_t)((uint32_t)center << 8);
+  int32_t filteredQ8 = (int32_t)reading.moistureFilteredQ8;
+  int32_t stepQ8 = (targetQ8 - filteredQ8) / MOISTURE_TRACKING_DIVISOR;
+  int32_t maxStepQ8 = (int32_t)maxMoistureThreshold(1U, span / 20U) << 8;
+  if (stepQ8 > maxStepQ8)
   {
-    reading.moistureFilterSamples++;
+    stepQ8 = maxStepQ8;
   }
+  else if (stepQ8 < -maxStepQ8)
+  {
+    stepQ8 = -maxStepQ8;
+  }
+
+  reading.moistureFilteredQ8 = (uint32_t)(filteredQ8 + stepQ8);
+  reading.moisture = (uint16_t)((reading.moistureFilteredQ8 + 128U) >> 8);
   return reading.moisture;
 }
 
@@ -6424,6 +6464,12 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     uint16_t rawBatteryMv = 0;
     bool rawCharging = false;
     uint32_t rawFdcCounts = 0;
+    bool hasMsv3Diagnostics = false;
+    bool boardTempValid = false;
+    int16_t rawBoardTempQuarterC = 0;
+    bool bareTankValid = false;
+    uint32_t rawBareTankFdcCounts = 0;
+    uint8_t tankPhase = 0;
     if (wideRaw)
     {
       rawFdcCounts = ((uint32_t)buffer[10]) | ((uint32_t)buffer[11] << 8) |
@@ -6431,6 +6477,28 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       rawBatteryMv = buffer[14] | (buffer[15] << 8);
       rawCharging = (buffer[16] & 0x01) != 0;
       moisture = calibrateMsv3Moisture(rawFdcCounts);
+
+      // 2026-08-25: board-temp/bare-tank-reference diagnostics extension - see
+      // MSV3_DIAGNOSTIC_PACKET_LEN's comment. startAdv() always sends the full 23 bytes once its
+      // firmware supports this (an invalid reading sends a zeroed field with its validity bit
+      // clear, not a shorter packet), so a packet shorter than 23 here means older MSV3 firmware
+      // and is left with hasMsv3Diagnostics=false and every diagnostic field at its default.
+      hasMsv3Diagnostics = len >= MSV3_DIAGNOSTIC_PACKET_LEN;
+      if (hasMsv3Diagnostics)
+      {
+        uint8_t flags = buffer[16];
+        tankPhase = (flags & 0x02) ? 1 : 0;
+        int16_t tempField = (int16_t)(buffer[17] | (buffer[18] << 8));
+        uint32_t bareTankField = ((uint32_t)buffer[19]) | ((uint32_t)buffer[20] << 8) |
+                                  ((uint32_t)buffer[21] << 16) | ((uint32_t)buffer[22] << 24);
+        // Independent receiver-side range check, not just trust of the probe's own validity bit
+        // - a corrupted/malformed packet could have the bit set with a nonsense value.
+        boardTempValid = (flags & 0x04) != 0 &&
+                          tempField >= -160 && tempField <= 340;
+        rawBoardTempQuarterC = boardTempValid ? tempField : 0;
+        bareTankValid = (flags & 0x08) != 0;
+        rawBareTankFdcCounts = bareTankValid ? bareTankField : 0;
+      }
     }
     else if (hasRaw)
     {
@@ -6465,7 +6533,9 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // numeric scale. Do not blend across those incompatible scales.
     if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw))
     {
-      reading.moistureFilterSamples = 0;
+      reading.moistureCenterCount = 0;
+      reading.moistureCenterNext = 0;
+      reading.moistureWateringStreak = 0;
     }
     // Battery calibration is stateful too. Keep it after duplicate rejection and inside
     // the same packet transaction so repeated advertisement frames cannot overweight one
@@ -6502,6 +6572,12 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.rawFdcCounts = rawFdcCounts;
     reading.rawBatteryMv = rawBatteryMv;
     reading.rawCharging = rawCharging;
+    reading.hasMsv3Diagnostics = hasMsv3Diagnostics;
+    reading.boardTempValid = boardTempValid;
+    reading.rawBoardTempQuarterC = rawBoardTempQuarterC;
+    reading.bareTankValid = bareTankValid;
+    reading.rawBareTankFdcCounts = rawBareTankFdcCounts;
+    reading.tankPhase = tankPhase;
     reading.rssi = packetRssi;
     reading.lastSeenMs = receivedAtMs;
     publishedReading = reading;
@@ -6540,7 +6616,21 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.print(" measuredMoisture=");
     Serial.print(moisture);
     Serial.print(" displayMoisture=");
-    Serial.println(displayMoisture);
+    Serial.print(displayMoisture);
+    if (hasMsv3Diagnostics)
+    {
+      Serial.print(" tankPhase=");
+      Serial.print(tankPhase);
+      Serial.print(" boardTempQ4C=");
+      Serial.print(boardTempValid ? rawBoardTempQuarterC : 0);
+      Serial.print(" boardTempValid=");
+      Serial.print(boardTempValid);
+      Serial.print(" bareTankFdcCounts=");
+      Serial.print(bareTankValid ? rawBareTankFdcCounts : 0);
+      Serial.print(" bareTankValid=");
+      Serial.print(bareTankValid);
+    }
+    Serial.println();
 
     // Do not schedule cloud work from packet reception. The periodic uploader drains all
     // queued wakes at cloudSyncIntervalSeconds cadence, so retaining every sample no longer
