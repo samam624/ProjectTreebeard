@@ -231,28 +231,73 @@ async function shareHistoryApi(request: Request): Promise<Response> {
   // Clamped before the Date math below: an unbounded sinceHours (e.g. a huge or
   // negative value) can push Date.now() - sinceHours*3600_000 outside the valid Date
   // range, throwing an uncaught RangeError that surfaced as a raw 500 instead of a
-  // clean 400. 2160h (90 days) comfortably covers the widest UI range (7 days).
+  // clean 400. 87600h (10 years) matches the widest UI range - MobileAppPage.h's
+  // "All time" option - with headroom to spare.
   const rawSinceHours = Number(url.searchParams.get("sinceHours") ?? "24");
-  const sinceHours = Number.isFinite(rawSinceHours) ? Math.min(Math.max(rawSinceHours, 1), 2160) : 24;
+  const sinceHours = Number.isFinite(rawSinceHours) ? Math.min(Math.max(rawSinceHours, 1), 87600) : 24;
   const since = new Date(Date.now() - sinceHours * 3600_000).toISOString();
   const rawBeforeId = Number(url.searchParams.get("beforeId") ?? "0");
   const beforeId = Number.isFinite(rawBeforeId) ? Math.max(rawBeforeId, 0) : 0;
-  const rawLimit = Number(url.searchParams.get("limit") ?? "500");
-  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 2000) : 500;
 
-  const { data, error } = await serviceClient().rpc("msv2_read_share_sensor_history", {
-    p_share_token: shareToken,
-    p_receiver_id: receiverId,
-    p_sensor_id: sensorId,
-    p_since: since,
-    p_before_id: beforeId,
-    p_limit: limit,
-  });
-  if (error) {
-    return jsonResponse({ ok: false, error: error.message }, 401);
+  // PostgREST's own "Max Rows" API setting hard-caps every RPC response to 1000 rows
+  // server-side no matter what p_limit asks for (confirmed live 2026-08-26 by requesting
+  // 1999/2000 and getting exactly 1000 back both times, while 200 correctly came back as
+  // 200 - see MobileAppPage.h's HISTORY_BATCH_ROWS comment for the full diagnosis). A
+  // single browser fetch used to map 1:1 to one RPC call and therefore silently topped out
+  // at 1000 rows. Instead of raising a project-wide dashboard setting (bigger blast radius,
+  // affects every table/endpoint), loop internally here: each RPC call still only returns
+  // up to 1000, but the loop runs server-to-server inside Supabase's own network instead of
+  // over the caller's (often mobile) connection, so many fast internal hops replace many
+  // slow browser round trips before we hand back one response.
+  const RPC_PAGE_ROWS = 1000;
+  // Ceiling on how much a single browser round trip can request. Large enough to collapse
+  // a wide range into a handful of round trips; bounded so the response JSON and the loop's
+  // own run time stay reasonable.
+  const MAX_TOTAL_ROWS = 20000;
+  // Wall-clock guard on the loop below, comfortably inside the edge function's own execution
+  // ceiling. If it fires, `hasMore` is still reported honestly and the caller just makes
+  // another round trip instead of this request hanging until it times out.
+  const LOOP_TIME_BUDGET_MS = 20000;
+
+  const rawLimit = Number(url.searchParams.get("limit") ?? "500");
+  const requestedTotal = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), MAX_TOTAL_ROWS) : 500;
+
+  const rows: Record<string, unknown>[] = [];
+  let cursor = beforeId;
+  let hasMore = false;
+  const loopStartedAt = Date.now();
+
+  while (rows.length < requestedTotal) {
+    const want = Math.min(RPC_PAGE_ROWS, requestedTotal - rows.length);
+    const { data, error } = await serviceClient().rpc("msv2_read_share_sensor_history", {
+      p_share_token: shareToken,
+      p_receiver_id: receiverId,
+      p_sensor_id: sensorId,
+      p_since: since,
+      p_before_id: cursor,
+      p_limit: want,
+    });
+    if (error) {
+      return jsonResponse({ ok: false, error: error.message }, 401);
+    }
+
+    const page = (data ?? []) as Record<string, unknown>[];
+    rows.push(...page);
+
+    if (page.length < want) {
+      hasMore = false;
+      break;
+    }
+
+    cursor = Number(page[page.length - 1].id);
+
+    if (rows.length >= requestedTotal || Date.now() - loopStartedAt > LOOP_TIME_BUDGET_MS) {
+      hasMore = true;
+      break;
+    }
   }
 
-  return jsonResponse({ ok: true, readings: data ?? [] });
+  return jsonResponse({ ok: true, readings: rows, hasMore });
 }
 
 async function shareHistoryClearApi(request: Request): Promise<Response> {

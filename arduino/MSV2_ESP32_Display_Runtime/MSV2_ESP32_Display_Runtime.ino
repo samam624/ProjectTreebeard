@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-24 centered-moisture-filter-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-26 cloud-heap-guard-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -337,6 +337,18 @@ const uint32_t CLOUD_MIN_UPLOAD_SPACING_MS = 60000;
 // prevent. Left at the original conservative floor pending real evidence of what actually
 // distinguishes success from failure (see the sibling-function cleanup fix below for the
 // current best lead: TCP/TLS session leakage from OTHER cloud calls, not this one's heap).
+//
+// 2026-08-26: this guard was only ever checked in runCloudSnapshotUploader(). Live /device
+// telemetry caught a real crash (resetReason "panic/exception") with minFreeHeapEverBytes
+// down to 7448 bytes on a build that already had the cloud-cleanup-v3 fix - cloudSyncTask()
+// calls up to five blocking HTTPClient/WiFiClientSecure functions back-to-back in the same
+// 1-second tick whenever their periodic timers land together (config pull and display pull
+// share the same 30s interval, so this is routine, not rare). Once the guarded snapshot
+// upload passes, the four unguarded calls after it (bootstrap, display settings, config
+// pull's 12KB DynamicJsonDocument, auto-cal pull) could still each open a fresh TLS session
+// and push heap the rest of the way to empty with nothing left to stop them. Now checked at
+// the top of all five, so a low reading during the cascade halts the REST of that tick too,
+// not just the first call.
 const uint32_t CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES = 40960;
 const uint32_t CLOUD_LOW_HEAP_RETRY_MS = 15000;
 // Exponential backoff on CONSECUTIVE upload failures (any cause, not just low-heap skips) -
@@ -5100,6 +5112,15 @@ void runCloudBootstrap(uint32_t now)
     return;
   }
 
+  uint32_t freeHeapBeforeBootstrap = ESP.getFreeHeap();
+  if (freeHeapBeforeBootstrap < minFreeHeapEverBytes) minFreeHeapEverBytes = freeHeapBeforeBootstrap;
+  if (freeHeapBeforeBootstrap < CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES)
+  {
+    setCloudBootstrapLastError("skipped: low heap");
+    nextCloudBootstrapMs = now + CLOUD_LOW_HEAP_RETRY_MS;
+    return;
+  }
+
   const bool isHttps = strncmp(MSV2_CLOUD_BOOTSTRAP_URL, "https://", 8) == 0;
   const bool isHttp = strncmp(MSV2_CLOUD_BOOTSTRAP_URL, "http://", 7) == 0;
   if (!isHttps && !isHttp)
@@ -5260,6 +5281,15 @@ void runCloudConfigPull(uint32_t now)
     return;
   }
 
+  uint32_t freeHeapBeforeConfigPull = ESP.getFreeHeap();
+  if (freeHeapBeforeConfigPull < minFreeHeapEverBytes) minFreeHeapEverBytes = freeHeapBeforeConfigPull;
+  if (freeHeapBeforeConfigPull < CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES)
+  {
+    setCloudConfigLastError("skipped: low heap");
+    nextCloudConfigPullMs = now + CLOUD_LOW_HEAP_RETRY_MS;
+    return;
+  }
+
   const bool isHttps = strncmp(cloudUploadUrl, "https://", 8) == 0;
   const bool isHttp = strncmp(cloudUploadUrl, "http://", 7) == 0;
   if (!isHttps && !isHttp)
@@ -5386,6 +5416,15 @@ void runCloudDisplaySettings(uint32_t now)
   {
     setCloudDisplayLastError("waiting for station WiFi");
     nextCloudDisplaySyncMs = now + 10000UL;
+    return;
+  }
+
+  uint32_t freeHeapBeforeDisplaySync = ESP.getFreeHeap();
+  if (freeHeapBeforeDisplaySync < minFreeHeapEverBytes) minFreeHeapEverBytes = freeHeapBeforeDisplaySync;
+  if (freeHeapBeforeDisplaySync < CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES)
+  {
+    setCloudDisplayLastError("skipped: low heap");
+    nextCloudDisplaySyncMs = now + CLOUD_LOW_HEAP_RETRY_MS;
     return;
   }
 
@@ -5614,6 +5653,14 @@ void runCloudAutoCalPull(uint32_t now)
   if (!wifiStationConnected)
   {
     nextCloudAutoCalPullMs = now + 10000UL;
+    return;
+  }
+
+  uint32_t freeHeapBeforeAutoCalPull = ESP.getFreeHeap();
+  if (freeHeapBeforeAutoCalPull < minFreeHeapEverBytes) minFreeHeapEverBytes = freeHeapBeforeAutoCalPull;
+  if (freeHeapBeforeAutoCalPull < CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES)
+  {
+    nextCloudAutoCalPullMs = now + CLOUD_LOW_HEAP_RETRY_MS;
     return;
   }
 

@@ -559,6 +559,7 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
               <option value="168">Last 7 days</option>
               <option value="336">Last 14 days</option>
               <option value="720">Last 30 days</option>
+              <option value="87600">All time</option>
             </select>
           </label>
           <button type="button" class="ghost" id="historyClearButton">Clear All History</button>
@@ -1694,16 +1695,23 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
     }
 
-    // Supabase has none of the ESP32 HTTPClient's ~31.6KB response-buffer ceiling (the
-    // reason pages used to be capped at 150 rows), so pages can be much bigger here -
-    // still well under the RPC's own 5000-row limit, and a typical 24h load now usually
-    // fits in a single request.
-    const HISTORY_PAGE_SIZE = 1000;
-    // Safety cap: 30 * 1000 = 30,000 rows max per load. Raised from 12 pages (12,000 rows)
-    // alongside the 14/30-day range options - a normal ~1-2 min wake cadence probe runs
-    // ~1,000/day, so 30 days needs headroom past the old cap or the widest new range would
-    // have silently truncated to fewer days than selected instead of erroring.
-    const HISTORY_MAX_PAGES = 30;
+    // Supabase's own PostgREST "Max Rows" API setting silently truncates every RPC
+    // response to 1000 rows no matter what's requested (confirmed live 2026-08-26).
+    // Rather than have this client walk that 1000-row cap one slow browser-to-Supabase
+    // round trip at a time (each paying full TLS/network latency, especially over a
+    // phone's mobile/WiFi link), the plant-dashboard edge function now loops through
+    // that same 1000-row cap internally - fast server-to-server calls inside Supabase's
+    // own network - and hands back one bigger batch per request. HISTORY_BATCH_ROWS is
+    // how much to ask for per browser round trip; it's a request-size hint, not a strict
+    // per-call limit like the old HISTORY_PAGE_SIZE was, so it doesn't need to equal the
+    // platform's 1000-row cap. Keep in sync with plant-dashboard/index.ts's MAX_TOTAL_ROWS.
+    const HISTORY_BATCH_ROWS = 20000;
+    // Circuit breaker on browser round trips, not a "how much data should exist"
+    // assumption - the real stop condition is the server's `hasMore` flag below, which
+    // reflects whether its own internal pagination actually ran out of rows (a previous
+    // version inferred this from page size instead and broke as soon as the platform's
+    // per-call row cap didn't match this constant - see git history on this comment).
+    const HISTORY_MAX_BATCHES = 500;
 
     function shareTokenStorageKey() {
       return "msv2.shareToken." + ((claimInfo && claimInfo.receiverId) || "");
@@ -1742,7 +1750,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     async function fetchHistoryPage(token, sensor, hours, beforeId) {
       const query = `receiverId=${encodeURIComponent(claimInfo.receiverId)}&sensorId=${encodeURIComponent(sensor)}` +
-        `&sinceHours=${encodeURIComponent(hours)}&beforeId=${beforeId}&limit=${HISTORY_PAGE_SIZE}`;
+        `&sinceHours=${encodeURIComponent(hours)}&beforeId=${beforeId}&limit=${HISTORY_BATCH_ROWS}`;
       return fetch(`${SHARE_API_BASE}/api/share-history?${query}`, {
         cache: "no-store",
         headers: { "Authorization": "Bearer " + token },
@@ -1791,18 +1799,19 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
       if (isCurrent()) $("historyNotice").textContent = "Loading...";
 
-      // Pages walk backward from the most recent row (beforeId=0 means "start at the
+      // Batches walk backward from the most recent row (beforeId=0 means "start at the
       // newest"), not forward from the start of the window - a dense window can hold
-      // far more rows than the page cap, and paginating forward from the oldest end
-      // meant the chart silently stalled short of "now" instead of ever reaching it,
-      // worse the wider the selected range. Each page comes back newest-first; the
-      // whole assembled list is reversed once at the end for chronological rendering.
+      // far more rows than one batch, and paginating forward from the oldest end meant
+      // the chart silently stalled short of "now" instead of ever reaching it, worse the
+      // wider the selected range. Each batch comes back newest-first; the whole assembled
+      // list is reversed once at the end for chronological rendering.
       const pages = [];
       let beforeId = 0;
+      let truncated = false;
       try {
         let token = await getOrMintShareToken();
 
-        for (let page = 0; page < HISTORY_MAX_PAGES; page++) {
+        for (let page = 0; page < HISTORY_MAX_BATCHES; page++) {
           let response = await fetchHistoryPage(token, sensor, hours, beforeId);
           if (response.status === 401) {
             token = await getOrMintShareToken(true);
@@ -1820,15 +1829,22 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
           const page_rows = body.readings || [];
           pages.push(...page_rows);
-          if (page_rows.length < HISTORY_PAGE_SIZE) break;
+          if (!body.hasMore) break;
 
           beforeId = page_rows[page_rows.length - 1].id;
           $("historyNotice").textContent = `Loading... ${pages.length} readings so far`;
+          // Ran out of batches, not out of data: the server said hasMore, so the
+          // requested window almost certainly has more rows before beforeId that this
+          // load never fetched. Say so below rather than reporting a plain count that
+          // looks complete.
+          if (page === HISTORY_MAX_BATCHES - 1) truncated = true;
         }
 
         if (!isCurrent()) return;
         const rows = pages.reverse();
-        $("historyNotice").textContent = `${rows.length} readings`;
+        $("historyNotice").textContent = truncated
+          ? `${rows.length} readings (hit the safety limit - older data in this range wasn't loaded)`
+          : `${rows.length} readings`;
         // `moisture` is always the raw, unsmoothed receiver-derived measurement (and
         // raw_battery_mv/raw_charging alongside it from migration 032 onward) - both charts
         // are recomputed from that raw signal by renderHistoryFromCache()/the Smoothing panel
