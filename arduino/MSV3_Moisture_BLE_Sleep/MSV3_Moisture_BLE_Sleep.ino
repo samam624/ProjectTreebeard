@@ -16,21 +16,21 @@
 // Electrode-swap alternation (2026-08-22 addendum): loop() now toggles the
 // TMUX1109 between electrode-swap codes 0/1 once per wake, selected while the
 // FDC2214 is still in shutdown (before probeWake() deasserts SD) so the tank
-// isn't being actively driven across the mux transition. This relies on
-// probeWake()'s existing settle path (tSDWAKEUP + CONFIG-last reinit +
-// FDC_ACTIVATION_US + WAKE_DISCARD_CONVERSIONS discards) as the settle margin
-// for whichever phase is selected -- NOT the bring-up sketch's separately
-// measured 300ms *live*-switch settle, which was measured under a different
-// condition (mux switched while the FDC was already free-running). This
-// switch-during-shutdown assumption is a reasoned hypothesis, not yet
-// hardware-proven: the bring-up sketch's `wakeprofile` command cannot
-// validate it, because `doWakeProfile()` calls `probeSleep()` first, which
-// resets the mux to phase 0 before the cold-wake sequence runs. See the
-// "Electrode-swap alternation" addendum in
-// docs/MSV3_PRODUCTION_FIRMWARE_2026-08-22.md for the required
-// bench-observation window (watch this sketch's own serial output across
-// both phases) before leaving a probe on this behavior unattended overnight,
-// and for the fallback if instability is observed.
+// isn't being actively driven across the mux transition.
+//
+// 2026-08-29 update: the mux-during-shutdown settle margin was never
+// hardware-verified (see docs/MSV3_PRODUCTION_FIRMWARE_2026-08-22.md's
+// "Required bench-observation window" section), and this build is about to
+// run a multi-day unattended solar-recharge test with no serial console
+// watching it -- BLE advertising (the only remote telemetry for that test,
+// battery mV included) is gated on a clean FDC read, so a bad settle
+// assumption would go silent rather than just log a warning. Applying that
+// doc's own named fallback preemptively rather than running the bench
+// window first: MUX_SWITCH_SETTLE_MS (300ms) now runs after every setMux()
+// that precedes a probeWake(), reusing the bring-up sketch's own
+// proven-on-hardware *live*-switch settle figure as a safety margin here
+// too. This makes the settle-timing question moot for this test instead of
+// betting the whole test's visibility on an unverified hypothesis.
 //
 // REQUIRED build path, same as the bring-up sketch: raw arduino-cli/Arduino
 // IDE builds will fail at the compile-time guard below unless the installed
@@ -138,6 +138,10 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 #define FDC_TSDWAKEUP_MS 3      // datasheet tSDWAKEUP = 2ms max; +1ms margin
 #define FDC_ACTIVATION_US 400   // sensor activation = 16,384 fINT cycles (~378us @ ~43.3MHz internal osc)
 #define MUX_SLEEP_CODE 0        // electrode-swap. NEVER 2 or 3 -- see probeSleep().
+// Settle margin after any setMux() that precedes a probeWake(), added 2026-08-29 -- see the file
+// header comment. Reuses the bring-up sketch's bench-proven live-switch figure rather than
+// trusting the unverified mux-during-shutdown assumption for this unattended test.
+#define MUX_SWITCH_SETTLE_MS 300
 #define PIN_CNF_DISCONNECTED 2UL  // nRF52840 reset default: input buffer disconnected, no pull.
 
 #define WDT_TIMEOUT_MS 5000UL
@@ -632,9 +636,10 @@ void loop()
   // shutdown (probeSleep() left SD high and the mux parked on
   // MUX_SLEEP_CODE) -- switching here, before probeWake() deasserts SD,
   // means the tank isn't being actively driven across the mux transition.
-  // See the file header comment for why no separate settle delay is added.
+  // See the file header comment for MUX_SWITCH_SETTLE_MS.
   uint8_t phaseUsed = currentTankPhase;
   setMux(phaseUsed);
+  delay(MUX_SWITCH_SETTLE_MS);
 
   uint32_t rawData = 0;
   uint16_t fdcStatus = 0;
@@ -701,6 +706,7 @@ void loop()
     // runs straight through to its own probeSleep() call below).
     uint8_t bareTankMuxCode = 2 | phaseUsed;  // phase 0 -> code 2, phase 1 -> code 3
     setMux(bareTankMuxCode);
+    delay(MUX_SWITCH_SETTLE_MS);
     bool bareWakeOk = probeWake(WAKE_DISCARD_CONVERSIONS);
     uint32_t bareTankData = 0;
     uint16_t bareTankStatus = 0;
