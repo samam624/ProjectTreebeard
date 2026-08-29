@@ -5,11 +5,11 @@ Status: **outline/speaker-notes draft**, informal tone (research group, not a fo
 
 Suggested visuals referenced below (already exist in-repo):
 - MSV1 figures: PCB layout, manufactured probe, and Fig. 12/17 response plots from
-  `EEC284_Final_Paper (2).pdf`
-- `hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png`
-- `hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png`
-- `hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`
-- `hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`
+  `MSV1/EEC284_Final_Paper (2).pdf`
+- `MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png`
+- `MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png`
+- `MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`
+- `DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`
 
 ---
 

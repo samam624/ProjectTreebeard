@@ -9,7 +9,7 @@ description: Build (or extend) a local, offline pin/net reference library for a 
 
 Answering "what's connected to net X" or "what does pin Y do" by re-reading a raw netlist and
 cross-referencing a datasheet from scratch is slow and easy to get subtly wrong (see
-`hardware/MSV3_Probe_PCB/reference/` for a worked example — that library resolved several
+`MSV3/hardware/MSV3_Probe_PCB/reference/` for a worked example — that library resolved several
 previously-unidentified nets, like two charger status lines that had been open questions for
 weeks). Once built, the reference library turns that into two file reads. Build it once per board
 revision, then just read it.
@@ -20,12 +20,13 @@ revision, then just read it.
   built for a board that doesn't have one yet.
 - An existing library needs extending (schematic changed, a new part needs its pinout added).
 - You're about to answer a pin/net question on a board that already has a library under
-  `hardware/<BoardName>/reference/` — **check there first**, don't re-derive from the raw netlist.
+  `<Generation>/hardware/<BoardName>/reference/` — **check there first**, don't re-derive from the
+  raw netlist. (`<Generation>` is whichever of MSV1/MSV2/MSV3/DisplayCenter owns that board.)
 
 ## Output structure (one per board)
 
 ```
-hardware/<BoardName>/reference/
+<Generation>/hardware/<BoardName>/reference/
   netlist/<original filename>.NET       -- copy of the source netlist, unmodified
   datasheets/<PART>.pdf                 -- real datasheet PDFs, one per unique IC
   datasheets/<PART>_extracted.txt       -- PyMuPDF text extraction (see below), for fast grep
@@ -33,7 +34,7 @@ hardware/<BoardName>/reference/
   PIN_NET_REFERENCE.md                  -- one row per net: every pin on it, one-line function
 ```
 
-Follow `hardware/MSV3_Probe_PCB/reference/` as the worked example for both files' exact format
+Follow `MSV3/hardware/MSV3_Probe_PCB/reference/` as the worked example for both files' exact format
 and level of detail — copy its structure rather than inventing a new one each time.
 
 ## Process

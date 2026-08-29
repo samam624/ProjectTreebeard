@@ -1,8 +1,8 @@
 param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
-  [string]$Port = "COM3",
-  [string]$Sketch = "arduino/MSV2_ESP32_SWD_Flasher",
+  [string]$Port,
+  [string]$Sketch = "DisplayCenter/arduino/MSV2_Antenna_Test",
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 )
 
@@ -20,10 +20,16 @@ function Invoke-ArduinoCli {
   }
 }
 
+# Same FQBN as scripts/arduino_display.ps1 - this is the same ESP32-S3-WROOM-1U-N16R8
+# module, just now on its own PCB instead of the devkit breadboard build.
 $Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
-$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\swd-flasher"
+$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\antenna-test"
 
 New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
+
+if ($Action -in @("upload", "monitor") -and [string]::IsNullOrEmpty($Port)) {
+  throw "This is the new custom PCB, not the devkit - its COM port isn't known in advance. Run '-Action board-list' first, then pass '-Port COMx' explicitly."
+}
 
 switch ($Action) {
   "compile" {

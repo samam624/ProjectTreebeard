@@ -348,7 +348,7 @@
 
 **Visual:** Use the MSV3 PCB isometric render with five numbered callouts.
 
-**Suggested asset:** [`hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`](../hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png)
+**Suggested asset:** [`hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png)
 
 **Speaker notes:** The same BLE receiver/cloud family remains downstream, reducing system-level migration risk.
 
@@ -461,11 +461,11 @@ Use the exact table in [`MSV_BUILD_MILESTONE_FACT_CHECK.md`](MSV_BUILD_MILESTONE
 
 ## Visual Asset Shortlist
 
-- MSV1 figures and plots: [`EEC284_Final_Paper (2).pdf`](../EEC284_Final_Paper%20%282%29.pdf)
-- MSV3 PCB: [`hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`](../hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png)
-- MSV3 assembled solar enclosure: [`hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png`](../hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png)
-- MSV3 exploded view: [`hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png`](../hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png)
-- Receiver enclosure: [`hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`](../hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png)
+- MSV1 figures and plots: [`EEC284_Final_Paper (2).pdf`](../../MSV1/EEC284_Final_Paper%20%282%29.pdf)
+- MSV3 PCB: [`hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png)
+- MSV3 assembled solar enclosure: [`hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png)
+- MSV3 exploded view: [`hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png)
+- Receiver enclosure: [`hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`](../../DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png)
 
 ## IEEE-Style References
 

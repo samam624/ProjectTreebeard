@@ -1,10 +1,9 @@
 param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
-  [string]$Port = "COM5",
-  [string]$Sketch = "arduino/MSV2_Moisture_BLE_Sleep",
-  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
-  [string]$Fqbn = "Seeeduino:nrf52:xiaonRF52840Sense"
+  [string]$Port = "COM3",
+  [string]$Sketch = "DisplayCenter/arduino/MSV2_ESP32_SWD_Flasher",
+  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,15 +20,10 @@ function Invoke-ArduinoCli {
   }
 }
 
-$SketchName = Split-Path $Sketch -Leaf
-$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\probe-$SketchName"
+$Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
+$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\swd-flasher"
 
-if ($Action -in @("compile", "upload")) {
-  if (!(Test-Path $Sketch)) {
-    throw "Probe sketch not found at '$Sketch'"
-  }
-  New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
-}
+New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
 
 switch ($Action) {
   "compile" {

@@ -1,0 +1,30 @@
+LCSC Part Number,Manufacture Part Number,Manufacturer,Customer NO.,Package,Description,RoHS,Quantity,Unit Price($),Ext.Price($),Estimated lead time (business days),Updated lead time,Date Code / Lot No.,Status
+C2933468,FRC0805F5604TS,FOJAN,,0805,5.6MΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.0038,0.38,,,,-
+C165948,TYPE-C-31-M-12,Korean Hroparts Elec,,SMD,USB-C (USB TYPE-C) Receptacle Connector 16 Position Surface Mount,YES,5,0.1857,0.93,,,,-
+C173752,S2B-PH-K-S(LF)(SN),JST,,"Through Hole,Right Angle,P=2mm",Connector Header 2 position 2mm Pitch 2A Right Angle -25℃~+85℃,YES,20,0.0393,0.79,,,,-
+C92914,LBC2012T220M,Taiyo Yuden,,0805,130mA 22uH ±20% 3.7Ω Wire-wound inductor 0805 Fixed Inductors RoHS,YES,10,,,,,,Quoted
+C129192,NTR1P02T1G,onsemi,,SOT-23,P-Channel 20V 1A 400mW Surface Mount SOT-23,YES,5,0.1711,0.86,,,,-
+C497961,HL-PSC-2012H203BC,HONGLITRONIC,,0805,Blue LED Indication - Discrete 3.4V 0805,YES,20,0.0245,0.49,,,,-
+C552819,"PMEG2010AET,215",Nexperia,,SOT-23,Diode 1 Independent 20V 1A Surface Mount SOT-23,YES,5,0.2387,1.19,,,,-
+C356849,E73-2G4M08S1C,EBYTE,,"SMD,18x13mm","nRF52840 Chip 120m SMD,18x13mm RF Transceiver Modules and Modems RoHS",YES,5,7.5888,37.94,,,,-
+C15999,USBLC6-2P6,ST,,SOT-666-6,17VC Clamp 5A@8/20us Ipp ESD DIODE SOT-666-6,YES,5,0.2779,1.39,,,,-
+C2887324,TPS7A0233PDBVR,TI,,SOT-23-5,Linear Voltage Regulator IC Positive Fixed 1 Output 200mA SOT-23-5,YES,5,0.7263,3.63,7,,,Quoted
+C5208201,BQ25170DSGR,TI,,WSON-8(2x2),Battery Charging IC Multi-Chemistry WSON-8(2x2),YES,5,0.8243,4.12,,,,-
+C157471,BQ25504RGTT,TI,,VQFN-16-EP(3x3),Boost 1MHz Adjustable VQFN-16-EP(3x3) Power Management - Specialized RoHS,YES,6,5.8501,35.10,,,,-
+C17710,0805W8F4700T5E,UNI-ROYAL,,0805,470Ω ±1% 125mW 0805 Thick Film Resistor,YES,100,0.0106,1.06,,,,-
+C88993,BLM21PG220SN1D,muRata,,0805,22Ω@100MHz 1 Line Ferrite Bead 0805 6A 9mΩ,YES,20,0.0302,0.60,,,,-
+C367866,WR08W4124FTL,Walsin,,0805,125mW 4.12MΩ 150V Thick Film Resistor ±100ppm/℃ ±1% 0805 Chip Resistor - Surface Mount RoHS,YES,100,0.0029,0.29,,,,-
+C1713,CL21A106KOQNNNE,Samsung Electro-Mechanics,,0805,10uF ±10% 16V Ceramic Capacitor X5R 0805,YES,40,0.0827,3.31,,,,-
+C313940,CRCW08055M90FKEA,VISHAY,,0805,125mW 5.9MΩ Thick Film Resistor ±100ppm/℃ ±1% 0805 Chip Resistor - Surface Mount RoHS,YES,20,0.0212,0.42,,,,-
+C332878,RTT055624FTP,RALEC,,0805,5.62MΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.002,0.20,,,,-
+C844596,CRCW080510M0FKEA,VISHAY,,0805,10MΩ 125mW 150V Thick Film Resistor ±1% ±100ppm/℃ 0805 Chip Resistor - Surface Mount RoHS,YES,50,0.009,0.45,,,,-
+C332857,RTT054424FTP,RALEC,,0805,4.42MΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.0019,0.19,,,,-
+C17593,0805W8F2702T5E,UNI-ROYAL,,0805,27kΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.0044,0.44,,,,-
+C2907219,FRC0805F1002TS,FOJAN,,0805,10kΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.004,0.40,,,,-
+C2907044,FRC0603F5101TS,FOJAN,,0603,5.1kΩ ±1% 100mW 0603 Thick Film Resistor,YES,100,0.0028,0.28,,,,-
+C149504,0805W8F1003T5E,UNI-ROYAL,,0805,100kΩ ±1% 125mW 0805 Thick Film Resistor,YES,100,0.0104,1.04,,,,-
+C49678,CC0805KRX7R9BB104,YAGEO,,0805,100nF ±10% 50V Ceramic Capacitor X7R 0805,YES,20,0.0325,0.65,,,,-
+C83170,CC0805KRX7R9BB103,YAGEO,,0805,10nF ±10% 50V Ceramic Capacitor X7R 0805,YES,50,0.0184,0.92,,,,-
+C97905,GRM2195C1H103JA01D,muRata,,0805,10nF ±5% 50V Ceramic Capacitor C0G 0805,YES,10,0.1122,1.12,,,,-
+C1779,CL21A475KAQNNNE,Samsung Electro-Mechanics,,0805,4.7uF ±10% 25V Ceramic Capacitor X5R 0805,YES,20,0.0507,1.01,,,,-
+C28323,CL21B105KBFNNNE,Samsung Electro-Mechanics,,0805,1uF ±10% 50V Ceramic Capacitor X7R 0805,YES,20,0.0874,1.75,,,,-

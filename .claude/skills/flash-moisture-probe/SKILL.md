@@ -5,19 +5,19 @@ description: Compile, flash, and reliably capture boot-time serial output from t
 
 # Flash a moisture probe and capture its boot output
 
-Two probe sketches, both on Seeed XIAO nRF52840 Sense boards, both flashed the same way via `scripts/arduino_probe.ps1`:
+Two probe sketches, both on Seeed XIAO nRF52840 Sense boards, both flashed the same way via `MSV2/scripts/arduino_probe.ps1`:
 
 | Probe | Sketch | Port (last known, can shift) |
 |---|---|---|
-| Scindapsus | `arduino/MSV2_Moisture_BLE_Sleep` | COM15 |
-| Alocasia | `arduino/MSV2_Moisture_BLE_Sleep_Alocasia` | COM11 |
+| Scindapsus | `MSV2/arduino/MSV2_Moisture_BLE_Sleep` | COM15 |
+| Alocasia | `MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia` | COM11 |
 
 FQBN: `Seeeduino:nrf52:xiaonRF52840Sense`. `arduino_probe.ps1` hardcodes this and the `arduino-cli.exe` path already — don't hand-roll a different invocation.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/arduino_probe.ps1 -Action board-list
-powershell -ExecutionPolicy Bypass -File scripts/arduino_probe.ps1 -Action compile -Sketch "arduino/MSV2_Moisture_BLE_Sleep_Alocasia"
-powershell -ExecutionPolicy Bypass -File scripts/arduino_probe.ps1 -Action upload -Port COM11 -Sketch "arduino/MSV2_Moisture_BLE_Sleep_Alocasia"
+powershell -ExecutionPolicy Bypass -File MSV2/scripts/arduino_probe.ps1 -Action board-list
+powershell -ExecutionPolicy Bypass -File MSV2/scripts/arduino_probe.ps1 -Action compile -Sketch "MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia"
+powershell -ExecutionPolicy Bypass -File MSV2/scripts/arduino_probe.ps1 -Action upload -Port COM11 -Sketch "MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia"
 ```
 
 Compile before upload when making changes — cheap, no hardware needed, catches errors before touching the physical device. Flashing overwrites whatever's running and briefly interrupts a probe that may be actively deployed — treat it as a real action, not a no-op, same as the display receiver (see `flash-esp32-display`).
@@ -42,7 +42,7 @@ python scripts/serial_capture.py --port COM11 --duration 18 --out capture.log
 ### Example end-to-end
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/arduino_probe.ps1 -Action upload -Port COM15 -Sketch "arduino/MSV2_Moisture_BLE_Sleep"
+powershell -ExecutionPolicy Bypass -File MSV2/scripts/arduino_probe.ps1 -Action upload -Port COM15 -Sketch "MSV2/arduino/MSV2_Moisture_BLE_Sleep"
 python scripts/serial_capture.py --port COM15 --duration 15 --out scindapsus_boot.log
 ```
 

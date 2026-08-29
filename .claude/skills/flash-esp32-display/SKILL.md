@@ -5,15 +5,15 @@ description: Compile and flash the MSV2 ESP32-S3 display receiver firmware to a 
 
 # Flash the MSV2 ESP32 display receiver
 
-Full reference: [docs/ESP32_DISPLAY_FLASHING.md](../../../docs/ESP32_DISPLAY_FLASHING.md) — read it if anything below is ambiguous or the known-good status/build tag needs checking.
+Full reference: [DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md](../../../DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md) — read it if anything below is ambiguous or the known-good status/build tag needs checking.
 
-This flashes `arduino/MSV2_ESP32_Display_Runtime` using the Arduino IDE's bundled `arduino-cli.exe` via `scripts/arduino_display.ps1`. No `-ExecutionPolicy Bypass` needed — call the script directly.
+This flashes `DisplayCenter/arduino/MSV2_ESP32_Display_Runtime` using the Arduino IDE's bundled `arduino-cli.exe` via `DisplayCenter/scripts/arduino_display.ps1`. No `-ExecutionPolicy Bypass` needed — call the script directly.
 
 ## Before flashing
 
 1. **List ports** to confirm the device and find its COM port:
    ```powershell
-   .\scripts\arduino_display.ps1 -Action board-list
+   .\DisplayCenter\scripts\arduino_display.ps1 -Action board-list
    ```
    The display receiver normally shows as an `ESP32 Family Device` (commonly `COM13` on this machine; ports can shift).
 
@@ -22,7 +22,7 @@ This flashes `arduino/MSV2_ESP32_Display_Runtime` using the Arduino IDE's bundle
 ## Compile only (no hardware needed, safe to run any time)
 
 ```powershell
-.\scripts\arduino_display.ps1 -Action compile
+.\DisplayCenter\scripts\arduino_display.ps1 -Action compile
 ```
 
 Use this to verify a firmware change builds before touching real hardware.
@@ -30,7 +30,7 @@ Use this to verify a firmware change builds before touching real hardware.
 ## Flash normal firmware
 
 ```powershell
-.\scripts\arduino_display.ps1 -Action upload -Port COM13
+.\DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM13
 ```
 
 Compiles then flashes. Swap `COM13` for whatever `board-list` reports.
@@ -38,13 +38,13 @@ Compiles then flashes. Swap `COM13` for whatever `board-list` reports.
 ## Flash forced first-time setup (for testing onboarding without wiping saved WiFi/cloud config until confirmed)
 
 ```powershell
-.\scripts\arduino_display.ps1 -Action upload -Port COM13 -ForceWifiSetup
+.\DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM13 -ForceWifiSetup
 ```
 
 ## Serial monitor
 
 ```powershell
-.\scripts\arduino_display.ps1 -Action monitor -Port COM13
+.\DisplayCenter\scripts\arduino_display.ps1 -Action monitor -Port COM13
 ```
 
 This blocks/streams continuously — run with a bounded timeout or in the background when using it to capture boot logs, and stop it before attempting another upload to the same port (see the port-busy note above).
@@ -53,4 +53,4 @@ This blocks/streams continuously — run with a bounded timeout or in the backgr
 
 - Flashing overwrites whatever firmware is currently running on the physical device — treat it as a real, user-visible action, not a no-op verification step. Confirm with the user before flashing a device that might be in active use, unless they've already asked for the flash directly.
 - `arduino-cli.exe` lives at `C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe` (hardcoded in the script's `$CliPath` default).
-- Board FQBN and build flags are already correct in `scripts/arduino_display.ps1` — don't hand-roll a different `arduino-cli compile`/`upload` invocation.
+- Board FQBN and build flags are already correct in `DisplayCenter/scripts/arduino_display.ps1` — don't hand-roll a different `arduino-cli compile`/`upload` invocation.

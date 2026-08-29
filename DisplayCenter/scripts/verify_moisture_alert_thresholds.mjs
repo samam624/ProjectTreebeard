@@ -4,16 +4,20 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// This script checks firmware (here in DisplayCenter) against the web client, which lives in the
+// sibling cloud/ folder (project-treebeard reorg, 2026-08-29) -- not under repoRoot like everything
+// else this file reads.
+const cloudRoot = resolve(repoRoot, "..", "cloud");
 
 const firmware = await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MSV2_ESP32_Display_Runtime.ino"), "utf8");
 const localApp = await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8");
-const dashboardHtml = await readFile(join(repoRoot, "web", "plant-dashboard", "index.html"), "utf8");
-const serviceWorker = await readFile(join(repoRoot, "web", "plant-dashboard", "sw.js"), "utf8");
+const dashboardHtml = await readFile(join(cloudRoot, "web", "plant-dashboard", "index.html"), "utf8");
+const serviceWorker = await readFile(join(cloudRoot, "web", "plant-dashboard", "sw.js"), "utf8");
 const appMatch = dashboardHtml.match(/src="assets\/(app\.v(\d+)\.js)"/);
 assert.ok(appMatch, "Dashboard HTML must reference a versioned app.vN.js bundle.");
 const appAsset = appMatch[1];
 const appVersion = appMatch[2];
-const cloudApp = await readFile(join(repoRoot, "web", "plant-dashboard", "assets", appAsset), "utf8");
+const cloudApp = await readFile(join(cloudRoot, "web", "plant-dashboard", "assets", appAsset), "utf8");
 
 // 2026-08-23: 0 is the watering-line inflection point - literally the driest a sensor has
 // ever recorded (moisturePercent()'s own zero), NOT a padded-above-dry cue. 0-100 (the

@@ -2,7 +2,7 @@ param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
   [string]$Port = "COM13",
-  [string]$Sketch = "arduino/MSV2_ESP32_Display_Runtime",
+  [string]$Sketch = "DisplayCenter/arduino/MSV2_ESP32_Display_Runtime",
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
   [switch]$ForceWifiSetup
 )

@@ -1,9 +1,10 @@
 param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
-  [string]$Port = "COM12",
-  [string]$Sketch = "arduino/MSV2_Moisture_AFE_Test",
-  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
+  [string]$Port = "COM5",
+  [string]$Sketch = "MSV2/arduino/MSV2_Moisture_BLE_Sleep",
+  [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
+  [string]$Fqbn = "Seeeduino:nrf52:xiaonRF52840Sense"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,12 +21,15 @@ function Invoke-ArduinoCli {
   }
 }
 
-# ESP32-S3 devkit (native USB, VID_303A PID_4001) bought separately for this AFE
-# comparison bench test - not one of the other known MSV2 boards.
-$Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
-$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\moisture-afe-test"
+$SketchName = Split-Path $Sketch -Leaf
+$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\probe-$SketchName"
 
-New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
+if ($Action -in @("compile", "upload")) {
+  if (!(Test-Path $Sketch)) {
+    throw "Probe sketch not found at '$Sketch'"
+  }
+  New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
+}
 
 switch ($Action) {
   "compile" {

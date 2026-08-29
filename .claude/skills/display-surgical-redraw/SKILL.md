@@ -1,6 +1,6 @@
 ---
 name: display-surgical-redraw
-description: Core rendering rule for the MSV2 ESP32 display firmware (arduino/MSV2_ESP32_Display_Runtime) - any new or changed display feature's steady-state/periodic redraw must only repaint the pixels that actually changed, never a whole card or the whole screen. Load this before writing or reviewing any drawPlantCard*/render*/draw* function, before adding a new touchscreen UI element (modal, card, overlay, expanded view), or when a redraw is causing visible flicker.
+description: Core rendering rule for the MSV2 ESP32 display firmware (DisplayCenter/arduino/MSV2_ESP32_Display_Runtime) - any new or changed display feature's steady-state/periodic redraw must only repaint the pixels that actually changed, never a whole card or the whole screen. Load this before writing or reviewing any drawPlantCard*/render*/draw* function, before adding a new touchscreen UI element (modal, card, overlay, expanded view), or when a redraw is causing visible flicker.
 ---
 
 # Display: only touch the pixels that changed
@@ -19,10 +19,10 @@ This is a hard rule for this project, not a nice-to-have.
 ## Why: this isn't just about flicker
 
 On other displays, over-repainting is merely wasteful. On this hardware it's a **correctness
-risk with a documented incident**. See `docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md`
+risk with a documented incident**. See `DisplayCenter/docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md`
 (status: RESOLVED, but read as a cautionary tale, not ancient history):
 
-- The ST7796 display and the XPT2046 touch controller share one SPI bus (`docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md`, "Shared SPI topology"). Touch polling happening at the same time as display writes was the root cause of real, user-visible corruption (stray red pixels, torn frames, one card briefly showing another card's sprite).
+- The ST7796 display and the XPT2046 touch controller share one SPI bus (`DisplayCenter/docs/DISPLAY_TOUCH_BRIGHTNESS_IMPLEMENTATION.md`, "Shared SPI topology"). Touch polling happening at the same time as display writes was the root cause of real, user-visible corruption (stray red pixels, torn frames, one card briefly showing another card's sprite).
 - More writes = more SPI transactions = more opportunities for that kind of glitch, plus more idle-touch-poll interleaving windows. Minimizing writes isn't just about looking clean; it's shrinking the actual attack surface for that bug class recurring.
 - Separately, a full-panel repaint on every touch sample is *exactly* the bug that made the brightness slider look frozen/flashing before it was fixed (see `drawBrightnessSliderRow()`'s history) - the display/touch bus is slow enough that unnecessary large writes are visible to the user as flicker, not just theoretically wasteful.
 

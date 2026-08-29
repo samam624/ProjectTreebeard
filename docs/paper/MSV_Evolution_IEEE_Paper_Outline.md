@@ -99,7 +99,7 @@ MSV3: comb electrodes <-> TMUX1109 <-> FDC2214 + LC tank (6.8uH / 270pF)
   firmware (alternating drive/sense, 10 kΩ pulldown on each plate). Alocasia has not been migrated
   to that rework and still runs the original single-plate firmware (one driven/sensed plate against
   a grounded plate, 100 kΩ pulldown) — confirmed directly in
-  `arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino`, whose own header
+  `MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino`, whose own header
   comments state this explicitly. The two units therefore differ in both topology and pulldown
   value, which is why raw-to-percentage calibration is per-device rather than global — and why
   Alocasia is not evidence for dual-plate's anti-polarization benefit.
@@ -217,7 +217,7 @@ MSV3: comb electrodes <-> TMUX1109 <-> FDC2214 + LC tank (6.8uH / 270pF)
 
 - Do not describe both current field units as dual-plate — Alocasia is still the original
   single-plate/100 kΩ firmware; only Thaumatophyllum runs the reworked dual-plate/10 kΩ firmware.
-  Verified against `arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino`
+  Verified against `MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino`
   2026-08-29 (an earlier draft of this outline had this backwards, stating "56 kΩ dual-plate" for
   Alocasia — that number does not appear anywhere in the firmware or hardware source).
 - Do not describe MSV3 EC/conductivity sensing as operational.

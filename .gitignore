@@ -1,16 +1,20 @@
 **/WiFiCredentials.h
+# Sensitive, not project content -- added 2026-08-29 after git add -A nearly swept this into a
+# commit during the project-treebeard reorg. Belongs somewhere outside any git repo (a password
+# manager or secure notes), not here -- flagged to the user, not moved unilaterally.
+github-recovery-codes.txt
 .venv/
 __pycache__/
 *.py[cod]
-*.csv
+data/sensor_logs/*.csv
 packet_test*.csv
 .netlify/
-web/*.zip
+cloud/web/*.zip
 node_modules/
 .arduino-build/
-supabase/.temp/
-supabase/.branches/
-supabase/.env
+cloud/supabase/.temp/
+cloud/supabase/.branches/
+cloud/supabase/.env
 .claude/settings.local.json
 .vscode/
 # Run artifacts from the agent-supervisor tool (Desktop\agent-supervisor, not part of this repo)
@@ -19,15 +23,17 @@ supabase/.env
 
 # arduino-cli build output -- regenerable, and no build/ dir has ever been
 # tracked here (the only committed .hex files are the deliberately-kept
-# bootloader images under MSV2_ESP32_SWD_Flasher/bootloaders/).
-arduino/*/build/
-arduino/*/*.uf2
+# bootloader images under DisplayCenter/arduino/MSV2_ESP32_SWD_Flasher/bootloaders/).
+# One extra */ level vs. before the project-treebeard reorg (2026-08-29): sketches now
+# live under <MSV1|MSV2|MSV3|DisplayCenter>/arduino/<Sketch>/, not arduino/<Sketch>/ directly.
+*/arduino/*/build/
+*/arduino/*/*.uf2
 
 # Datasheet PDFs for the PCB reference library: ~31MB of binaries vs ~1.7MB
 # for the *_extracted.txt versions that are actually grepped for specs. The
 # text, netlist and indexes ARE tracked; re-fetch the PDFs with
 # scripts/fetch_datasheet.py if a page image or figure is needed.
-hardware/*/reference/datasheets/*.pdf
+*/hardware/*/reference/datasheets/*.pdf
 
 # LaTeX build artifacts (aux/log/synctex/pdf) -- regenerable via LaTeX Workshop in VS Code or
 # Desktop\latex-tools\tex_compile.ps1 (not part of this repo); only the .tex source and figures/
