@@ -13,9 +13,9 @@ supabase/.branches/
 supabase/.env
 .claude/settings.local.json
 .vscode/
+# Run artifacts from the agent-supervisor tool (Desktop\agent-supervisor, not part of this repo)
+# when it's pointed at this project via --root -- lands here, not in the tool's own folder.
 .agent-runs/
-tools/agent-supervisor/.env
-tools/agent-supervisor/dist/
 
 # arduino-cli build output -- regenerable, and no build/ dir has ever been
 # tracked here (the only committed .hex files are the deliberately-kept
@@ -28,3 +28,9 @@ arduino/*/*.uf2
 # text, netlist and indexes ARE tracked; re-fetch the PDFs with
 # scripts/fetch_datasheet.py if a page image or figure is needed.
 hardware/*/reference/datasheets/*.pdf
+
+# LaTeX build artifacts (aux/log/synctex/pdf) -- regenerable via LaTeX Workshop in VS Code or
+# Desktop\latex-tools\tex_compile.ps1 (not part of this repo); only the .tex source and figures/
+# are tracked.
+docs/paper/build/
+
