@@ -183,6 +183,39 @@ executing after the bootloader write and can corrupt the bootloader again.
 This is why `flash`'s own per-call erase isn't a substitute: it only erases
 the region it's about to write, not the rest of the chip.
 
+#### One-shot install for a batch of fresh boards
+
+For flashing the same bootloader onto several boards back to back (touch the
+pads, run one command, move to the next board), `--bootloader` folds the
+whole sequence above into a single invocation — no separate `erase CONFIRM`,
+no typing the hex path each time:
+
+```powershell
+python scripts/swd_flash_hex.py --port COM3 --bootloader
+```
+
+This drives the adapter's own `probe` command and requires **3 seconds of
+continuous, consistent-DPIDR contact** before doing anything else (`--contact-
+stable` to change that duration, `--contact-timeout` for the overall budget,
+default 30s) — one lucky momentary contact isn't enough to start on. That
+matters in practice: an earlier version of this flag only checked for one
+successful read, and a flickering hand contact passed that single check,
+started mass-erase, then genuinely lost contact partway into writing the
+first segment — a run that looked "confirmed" but wasn't actually solid.
+Requiring a real held window catches that before erase ever starts, and also
+resets the window (rather than accepting it) if DPIDR reads *differently*
+between checks — per the DPIDR-consistency note under "Hand-held test-point
+contact" above, that's noise passing the parity check, not a real link.
+
+Once contact holds for the full window, it **always** mass-erases regardless
+of `--mass-erase`/no flag (skipping it here is never correct, per the
+paragraph above), then flashes `arduino/MSV2_ESP32_SWD_Flasher/bootloaders/pca10056_bootloader-0.11.0_s140_6.1.1.hex`
+(pass `--hex` to use a different image). Once the first board of a session
+has confirmed the wiring is actually correct (SWCLK/SWDIO not swapped, etc.
+— worth checking once with `id`/`probe` per the bring-up sequence above), the
+remaining boards in the same session don't need that check repeated: a bad
+contact just times out or fails verify, it doesn't silently corrupt anything.
+
 ### Flashing an application once the bootloader is installed
 
 This is the actual payoff of going through the SWD install at all: once a

@@ -1343,3 +1343,19 @@ http://BOARD_IP/config-meta
   run through a Git-Bash-backed shell on this machine (`'C:\Program' is not recognized...`) -
   invoke `node node_modules/tsx/dist/cli.mjs src/index.ts run ...` (or `src/live-server.ts`)
   directly, or use a native PowerShell/cmd terminal where `npm run ...` works fine.
+
+## 2026-08-28: Four-board MSV3 SWD bring-up + EC-check analog fix (flashed, live)
+
+All 4 freshly-assembled MSV3 boards taken through SWD bootloader install + USB DFU bring-up flash,
+all confirmed alive with no hangs (LFRC active, FDC2214 correct, clean BLE init/advertise/stop).
+`scripts/swd_flash_hex.py` gained a one-shot `--bootloader` mode requiring 3s of continuous stable
+contact before erasing (a single-read check was confirmed insufficient on real hardware first).
+`DIV_NODE`/`VDIV` bodged from digital-only `P0.00` to analog-capable `P0.03`/AIN1 per the fix plan
+in `docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md` Test 5; firmware updated to a real `analogRead()`.
+Found and fixed a real bug this introduced (old `P0.00` trace still live in parallel on the PCB,
+left unconfigured instead of disconnected). Found one board with a genuinely dead mux (`muxsweep`
+shows zero switching) and, separately, one board with a `VDIV` net pegged near 3V regardless of mux
+code (points at `R17` or the mux's `VDIV`-throw pins, not yet confirmed which). Closed a real open
+item from the bench test plan: first confirmed real-bridge EC-check test on this design, both
+digital and analog paths, on a third, healthy board. Full detail, per-board results table, and open
+items: `docs/MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md`.
