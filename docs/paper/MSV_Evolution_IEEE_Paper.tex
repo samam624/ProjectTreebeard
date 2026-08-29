@@ -1,0 +1,301 @@
+% MSV Evolution -- IEEE conference paper (2-page target)
+% Overleaf: create a Blank Project, delete its main.tex, upload this file as main.tex,
+% and compile with pdfLaTeX. Self-contained -- no external images, no .bib file needed.
+%
+% Source basis: docs/MSV_EVOLUTION_IEEE_PAPER_DRAFT.md (prose), reconciled against
+% docs/MSV_BUILD_MILESTONE_FACT_CHECK.md (approved numbers) and, for the electrode
+% topology of the two field units, directly against
+% arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino and
+% arduino/MSV2_Moisture_BLE_Sleep/MSV2_Moisture_BLE_Sleep.ino (see the correction note
+% at \S II.B: the fact-check doc and both outline/draft docs had Alocasia's topology and
+% pulldown value backwards -- 56 kOhm dual-plate -- the firmware source says 100 kOhm
+% single-plate). Author: verify every remaining figure against live hardware / the
+% receiver's /device endpoint before submission -- see the checklist at the end of this
+% file (kept as a LaTeX comment so it does not render).
+
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{textcomp}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc}
+\usepackage{booktabs}
+\usepackage{url}
+
+\begin{document}
+
+\title{Evolution of the MSV Soil-Moisture Platform: From 555-Timer Sensing to a Connected FDC2214 Probe}
+
+\author{
+\IEEEauthorblockN{Sam Amezcua}
+\IEEEauthorblockA{Department of Electrical and Computer Engineering\\
+University of California, Davis\\
+Davis, California, USA\\
+scamezcua@ucdavis.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+This paper summarizes three generations of a capacitive soil-moisture sensor. MSV1 used cascaded
+555 timers but compressed the useful response because its analog stage was designed for
+80--220\,pF while measurements reached 274\,pF--1.28\,nF. MSV2 replaced analog conversion with
+digitally timed relaxation oscillation and added Bluetooth Low Energy (BLE), an ESP32-S3 receiver,
+cloud history, and plant-specific calibration. Field use exposed clock quantization, supply
+coupling, electrode-bias risk, flash leakage, and receiver/cloud defects. MSV3 is a work in
+progress using an FDC2214 resonant converter, a TMUX1109 to route two electrodes through four
+states, and solar harvesting. Bring-up verified a 17-byte packet, 900 consecutive post-repair
+samples, and 10--15\,\textmu A timed-sleep current. Wet-soil stability and energy-neutral operation
+remain open.
+\end{abstract}
+
+\begin{IEEEkeywords}
+capacitive soil-moisture sensing, Bluetooth Low Energy, FDC2214, nRF52840, energy harvesting,
+wireless sensor node
+\end{IEEEkeywords}
+
+\section{Introduction}
+Capacitive electrodes reduce the corrosion and polarization risk of low-cost resistive soil
+probes. The MSV project progressed from an analog proof of concept (MSV1), through a connected
+nRF52840/ESP32-S3 platform (MSV2), to a dedicated capacitance-converter and solar-assisted probe
+(MSV3). The objective remained a repeatable, low-power moisture indicator with wireless history.
+This paper emphasizes the measured shortcomings that motivated each transition.
+
+\section{Architecture Evolution}
+
+\subsection{MSV1: Analog Frequency-to-Voltage Measurement}
+MSV1 used an interdigitated PCB comb, astable and monostable 555 timers, an RC low-pass filter,
+and a comparator/LED alarm \cite{amezcua2026msv1}. Potting-soil frequency changed from
+approximately 27\,kHz dry to 7.5\,kHz wet, while extracted capacitance ranged from 274\,pF dry to
+approximately 1.28\,nF saturated. The downstream voltage nonetheless remained near
+1.07--1.10\,V because the RC chain was sized for a much smaller predicted range
+(80--220\,pF). A 100\,k$\Omega$ feedback resistor caused comparator latching; removing it
+produced near-threshold flicker instead. Direct digital timing in MSV2 preserved the useful
+frequency response without this analog compression.
+
+\subsection{MSV2: Connected Digital Relaxation Oscillator}
+The Seeed XIAO nRF52840 Sense probe counts repeated capacitive charge/discharge transitions,
+applies burst/median filtering, and broadcasts raw values in non-connectable BLE advertisements
+\cite{project_oscillator_report}. Early MSV2 sensing fixed the drive direction against a grounded
+return; a later dual-plate rework alternates which electrode drives and which senses each cycle to
+reduce sustained DC bias.
+
+\textbf{Correction to earlier project notes:} the two current field units are \emph{not} the same
+topology. Only the Thaumatophyllum unit has been migrated to the dual-plate rework (10\,k$\Omega$
+pulldown per plate); the Alocasia unit still runs the original single-plate firmware against a
+grounded return, with a 100\,k$\Omega$ pulldown. This is stated directly in that probe's own
+firmware source and is the opposite of what an earlier internal fact-check pass concluded (it had
+recorded Alocasia as 56\,k$\Omega$ dual-plate, a value that does not appear in any firmware or
+hardware source in the repository). The two units therefore differ in topology as well as raw
+range and must not be presented as two instances of one dual-plate design differing only by
+resistor value.
+
+An ESP32-S3 receiver performs calibration, display, history recovery, and cloud upload; a
+progressive web application presents the stored data. The probe uses timed System-ON sleep,
+approximately 10\,s wake/check intervals, and approximately 60\,s advertisements.
+
+\subsection{MSV3: Resonant Conversion, Electrode Multiplexing, and Solar Power}
+MSV3 replaces GPIO timing with an FDC2214 28-bit capacitance-to-digital converter and a
+6.8\,\textmu H / 270\,pF LC tank \cite{ti_fdc2214}. A TMUX1109 routes two electrodes through four
+states: two swapped capacitance-measurement phases and two auxiliary EC-check/bare-tank reference
+phases \cite{ti_tmux1109} -- a two-electrode, four-state design, not an arbitrary $N$-channel
+array. The E73-2G4M08S1C nRF52840 module has no 32.768\,kHz crystal, requiring firmware to select
+the internal low-frequency RC oscillator before the SoftDevice/FreeRTOS start
+\cite{nordic_nrf52840, project_lfclk_hang}; this is enforced by a build script rather than left to
+manual discipline. The power path combines a BQ25504 energy-harvesting front end, a BQ25170
+charger, and a TPS7A0233 3.3\,V regulator \cite{ti_bq25504}. MSV3 preserves the MSV2 receiver and
+cloud path unchanged; its observed live packet is 17 bytes. A 23-byte die-temperature/bare-tank
+reference format is compile- and cloud-tested but not confirmed flashed to a field unit.
+
+Fig.~\ref{fig:arch} summarizes the three signal paths and the receiver/cloud stage shared by MSV2
+and MSV3.
+
+\begin{figure*}[!t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners, align=center, font=\scriptsize, text width=1.9cm,
+              minimum height=0.85cm, inner sep=2pt},
+  arr/.style={-{Latex[length=2mm]}},
+  node distance=5mm
+]
+  % MSV1 row
+  \node[box] (m1a) {Comb\\electrode};
+  \node[box, right=of m1a] (m1b) {Astable\\555};
+  \node[box, right=of m1b] (m1c) {Monostable\\555};
+  \node[box, right=of m1c] (m1d) {RC\\LPF};
+  \node[box, right=of m1d] (m1e) {Comparator\\+ LED};
+  \draw[arr] (m1a) -- (m1b);
+  \draw[arr] (m1b) -- (m1c);
+  \draw[arr] (m1c) -- (m1d);
+  \draw[arr] (m1d) -- (m1e);
+  \node[font=\footnotesize\bfseries, left=4mm of m1a, anchor=east] {MSV1};
+
+  % MSV2 row
+  \node[box, below=10mm of m1a] (m2a) {Dual-plate\\electrodes};
+  \node[box, right=of m2a] (m2b) {nRF52840\\GPIO timing};
+  \node[box, right=of m2b] (m2c) {BLE\\advertise};
+  \node[box, right=of m2c] (m2d) {ESP32-S3\\receiver};
+  \node[box, right=of m2d] (m2e) {Supabase\\+ PWA};
+  \draw[arr] (m2a) -- (m2b);
+  \draw[arr] (m2b) -- (m2c);
+  \draw[arr] (m2c) -- (m2d);
+  \draw[arr] (m2d) -- (m2e);
+  \node[font=\footnotesize\bfseries, left=4mm of m2a, anchor=east] {MSV2};
+
+  % MSV3 row
+  \node[box, below=10mm of m2a] (m3a) {TMUX1109\\+ electrodes};
+  \node[box, right=of m3a] (m3b) {FDC2214\\LC tank};
+  \node[box, right=of m3b] (m3c) {E73 nRF52840\\BLE};
+  \node[box, right=of m3c] (m3d) {ESP32-S3\\receiver};
+  \node[box, right=of m3d] (m3e) {Supabase\\+ PWA};
+  \draw[arr] (m3a) -- (m3b);
+  \draw[arr] (m3b) -- (m3c);
+  \draw[arr] (m3c) -- (m3d);
+  \draw[arr] (m3d) -- (m3e);
+  \node[font=\footnotesize\bfseries, left=4mm of m3a, anchor=east] {MSV3};
+
+  % shared receiver/cloud annotation
+  \draw[dashed] ($(m2d.north west)+(-0.15,0.25)$) rectangle ($(m3e.south east)+(0.15,-0.15)$);
+  \node[font=\scriptsize, below=1mm of m3e, anchor=north] {shared receiver / cloud stack};
+\end{tikzpicture}
+\caption{Three-generation signal path. MSV1 converts frequency to a threshold voltage entirely in
+analog hardware. MSV2 and MSV3 both measure digitally at the probe and share the same ESP32-S3
+receiver and cloud stack; only the sensing front end changed between them.}
+\label{fig:arch}
+\end{figure*}
+
+\section{Tests, Milestones, and Corrective Work}
+The main verified events are summarized in Table~\ref{tab:milestones}. Dates indicate the day
+documented in the repository; they do not imply second-level deployment accuracy.
+
+\begin{table}[!t]
+\caption{Selected Verified Project Events}
+\label{tab:milestones}
+\centering
+\footnotesize
+\begin{tabular}{@{}p{0.16\linewidth}p{0.32\linewidth}p{0.42\linewidth}@{}}
+\toprule
+\textbf{Date (2026)} & \textbf{Test / milestone} & \textbf{Result / significance} \\
+\midrule
+Jul.\ 24 & BLE loss test & 198/200 advertisements received in 10\,min; 1.00\% observed loss. \\
+Jul.\ 24--25 & In-soil RC and oscillator tests & One-shot RC timing was impractical; free-running
+relaxation frequency became the MSV2 method. \\
+Jul.\ 31 & RTC timing analysis & A 1\,ms gate produced quantized plateaus; a 5\,ms window reduced
+the artifact. \\
+Aug.\ 9 & Probe power investigation & QSPI flash left active at $\sim$1.3--1.5\,mA; deep-power-down
+fix restored expected life on both probes. \\
+Aug.\ 12--14 & Receiver/UI stabilization & Touch/SPI, animation, BLE/cloud coexistence, caching,
+and other defects corrected. \\
+Aug.\ 21 & MSV3 LFCLK and sleep-current repair & LFRC-at-startup eliminated a 115--122-sample
+freeze (900 consecutive samples after) \cite{project_lfclk_hang}. Sleep current fell from
+65--71\,\textmu A to 10--15\,\textmu A. \\
+Aug.\ 22 & MSV3 production rollout & First MSV3 production probe/receiver observed live; 17-byte
+high-resolution packet, lossless history batching, and full adaptive calibration documented
+\cite{project_production_firmware}. \\
+Aug.\ 23--25 & History recovery / filtering / pagination & Live/history consistency, centered
+filtering, and an infinite-reload pagination defect corrected in successive receiver builds. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+MSV2's short measurement gate was quantized by the RTC tick, and supply voltage also shifted the
+oscillator. More critically, QSPI flash remained awake at roughly 1.3--1.5\,mA and exhausted
+150\,mAh batteries in four to six days. Receiver testing found BLE/TLS contention, touch/SPI
+corruption, stale cached assets, and long-range history pagination defects
+\cite{project_status_handoff}. These are system-integration failures rather than sensing-only
+failures.
+
+MSV3 initially froze after 115--122 samples because a post-startup low-frequency-clock
+reconfiguration corrupted RTC1; selecting the internal RC oscillator at the board-variant level
+(before FreeRTOS/SoftDevice start) produced 900 consecutive samples across two runs
+\cite{project_lfclk_hang}. Disconnecting the battery-divider and charger-status pins before sleep
+reduced timed-sleep current from 65--71\,\textmu A to 10--15\,\textmu A. Direct sunlight produced
+6\,V open-circuit and 30\,mA short-circuit; roughly 10\,mA of battery charging was inferred from
+voltage-rise behavior, not directly measured with an ammeter.
+
+\section{Limitations and Next Work}
+MSV3 still requires wet-soil calibration, FDC2214 drive-current/ring-down tuning, multi-day drift
+measurement, and overcast/low-battery solar-recovery tests -- the latter is in progress as of this
+writing on a probe that was fully discharged and released to run on solar power alone. Graded
+conductivity sensing is not operational: the divider node is routed to P0.00, which has no ADC
+capability on this MCU, so a bodge to an analog-capable pin plus a PCB revision are required. Die
+temperature is MCU/electronics temperature and must not be labeled soil temperature. The current
+receiver build should also be verified through its \texttt{/device} endpoint before presenting
+results; checked-in source alone does not prove what is flashed to the physical unit.
+
+\section{Conclusion}
+MSV evolved from an analog proof of concept to a connected field platform and then to a dedicated,
+solar-assisted probe. Its central lesson is that electrode physics, clocking, power state, packet
+compatibility, receiver recovery, calibration, and history handling must be validated together --
+most of MSV2's hardest bugs were system-integration failures, not sensing-principle failures. MSV3
+removes several sources of MSV2 timing error, but its value will be established only after
+long-duration wet-soil and energy-neutral field testing.
+
+\begin{thebibliography}{9}
+
+\bibitem{amezcua2026msv1}
+S. Amezcua, ``Design and Experimental Characterization of a Capacitive Soil Moisture Sensor Using a
+555 Timer Architecture,'' EEC 284 final paper, Dept. Elect. Comput. Eng., Univ. California, Davis,
+CA, USA, 2026.
+
+\bibitem{ti_fdc2214}
+Texas Instruments, ``FDC2212/FDC2214 Multi-Channel, High-Resolution, Noise-Immune
+Capacitance-to-Digital Converter,'' FDC2x1x datasheet, SNOSCZ5B, Oct. 2024.
+
+\bibitem{nordic_nrf52840}
+Nordic Semiconductor, ``nRF52840 Product Specification,'' ver. 1.1, doc. 4413\_417, Feb. 2019.
+
+\bibitem{ti_tmux1109}
+Texas Instruments, ``TMUX1108 8:1 and TMUX1109 Dual 4:1 Precision Multiplexers,'' datasheet,
+SCDS406A, Feb. 2024.
+
+\bibitem{ti_bq25504}
+Texas Instruments, ``BQ25504 Ultra-Low-Power Boost Converter With Battery Management for Energy
+Harvester Applications,'' datasheet, SLUSAH0G, Aug. 2023.
+
+\bibitem{project_status_handoff}
+MSV2/MSV3 Project, ``Status Handoff,'' internal engineering status document, Aug. 2026.
+
+\bibitem{project_oscillator_report}
+MSV2/MSV3 Project, ``Moisture Sensor Oscillator Report,'' internal engineering report, Jul. 2026.
+
+\bibitem{project_lfclk_hang}
+MSV2/MSV3 Project, ``MSV3 LFCLK/RTC1 Hang,'' internal failure analysis, Aug. 21, 2026.
+
+\bibitem{project_production_firmware}
+MSV2/MSV3 Project, ``MSV3 Production Firmware,'' internal verification record, Aug. 22, 2026.
+
+\end{thebibliography}
+
+\end{document}
+
+% ============================================================================
+% AUTHOR VERIFICATION CHECKLIST (not rendered -- LaTeX comment block)
+% Carried forward from docs/MSV_Evolution_IEEE_Paper_Outline.md and
+% docs/MSV_BUILD_MILESTONE_FACT_CHECK.md. Confirm every item before submission:
+%
+% 1. Query the receiver's live /device endpoint -- do not cite checked-in source
+%    identity (e.g. "cloud-heap-guard-v1") as proof of what is currently flashed.
+% 2. Confirm whether Aug. 26 history/heap fixes are active on the physical receiver.
+% 3. Do not claim the 23-byte temperature/bare-tank packet is deployed -- compile/
+%    cloud-tested only, not confirmed flashed to any field unit.
+% 4. The Aug. 29 empty-battery solar-recovery test: as of this writing it is
+%    in progress with no result yet -- do not backfill a pass/fail outcome.
+% 5. Long-duration MSV3 stability (wet soil, multi-day FDC drift, temperature
+%    dependence, overcast energy balance) remains open -- do not overstate MSV3
+%    as field-proven.
+% 6. Decide whether historical "Scindapsus" screenshots/labels should be
+%    relabeled to Thaumatophyllum or explained once as a naming alias.
+% 7. Do NOT restate the Alocasia-is-dual-plate/56kOhm claim from earlier project
+%    notes -- it is factually backwards; verified 2026-08-29 against
+%    arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino,
+%    whose own comments state single-plate/100 kOhm. This same error appeared in
+%    the outline draft, the prose draft, the fact-check doc, and both slide
+%    outlines before this correction -- if any of those docs get re-consulted or
+%    regenerated, re-check this claim rather than trusting them by default.
+% 8. Do not describe MSV3 EC/conductivity sensing as operational.
+% 9. Do not call MCU die temperature "soil temperature."
+% 10. Do not state the solar harvester's charge current as directly measured --
+%     it is inferred via the R_BAT(on) method, not an ammeter reading.
+% ============================================================================
