@@ -74,10 +74,29 @@
 #define PIN_VBAT_DIV_EN 29  // P0.29 / AIN5
 #define PIN_VBAT_DIV    2   // P0.02 / AIN0 -- analogRead here
 
-// ---- EC-check divider midpoint (DIV_NODE in the design doc). No LF crystal
-// populated, so P0.00 is free for this; NOT an AIN-capable pin on nRF52840,
-// so this is a digital reasonableness check only, not a calibrated voltage.
-#define PIN_DIV_NODE 0  // P0.00
+// ---- EC-check divider midpoint (DIV_NODE in the design doc). Originally
+// wired to P0.00 (module pin 11) -- free since no LF crystal is populated,
+// but NOT AIN-capable on nRF52840 (SAADC/COMP/LPCOMP are hard-restricted to
+// AIN0-AIN7), so that wiring could only ever be a digital threshold, never
+// the graded EC reading the design actually wants. Bodged 2026-08-28 to
+// P0.03/AIN1 (module pin 3, castellated edge pad, otherwise unused on this
+// board) per the fix plan in docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 5.
+#define PIN_DIV_NODE 3  // P0.03 / AIN1 -- analogRead here now
+
+// The old trace to P0.00 (module pin 11) is still physically present on the
+// PCB in parallel with the new P0.03 bodge -- confirmed in the real netlist
+// (VDIV net members: MUX-7, MUX-11, R17-2, U1-11, VDIV-1). The fix plan
+// always expected this ("leaving the existing trace in place is fine
+// electrically... firmware just needs to stop reading it"), but repointing
+// PIN_DIV_NODE away from 0 silently dropped the setup()-time pinMode() that
+// used to keep P0.00 an inert input -- left fully unconfigured, it can sit
+// in whatever state the bootloader left it in, which measured as a real
+// ~3.1V, present regardless of mux code (confirmed 2026-08-28: pegged
+// full-scale on P0.03's ADC in all 4 mux codes, including codes 0/1 where
+// the mux doesn't route anything to VDIV at all -- ruling out the mux/
+// bridging entirely and pointing at this pin instead). Must stay explicitly
+// gpioDisconnect()'d, not just left alone.
+#define PIN_DIV_NODE_OLD 0  // P0.00 -- still wired to VDIV in parallel, disconnect only
 
 // ---- BQ25170 charger status pins -- resolved via the pcb-reference library
 // 2026-08-21 (previously unidentified nets in this project's own notes for
@@ -505,6 +524,7 @@ void setup() {
   pinMode(PIN_VBAT_DIV, INPUT);
 
   pinMode(PIN_DIV_NODE, INPUT);
+  gpioDisconnect(PIN_DIV_NODE_OLD);  // P0.00 still wired to VDIV in parallel -- must not be left unconfigured
 
   // Open-drain outputs on the BQ25170 side -- plain inputs here, no pull
   // needed since the charger itself drives them (external pull-up per its
@@ -615,7 +635,7 @@ void printHelp() {
   Serial.println(F("  vbat                     - read VBAT_DIV (battery divider) -- informational, no battery attached"));
   Serial.println(F("  vbathold <secs>          - hold VBAT_DIV_EN LOW (default 120s) for manual multimeter probing, no ADC reads"));
   Serial.println(F("  chgstatus                - read BQ25170 STAT/PG charger status pins"));
-  Serial.println(F("  divnode                  - digitalRead DIV_NODE (EC-check midpoint) -- informational only"));
+  Serial.println(F("  divnode                  - analogRead DIV_NODE (EC-check midpoint), P0.03/AIN1 bodge"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
   Serial.println(F("  blestart                 - init BLE, advertise continuously (one-shot reading) until blestop"));
@@ -1064,6 +1084,42 @@ void doVbatHold(int secs) {
   Serial.println(F("  vbathold finished -- VBAT_DIV_EN released back to high-Z."));
 }
 
+// EC-check divider midpoint, now that PIN_DIV_NODE lives on P0.03/AIN1
+// (bodged 2026-08-28) instead of the digital-only P0.00 it started on.
+// Reuses readVbatMv()'s exact reference/resolution/sample-time settings
+// rather than re-deriving ADC config from scratch, per the fix plan in
+// docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 5. Unlike VBAT_DIV, this net
+// has no enable pin and no capacitor (plain R17 pulldown + mux switch
+// resistance per the netlist -- see doSenseSweep()'s comment), so it settles
+// in microseconds; no RC settle delay needed here, just the same
+// discard-first-sample-after-reference-switch as readVbatMv().
+// No divider-ratio multiplier: unlike VBAT_DIV (which reads half of VBAT by
+// design), this net IS the voltage of interest directly.
+#define DIV_NODE_MV_PER_LSB (3000.0f / 4096.0f)
+
+float readDivNodeMv(int *rawOut) {
+  analogReference(AR_INTERNAL_3_0);
+  analogReadResolution(12);
+  analogSampleTime(40);
+  (void)analogRead(PIN_DIV_NODE);  // discard first sample after a reference switch
+  int raw = analogRead(PIN_DIV_NODE);
+  analogReference(AR_DEFAULT);   // restore core defaults for any other analogRead user
+  analogReadResolution(10);
+  analogSampleTime(3);
+  if (rawOut) *rawOut = raw;
+  return raw * DIV_NODE_MV_PER_LSB;
+}
+
+void doDivNode() {
+  int raw = 0;
+  float mv = readDivNodeMv(&raw);
+  Serial.print(F("  DIV_NODE analog: raw="));
+  Serial.print(raw);
+  Serial.print(F("/4095  "));
+  Serial.print(mv, 1);
+  Serial.println(F(" mV  (3V3 side higher = more conductive; ~0V dry/open at rest)"));
+}
+
 // ------------------------------------------- sleep / wake power mgmt ----
 // Whole-board low-power sequencing, added 2026-08-21. Every number below is
 // from the real datasheet in hardware/MSV3_Probe_PCB/reference/datasheets/,
@@ -1147,6 +1203,7 @@ void probeSleep() {
   // 6. Undriven, pull-up-less inputs -> disconnect their input buffers.
   gpioDisconnect(PIN_FDC_INTB);
   gpioDisconnect(PIN_DIV_NODE);
+  gpioDisconnect(PIN_DIV_NODE_OLD);  // P0.00, still wired to VDIV in parallel
   // 2026-08-21: charger STAT/PG have the same gap -- readChargerPins()
   // already gpioDisconnect()s them after every chgstatus/isBatteryCharging()
   // call, but only after one has actually run. If sleep happens before any
@@ -1376,8 +1433,7 @@ void handleCommand(String cmd) {
   } else if (cmd == "chgstatus") {
     doChgStatus();
   } else if (cmd == "divnode") {
-    Serial.print(F("  DIV_NODE = "));
-    Serial.println(digitalRead(PIN_DIV_NODE) ? F("HIGH") : F("LOW"));
+    doDivNode();
   } else if (cmd == "wdtstatus") {
     printResetReason();
     printWatchdogStatus();

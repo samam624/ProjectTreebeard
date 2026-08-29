@@ -13,17 +13,33 @@ Usage:
     python scripts/swd_flash_hex.py --port COM3 --hex path\\to\\image.hex
     python scripts/swd_flash_hex.py --port COM3 --hex path\\to\\image.hex --mass-erase
 
+    # One-shot new-bootloader install (touch the pads, then run this --
+    # waits for 3s of continuous, consistent-DPIDR contact before doing
+    # anything, always mass-erases, flashes the bundled pca10056 bootloader
+    # hex, no separate `erase CONFIRM` step, no separate `probe` session):
+    python scripts/swd_flash_hex.py --port COM3 --bootloader
+
 Doesn't mass-erase by default -- run `erase CONFIRM` yourself in an
 interactive session first (see docs/SWD_FLASHER.md) unless you pass
 --mass-erase to have this script do it before writing the first segment.
+--bootloader always mass-erases regardless of --mass-erase/--no-mass-erase,
+since a partial old application left behind by a non-erased write is exactly
+what corrupts a freshly-written bootloader (see docs/SWD_FLASHER.md).
 """
 
 import argparse
 import re
 import sys
 import time
+from pathlib import Path
 
 import serial
+
+DEFAULT_BOOTLOADER_HEX = (
+    Path(__file__).resolve().parent.parent
+    / "arduino" / "MSV2_ESP32_SWD_Flasher" / "bootloaders"
+    / "pca10056_bootloader-0.11.0_s140_6.1.1.hex"
+)
 
 PROGRESS_RE = re.compile(r"^progress: (.+?) (\d+)/(\d+)\b")
 
@@ -111,6 +127,79 @@ class LineReader:
                 self._buf += chunk
 
 
+DPIDR_RE = re.compile(r"DPIDR\s*=\s*0x([0-9A-Fa-f]+)")
+
+
+def wait_for_contact(ser, reader, timeout_s=20, stable_s=3.0):
+    """Drive the flasher's own `probe` command (a tight ~7x/sec contact-check
+    loop meant for exactly this hand-held-wiring case) until it reports the
+    *same* DPIDR continuously for `stable_s` seconds, not just one lucky read.
+
+    A single successful check isn't enough evidence: a momentary/flickering
+    contact can pass one parity check and then drop before erase+flash
+    finishes (confirmed the hard way -- one lucky `id: OK` mid-thousands-of-
+    retries let a real run start, mass-erase completed, then the first
+    segment's own reconnect failed because contact had already let go). This
+    also uses probe's DPIDR-consistency signal from docs/SWD_FLASHER.md:
+    genuine contact reads the *same* DPIDR every time; different garbage
+    between reads means noise passed the ACK/parity check, not a real link,
+    so that resets the stability window same as a reported contact loss.
+    """
+    print(f"Waiting for {stable_s:.0f}s of continuous solid SWD contact "
+          f"(touch the pads now, up to {timeout_s:.0f}s total)...")
+    ser.reset_input_buffer()
+    ser.write(b"probe\n")
+
+    def stop_probe():
+        ser.write(b"\n")
+        stop_deadline = time.time() + 2
+        while time.time() < stop_deadline:
+            line = reader.read_line(timeout_s=0.3)
+            if line is not None and "probe: stopped" in line:
+                return
+
+    deadline = time.time() + timeout_s
+    contact_since = None
+    contact_dpidr = None
+    last_status_len = 0
+
+    while time.time() < deadline:
+        line = reader.read_line(timeout_s=0.2)
+        if line is not None:
+            m = DPIDR_RE.search(line)
+            if "CONTACT MADE" in line or "holding contact" in line:
+                dpidr = m.group(1) if m else None
+                if contact_since is None:
+                    contact_since = time.time()
+                    contact_dpidr = dpidr
+                elif dpidr is not None and dpidr != contact_dpidr:
+                    print("\n  DPIDR changed mid-contact (0x%s -> 0x%s) -- treating as noise, "
+                          "restarting stability window." % (contact_dpidr, dpidr))
+                    contact_since = time.time()
+                    contact_dpidr = dpidr
+            elif "contact lost" in line:
+                if contact_since is not None:
+                    print()
+                contact_since = None
+                contact_dpidr = None
+
+        if contact_since is not None:
+            held_s = time.time() - contact_since
+            status = f"  holding contact (DPIDR=0x{contact_dpidr}): {held_s:0.1f}/{stable_s:0.1f}s"
+            print("\r" + status + " " * max(0, last_status_len - len(status)), end="", flush=True)
+            last_status_len = len(status)
+            if held_s >= stable_s:
+                print()
+                stop_probe()
+                print(f"  contact stable for {stable_s:.0f}s -- proceeding.")
+                return True
+
+    stop_probe()
+    print()
+    print("  no continuously solid contact within the timeout -- adjust pad pressure/alignment and rerun.")
+    return False
+
+
 def send_segment(ser, reader, addr, data, verbose=True):
     cmd = f"flash {addr:X} {len(data)}\n"
     ser.write(cmd.encode())
@@ -173,19 +262,35 @@ def send_segment(ser, reader, addr, data, verbose=True):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", required=True, help="Serial port of the ESP32-S3 SWD flasher, e.g. COM3")
-    ap.add_argument("--hex", required=True, help="Path to the Intel HEX image to flash")
+    ap.add_argument("--hex", help="Path to the Intel HEX image to flash "
+                     "(defaults to the bundled pca10056 bootloader hex if --bootloader is given)")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--mass-erase", action="store_true",
                      help="Send 'erase CONFIRM' before writing the first segment")
+    ap.add_argument("--bootloader", action="store_true",
+                     help="One-shot new-bootloader install: waits for solid SWD contact, "
+                     "always mass-erases (skipping erase before a bootloader write risks "
+                     "leaving old app code that re-corrupts it), then flashes --hex or the "
+                     "bundled pca10056 bootloader hex if --hex isn't given")
+    ap.add_argument("--contact-timeout", type=float, default=30.0,
+                     help="Total seconds to wait for contact to go stable in --bootloader mode (default 30)")
+    ap.add_argument("--contact-stable", type=float, default=3.0,
+                     help="Seconds of continuous, consistent-DPIDR contact required before "
+                     "erase/flash starts in --bootloader mode (default 3)")
     args = ap.parse_args()
 
-    segments = parse_intel_hex(args.hex)
+    hex_path = args.hex or (str(DEFAULT_BOOTLOADER_HEX) if args.bootloader else None)
+    if not hex_path:
+        ap.error("--hex is required unless --bootloader is given")
+    mass_erase = args.mass_erase or args.bootloader
+
+    segments = parse_intel_hex(hex_path)
     if not segments:
         print("No data records found in hex file -- nothing to do.")
         return 1
 
     total_bytes = sum(len(d) for _, d in segments)
-    print(f"{args.hex}: {len(segments)} segment(s), {total_bytes} bytes total")
+    print(f"{hex_path}: {len(segments)} segment(s), {total_bytes} bytes total")
     for addr, data in segments:
         print(f"  0x{addr:08X} - 0x{addr + len(data):08X}  ({len(data)} bytes)")
 
@@ -194,7 +299,12 @@ def main():
     ser.reset_input_buffer()
     reader = LineReader(ser)
 
-    if args.mass_erase:
+    if args.bootloader:
+        print()
+        if not wait_for_contact(ser, reader, timeout_s=args.contact_timeout, stable_s=args.contact_stable):
+            return 1
+
+    if mass_erase:
         print("\nMass erasing target...")
         ser.write(b"erase CONFIRM\n")
         deadline = time.time() + 30
