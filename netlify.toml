@@ -1,9 +1,25 @@
-# This site's Netlify project has no dashboard-level "Base directory" override (confirmed via
-# `netlify api getSite` 2026-08-29: build_settings.base/dir/cmd are all null) -- Netlify finds
-# config purely by looking for netlify.toml at the repo root. The real build config now lives at
-# cloud/netlify.toml (project-treebeard reorg moved the whole cloud/ stack out of repo root), so
-# this file's only job is to point Netlify there via `base`. Every path inside cloud/netlify.toml
-# (and cloud/web/plant-dashboard/netlify.toml) resolves relative to this `base`, unchanged from
-# before the reorg.
+# This site's Netlify project has no dashboard-level "Base directory"/"Publish directory"
+# override (confirmed via `netlify api getSite` 2026-08-29: build_settings.base/dir/cmd are all
+# null), so this file is the only thing telling Netlify where the site actually is.
+#
+# 2026-08-29 (project-treebeard reorg moved cloud/ out of repo root): tried `[build] base =
+# "cloud"` first, expecting Netlify to also pick up cloud/netlify.toml -- did NOT work under
+# `netlify deploy`: it silently published the whole repo as site root (index.html ended up at
+# /cloud/web/plant-dashboard/index.html, 404 at /, zero header/redirect rules applied). Tried
+# `base` pointing straight at cloud/web/plant-dashboard next -- also did not work; `netlify
+# deploy` without an explicit --dir appears to ignore `[build] base` entirely for a build-less
+# static site (no [build] command here to give `base` something to act on) and just republishes
+# whatever's at the invocation directory.
+#
+# What actually verified working: `netlify deploy --dir cloud/web/plant-dashboard` served 200 OK
+# with the correct CSP header and page title. `publish` below is the CLI/CI equivalent of that
+# --dir, expressed as a config value instead of a flag -- and unlike `base`, `publish` alone
+# does NOT depend on a build command existing.
+#
+# Headers/redirects are handled by cloud/web/plant-dashboard/_headers and _redirects (Netlify's
+# native, chain-independent mechanism -- auto-discovered wherever `publish` resolves to, already
+# a complete match for what the two now-removed nested netlify.toml files specified). No `[build]
+# base` needed, no second netlify.toml needed -- one file, one explicit path, verified by an
+# actual deploy rather than reasoned through.
 [build]
-  base = "cloud"
+  publish = "cloud/web/plant-dashboard"
