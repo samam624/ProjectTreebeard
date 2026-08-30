@@ -97,7 +97,7 @@ Possible later expansion of those same screens:
 ## Remote Monitoring Flow
 
 The receiver pushes small snapshots and lossless history batches to Supabase. The first API sketch
-is retained in [MSV2 Cloud API Draft](CLOUD_API_DRAFT.md) as historical design context; the deployed
+is retained in [MSV2 Cloud API Draft](../cloud/docs/CLOUD_API_DRAFT.md) as historical design context; the deployed
 Edge Functions and migrations are authoritative.
 
 The hosted app reads the latest snapshot and history from the backend. The receiver remains the

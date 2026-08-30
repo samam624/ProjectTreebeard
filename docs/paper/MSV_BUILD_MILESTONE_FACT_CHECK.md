@@ -19,7 +19,7 @@
 - A 100 kOhm comparator-feedback resistor caused latching and was removed. With no hysteresis, the indicator flickered around the threshold for approximately ten minutes.
 - Correct conclusion: MSV1 validated the moisture-dependent frequency response but did not provide a robust analog output/threshold across the real capacitance range.
 
-**Primary evidence:** [`EEC284_Final_Paper (2).pdf`](../EEC284_Final_Paper%20%282%29.pdf)
+**Primary evidence:** [`EEC284_Final_Paper (2).pdf`](../../MSV1/EEC284_Final_Paper%20%282%29.pdf)
 
 ### MSV2
 
@@ -38,7 +38,7 @@
 - Some historical notes use “Scindapsus” for the Thaumatophyllum lineage. This is a naming inconsistency, not a third architecture.
 - Power wording: MSV2 uses timed low-power **System-ON** sleep. Do not call it the deepest System-OFF mode.
 
-**Primary evidence:** [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](MOISTURE_SENSOR_OSCILLATOR_REPORT.md), [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md), and [`STATUS_HANDOFF.md`](STATUS_HANDOFF.md)
+**Primary evidence:** [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](../../MSV2/docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md), [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md), and [`STATUS_HANDOFF.md`](../STATUS_HANDOFF.md)
 
 ### MSV3
 
@@ -56,7 +56,7 @@
 - Die temperature is MCU/electronics temperature, not soil temperature.
 - EC design issue: DIV_NODE is routed to P0.00, which is not ADC capable. Graded EC requires a bodge to an analog-capable pin such as P0.03/AIN1 and a PCB correction in the next revision.
 
-**Primary evidence:** [`MSV3_PROBE_BOM.md`](MSV3_PROBE_BOM.md), [`MOISTURE_SENSOR_FDC2212_FRONTEND.md`](MOISTURE_SENSOR_FDC2212_FRONTEND.md), [`MSV3_LFCLK_RTC1_HANG_2026-08-21.md`](MSV3_LFCLK_RTC1_HANG_2026-08-21.md), and [`MSV3_PRODUCTION_FIRMWARE_2026-08-22.md`](MSV3_PRODUCTION_FIRMWARE_2026-08-22.md)
+**Primary evidence:** [`MSV3_PROBE_BOM.md`](../../MSV3/docs/MSV3_PROBE_BOM.md), [`MOISTURE_SENSOR_FDC2212_FRONTEND.md`](../../MSV3/docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md), [`MSV3_LFCLK_RTC1_HANG_2026-08-21.md`](../../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md), and [`MSV3_PRODUCTION_FIRMWARE_2026-08-22.md`](../../MSV3/docs/MSV3_PRODUCTION_FIRMWARE_2026-08-22.md)
 
 ## 2. Dated Test and Milestone Timeline
 
@@ -158,23 +158,23 @@ The documents record a rapid sequence rather than one clean release:
 
 ## 7. Relevant Internal Documentation
 
-- Overall status: [`STATUS_HANDOFF.md`](STATUS_HANDOFF.md)
-- Roadmap/open work: [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md)
-- Known issues: [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
-- MSV2 oscillator: [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](MOISTURE_SENSOR_OSCILLATOR_REPORT.md)
-- Adaptive calibration: [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md)
-- MSV3 FDC front end: [`MOISTURE_SENSOR_FDC2212_FRONTEND.md`](MOISTURE_SENSOR_FDC2212_FRONTEND.md)
-- MSV3 BOM: [`MSV3_PROBE_BOM.md`](MSV3_PROBE_BOM.md)
-- MSV3 LFCLK failure analysis: [`MSV3_LFCLK_RTC1_HANG_2026-08-21.md`](MSV3_LFCLK_RTC1_HANG_2026-08-21.md)
-- MSV3 bench plan: [`MSV3_BENCH_TEST_PLAN_2026-08-21.md`](MSV3_BENCH_TEST_PLAN_2026-08-21.md)
-- MSV3 production firmware: [`MSV3_PRODUCTION_FIRMWARE_2026-08-22.md`](MSV3_PRODUCTION_FIRMWARE_2026-08-22.md)
-- Temperature/tank-reference status: [`MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md`](MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md)
-- Multi-day drift follow-up: [`MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md`](MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md)
-- Receiver smoothing: [`RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md`](RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md)
-- Lossless batching: [`RECEIVER_LOSSLESS_HISTORY_BATCHING_2026-08-22.md`](RECEIVER_LOSSLESS_HISTORY_BATCHING_2026-08-22.md)
-- Receiver cloud reliability: [`RECEIVER_CLOUD_RELIABILITY_2026-08-23.md`](RECEIVER_CLOUD_RELIABILITY_2026-08-23.md)
-- History smoothing/debounce: [`HISTORY_SMOOTHING_WATERING_DEBOUNCE_2026-08-23.md`](HISTORY_SMOOTHING_WATERING_DEBOUNCE_2026-08-23.md)
-- Retroactive history smoothing: [`HISTORY_RETROACTIVE_SMOOTHING_2026-08-23.md`](HISTORY_RETROACTIVE_SMOOTHING_2026-08-23.md)
+- Overall status: [`STATUS_HANDOFF.md`](../STATUS_HANDOFF.md)
+- Roadmap/open work: [`PRODUCT_ROADMAP.md`](../PRODUCT_ROADMAP.md)
+- Known issues: [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)
+- MSV2 oscillator: [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](../../MSV2/docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md)
+- Adaptive calibration: [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md)
+- MSV3 FDC front end: [`MOISTURE_SENSOR_FDC2212_FRONTEND.md`](../../MSV3/docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md)
+- MSV3 BOM: [`MSV3_PROBE_BOM.md`](../../MSV3/docs/MSV3_PROBE_BOM.md)
+- MSV3 LFCLK failure analysis: [`MSV3_LFCLK_RTC1_HANG_2026-08-21.md`](../../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md)
+- MSV3 bench plan: [`MSV3_BENCH_TEST_PLAN_2026-08-21.md`](../../MSV3/docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md)
+- MSV3 production firmware: [`MSV3_PRODUCTION_FIRMWARE_2026-08-22.md`](../../MSV3/docs/MSV3_PRODUCTION_FIRMWARE_2026-08-22.md)
+- Temperature/tank-reference status: [`MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md`](../../MSV3/docs/MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md)
+- Multi-day drift follow-up: [`MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md`](../../MSV3/docs/MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md)
+- Receiver smoothing: [`RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md`](../../DisplayCenter/docs/RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md)
+- Lossless batching: [`RECEIVER_LOSSLESS_HISTORY_BATCHING_2026-08-22.md`](../../DisplayCenter/docs/RECEIVER_LOSSLESS_HISTORY_BATCHING_2026-08-22.md)
+- Receiver cloud reliability: [`RECEIVER_CLOUD_RELIABILITY_2026-08-23.md`](../../DisplayCenter/docs/RECEIVER_CLOUD_RELIABILITY_2026-08-23.md)
+- History smoothing/debounce: [`HISTORY_SMOOTHING_WATERING_DEBOUNCE_2026-08-23.md`](../../DisplayCenter/docs/HISTORY_SMOOTHING_WATERING_DEBOUNCE_2026-08-23.md)
+- Retroactive history smoothing: [`HISTORY_RETROACTIVE_SMOOTHING_2026-08-23.md`](../../DisplayCenter/docs/HISTORY_RETROACTIVE_SMOOTHING_2026-08-23.md)
 
 ## 8. Cross-Document Consistency Checklist
 

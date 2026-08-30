@@ -20,12 +20,41 @@ function Invoke-ArduinoCli {
   }
 }
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SubsystemRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
+$RepoRoot = (Resolve-Path (Join-Path $SubsystemRoot "..")).Path
+
+function Resolve-ProjectPath {
+  param([string]$Path)
+
+  $Candidates = if ([IO.Path]::IsPathRooted($Path)) {
+    @($Path)
+  } else {
+    @(
+      (Join-Path $RepoRoot $Path),
+      (Join-Path $SubsystemRoot $Path),
+      (Join-Path (Get-Location).Path $Path)
+    )
+  }
+
+  foreach ($Candidate in $Candidates) {
+    if (Test-Path -LiteralPath $Candidate) {
+      return (Resolve-Path -LiteralPath $Candidate).Path
+    }
+  }
+
+  throw "Antenna test sketch not found at '$Path' (checked the repository root, DisplayCenter folder, and current directory)"
+}
+
 # Same FQBN as scripts/arduino_display.ps1 - this is the same ESP32-S3-WROOM-1U-N16R8
 # module, just now on its own PCB instead of the devkit breadboard build.
 $Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
-$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\antenna-test"
+$BuildPath = Join-Path $RepoRoot ".arduino-build\antenna-test"
 
-New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
+if ($Action -in @("compile", "upload")) {
+  $Sketch = Resolve-ProjectPath $Sketch
+  New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
+}
 
 if ($Action -in @("upload", "monitor") -and [string]::IsNullOrEmpty($Port)) {
   throw "This is the new custom PCB, not the devkit - its COM port isn't known in advance. Run '-Action board-list' first, then pass '-Port COMx' explicitly."

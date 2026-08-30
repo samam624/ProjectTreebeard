@@ -21,13 +21,37 @@ function Invoke-ArduinoCli {
   }
 }
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SubsystemRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
+$RepoRoot = (Resolve-Path (Join-Path $SubsystemRoot "..")).Path
+
+function Resolve-ProjectPath {
+  param([string]$Path)
+
+  $Candidates = if ([IO.Path]::IsPathRooted($Path)) {
+    @($Path)
+  } else {
+    @(
+      (Join-Path $RepoRoot $Path),
+      (Join-Path $SubsystemRoot $Path),
+      (Join-Path (Get-Location).Path $Path)
+    )
+  }
+
+  foreach ($Candidate in $Candidates) {
+    if (Test-Path -LiteralPath $Candidate) {
+      return (Resolve-Path -LiteralPath $Candidate).Path
+    }
+  }
+
+  throw "Probe sketch not found at '$Path' (checked the repository root, MSV2 folder, and current directory)"
+}
+
 $SketchName = Split-Path $Sketch -Leaf
-$BuildPath = Join-Path (Resolve-Path ".").Path ".arduino-build\probe-$SketchName"
+$BuildPath = Join-Path $RepoRoot ".arduino-build\probe-$SketchName"
 
 if ($Action -in @("compile", "upload")) {
-  if (!(Test-Path $Sketch)) {
-    throw "Probe sketch not found at '$Sketch'"
-  }
+  $Sketch = Resolve-ProjectPath $Sketch
   New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
 }
 

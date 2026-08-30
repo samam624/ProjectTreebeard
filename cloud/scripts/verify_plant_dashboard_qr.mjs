@@ -8,8 +8,9 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(scriptDir, "..");
-const dashboardRoot = join(repoRoot, "web", "plant-dashboard");
+const cloudRoot = resolve(scriptDir, "..");
+const projectRoot = resolve(cloudRoot, "..");
+const dashboardRoot = join(cloudRoot, "web", "plant-dashboard");
 const qrFixture = join(scriptDir, "fixtures", "msv2-pairing-qr.png");
 const expectedPairing = {
   receiverId: "MSV2TEST123",
@@ -167,8 +168,7 @@ async function main() {
   const cacheName = `msv2-cloud-app-v${appVersion}`;
   const appSource = await readFile(join(dashboardRoot, "assets", appAsset), "utf8");
   const headerSource = await readFile(join(dashboardRoot, "_headers"), "utf8");
-  const localNetlifySource = await readFile(join(dashboardRoot, "netlify.toml"), "utf8");
-  const rootNetlifySource = await readFile(join(repoRoot, "netlify.toml"), "utf8");
+  const rootNetlifySource = await readFile(join(projectRoot, "netlify.toml"), "utf8");
   const decoderIntegrity = `sha384-${createHash("sha384").update(decoderBytes).digest("base64")}`;
   const expectedIntegrity = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
   assert.equal(decoderIntegrity, expectedIntegrity, "Vendored decoder hash must remain pinned.");
@@ -176,10 +176,9 @@ async function main() {
   assert.ok(workerSource.includes(`"${cacheName}"`), "Service-worker cache version must match the HTML app bundle.");
   assert.ok(workerSource.includes(`"/assets/${appAsset}"`) && workerSource.includes('"/assets/jsQR-1.4.0.min.js"'), "Service worker must precache both scanner assets.");
   assert.match(decoderLicense, /Apache License[\s\S]*Version 2\.0/, "Vendored decoder license must be present.");
-  for (const configSource of [headerSource, localNetlifySource, rootNetlifySource]) {
-    assert.ok(configSource.includes("camera=(self), microphone=()"), "Every Netlify header source must allow only same-origin camera use.");
-    assert.ok(!configSource.includes("cdn.jsdelivr.net"), "Production CSP must not retain the decoder CDN.");
-  }
+  assert.ok(headerSource.includes("camera=(self), microphone=()"), "Netlify headers must allow only same-origin camera use.");
+  assert.ok(!headerSource.includes("cdn.jsdelivr.net"), "Production CSP must not retain the decoder CDN.");
+  assert.match(rootNetlifySource, /publish\s*=\s*["']cloud\/web\/plant-dashboard["']/, "The root Netlify config must publish the dashboard folder.");
   console.log("CHECK static scanner assets and deployment configs are consistent");
   const server = startDashboardServer();
   await new Promise((resolveListen, rejectListen) => {
