@@ -560,9 +560,22 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
               <option value="336">Last 14 days</option>
               <option value="720">Last 30 days</option>
               <option value="87600">All time</option>
+              <option value="custom">Custom range...</option>
             </select>
           </label>
           <button type="button" class="ghost" id="historyClearButton">Clear All History</button>
+        </div>
+        <!-- Extra alongside the presets above, not a replacement - lets you pin an exact
+             historical window (e.g. 2026-10-29 through 2026-10-31) instead of only "last N
+             hours/days through right now". Hidden unless "Custom range..." is selected. -->
+        <div class="network-row hidden" id="historyCustomRangeRow">
+          <label>From
+            <input type="date" id="historyCustomStart">
+          </label>
+          <label>To
+            <input type="date" id="historyCustomEnd">
+          </label>
+          <button type="button" class="ghost" id="historyCustomApply">Apply</button>
         </div>
         <div class="notice" id="historyNotice">Pulled from Supabase - requires cloud sync enabled on this receiver.</div>
 
@@ -597,9 +610,6 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
             <label>Smoothing (EMA alpha)
               <input type="number" id="smBatteryAlpha" min="0.01" max="1" step="0.01">
             </label>
-            <label>Charge-state confirm (packets)
-              <input type="number" id="smChargeConfirmPackets" min="1" step="1">
-            </label>
           </div>
 
           <div class="smoothing-actions">
@@ -627,6 +637,75 @@ const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         <div class="chart-wrap">
           <svg class="chart" id="historyBatteryChart"></svg>
           <div class="chart-tooltip" id="historyBatteryTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- MSV3-only: board_temp_quarter_c (nRF52840 on-die temperature, quarter-degree C)
+           is nullable and absent from every MSV2 probe and from MSV3 probes still on
+           pre-diagnostics firmware, so this card starts hidden and only appears once
+           renderHistoryFromCache() finds at least one non-null reading for the selected
+           probe. Raw/uncompensated - see MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md. -->
+      <section class="network-card chart-card hidden" id="historyTempSection">
+        <div class="chart-head">
+          <div class="chart-title">Board (die) temperature</div>
+          <div class="chart-latest" id="historyTempLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyTempChart"></svg>
+          <div class="chart-tooltip" id="historyTempTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- MSV3-only, same nullable/hidden-until-seen convention as historyTempSection above.
+           raw_fdc_counts (moisture-connected, present since migration 029/037) - see
+           MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md. Own auto-scaled axis rather than
+           overlaying on the bare-tank chart below: the two run ~4M counts apart (electrodes
+           in parallel vs. disconnected), so a shared axis would flatten both lines' actual
+           (much smaller) day-to-day drift into a nearly invisible sliver. Compare this
+           chart's shape against the bare-tank and temperature charts by eye instead. -->
+      <section class="network-card chart-card hidden" id="historyRawFdcSection">
+        <div class="chart-head">
+          <div class="chart-title">Raw FDC counts (moisture-connected)</div>
+          <div class="chart-latest" id="historyRawFdcLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyRawFdcChart"></svg>
+          <div class="chart-tooltip" id="historyRawFdcTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- MSV3-only. bare_tank_fdc_counts (EC-check mux codes 2/3, electrodes disconnected,
+           oscillating on L2/C17 alone) - present since migration 035, only taken on
+           advertising wakes so this is naturally sparser than the raw-FDC chart above.
+           See MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md for the reserved
+           Cconnected/Cbare = (Dbare/Dconnected)^2 compensation formula this chart exists to
+           let you eyeball before trusting. -->
+      <section class="network-card chart-card hidden" id="historyBareTankSection">
+        <div class="chart-head">
+          <div class="chart-title">Bare-tank FDC reference (disconnected mux)</div>
+          <div class="chart-latest" id="historyBareTankLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyBareTankChart"></svg>
+          <div class="chart-tooltip" id="historyBareTankTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- MSV3-only experimental derived observable. This is calculated from the connected
+           and bare counts carried by the SAME history row; never construct it by dividing
+           independently averaged/interpolated chart series. The squared ratio follows from
+           the FDC resonant-tank transfer function and cancels multiplicative reference-clock
+           and inductor drift to first order. It is not volumetric water content and does not
+           remove soil's own temperature/conductivity response, so the production moisture,
+           alerts, smoothing and calibration remain deliberately unchanged. -->
+      <section class="network-card chart-card hidden" id="historyFdcReferenceSection">
+        <div class="chart-head">
+          <div class="chart-title">Bare-reference normalized FDC (experimental, higher = wetter)</div>
+          <div class="chart-latest" id="historyFdcReferenceLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyFdcReferenceChart"></svg>
+          <div class="chart-tooltip" id="historyFdcReferenceTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
         </div>
       </section>
     </section>
@@ -1185,7 +1264,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     // Client-side, retroactive presentation smoothing (2026-08-23) ---------------------------
     // Ports the receiver firmware's robust centered moisture filter (smoothMoistureForDisplay(),
-    // MSV2_ESP32_Display_Runtime.ino) and battery EMA + charge-state debounce
+    // MSV2_ESP32_Display_Runtime.ino) and battery EMA
     // (calibrateRawBattery()) so the History chart recomputes "displayed" from the stored RAW
     // signal every time it renders, instead of only ever showing whatever the receiver's
     // filter baked in at ingest time. A parameter change therefore applies to the ENTIRE
@@ -1200,7 +1279,6 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       maxStepSpanPct: 5,
       confirmPackets: 2,
       batteryAlpha: 0.2,
-      chargeConfirmPackets: 2,
     };
     const SMOOTHING_STORAGE_KEY = "msv2.historySmoothingParams.v2";
     const SMOOTHING_FIELD_IDS = {
@@ -1211,7 +1289,6 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       maxStepSpanPct: "smMaxStepSpanPct",
       confirmPackets: "smConfirmPackets",
       batteryAlpha: "smBatteryAlpha",
-      chargeConfirmPackets: "smChargeConfirmPackets",
     };
 
     function loadSmoothingParams() {
@@ -1239,7 +1316,6 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         noiseWateringMult: [0, 100, false],
         wateringSpanPct: [0, 100, false], maxStepSpanPct: [0.1, 100, false],
         confirmPackets: [1, 255, true], batteryAlpha: [0.01, 1, false],
-        chargeConfirmPackets: [1, 255, true],
       };
       const params = {};
       for (const key of Object.keys(SMOOTHING_FIELD_IDS)) {
@@ -1337,8 +1413,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     }
 
     // Battery voltage -> percent curve, ported verbatim from BATTERY_CURVE/batteryMvToPercent()
-    // in MSV2_ESP32_Display_Runtime.ino - keep in sync if that curve or the IR-compensation
-    // taper is ever revised there.
+    // in MSV2_ESP32_Display_Runtime.ino. Percentage uses measured voltage directly; charging
+    // remains visible as a diagnostic but does not apply a cross-probe voltage offset.
     const BATTERY_CURVE = [
       { mv: 4200, pct: 100 }, { mv: 4150, pct: 95 }, { mv: 4110, pct: 90 }, { mv: 4080, pct: 85 }, { mv: 4020, pct: 80 },
       { mv: 3980, pct: 75 }, { mv: 3950, pct: 70 }, { mv: 3910, pct: 65 }, { mv: 3870, pct: 60 }, { mv: 3850, pct: 55 },
@@ -1346,10 +1422,6 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       { mv: 3750, pct: 25 }, { mv: 3730, pct: 20 }, { mv: 3710, pct: 15 }, { mv: 3690, pct: 10 }, { mv: 3610, pct: 5 },
       { mv: 3270, pct: 0 },
     ];
-    const BATTERY_CHARGE_IR_COMPENSATION_MV = 400;
-    const BATTERY_CHARGE_TAPER_START_MV = 4100;
-    const BATTERY_CHARGE_TAPER_END_MV = 4200;
-
     function interpolateBatteryPercent(mv) {
       if (mv >= BATTERY_CURVE[0].mv) return BATTERY_CURVE[0].pct;
       const last = BATTERY_CURVE[BATTERY_CURVE.length - 1];
@@ -1364,33 +1436,22 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return 0;
     }
 
-    function batteryChargeCompensationMv(mv) {
-      if (mv <= BATTERY_CHARGE_TAPER_START_MV) return BATTERY_CHARGE_IR_COMPENSATION_MV;
-      if (mv >= BATTERY_CHARGE_TAPER_END_MV) return 0;
-      const remainingFrac = (BATTERY_CHARGE_TAPER_END_MV - mv) / (BATTERY_CHARGE_TAPER_END_MV - BATTERY_CHARGE_TAPER_START_MV);
-      return BATTERY_CHARGE_IR_COMPENSATION_MV * remainingFrac;
-    }
-
-    function batteryMvToPercent(mv, charging) {
-      const restMv = charging ? mv - batteryChargeCompensationMv(mv) : mv;
+    function batteryMvToPercent(mv) {
       // Firmware's version returns uint8_t - it rounds to a whole percent HERE, before
       // that value ever reaches the EMA in smoothBatterySeries(). Rounding only at final
       // display time instead would blend a continuous float trajectory the receiver never
       // actually computed.
-      return Math.round(interpolateBatteryPercent(restMv));
+      return Math.round(interpolateBatteryPercent(mv));
     }
 
-    // Faithful port of calibrateRawBattery() in MSV2_ESP32_Display_Runtime.ino, generalized so
-    // the charge-state confirm count is a parameter (pass chargeConfirmPackets: 1 to reproduce
-    // the original un-debounced behavior). Rows that predate raw-battery history (before
+    // Faithful port of calibrateRawBattery() in MSV2_ESP32_Display_Runtime.ino. Rows that predate raw-battery history (before
     // migration 032) or come from a probe still on the legacy no-raw packet format have no
     // rawBatteryMv/rawCharging - those pass straight through as whatever the receiver's own
     // ingest-time filter already computed, with no raw overlay possible, and reset the filter
     // state so the next raw-carrying row cold-starts instead of blending across the gap.
     function smoothBatterySeries(rows, p) {
       const out = [];
-      let smoothed = null, lastConfirmedCharging = false;
-      let pendingCharging = null, pendingStreak = 0;
+      let smoothed = null;
 
       for (const row of rows) {
         if (row.rawBatteryMv == null || row.rawCharging == null) {
@@ -1398,42 +1459,20 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             out.push({ t: row.t, v: row.batteryPercent });
           }
           smoothed = null;
-          lastConfirmedCharging = false;
-          pendingCharging = null;
-          pendingStreak = 0;
           continue;
         }
 
-        const measuredCharging = row.rawCharging;
-        let useCharging;
-        if (smoothed === null || measuredCharging === lastConfirmedCharging) {
-          useCharging = measuredCharging;
-          pendingStreak = 0;
-          pendingCharging = null;
-        } else {
-          if (pendingCharging === measuredCharging) pendingStreak++;
-          else { pendingCharging = measuredCharging; pendingStreak = 1; }
-          if (pendingStreak >= Math.max(1, p.chargeConfirmPackets)) {
-            useCharging = measuredCharging;
-            pendingStreak = 0;
-            pendingCharging = null;
-          } else {
-            useCharging = lastConfirmedCharging;
-          }
-        }
-
-        const rawPct = batteryMvToPercent(row.rawBatteryMv, useCharging);
-        if (smoothed === null || useCharging !== lastConfirmedCharging) {
+        const rawPct = batteryMvToPercent(row.rawBatteryMv);
+        if (smoothed === null) {
           smoothed = rawPct;
         } else {
           smoothed += p.batteryAlpha * (rawPct - smoothed);
         }
-        lastConfirmedCharging = useCharging;
 
         out.push({
           t: row.t,
           v: Math.round(smoothed),
-          raw: batteryMvToPercent(row.rawBatteryMv, measuredCharging),
+          raw: rawPct,
         });
       }
 
@@ -1443,6 +1482,24 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // Rows from the most recent loadHistory() fetch, cached so a Smoothing-panel parameter
     // change can recompute both charts instantly with no refetch.
     let lastHistoryRows = [];
+
+    // FDC2214 DATA is proportional to 1/sqrt(L*C)/fref. Connected and bare readings in one
+    // packet use the same FDC, reference clock, inductor and close-in-time thermal state, so
+    // (Dbare/Dconnected)^2 estimates Cconnected/Cbare. Subtracting one reports the connected
+    // electrode/soil contribution relative to the bare tank. Keeping this dimensionless avoids
+    // a window-dependent baseline and preserves the exact sign: larger means more capacitance
+    // and therefore wetter. This is reference normalization, not calibrated soil-water percent.
+    function msv3ReferenceExcessPercent(row) {
+      if (!row) return null;
+      const connected = Number(row.raw_fdc_counts);
+      const bare = Number(row.bare_tank_fdc_counts);
+      const maxFdcCount = 0x0FFFFFFF;
+      if (!Number.isInteger(connected) || connected <= 0 || connected > maxFdcCount) return null;
+      if (!Number.isInteger(bare) || bare <= 0 || bare > maxFdcCount) return null;
+      const ratio = bare / connected;
+      const excessPercent = (ratio * ratio - 1) * 100;
+      return Number.isFinite(excessPercent) ? excessPercent : null;
+    }
 
     function renderHistoryFromCache() {
       // Deliberately does NOT call writeSmoothingFormValues() here - this runs on every
@@ -1476,6 +1533,53 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
       renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "");
       renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", batteryPoints, "#199e70", "%");
+
+      // board_temp_quarter_c is nullable (MSV3-only, quarter-degree C) - only show the card
+      // once the selected probe actually has at least one reading, so every MSV2 probe and
+      // any MSV3 probe still on pre-diagnostics firmware doesn't get a permanent empty chart.
+      const tempPoints = lastHistoryRows
+        .filter((r) => r.board_temp_quarter_c != null)
+        .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.board_temp_quarter_c / 4 }));
+      $("historyTempSection").classList.toggle("hidden", tempPoints.length === 0);
+      if (tempPoints.length) {
+        renderHistoryChart("historyTempChart", "historyTempTooltip", "historyTempLatest", tempPoints, "#e5723f", "°C");
+      }
+
+      const rawFdcPoints = lastHistoryRows
+        .filter((r) => r.raw_fdc_counts != null)
+        .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.raw_fdc_counts }));
+      $("historyRawFdcSection").classList.toggle("hidden", rawFdcPoints.length === 0);
+      if (rawFdcPoints.length) {
+        renderHistoryChart("historyRawFdcChart", "historyRawFdcTooltip", "historyRawFdcLatest", rawFdcPoints, "#9b6bd6", "");
+      }
+
+      const bareTankPoints = lastHistoryRows
+        .filter((r) => r.bare_tank_fdc_counts != null)
+        .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.bare_tank_fdc_counts }));
+      $("historyBareTankSection").classList.toggle("hidden", bareTankPoints.length === 0);
+      if (bareTankPoints.length) {
+        renderHistoryChart("historyBareTankChart", "historyBareTankTooltip", "historyBareTankLatest", bareTankPoints, "#3fb8c9", "");
+      }
+
+      // Compute before any chart smoothing/downsampling from the two fields in each retained
+      // history row. The server's sampled-history path keeps whole rows, so pairing survives.
+      const fdcReferencePoints = lastHistoryRows
+        .map((r) => ({
+          t: new Date(r.received_at).getTime(),
+          v: msv3ReferenceExcessPercent(r),
+        }))
+        .filter((point) => point.v != null);
+      $("historyFdcReferenceSection").classList.toggle("hidden", fdcReferencePoints.length === 0);
+      if (fdcReferencePoints.length) {
+        renderHistoryChart(
+          "historyFdcReferenceChart",
+          "historyFdcReferenceTooltip",
+          "historyFdcReferenceLatest",
+          fdcReferencePoints,
+          "#d5a63c",
+          "% capacitance above bare",
+        );
+      }
     }
 
     function renderHistoryChart(svgId, tooltipId, latestId, points, color, unit) {
@@ -1695,23 +1799,19 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
     }
 
-    // Supabase's own PostgREST "Max Rows" API setting silently truncates every RPC
-    // response to 1000 rows no matter what's requested (confirmed live 2026-08-26).
-    // Rather than have this client walk that 1000-row cap one slow browser-to-Supabase
-    // round trip at a time (each paying full TLS/network latency, especially over a
-    // phone's mobile/WiFi link), the plant-dashboard edge function now loops through
-    // that same 1000-row cap internally - fast server-to-server calls inside Supabase's
-    // own network - and hands back one bigger batch per request. HISTORY_BATCH_ROWS is
-    // how much to ask for per browser round trip; it's a request-size hint, not a strict
-    // per-call limit like the old HISTORY_PAGE_SIZE was, so it doesn't need to equal the
-    // platform's 1000-row cap. Keep in sync with plant-dashboard/index.ts's MAX_TOTAL_ROWS.
-    const HISTORY_BATCH_ROWS = 20000;
+    // The edge function probes the selected window's row count before downloading its
+    // payload and returns at most 2400 evenly spaced readings. Sparse windows keep every
+    // row; dense windows (such as Alocasia GP's >100k-row week) return one row out of every
+    // N. 2400 is three points per horizontal pixel on this 800px chart, so transmitting
+    // more would add load time without visible chart detail. Keep in sync with
+    // plant-dashboard/index.ts's HISTORY_POINT_BUDGET.
+    const HISTORY_BATCH_ROWS = 2400;
     // Circuit breaker on browser round trips, not a "how much data should exist"
     // assumption - the real stop condition is the server's `hasMore` flag below, which
     // reflects whether its own internal pagination actually ran out of rows (a previous
     // version inferred this from page size instead and broke as soon as the platform's
     // per-call row cap didn't match this constant - see git history on this comment).
-    const HISTORY_MAX_BATCHES = 500;
+    const HISTORY_MAX_BATCHES = 10;
 
     function shareTokenStorageKey() {
       return "msv2.shareToken." + ((claimInfo && claimInfo.receiverId) || "");
@@ -1748,9 +1848,13 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return shareToken;
     }
 
-    async function fetchHistoryPage(token, sensor, hours, beforeId) {
-      const query = `receiverId=${encodeURIComponent(claimInfo.receiverId)}&sensorId=${encodeURIComponent(sensor)}` +
+    async function fetchHistoryPage(token, sensor, hours, beforeId, untilMs) {
+      let query = `receiverId=${encodeURIComponent(claimInfo.receiverId)}&sensorId=${encodeURIComponent(sensor)}` +
         `&sinceHours=${encodeURIComponent(hours)}&beforeId=${beforeId}&limit=${HISTORY_BATCH_ROWS}`;
+      // Extra, optional upper bound alongside sinceHours - lets a custom range pin an exact
+      // historical window (e.g. 2026-10-29 through 2026-10-31) instead of always reading
+      // through whatever's newest right now. Omitted entirely for the preset-range case.
+      if (untilMs) query += `&untilMs=${encodeURIComponent(untilMs)}`;
       return fetch(`${SHARE_API_BASE}/api/share-history?${query}`, {
         cache: "no-store",
         headers: { "Authorization": "Bearer " + token },
@@ -1792,10 +1896,34 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     async function loadHistoryInner(isCurrent) {
       populateHistorySensorSelect();
       const sensor = $("historySensorSelect").value;
-      const hours = $("historyRangeSelect").value;
       if (!sensor) {
         if (isCurrent()) $("historyNotice").textContent = "No probes seen yet.";
         return;
+      }
+
+      // Custom range is extra, alongside the hour presets, not a replacement - the API still
+      // only understands "sinceHours back from now" plus an optional untilMs upper bound, so
+      // a custom start date gets converted into however many hours back from *now* it is.
+      let hours, untilMs;
+      if ($("historyRangeSelect").value === "custom") {
+        const startVal = $("historyCustomStart").value;
+        const endVal = $("historyCustomEnd").value;
+        if (!startVal || !endVal) {
+          if (isCurrent()) $("historyNotice").textContent = "Pick both a start and end date, then Apply.";
+          return;
+        }
+        const startMs = new Date(startVal + "T00:00:00").getTime();
+        // End date is inclusive through the end of that day, not just midnight at its start.
+        const endMs = new Date(endVal + "T23:59:59.999").getTime();
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+          if (isCurrent()) $("historyNotice").textContent = "End date must be on or after the start date.";
+          return;
+        }
+        hours = Math.max(1, Math.ceil((Date.now() - startMs) / 3600_000));
+        untilMs = endMs;
+      } else {
+        hours = $("historyRangeSelect").value;
+        untilMs = null;
       }
       if (isCurrent()) $("historyNotice").textContent = "Loading...";
 
@@ -1808,14 +1936,16 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       const pages = [];
       let beforeId = 0;
       let truncated = false;
+      let totalReadings = null;
+      let sampleEvery = 1;
       try {
         let token = await getOrMintShareToken();
 
         for (let page = 0; page < HISTORY_MAX_BATCHES; page++) {
-          let response = await fetchHistoryPage(token, sensor, hours, beforeId);
+          let response = await fetchHistoryPage(token, sensor, hours, beforeId, untilMs);
           if (response.status === 401) {
             token = await getOrMintShareToken(true);
-            response = await fetchHistoryPage(token, sensor, hours, beforeId);
+            response = await fetchHistoryPage(token, sensor, hours, beforeId, untilMs);
           }
 
           const body = await response.json();
@@ -1824,15 +1954,37 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             $("historyNotice").textContent = body.error || ("HTTP " + response.status);
             renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", [], "#3987e5", "");
             renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", [], "#199e70", "%");
+            $("historyTempSection").classList.add("hidden");
+            $("historyRawFdcSection").classList.add("hidden");
+            $("historyBareTankSection").classList.add("hidden");
+            $("historyFdcReferenceSection").classList.add("hidden");
             return;
           }
 
           const page_rows = body.readings || [];
           pages.push(...page_rows);
+          const bodyTotalReadings = Number(body.totalReadings);
+          const bodySampleEvery = Number(body.sampleEvery);
+          if (Number.isFinite(bodyTotalReadings) && bodyTotalReadings >= 0) {
+            totalReadings = Math.floor(bodyTotalReadings);
+          }
+          if (Number.isFinite(bodySampleEvery) && bodySampleEvery >= 1) {
+            sampleEvery = Math.floor(bodySampleEvery);
+          }
           if (!body.hasMore) break;
 
+          // A hasMore response without a cursor row cannot make forward progress. Treat it
+          // as a partial result instead of throwing while dereferencing the empty array or
+          // spinning until the circuit breaker.
+          if (!page_rows.length) {
+            truncated = true;
+            break;
+          }
+
           beforeId = page_rows[page_rows.length - 1].id;
-          $("historyNotice").textContent = `Loading... ${pages.length} readings so far`;
+          $("historyNotice").textContent = sampleEvery > 1 && totalReadings != null
+            ? `Loading... ${pages.length.toLocaleString()} plotted from ${totalReadings.toLocaleString()} readings (every ${sampleEvery})`
+            : `Loading... ${pages.length.toLocaleString()} readings so far`;
           // Ran out of batches, not out of data: the server said hasMore, so the
           // requested window almost certainly has more rows before beforeId that this
           // load never fetched. Say so below rather than reporting a plain count that
@@ -1842,9 +1994,13 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
         if (!isCurrent()) return;
         const rows = pages.reverse();
-        $("historyNotice").textContent = truncated
-          ? `${rows.length} readings (hit the safety limit - older data in this range wasn't loaded)`
-          : `${rows.length} readings`;
+        let historySummary = sampleEvery > 1 && totalReadings != null
+          ? `${rows.length.toLocaleString()} plotted from ${totalReadings.toLocaleString()} readings (sampled every ${sampleEvery})`
+          : `${rows.length.toLocaleString()} readings`;
+        if (truncated) {
+          historySummary += " (hit the safety limit - older data in this range wasn't loaded)";
+        }
+        $("historyNotice").textContent = historySummary;
         // `moisture` is always the raw, unsmoothed receiver-derived measurement (and
         // raw_battery_mv/raw_charging alongside it from migration 032 onward) - both charts
         // are recomputed from that raw signal by renderHistoryFromCache()/the Smoothing panel
@@ -2112,7 +2268,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     $("diagnosticsTab").addEventListener("click", () => setTab("diagnostics"));
     $("historyTab").addEventListener("click", () => { setTab("history"); loadHistory(); });
     $("historySensorSelect").addEventListener("change", loadHistory);
-    $("historyRangeSelect").addEventListener("change", loadHistory);
+    $("historyRangeSelect").addEventListener("change", () => {
+      $("historyCustomRangeRow").classList.toggle("hidden", $("historyRangeSelect").value !== "custom");
+      loadHistory();
+    });
+    $("historyCustomApply").addEventListener("click", loadHistory);
     $("historyClearButton").addEventListener("click", clearAllHistory);
 
     // Smoothing panel: initialize from whatever was last saved (or firmware defaults), then

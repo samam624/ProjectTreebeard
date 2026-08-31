@@ -1,7 +1,15 @@
 # Moisture insertion settling investigation and V4 temperature plan
 
 **Recorded:** 2026-08-24  
-**Status:** Investigation plan saved for later bench testing; no final root cause claimed yet.
+**Status:** Investigation plan retained; 2026-08-30 coating evidence strongly advanced one branch,
+but the controlled soil re-entry test is still pending.
+
+> **2026-08-30 update:** Water pockets were physically observed beneath the nail polish. Once the
+> coating was removed, the probe's long drift reversed during drying and settled to a flat air
+> baseline. This strongly supports the water-uptake/retention hypothesis below and explains why the
+> abnormal behavior appeared in soil, but it does not yet eliminate soil-contact settling. See
+> [MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md](MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md)
+> for the repair procedure, acceptance test, and corrected V4 edge-sealing recommendation.
 
 ## Problem statement
 
@@ -212,4 +220,3 @@ the blade is remote/cabled; add SHT45 only if enclosure RH is worth measuring.**
 - Sensirion SHT45 product page: <https://sensirion.com/products/catalog/SHT45>
 - Microchip MCP9808 product page: <https://www.microchip.com/en-us/product/mcp9808>
 - Local nRF52840 specification copy: `hardware/MSV3_Probe_PCB/reference/datasheets/nRF52840_PS_v1.1.pdf`
-

@@ -33,7 +33,7 @@
 #define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
 #define MSV2_SAFE_BOOT_LED_PIN 2
 #define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-26 cloud-heap-guard-v1"
+#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-30 detail-view-self-heal-v1"
 
 #ifndef MSV2_FORCE_WIFI_SETUP
 #define MSV2_FORCE_WIFI_SETUP 0
@@ -287,6 +287,21 @@ const uint32_t DEFAULT_STALE_SECONDS = 180;
 const uint8_t BATTERY_UNKNOWN = 255;
 const uint8_t MAX_ART_SLOTS = 16;
 const uint32_t SENSOR_RENDER_INTERVAL_MS = 2000;
+// 2026-08-30: self-healing backstop for the tap-to-expand diagnostic view. Confirmed live
+// (real hardware, real photo): a touch-triggered draw can occasionally leave a stuck, partial
+// repaint (observed: only the "Age" stat visible, rest of the card otherwise normal) that
+// persists indefinitely - by design, the data-only redraw path never revisits pixels it
+// believes are already correct, so a one-off corrupted write never self-corrects. Confirmed
+// user-side that tapping the card again (which forces collapsePlantCardInPlace's full clear)
+// fixes it immediately and the corruption itself is intermittent, not a state-machine bug -
+// consistent with a transient SPI-bus timing issue on hardware with a documented history of
+// touch/display bus contention, not a logic error in expandedCardSlot tracking. This doesn't
+// fix the root SPI-timing cause (see the 2026-08-30 touch-gesture-redesign comments for the
+// mitigation already applied there); it bounds the damage: while a card is expanded, a full
+// (not data-only) redraw of the detail view fires periodically regardless of whether anything
+// is known to have changed, so any stuck corruption clears itself within this window instead
+// of lasting until someone happens to tap it.
+const uint32_t DETAIL_FULL_RESYNC_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_FIRST_TRY_MS = 15000;
 const uint32_t CLOUD_BOOTSTRAP_RETRY_MS = 300000;
 const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
@@ -357,8 +372,14 @@ const uint32_t CLOUD_LOW_HEAP_RETRY_MS = 15000;
 // on the next success. Capped well below cloudSyncIntervalSeconds's own ceiling so a bad
 // patch backs off but still eventually retries on its own.
 const uint32_t CLOUD_UPLOAD_BACKOFF_MAX_MS = 180000;
-const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 30000;
-const uint32_t CLOUD_DISPLAY_PULL_INTERVAL_MS = 30000;
+// 2026-08-29: relaxed from 30000 (both) to cut Supabase Edge Function invocations - at 30s
+// these two polls alone were ~5,760/day (~173,000/month) from a single receiver, ~38% of the
+// free-tier 500,000/month invocation quota. A cloud-pushed config/display change now takes up
+// to ~2 minutes to reach the receiver instead of ~30s - confirmed acceptable for how this
+// feature is actually used (see chat log). If a future receiver relies on near-real-time
+// cloud-pushed display updates, lower this back down rather than removing the tradeoff note.
+const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 120000;
+const uint32_t CLOUD_DISPLAY_PULL_INTERVAL_MS = 120000;
 const uint32_t CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS = 300000;
 const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned range/schedule changes slowly
 // Cloud HTTP/TLS and BLE scanning intentionally stay off the render/WebServer core.
@@ -565,11 +586,46 @@ const uint8_t DEFAULT_BRIGHTNESS_PERCENT = 75;
 // display writes on every loop() iteration. Widened from 16ms to reduce how often the
 // bus switches devices per second; still comfortably responsive for a slider drag (30Hz).
 const uint32_t TOUCH_POLL_INTERVAL_MS = 32;
-// Open the receiver brightness controls with two completed taps anywhere on the
-// dashboard. A minimum release-to-release gap rejects resistive-panel contact
-// bounce; the generous upper bound is easier to use than the old 48x40 corner target.
-const uint32_t TOUCH_DOUBLE_TAP_MIN_GAP_MS = 120;
-const uint32_t TOUCH_DOUBLE_TAP_WINDOW_MS = 650;
+// 2026-08-30 gesture redesign: open the receiver brightness controls with a long-press
+// (hold, no lift) anywhere on the dashboard, replacing the old double-tap-anywhere gesture.
+// The double-tap version required this resistive panel to reliably tell "two clean release
+// events" apart from ordinary contact bounce, which it did not do well in practice (field
+// report: it mostly just registered as a single tap on whatever plant card it landed on).
+// A long-press only needs "is a contact still present", which this hardware handles far
+// more reliably - no second-touch coordination, no bounce-as-second-tap risk. This also
+// lets a genuine short tap on a plant card act immediately (see handleTouchInput()) instead
+// of every tap being deferred for up to 650ms (the old double-tap window) to see if a second
+// one followed - that mandatory wait, with no tap-feedback on screen, was the leading suspect
+// for taps "freezing" rather than opening a card's diagnostic view.
+const uint32_t TOUCH_LONG_PRESS_MS = 550;
+// 2026-08-30, same-day follow-up: a raw touch-up sample is not immediately trusted as a real
+// release - handleTouchInput() requires it to hold for this long first. Removing the old
+// double-tap design's 650ms deferral (above) made ordinary taps instant, but that deferral
+// had also been absorbing resistive-panel contact bounce as a side effect the whole time -
+// this codebase's own prior comment on the removed TOUCH_DOUBLE_TAP_MIN_GAP_MS said bounce on
+// this exact panel can span up to ~120ms between release events. Without an equivalent
+// safeguard, a single physical tap could fire the tap/collapse action 2-3 times in rapid
+// succession, corrupting the expand/collapse sequence (confirmed field symptom: a card stuck
+// half-drawn, or a tap silently toggling back to its prior state). 160ms = the ~120ms bounce
+// ceiling plus one TOUCH_POLL_INTERVAL_MS (32ms) of polling-phase margin, rounded up - still
+// far below the old 650ms, so a genuine tap still feels immediate.
+const uint32_t TOUCH_RELEASE_STABLE_MS = 160;
+// 2026-08-30 IRQ-primary redesign, phone-a-friend consultation "display-touch-corruption-
+// 2026-08-30": confirmed by isolation test (touch SPI fully disabled -> zero card-art
+// corruption over an extended watch) that touch SPI transactions during active gestures, not
+// idle polling, are the actual corruption trigger. The gesture logic above (long-press hold +
+// release-stability) was correct in shape but implemented by re-calling touchScreen.touched()
+// every TOUCH_POLL_INTERVAL_MS the whole time a finger was down or just lifted - a plain tap
+// cost 5-20+ SPI transactions clustered right around the TFT writes that follow. handleTouchInput
+// now treats the T_IRQ GPIO level (free, no SPI) as the primary down/up signal and only spends a
+// real SPI transaction (touchScreen.getPoint()) when coordinates are actually needed: once per
+// gesture at the confirmed initial press, and repeatedly only while actively dragging the
+// brightness slider. This constant is the settle window enforced after every such SPI read,
+// on both the down and release side, before trusting the T_IRQ level again - XPT2046's PENIRQ
+// can glitch/deassert during and immediately after a conversion (this is documented ADC
+// behavior, not a hardware fault), so a release must never be evaluated from a GPIO sample
+// taken inside this window. Value = TOUCH_POLL_INTERVAL_MS (one full poll's worth of margin).
+const uint32_t TOUCH_POST_SPI_BLACKOUT_MS = 32;
 const int TOUCH_TARGET_MARGIN = 48;
 // Arduino_GFX defaults an ESP32 SPI bus to 40MHz. That was fine when the ST7796S was the
 // only device on the bus; now XPT2046 is electrically tapped onto the same SCK/MOSI traces
@@ -822,6 +878,15 @@ struct PlantArtSlot
   bool lastMoistureCalibrated = false;
   uint16_t lastMoistureColor = 0;
   uint8_t lastBatteryPct = 0;
+  // MSV3-only, nullable - a probe without board-temp diagnostics (every MSV2 sensor, or an
+  // MSV3 still on pre-diagnostics firmware) never sets boardTempValid, so this row simply
+  // never appears for those cards. lastBoardTempInitialized is separate from
+  // metricsInitialized so a probe whose validity flips (diagnostics firmware flashed mid-
+  // session) is picked up as a real change rather than staying stuck on whatever the first
+  // draw happened to see.
+  bool lastBoardTempInitialized = false;
+  bool lastBoardTempValid = false;
+  int16_t lastBoardTempQuarterC = 0;
   // Last-drawn state for drawPlantCardDetailDataOnly()'s diagnostic rows - same "only
   // repaint what changed" principle as the fields above, see seedDetailCache() and the
   // display-surgical-redraw skill. Formatted text is cached (not raw values) so the
@@ -839,6 +904,10 @@ struct PlantArtSlot
   bool lastDetailRangeTrendWarn = false;
   char lastDetailRawText[16] = "";
   bool lastDetailCharging = false;
+  // See DETAIL_FULL_RESYNC_MS's own comment - set whenever this slot's detail view is
+  // (re)opened, checked by renderDashboardDataOnly() to periodically force a full (not
+  // data-only) redraw as a self-healing backstop against a stuck partial repaint.
+  uint32_t nextDetailFullResyncMs = 0;
 };
 
 // All the formatted text/colors the detail view needs, computed once and shared by both
@@ -909,6 +978,7 @@ uint8_t artSlotCount = 0;
 // (after the struct exists) or the sketch fails with "'DashboardGrid' does not name a type".
 DashboardGrid gridForCardCount(size_t count);
 void drawPlantCardDataOnly(PlantArtSlot& slot);
+void restoreCardsFromCache();
 void drawPlantCardDetail(PlantArtSlot& slot);
 void drawPlantCardDetailDataOnly(PlantArtSlot& slot);
 void expandPlantCardInPlace(PlantArtSlot& slot);
@@ -1009,6 +1079,17 @@ bool isAdminActionAllowed()
   adminUnlockUntilMs = now + ADMIN_GRACE_WINDOW_MS;
   return true;
 }
+// 2026-08-29/30: shared across all five cloud network functions below (bootstrap, config
+// pull, display-settings pull, auto-cal pull, snapshot upload) instead of each declaring its
+// own local pair. Root-caused two live "panic/exception" reboots: WiFiClientSecure's mbedTLS
+// session buffers (~30-40KB, contiguous) were being allocated and freed fresh on every single
+// call across five independent call sites, constantly interleaved with unrelated JSON/String
+// allocations from other tasks - real heap fragmentation, not a leak (min free heap recorded
+// at 8,340 bytes; largest contiguous block already 45% smaller than total free heap only ~4.5
+// minutes into a fresh boot). Safe to share: all five functions only ever run sequentially on
+// cloudSyncTask's single task/loop (see that function below), never concurrently.
+WiFiClientSecure cloudSecureClient;
+WiFiClient cloudPlainClient;
 bool cloudEnabled = false;
 char cloudUploadUrl[160] = "";
 char cloudApiToken[80] = "";
@@ -1055,10 +1136,81 @@ bool touchWakeOnlyThisGesture = false;
 int16_t lastTouchX = -1;
 int16_t lastTouchY = -1;
 uint32_t lastTouchPollMs = 0;
-uint32_t lastDashboardTapMs = 0;
-int16_t pendingSingleTapX = -1;
-int16_t pendingSingleTapY = -1;
-bool singleTapPending = false;
+// 2026-08-30 gesture redesign - see TOUCH_LONG_PRESS_MS's own comment. touchDownStartMs marks
+// when the CURRENT contact began (reset on every new touch-down); longPressFired latches once
+// the long-press action has fired for this contact, so it can't also fire the ordinary tap
+// action on release, and can't fire more than once while still held.
+uint32_t touchDownStartMs = 0;
+bool longPressFired = false;
+// 2026-08-30, same-day follow-up: a raw "not touched" sample on release is not trusted until
+// it holds for TOUCH_RELEASE_STABLE_MS - see that constant's own comment for why (contact
+// bounce on this resistive panel can otherwise fire the tap/collapse action 2-3 times for one
+// physical press once the old 650ms deferral, which absorbed this for free, was removed).
+uint32_t releaseCandidateSinceMs = 0;
+bool releaseCandidatePending = false;
+// 2026-08-30 IRQ-primary redesign - see TOUCH_POST_SPI_BLACKOUT_MS's comment. touchPendingConfirm
+// is true for the single poll between "T_IRQ just read LOW" and "spent this gesture's one SPI
+// read" - lets touchDownStartMs (above) start ticking from the very first LOW sample while still
+// deferring the actual touchScreen.getPoint() call by one poll interval, so it isn't taken on a
+// poorly-settled first-contact sample. lastTouchSpiMs is the timestamp of the most recent real
+// SPI transaction (initial press or a drag sample) - both the down and release sides of
+// handleTouchInput() check against it before trusting a fresh T_IRQ read.
+bool touchPendingConfirm = false;
+uint32_t lastTouchSpiMs = 0;
+// 2026-08-30 bidirectional bus-turnaround guard, phone-a-friend consultation
+// "display-touch-corruption-2026-08-30": the IRQ-primary redesign above cut a plain tap to
+// exactly one touch SPI transaction, which reduced (but per the user's field report, did not
+// eliminate - roughly 1/10 taps) the card-art corruption. TOUCH_POST_SPI_BLACKOUT_MS only ever
+// protected touch's own recent SPI activity; it said nothing about how recently the DISPLAY side
+// had written something, and drawPlantSpriteComposited()/renderDashboardDataOnly() keep writing
+// on their own independent cadence regardless of touch state. touchAcquisitionPending, set the
+// moment T_IRQ first reads LOW, tells loop() to skip its three periodic display-writing calls
+// (renderDashboardDataOnly/renderAnimatedPlantArt/renderUi) so the gesture's one unavoidable
+// coordinate read never lands immediately adjacent to an unrelated TFT burst - see
+// handleTouchInput()'s use of it and loop()'s three gated call sites. lastDisplaySpiActivityMs is
+// stamped by loop() right after each of those calls runs, so handleTouchInput() can require
+// quiet on both sides (not just its own) before spending the read. Does not gate the brightness
+// slider's drag-mode reads - loop() already skips all three periodic calls unconditionally while
+// brightnessOverlayOpen is true, so no unrelated display traffic can occur during a drag anyway.
+volatile bool touchAcquisitionPending = false;
+volatile uint32_t lastDisplaySpiActivityMs = 0;
+// Set true the instant a long-press opens the overlay; blocks that SAME held contact from
+// also being read as a slider-drag on the panel that just appeared under it. Reset on the
+// next fresh touch-down.
+bool overlayOpenedThisGesture = false;
+// 2026-08-30 latched-target fix, phone-a-friend consultation "display-touch-corruption-
+// 2026-08-30": field-reported twice - rapid-mashing the brightness "-" button could close the
+// overlay instead of decrementing. Root cause (per that consultation): TOUCH_RELEASE_STABLE_MS
+// merges any re-press arriving within 160ms of a lift into the SAME ongoing gesture (needed to
+// absorb this panel's own documented ~120ms release bounce - see that constant's comment), so
+// mashing faster than that never actually completes a release until the user stops entirely.
+// While merged, the old code kept re-sampling touch coordinates every poll and overwriting
+// lastTouchX/lastTouchY unconditionally (even while sitting on a button, not dragging) - normal
+// touch jitter across many rapid re-samples could drift that cached position outside the
+// minus button's hitbox (only 4px inset from the modal's own left edge) by the time the merged
+// gesture finally released, misfiring the release handler's outside-tap-closes catch-all.
+// overlayTouchTarget is classified exactly ONCE, from the gesture's single confirmed press
+// coordinate (see touchPendingConfirm's use of it), and never reclassified from a later,
+// possibly-drifted sample - the release handler dispatches on this latched target instead of
+// re-deriving one from lastTouchX/lastTouchY.
+enum class OverlayTouchTarget : uint8_t { None, Minus, Plus, Slider, Screen, Sound, Close };
+OverlayTouchTarget overlayTouchTarget = OverlayTouchTarget::None;
+// 2026-08-30 ISOLATION TEST, phone-a-friend consultation "display-touch-corruption-2026-08-30":
+// DisplayCenter/docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md's "Not yet tried" section
+// flagged this as the highest-value untried diagnostic and it was never actually run before two
+// more rounds of gesture-timing fixes (which only changed touch SPI traffic volume, not whether
+// touch SPI traffic is the actual trigger). When true, handleTouchInput() returns before ever
+// calling touchScreen.touched()/getPoint() - zero XPT2046 SPI transactions during a touch
+// gesture, not just idle-suppressed ones. Taps/holds do nothing while this is true; that is the
+// point of the test. touchSpiTransactionCount (exposed on /device) must stay at 0 for the whole
+// test run - if it doesn't, something outside handleTouchInput() is also calling the touch
+// driver and the isolation is not clean. Revert to false once the test is complete either way.
+// RESULT (2026-08-30): isolation test confirmed - zero touch SPI traffic, zero card-art
+// corruption over an extended watch. Flipped back to false now that handleTouchInput() has
+// been redesigned (see TOUCH_POST_SPI_BLACKOUT_MS) to minimize real touch SPI transactions
+// instead of eliminating them outright.
+const bool TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL = false;
+volatile uint32_t touchSpiTransactionCount = 0;
 int8_t expandedCardSlot = -1; // artSlots[] index rendered as the tap-to-expand detail view, -1 = none
 uint32_t nextCloudDisplaySyncMs = 0;
 uint32_t cloudDisplayLastAttemptMs = 0;
@@ -2672,9 +2824,9 @@ bool pointInside(int16_t x, int16_t y, int left, int top, int width, int height)
   return x >= left && x < left + width && y >= top && y < top + height;
 }
 
-// A confirmed single tap (see resolvePendingDashboardTap()) either closes the currently
-// expanded detail card (tapping anywhere while one is open) or, if none is open, expands
-// whichever plant card the tap landed on. Mirrors the brightness overlay's "no hidden
+// A tap, acted on immediately at release (see handleTouchInput()) - either closes the
+// currently expanded detail card (tapping anywhere while one is open) or, if none is open,
+// expands whichever plant card the tap landed on. Mirrors the brightness overlay's "no hidden
 // control activates unless dashboardControlsAllowed" guard.
 void handleDashboardSingleTap(int16_t x, int16_t y)
 {
@@ -2720,7 +2872,16 @@ void drawBrightnessSliderRow(uint8_t brightness, bool screenOn)
 
   char value[16];
   snprintf(value, sizeof(value), "%u%%", brightness);
-  drawTextRight(value, panelX + panelW - 16, panelY + 16, 2, screenOn ? TFT_ACCENT : TFT_MUTED, TFT_SURFACE);
+  // Fixed width covers the longest possible value ("100%"), so dragging from a wider value
+  // (e.g. "100%") down to a narrower one (e.g. "9%") can't leave the old leading digit(s)
+  // behind - drawTextRight()/tft.print() only clears each glyph cell it actually draws, and
+  // right-aligned text shifts its start position right as the string shrinks, exposing
+  // whatever was left of that start point. Without this, the old "1" (or "10") from "100%"
+  // stayed on screen next to the new value, reading like the brightness had gone over 100%.
+  const int valueRightX = panelX + panelW - 16;
+  const int valueMaxWidth = textPixelWidth("100%", 2);
+  tft.fillRect(valueRightX - valueMaxWidth, panelY + 16, valueMaxWidth, 16, TFT_SURFACE);
+  drawTextRight(value, valueRightX, panelY + 16, 2, screenOn ? TFT_ACCENT : TFT_MUTED, TFT_SURFACE);
 
   // Erase wide enough to cover the knob's full travel range (11px radius) at both ends,
   // but clamped so it can never paint over the +/- buttons sitting right next to the
@@ -2738,6 +2899,39 @@ void drawBrightnessSliderRow(uint8_t brightness, bool screenOn)
   tft.fillRoundRect(sliderX, sliderY, fillW, 16, 8, screenOn ? TFT_ACCENT : TFT_MUTED);
   int knobX = sliderX + sliderW * brightness / 100;
   tft.fillCircle(knobX, sliderY + 8, 11, TFT_WHITE);
+}
+
+// Redraws only the "Screen on/off" button - not the rest of the modal. Mirrors
+// drawBrightnessSliderRow()'s split: drawBrightnessOverlay() calls this once for the initial
+// paint, handleTouchInput()'s screen-button release handler calls it after toggling instead of
+// repainting the whole panel.
+void drawBrightnessScreenButtonRow(bool screenOn)
+{
+  const int panelX = 34;
+  const int panelY = 54;
+  const int panelH = tft.height() - panelY - 24;
+  // Button text is size 1 (8px glyph height) in a 34px-tall button, so the vertical offset
+  // that centers it is (34 - 8) / 2 = 13, not 9 - the old value sat visibly high.
+  const int buttonY = panelY + panelH - 50;
+  tft.fillRoundRect(panelX + 16, buttonY, 112, 34, 6, screenOn ? TFT_WARNING : TFT_ACCENT);
+  drawTextCenter(screenOn ? "Screen off" : "Screen on", panelX + 72, buttonY + 13, 1, TFT_BLACK, screenOn ? TFT_WARNING : TFT_ACCENT);
+}
+
+// Redraws only the "Sound on/off" button - see drawBrightnessScreenButtonRow()'s comment,
+// same split for the same reason.
+void drawBrightnessSoundButtonRow(bool soundOn)
+{
+  const int panelX = 34;
+  const int panelY = 54;
+  const int panelW = tft.width() - panelX * 2;
+  const int panelH = tft.height() - panelY - 24;
+  const int buttonY = panelY + panelH - 50;
+  // Centered in the gap between the screen and close buttons - same tap-target-describes-
+  // action convention as the screen button (label names what tapping it will do).
+  const int soundButtonW = 110;
+  const int soundButtonX = panelX + (panelW - soundButtonW) / 2;
+  tft.fillRoundRect(soundButtonX, buttonY, soundButtonW, 34, 6, soundOn ? TFT_WARNING : TFT_ACCENT);
+  drawTextCenter(soundOn ? "Sound off" : "Sound on", soundButtonX + soundButtonW / 2, buttonY + 13, 1, TFT_BLACK, soundOn ? TFT_WARNING : TFT_ACCENT);
 }
 
 void drawBrightnessOverlay()
@@ -2765,17 +2959,9 @@ void drawBrightnessOverlay()
   tft.fillRoundRect(panelX + panelW - 50, sliderY - 8, 38, 34, 6, TFT_SURFACE_2);
   drawTextCenter("+", panelX + panelW - 31, sliderY, 2, TFT_WHITE, TFT_SURFACE_2);
 
-  // Button text is size 1 (8px glyph height) in a 34px-tall button, so the vertical
-  // offset that centers it is (34 - 8) / 2 = 13, not 9 - the old value sat visibly high.
   const int buttonY = panelY + panelH - 50;
-  tft.fillRoundRect(panelX + 16, buttonY, 112, 34, 6, screenOn ? TFT_WARNING : TFT_ACCENT);
-  drawTextCenter(screenOn ? "Screen off" : "Screen on", panelX + 72, buttonY + 13, 1, TFT_BLACK, screenOn ? TFT_WARNING : TFT_ACCENT);
-  // Centered in the gap between the screen and close buttons - same tap-target-describes-
-  // action convention as the screen button above (label names what tapping it will do).
-  const int soundButtonW = 110;
-  const int soundButtonX = panelX + (panelW - soundButtonW) / 2;
-  tft.fillRoundRect(soundButtonX, buttonY, soundButtonW, 34, 6, soundEnabled ? TFT_WARNING : TFT_ACCENT);
-  drawTextCenter(soundEnabled ? "Sound off" : "Sound on", soundButtonX + soundButtonW / 2, buttonY + 13, 1, TFT_BLACK, soundEnabled ? TFT_WARNING : TFT_ACCENT);
+  drawBrightnessScreenButtonRow(screenOn);
+  drawBrightnessSoundButtonRow(soundEnabled);
   tft.fillRoundRect(panelX + panelW - 104, buttonY, 88, 34, 6, TFT_SURFACE_2);
   drawTextCenter("Close", panelX + panelW - 60, buttonY + 13, 1, TFT_MUTED, TFT_SURFACE_2);
 }
@@ -2796,6 +2982,26 @@ void previewTouchBrightness(int16_t x)
   drawBrightnessSliderRow(brightness, true);
 }
 
+// 2026-08-30 gesture redesign - see TOUCH_LONG_PRESS_MS's own comment for why long-press
+// replaced double-tap-anywhere. Dashboard-wide, same reachability guard as the tap-to-expand
+// path below; only opens the overlay (closing it is already handled entirely by the existing
+// button/outside-tap release logic further down, unchanged).
+void handleDashboardLongPress()
+{
+#if MSV2_ENABLE_WIFI
+  if (wifiSetupPortalActive || pendingRestartMs != 0)
+  {
+    return;
+  }
+#endif
+  if (brightnessOverlayOpen)
+  {
+    return;
+  }
+  brightnessOverlayOpen = true;
+  drawBrightnessOverlay();
+}
+
 void handleTouchInput(uint32_t now)
 {
   if (!touchReady || now - lastTouchPollMs < TOUCH_POLL_INTERVAL_MS)
@@ -2804,130 +3010,256 @@ void handleTouchInput(uint32_t now)
   }
   lastTouchPollMs = now;
 
-  // T_IRQ is active-low and can be sampled without touching the shared SPI bus.
-  // In polling mode touchScreen.touched() always performs an XPT2046 transaction,
-  // even while the panel is idle. On affected ST7796 modules those command bytes can
-  // leak into the TFT's last address window; the composited sprite renderer leaves
-  // that window on the bottom art row at x + 7, which is exactly where the two red
-  // pixels above "Moist" appeared on every card. Avoid all idle touch transactions,
-  // but keep polling once a gesture has started so its release is still detected.
-  if (!touchWasDown && digitalRead(TOUCH_IRQ) == HIGH)
+  if (TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL)
   {
+    // See TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL's comment - deliberately returns before the T_IRQ
+    // read below is even reached, so this whole function is a no-op for the isolation test.
     return;
   }
 
-  bool down = touchScreen.touched();
-  if (down)
+  // T_IRQ is active-low and can be sampled without touching the shared SPI bus at all - see
+  // TOUCH_POST_SPI_BLACKOUT_MS's comment for why this is now the primary down/up signal instead
+  // of repeatedly calling touchScreen.touched()/getPoint() (each a real XPT2046 SPI transaction).
+  const bool irqLow = digitalRead(TOUCH_IRQ) == LOW;
+  const bool inPostSpiBlackout = now - lastTouchSpiMs < TOUCH_POST_SPI_BLACKOUT_MS;
+
+  // Once the read that touchAcquisitionPending was deferring writes for has actually
+  // happened (touchPendingConfirm cleared) and its own post-read guard has elapsed, resume
+  // letting loop() write to the display again.
+  if (touchAcquisitionPending && !touchPendingConfirm && !inPostSpiBlackout)
   {
+    touchAcquisitionPending = false;
+  }
+
+  if (!touchWasDown && !touchPendingConfirm)
+  {
+    // Fully idle: watch T_IRQ only, zero SPI transactions.
+    releaseCandidatePending = false;
+    if (irqLow)
+    {
+      touchPendingConfirm = true;
+      touchDownStartMs = now;
+      // Start deferring loop()'s periodic display writes immediately - see
+      // touchAcquisitionPending's comment. Better to hold off a card's animation tick for a
+      // few ms than let it land right next to the coordinate read this gesture is about to need.
+      touchAcquisitionPending = true;
+    }
+    return;
+  }
+
+  if (touchPendingConfirm)
+  {
+    if (!irqLow)
+    {
+      // Released/bounced before a confirmed sample was ever taken - noise, not a gesture.
+      touchPendingConfirm = false;
+      touchAcquisitionPending = false;
+      return;
+    }
+
+    // Held LOW for one full poll interval - ready to spend this gesture's one SPI read, but
+    // only once BOTH sides of the bus have been quiet for a full blackout window. Guards
+    // against touch's own recent activity (inPostSpiBlackout) as well as the display's -
+    // loop() has been deferring its writes since touchAcquisitionPending went true above, so
+    // this is really just waiting for whatever write was already in flight/scheduled before
+    // this gesture started to have finished settling.
+    if (inPostSpiBlackout || now - lastDisplaySpiActivityMs < TOUCH_POST_SPI_BLACKOUT_MS)
+    {
+      return;
+    }
+
+    // Both sides confirmed quiet - explicitly force both CS lines high before this
+    // transaction so neither controller can still be mid-address-window from whatever it was
+    // last doing, then take the one read on a settled sample rather than the raw first-contact
+    // edge.
+    digitalWrite(TFT_CS, HIGH);
+    digitalWrite(TOUCH_CS, HIGH);
+    lastTouchSpiMs = now;
+    touchSpiTransactionCount++;
     TS_Point point = touchScreen.getPoint();
     int16_t x = -1;
     int16_t y = -1;
     if (!mapRawTouchToScreen(point.x, point.y, x, y))
     {
+      // Bad sample while still genuinely held down (irqLow just confirmed it) - retry next
+      // poll without resetting touchDownStartMs, so one noisy reading can't cost a real
+      // long-press its timing. touchAcquisitionPending stays true so display writes remain
+      // deferred for the retry too.
       return;
     }
+
+    touchPendingConfirm = false;
+    touchWasDown = true;
+    touchGestureChangedBrightness = false;
+    touchWakeOnlyThisGesture = false;
+    longPressFired = false;
+    overlayOpenedThisGesture = false;
+    releaseCandidatePending = false;
+    overlayTouchTarget = OverlayTouchTarget::None;
     lastTouchX = x;
     lastTouchY = y;
 
-    if (!touchWasDown)
+    bool screenOn;
+    uint8_t brightness;
+    portENTER_CRITICAL(&displaySettingsMux);
+    screenOn = displaySettings.screenOn;
+    brightness = displaySettings.brightnessPercent;
+    portEXIT_CRITICAL(&displaySettingsMux);
+    if (!screenOn)
     {
-      touchGestureChangedBrightness = false;
-      touchWakeOnlyThisGesture = false;
-      bool screenOn;
-      uint8_t brightness;
-      portENTER_CRITICAL(&displaySettingsMux);
-      screenOn = displaySettings.screenOn;
-      brightness = displaySettings.brightnessPercent;
-      portEXIT_CRITICAL(&displaySettingsMux);
-      if (!screenOn)
-      {
-        setDisplaySettingsLocal(brightness, true, "receiver-touch");
-        displayDirty = true;
-        lastDashboardTapMs = 0;
-        touchWakeOnlyThisGesture = true;
-        touchWasDown = true;
-        return; // Wake-only first touch; never activate a hidden control.
-      }
+      setDisplaySettingsLocal(brightness, true, "receiver-touch");
+      displayDirty = true;
+      touchWakeOnlyThisGesture = true;
+      return; // Wake-only first touch; never activate a hidden control.
     }
 
     if (brightnessOverlayOpen)
     {
+      // Classified exactly once, from this gesture's one confirmed press coordinate - see
+      // overlayTouchTarget's own comment for why this must never be redone from a later
+      // sample. Geometry matches the release handler's own hit-tests further down exactly.
       const int panelX = 34;
       const int panelY = 54;
       const int panelW = tft.width() - panelX * 2;
+      const int panelH = tft.height() - panelY - 24;
       const int sliderX = panelX + 58;
       const int sliderY = panelY + 82;
       const int sliderW = panelW - 116;
-      // The drag-preview hit box used to overlap the +/- buttons' own hit boxes (below,
-      // and in the release handler) by ~10px on their slider-facing edge. Any touch
-      // sample landing in that sliver during a normal button tap latched
-      // touchGestureChangedBrightness, which makes the release handler skip button
-      // detection entirely and just commit whatever extreme value that x position
-      // mapped to - the button appeared to always jump brightness to 100% or 1%
-      // instead of stepping by 10. Excluding the exact same button boxes used at
-      // release time makes the two hit-tests mutually exclusive by construction.
-      bool onMinusButton = pointInside(x, y, panelX + 4, sliderY - 14, 52, 48);
-      bool onPlusButton = pointInside(x, y, panelX + panelW - 56, sliderY - 14, 52, 48);
-      if (!onMinusButton && !onPlusButton && pointInside(x, y, sliderX - 12, sliderY - 20, sliderW + 24, 56))
+      const int buttonY = panelY + panelH - 50;
+      if (pointInside(x, y, panelX + 4, sliderY - 14, 52, 48))
       {
-        previewTouchBrightness(x);
+        overlayTouchTarget = OverlayTouchTarget::Minus;
       }
+      else if (pointInside(x, y, panelX + panelW - 56, sliderY - 14, 52, 48))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Plus;
+      }
+      else if (pointInside(x, y, sliderX - 12, sliderY - 20, sliderW + 24, 56))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Slider;
+        previewTouchBrightness(x);
+        lastDisplaySpiActivityMs = now;
+      }
+      else if (pointInside(x, y, panelX + 8, buttonY - 6, 128, 46))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Screen;
+      }
+      else if (pointInside(x, y, panelX + (panelW - 110) / 2 - 4, buttonY - 6, 118, 46))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Sound;
+      }
+      else if (pointInside(x, y, panelX + panelW - 112, buttonY - 6, 104, 46) || !pointInside(x, y, panelX, panelY, panelW, panelH))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Close;
+      }
+      // else: dead space inside the panel - stays None, a no-op at release, matching the
+      // pre-existing behavior of a tap that hit none of the known controls.
     }
-    touchWasDown = true;
     return;
   }
 
-  if (!touchWasDown)
+  // touchWasDown == true: an already-confirmed, active gesture.
+  if (irqLow)
   {
-    return;
-  }
-  touchWasDown = false;
+    // Still held. Cancel any release candidate in progress without resetting
+    // touchDownStartMs - see TOUCH_RELEASE_STABLE_MS's comment. No SPI transaction here at
+    // all unless the brightness slider is actively being dragged (below) - this is the whole
+    // point of the redesign: a plain tap or long-press spends zero further SPI time while held.
+    releaseCandidatePending = false;
 
-  if (!brightnessOverlayOpen)
-  {
-    if (touchWakeOnlyThisGesture)
+    if (!touchWakeOnlyThisGesture && !longPressFired && now - touchDownStartMs >= TOUCH_LONG_PRESS_MS)
     {
-      touchWakeOnlyThisGesture = false;
-      lastDashboardTapMs = 0;
-      singleTapPending = false;
+      // Fires once, mid-hold - see longPressFired's own comment. The release handler below
+      // checks longPressFired and does nothing further for this contact either way, so
+      // wherever the finger happens to lift (including right over a button that didn't
+      // exist a moment ago) can't also act on it. overlayOpenedThisGesture additionally stops
+      // the SAME held contact from being read as a slider-drag on the panel that just
+      // appeared under it, on the very next poll while still held. Pure timestamp check - no
+      // SPI transaction needed to fire a long-press.
+      longPressFired = true;
+      handleDashboardLongPress();
+      lastDisplaySpiActivityMs = now;
+      if (brightnessOverlayOpen)
+      {
+        overlayOpenedThisGesture = true;
+      }
       return;
     }
 
+    // Live slider drag is the one case that legitimately needs continuous coordinates while
+    // held - gated on the LATCHED target (see overlayTouchTarget's comment), not a fresh
+    // per-poll hit-test, so a gesture that started on a button can never be reclassified as a
+    // drag just because a later, jittery sample happens to land inside the slider region.
+    // Naturally rate-limited to TOUCH_POLL_INTERVAL_MS by the top-of-function gate, and
+    // additionally skipped inside the post-SPI blackout so a just-finished conversion has time
+    // to settle before the next one starts.
+    if (overlayTouchTarget == OverlayTouchTarget::Slider && !touchWakeOnlyThisGesture && !inPostSpiBlackout)
+    {
+      lastTouchSpiMs = now;
+      touchSpiTransactionCount++;
+      TS_Point point = touchScreen.getPoint();
+      int16_t x = -1;
+      int16_t y = -1;
+      if (mapRawTouchToScreen(point.x, point.y, x, y))
+      {
+        lastTouchX = x;
+        lastTouchY = y;
+        previewTouchBrightness(x);
+        lastDisplaySpiActivityMs = now;
+      }
+    }
+    return;
+  }
+
+  // irqLow == false: potential release. Never even start qualifying it inside the post-SPI
+  // blackout window - a conversion that just finished (initial press or a drag sample) can
+  // leave PENIRQ glitched/deasserted for a moment, which would otherwise look like a release.
+  if (inPostSpiBlackout)
+  {
+    return;
+  }
+
+  // Qualify the release before acting on it - require TOUCH_RELEASE_STABLE_MS of continuous
+  // "T_IRQ high" first. See that constant's own comment for why (contact bounce on this
+  // resistive panel can otherwise fire the tap/collapse action 2-3 times for one physical
+  // press). This is now a pure GPIO+timestamp debounce - no SPI transaction involved at all.
+  if (!releaseCandidatePending)
+  {
+    releaseCandidatePending = true;
+    releaseCandidateSinceMs = now;
+    return;
+  }
+  if (now - releaseCandidateSinceMs < TOUCH_RELEASE_STABLE_MS)
+  {
+    return;
+  }
+  releaseCandidatePending = false;
+  touchWasDown = false;
+
+  if (touchWakeOnlyThisGesture)
+  {
+    touchWakeOnlyThisGesture = false;
+    return;
+  }
+
+  if (longPressFired)
+  {
+    return;
+  }
+
+  if (!brightnessOverlayOpen)
+  {
     bool dashboardControlsAllowed = true;
 #if MSV2_ENABLE_WIFI
     dashboardControlsAllowed = !wifiSetupPortalActive && pendingRestartMs == 0;
 #endif
-    if (!dashboardControlsAllowed)
+    if (dashboardControlsAllowed)
     {
-      lastDashboardTapMs = 0;
-      singleTapPending = false;
-      return;
-    }
-
-    const uint32_t tapGapMs = now - lastDashboardTapMs;
-    if (lastDashboardTapMs != 0 &&
-        tapGapMs >= TOUCH_DOUBLE_TAP_MIN_GAP_MS &&
-        tapGapMs <= TOUCH_DOUBLE_TAP_WINDOW_MS)
-    {
-      lastDashboardTapMs = 0;
-      singleTapPending = false;
-      brightnessOverlayOpen = true;
-      drawBrightnessOverlay();
-      return;
-    }
-
-    // A contact bounce is too close to be a deliberate second tap. Keep the
-    // original timestamp so the user's real second tap can still complete it.
-    if (lastDashboardTapMs == 0 || tapGapMs > TOUCH_DOUBLE_TAP_WINDOW_MS)
-    {
-      lastDashboardTapMs = now;
-      // Resolved later in loop() by resolvePendingDashboardTap() once the double-tap
-      // window passes with no second tap. Stashed here rather than re-read from
-      // lastTouchX/lastTouchY at resolve time, because a new gesture starting before
-      // the window elapses overwrites those before this one would be resolved.
-      pendingSingleTapX = lastTouchX;
-      pendingSingleTapY = lastTouchY;
-      singleTapPending = true;
+      // Immediate, no deferral - the old design queued every tap for up to 650ms to see
+      // whether a second one followed. With that gesture gone (long-press owns the overlay
+      // now), a plain tap can just act on release.
+      handleDashboardSingleTap(lastTouchX, lastTouchY);
+      lastDisplaySpiActivityMs = now;
     }
     return;
   }
@@ -2939,15 +3271,12 @@ void handleTouchInput(uint32_t now)
     brightness = displaySettings.brightnessPercent;
     portEXIT_CRITICAL(&displaySettingsMux);
     setDisplaySettingsLocal(brightness, true, "receiver-touch");
-    drawBrightnessOverlay();
+    // Only the value/slider changed - see drawBrightnessSliderRow()'s own comment for why a
+    // full-panel repaint here is exactly the flashing anti-pattern it exists to avoid.
+    drawBrightnessSliderRow(brightness, true);
+    lastDisplaySpiActivityMs = now;
     return;
   }
-  const int panelX = 34;
-  const int panelY = 54;
-  const int panelW = tft.width() - panelX * 2;
-  const int panelH = tft.height() - panelY - 24;
-  const int sliderY = panelY + 82;
-  const int buttonY = panelY + panelH - 50;
   uint8_t brightness;
   bool screenOn;
   portENTER_CRITICAL(&displaySettingsMux);
@@ -2955,52 +3284,72 @@ void handleTouchInput(uint32_t now)
   screenOn = displaySettings.screenOn;
   portEXIT_CRITICAL(&displaySettingsMux);
 
-  if (pointInside(lastTouchX, lastTouchY, panelX + 4, sliderY - 14, 52, 48))
+  // Dispatch on the target LATCHED at this gesture's one confirmed press (see
+  // overlayTouchTarget's own comment) - never re-derived from lastTouchX/lastTouchY here.
+  // Re-deriving from the current (possibly-drifted, or merged-gesture-stale) coordinate was
+  // the actual bug: a button-origin gesture could resolve here as "outside the panel" and
+  // close the overlay instead of acting on the button the user was still on.
+  switch (overlayTouchTarget)
   {
-    setDisplaySettingsLocal((uint8_t)max(1, (int)brightness - 10), true, "receiver-touch");
-    drawBrightnessOverlay();
-  }
-  else if (pointInside(lastTouchX, lastTouchY, panelX + panelW - 56, sliderY - 14, 52, 48))
-  {
-    setDisplaySettingsLocal((uint8_t)min(100, (int)brightness + 10), true, "receiver-touch");
-    drawBrightnessOverlay();
-  }
-  else if (pointInside(lastTouchX, lastTouchY, panelX + 8, buttonY - 6, 128, 46))
-  {
-    setDisplaySettingsLocal(brightness, !screenOn, "receiver-touch");
-    if (!screenOn)
+    case OverlayTouchTarget::Minus:
     {
-      drawBrightnessOverlay();
+      // Only the slider row changed - see drawBrightnessSliderRow()'s comment.
+      uint8_t newBrightness = (uint8_t)max(1, (int)brightness - 10);
+      setDisplaySettingsLocal(newBrightness, true, "receiver-touch");
+      drawBrightnessSliderRow(newBrightness, true);
+      lastDisplaySpiActivityMs = now;
+      break;
     }
+    case OverlayTouchTarget::Plus:
+    {
+      uint8_t newBrightness = (uint8_t)min(100, (int)brightness + 10);
+      setDisplaySettingsLocal(newBrightness, true, "receiver-touch");
+      drawBrightnessSliderRow(newBrightness, true);
+      lastDisplaySpiActivityMs = now;
+      break;
+    }
+    case OverlayTouchTarget::Screen:
+    {
+      bool newScreenOn = !screenOn;
+      setDisplaySettingsLocal(brightness, newScreenOn, "receiver-touch");
+      if (!screenOn)
+      {
+        // Only this button's own color/label changed - see
+        // drawBrightnessScreenButtonRow()'s comment.
+        drawBrightnessScreenButtonRow(newScreenOn);
+        lastDisplaySpiActivityMs = now;
+      }
+      break;
+    }
+    case OverlayTouchTarget::Sound:
+      setSoundEnabledLocal(!soundEnabled);
+      // Only this button's own color/label changed - see drawBrightnessSoundButtonRow()'s
+      // comment. setSoundEnabledLocal() updates the soundEnabled global synchronously, so it
+      // already reflects the new state here.
+      drawBrightnessSoundButtonRow(soundEnabled);
+      lastDisplaySpiActivityMs = now;
+      break;
+    case OverlayTouchTarget::Close:
+      brightnessOverlayOpen = false;
+      // Not displayDirty=true - that would force a full renderUi() (re-read/parse ui.json,
+      // fillScreen, redraw the header, rebuild every card) purely to erase this modal, which
+      // is exactly the "whole display refreshes"/visible flash the surgical-redraw rule
+      // exists to avoid. restoreCardsFromCache() gets the same visual result (every card's
+      // real content is back, correctly) from PlantArtSlot's own cache alone - see its
+      // comment. Also a genuinely large write burst, so tracked by lastDisplaySpiActivityMs
+      // the same as loop()'s three periodic writers.
+      restoreCardsFromCache();
+      lastDisplaySpiActivityMs = now;
+      break;
+    case OverlayTouchTarget::Slider:
+    case OverlayTouchTarget::None:
+    default:
+      // Slider: any real drag already committed via touchGestureChangedBrightness above: a
+      // release reaching here means the press landed in the slider region but never moved
+      // enough to preview a value - a no-op is the right behavior (same as before this fix).
+      // None: dead space inside the panel - always was a no-op.
+      break;
   }
-  else if (pointInside(lastTouchX, lastTouchY, panelX + (panelW - 110) / 2 - 4, buttonY - 6, 118, 46))
-  {
-    setSoundEnabledLocal(!soundEnabled);
-    drawBrightnessOverlay();
-  }
-  else if (pointInside(lastTouchX, lastTouchY, panelX + panelW - 112, buttonY - 6, 104, 46) ||
-           !pointInside(lastTouchX, lastTouchY, panelX, panelY, panelW, panelH))
-  {
-    brightnessOverlayOpen = false;
-    lastDashboardTapMs = 0;
-    displayDirty = true;
-  }
-}
-
-// A tap-up that isn't completed by a second tap within TOUCH_DOUBLE_TAP_WINDOW_MS is a
-// genuine single tap, not the first half of a double-tap gesture. Resolved here on a
-// plain elapsed-time check (called from loop() every iteration) rather than inside
-// handleTouchInput() itself, since that function only runs when the touch controller is
-// actually polled - the panel can sit idle with no finger on the glass for the whole
-// window.
-void resolvePendingDashboardTap(uint32_t now)
-{
-  if (!singleTapPending || now - lastDashboardTapMs <= TOUCH_DOUBLE_TAP_WINDOW_MS)
-  {
-    return;
-  }
-  singleTapPending = false;
-  handleDashboardSingleTap(pendingSingleTapX, pendingSingleTapY);
 }
 
 // Resolves the dry/wet bounds to actually use for a card: the self-learned
@@ -3524,6 +3873,46 @@ void drawCardBatteryHeader(int x, int y, int w, int h, uint8_t batteryPct, uint1
   drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
 }
 
+// MSV3-only board (die) temperature, quarter-degree C -> whole C for display. Raw/uncompensated
+// - see docs/MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md. Returns false (nothing to
+// draw) when the sensor never reported a valid reading, same nullable convention as the History
+// tab's own board-temp chart.
+bool formatBoardTempHeader(bool valid, int16_t tempQuarterC, char* out, size_t outSize)
+{
+  if (!valid) return false;
+  // Plain ASCII, deliberately no degree symbol - this project uses the GFX library's default
+  // built-in font (no setFont() call anywhere in this file), which does not reliably render a
+  // UTF-8 degree sign (0xC2 0xB0 came out as garbage glyphs on real hardware) or any other
+  // single-byte code point above plain printable ASCII without visually verifying that font's
+  // actual glyph table first - not worth the risk for one character.
+  snprintf(out, outSize, "Temp: %dC", (int)(tempQuarterC / 4));
+  return true;
+}
+
+// Second header line directly below Batt:, right-aligned at the same rightX. Only present for
+// MSV3 probes with board-temp diagnostics live - absent (nothing drawn, no reserved blank row)
+// for every other sensor, so this never costs vertical space on a card that can't fill it in.
+void drawCardTempHeader(int x, int y, int w, int h, bool valid, int16_t tempQuarterC, uint16_t textColor, uint16_t surfaceColor, bool clearFirst)
+{
+  const int inset = cardHeaderInset(h);
+  const int rightX = x + w - inset;
+  // One size-1 text line below the Batt: row (which sits at y+6) - 9px matches this firmware's
+  // existing size-1 line spacing elsewhere (see the detail-view row pitch).
+  const int rowY = y + 15;
+  char tempHeader[16];
+  const bool hasText = formatBoardTempHeader(valid, tempQuarterC, tempHeader, sizeof(tempHeader));
+  if (clearFirst)
+  {
+    // Same fixed-width clear rationale as drawCardBatteryHeader: covers the longest plausible
+    // value so a shrinking/disappearing reading can't leave stale pixels behind.
+    tft.fillRect(max(x + inset, rightX - 60), rowY - 1, min(60, w - inset * 2), 10, surfaceColor);
+  }
+  if (hasText)
+  {
+    drawTextRight(tempHeader, rightX, rowY, 1, textColor, surfaceColor);
+  }
+}
+
 void drawCardHeader(int x, int y, int w, int h, const char* plant, uint8_t batteryPct, uint16_t textColor, uint16_t batteryColor, uint16_t surfaceColor)
 {
   char batteryHeader[16];
@@ -3648,6 +4037,12 @@ void drawPlantCard(
     return;
   }
 
+  // Compact cards skip this entirely - h<76 doesn't leave reliable clearance between the
+  // header and drawCompactCardMetrics' moisture row (see that function's own y math), and
+  // this is a secondary diagnostic stat, not worth the collision risk on the tightest layout.
+  const bool boardTempValid = reading != nullptr && reading->boardTempValid;
+  drawCardTempHeader(x, y, w, h, boardTempValid, boardTempValid ? reading->rawBoardTempQuarterC : 0, mutedColor, surfaceColor, false);
+
   if (showArt)
   {
     drawPlantArtInCard(x, y, w, h, art, stale ? mutedColor : accentColor, surfaceColor, 0);
@@ -3750,6 +4145,21 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
     drawCardBatteryHeader(x, y, w, h, batteryPct, batteryColor, slot.surfaceColor, true);
   }
 
+  // MSV3-only, nullable - see drawCardTempHeader()'s own comment. Gated the same way as every
+  // other row here: only clear+redraw when the value (or its presence) actually changed.
+  const bool boardTempValid = reading != nullptr && reading->boardTempValid;
+  const int16_t boardTempQuarterC = boardTempValid ? reading->rawBoardTempQuarterC : 0;
+  const bool boardTempChanged = !slot.lastBoardTempInitialized ||
+    boardTempValid != slot.lastBoardTempValid ||
+    (boardTempValid && boardTempQuarterC != slot.lastBoardTempQuarterC);
+  if (boardTempChanged)
+  {
+    drawCardTempHeader(x, y, w, h, boardTempValid, boardTempQuarterC, slot.mutedColor, slot.surfaceColor, true);
+    slot.lastBoardTempInitialized = true;
+    slot.lastBoardTempValid = boardTempValid;
+    slot.lastBoardTempQuarterC = boardTempQuarterC;
+  }
+
   slot.metricsInitialized = true;
   slot.lastMoistureStale = stale;
   slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
@@ -3757,6 +4167,66 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   slot.lastMoistureCalibrated = slot.calibrated;
   slot.lastMoistureColor = moistureColor;
   slot.lastBatteryPct = batteryPct;
+}
+
+// 2026-08-30: restores every visible card's on-screen content from PlantArtSlot's own cache -
+// no ui.json re-read, no full-screen clear, no header/title redraw - for use whenever
+// something else painted over the dashboard while the normal render loop was paused (currently
+// just the brightness overlay closing). renderDashboardDataOnly()'s per-tick path can't be
+// reused as-is here: it deliberately only repaints a field when its tracked *value* changed,
+// which is correct for its normal job but wrong here, since the actual on-screen pixels (not
+// any cached value) are what changed underneath. This forces the interior background, plant
+// name header, and art fully back first, then invalidates the metrics/temp cache sentinels so
+// drawPlantCardDataOnly()'s own field-by-field redraw repaints everything on top of it instead
+// of skipping fields whose value happens to be unchanged.
+//
+// 2026-08-30 gap-fill fix, field-reported twice: this only repainted each card's own x/y/w/h
+// rect. The brightness overlay's panel rect doesn't line up with the card grid - it clips
+// each card's edge (the grid has a top/bottom/left/right margin the modal doesn't reach) but
+// DOES paint straight across the gutters between cards, in the modal's own surfaceColor rather
+// than the dashboard's actual backgroundColor. Restoring only card rects left that gutter
+// residue sitting there indefinitely (it's not part of any card, so drawPlantCardDataOnly()
+// never touches it either) until a later, unrelated full renderUi() happened to fillScreen()
+// over it - which read as "the old menu stays up until the default display eventually gets
+// written over it." Painting the overlay's own known panel rect with the real background
+// color first, before any card redraws itself on top, closes that gap.
+void restoreCardsFromCache()
+{
+  if (artSlotCount > 0)
+  {
+    const int panelX = 34;
+    const int panelY = 54;
+    const int panelW = tft.width() - panelX * 2;
+    const int panelH = tft.height() - panelY - 24;
+    tft.fillRect(panelX, panelY, panelW, panelH, artSlots[0].backgroundColor);
+  }
+  for (uint8_t i = 0; i < artSlotCount; i++)
+  {
+    if (!artSlots[i].enabled)
+    {
+      continue;
+    }
+    if (i == expandedCardSlot)
+    {
+      expandPlantCardInPlace(artSlots[i]);
+      continue;
+    }
+    PlantArtSlot& slot = artSlots[i];
+    tft.fillRoundRect(slot.x, slot.y, slot.w, slot.h, 5, slot.surfaceColor);
+    // Plant name is only ever drawn once by the full drawPlantCard() path and is never
+    // touched again by drawPlantCardDataOnly() - see drawCardHeader()'s own comment about
+    // reserving header width so a later battery update can't grow across it. The battery
+    // value passed here is a throwaway placeholder; metricsInitialized=false below makes
+    // drawPlantCardDataOnly() redraw the real one immediately after.
+    drawCardHeader(slot.x, slot.y, slot.w, slot.h, slot.plant, BATTERY_UNKNOWN, slot.textColor, slot.mutedColor, slot.surfaceColor);
+    if (slot.artEnabled && slot.h >= 76)
+    {
+      drawPlantArtInCard(slot.x, slot.y, slot.w, slot.h, slot.art, slot.activeColor, slot.surfaceColor, slot.frame);
+    }
+    slot.metricsInitialized = false;
+    slot.lastBoardTempInitialized = false;
+    drawPlantCardDataOnly(slot);
+  }
 }
 
 void formatAgeText(uint32_t ms, char* out, size_t outSize)
@@ -4045,6 +4515,10 @@ void expandPlantCardInPlace(PlantArtSlot& slot)
   refreshSlotMoistureBounds(slot);
   PlantDetailStats s;
   computeDetailStats(slot, s);
+  // See DETAIL_FULL_RESYNC_MS's own comment. (Re)schedule on every genuine open, not just the
+  // first one after boot, so re-tapping a card back open after collapsing it restarts the
+  // window rather than potentially forcing a resync immediately on the next tick.
+  slot.nextDetailFullResyncMs = millis() + DETAIL_FULL_RESYNC_MS;
 
   if (slot.h < 76)
   {
@@ -4292,7 +4766,19 @@ void renderDashboardDataOnly(bool blinkOnly)
     }
     if (i == expandedCardSlot)
     {
-      drawPlantCardDetailDataOnly(artSlots[i]);
+      // See DETAIL_FULL_RESYNC_MS's own comment - periodically force a full repaint of the
+      // diagnostic info band instead of the usual data-only diff, so a stuck partial/corrupted
+      // write from a touch-triggered draw self-heals within a bounded window instead of
+      // persisting until the card happens to be tapped again.
+      uint32_t nowMs = millis();
+      if ((int32_t)(nowMs - artSlots[i].nextDetailFullResyncMs) >= 0)
+      {
+        expandPlantCardInPlace(artSlots[i]);
+      }
+      else
+      {
+        drawPlantCardDetailDataOnly(artSlots[i]);
+      }
       continue;
     }
     if (blinkOnly && !slotNeedsBlink(artSlots[i]))
@@ -5069,14 +5555,42 @@ bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
 // A failed HTTPClient::begin() (the `!began` branch in each of the five cloud functions
 // below) has been observed to leave real resources (heap, and possibly a TCP/TLS session)
 // unrecovered without an explicit stop() on both possible underlying clients - see the
-// 2026-08-23 receiver-reliability investigation. Each function declares its own local
-// WiFiClient/WiFiClientSecure pair (not shared globals, since a request can be plain HTTP
-// or HTTPS depending on the configured URL's scheme), so this takes them by reference
-// rather than assuming fixed global names.
-void stopCloudClients(WiFiClientSecure& secureClient, WiFiClient& plainClient)
+// 2026-08-23 receiver-reliability investigation. Stops the shared cloudSecureClient/
+// cloudPlainClient globals declared above (whichever one a given call actually used - the
+// other is already idle, and stop() on an unconnected client is a harmless no-op).
+void stopCloudClients()
 {
-  secureClient.stop();
-  plainClient.stop();
+  cloudSecureClient.stop();
+  cloudPlainClient.stop();
+}
+
+// 2026-08-30: total free heap alone does not guarantee the snapshot uploader's TLS connect
+// can proceed - WiFiClientSecure's mbedTLS session needs a contiguous allocation, and
+// fragmentation can leave the largest free block well under total free heap even when the
+// plain free-heap guard above passes. Live evidence: a running receiver reported 60648 bytes
+// total free (comfortably over CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES) but only 20468 bytes in its
+// largest internal free block, and its snapshot uploads were failing with a generic
+// "connection refused".
+//
+// CORRECTED same day, after a first attempt at this fix used 49152 (48KiB) and a threshold
+// this high blocked ALL FIVE cloud functions on a freshly-booted device, whose largest
+// contiguous internal block never exceeded ~34804 bytes even brand new (this receiver's own
+// GFX framebuffer/BLE/WebServer/LittleFS static allocations apparently leave less headroom
+// than assumed) - including config-pull/display-sync, which were succeeding fine before any
+// of this change. That ruled out "single 30-40KB contiguous allocation" as this board's real
+// constraint. Scoped down to ONLY the snapshot uploader (see its use below, after the JSON
+// batch payload - the largest, most fragmentation-prone allocation in this whole call chain -
+// has already been built) with a lower threshold: comfortably above the one confirmed-failing
+// datapoint (20468) while leaving real operating margin below the ~34804 fresh-boot ceiling.
+// This is calibration from two data points, not a proven exact mbedTLS requirement - if
+// snapshot uploads still intermittently fail at this threshold, check the added
+// largestFreeBlockInternalBytes/psramFreeBytes health fields before raising it again.
+const uint32_t CLOUD_SNAPSHOT_MIN_LARGEST_INTERNAL_BLOCK_BYTES = 24576;
+
+bool cloudHeapHasContiguousRoomForTls()
+{
+  return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >=
+         CLOUD_SNAPSHOT_MIN_LARGEST_INTERNAL_BLOCK_BYTES;
 }
 
 void runCloudBootstrap(uint32_t now)
@@ -5136,17 +5650,15 @@ void runCloudBootstrap(uint32_t now)
   Serial.println(MSV2_CLOUD_BOOTSTRAP_URL);
 
   HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
   bool began = false;
   if (isHttps)
   {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, MSV2_CLOUD_BOOTSTRAP_URL);
+    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(cloudSecureClient, MSV2_CLOUD_BOOTSTRAP_URL);
   }
   else
   {
-    began = http.begin(plainClient, MSV2_CLOUD_BOOTSTRAP_URL);
+    began = http.begin(cloudPlainClient, MSV2_CLOUD_BOOTSTRAP_URL);
   }
 
   cloudBootstrapLastAttemptMs = now;
@@ -5157,7 +5669,7 @@ void runCloudBootstrap(uint32_t now)
     // attempt has been observed to leave real resources (heap, and possibly a TCP/TLS
     // session) unrecovered without an explicit stop(), across every one of these five
     // cloud call sites, not just the snapshot uploader.
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     setCloudBootstrapLastError("could not start HTTP client");
     nextCloudBootstrapMs = now + CLOUD_BOOTSTRAP_RETRY_MS;
     return;
@@ -5251,7 +5763,7 @@ void runCloudBootstrap(uint32_t now)
   }
 
   http.end();
-  stopCloudClients(secureClient, plainClient);
+  stopCloudClients();
 }
 
 void runCloudConfigPull(uint32_t now)
@@ -5309,24 +5821,22 @@ void runCloudConfigPull(uint32_t now)
   configUrl += String(uiConfigVersion);
 
   HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
   bool began = false;
   if (isHttps)
   {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, configUrl);
+    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(cloudSecureClient, configUrl);
   }
   else
   {
-    began = http.begin(plainClient, configUrl);
+    began = http.begin(cloudPlainClient, configUrl);
   }
 
   cloudConfigLastAttemptMs = now;
   cloudConfigLastHttpStatus = 0;
   if (!began)
   {
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     setCloudConfigLastError("could not start HTTP client");
     nextCloudConfigPullMs = now + CLOUD_CONFIG_PULL_INTERVAL_MS;
     return;
@@ -5385,7 +5895,7 @@ void runCloudConfigPull(uint32_t now)
   }
 
   http.end();
-  stopCloudClients(secureClient, plainClient);
+  stopCloudClients();
   nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
 }
 
@@ -5454,23 +5964,21 @@ void runCloudDisplaySettings(uint32_t now)
   }
 
   HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
   bool began = false;
   if (isHttps)
   {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, url);
+    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(cloudSecureClient, url);
   }
   else
   {
-    began = http.begin(plainClient, url);
+    began = http.begin(cloudPlainClient, url);
   }
   cloudDisplayLastAttemptMs = now;
   cloudDisplayLastHttpStatus = 0;
   if (!began)
   {
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     setCloudDisplayLastError("could not start HTTP client");
     nextCloudDisplaySyncMs = now + CLOUD_DISPLAY_PULL_INTERVAL_MS;
     return;
@@ -5586,7 +6094,7 @@ void runCloudDisplaySettings(uint32_t now)
   }
 
   http.end();
-  stopCloudClients(secureClient, plainClient);
+  stopCloudClients();
   bool stillPending;
   portENTER_CRITICAL(&displaySettingsMux);
   stillPending = displaySettings.pendingCloudUpdate;
@@ -5678,22 +6186,20 @@ void runCloudAutoCalPull(uint32_t now)
   autoCalUrl += receiverId;
 
   HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
   bool began = false;
   if (isHttps)
   {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, autoCalUrl);
+    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(cloudSecureClient, autoCalUrl);
   }
   else
   {
-    began = http.begin(plainClient, autoCalUrl);
+    began = http.begin(cloudPlainClient, autoCalUrl);
   }
 
   if (!began)
   {
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
     return;
   }
@@ -5735,7 +6241,7 @@ void runCloudAutoCalPull(uint32_t now)
   }
 
   http.end();
-  stopCloudClients(secureClient, plainClient);
+  stopCloudClients();
   nextCloudAutoCalPullMs = millis() + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
 }
 
@@ -5811,17 +6317,15 @@ void runCloudSnapshotUploader(uint32_t now)
   Serial.println(cloudUploadUrl);
 
   HTTPClient http;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
   bool began = false;
   if (isHttps)
   {
-    secureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(secureClient, cloudUploadUrl);
+    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(cloudSecureClient, cloudUploadUrl);
   }
   else
   {
-    began = http.begin(plainClient, cloudUploadUrl);
+    began = http.begin(cloudPlainClient, cloudUploadUrl);
   }
 
   cloudLastAttemptMs = now;
@@ -5833,7 +6337,7 @@ void runCloudSnapshotUploader(uint32_t now)
     // unrecovered (see CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES above) - explicit stop() rather
     // than relying solely on these stack objects' destructors, which is the standard
     // mitigation for this class of ESP32 WiFiClientSecure behavior.
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     setCloudLastError("could not start HTTP client");
     nextCloudSyncMs = now + cloudSyncIntervalSeconds * 1000UL;
     return;
@@ -5863,9 +6367,28 @@ void runCloudSnapshotUploader(uint32_t now)
   if (payload.length() == 0)
   {
     http.end();
-    stopCloudClients(secureClient, plainClient);
+    stopCloudClients();
     setCloudLastError("could not serialize snapshot/history batch");
     nextCloudSyncMs = millis() + HISTORY_UPLOAD_RETRY_MS;
+    return;
+  }
+
+  // 2026-08-30: re-check the contiguous-block guard here, not just at the top of this
+  // function. This String payload (up to HISTORY_UPLOAD_BATCH_SIZE rows, now carrying the
+  // MSV3 board-temp/bare-tank/tank-phase fields on top of the prior per-row fields) is the
+  // largest, most fragmentation-prone allocation this function does before the TLS connect
+  // actually happens (HTTPClient::begin() above only stores the URL/client reference - the
+  // real connect() + mbedTLS session allocation happens inside the POST() call below). The
+  // guard at the top of this function ran before this String existed, so it cannot see
+  // fragmentation this payload itself just caused. copyHistoryUploadBatch() above only reads
+  // the queue (see its own definition) - it does not dequeue anything, so returning here
+  // before POST() leaves the queued history rows completely untouched for the next attempt.
+  if (!cloudHeapHasContiguousRoomForTls())
+  {
+    http.end();
+    stopCloudClients();
+    setCloudLastError("skipped: low heap after payload build");
+    nextCloudSyncMs = now + CLOUD_LOW_HEAP_RETRY_MS;
     return;
   }
 
@@ -5948,7 +6471,7 @@ void runCloudSnapshotUploader(uint32_t now)
   }
 
   http.end();
-  stopCloudClients(secureClient, plainClient);
+  stopCloudClients();
   size_t remainingHistory = queuedHistoryCount();
   if (!uploadAccepted)
   {
@@ -6030,6 +6553,18 @@ String deviceInfoJson()
   health["freeHeapNowBytes"] = ESP.getFreeHeap();
   health["minFreeHeapEverBytes"] = minFreeHeapEverBytes;
   health["largestFreeBlockBytes"] = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  // 2026-08-30: added while calibrating the snapshot uploader's contiguous-heap guard above -
+  // largestFreeBlockBytes alone (MALLOC_CAP_8BIT, unrestricted) can't tell whether this board
+  // has PSRAM inflating that number, or whether internal-only room is the real ceiling. Cheap,
+  // diagnostic-only reads; not used in any guard/branch themselves.
+  health["largestFreeBlockInternalBytes"] =
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  health["psramSizeBytes"] = ESP.getPsramSize();
+  health["psramFreeBytes"] = ESP.getFreePsram();
+  // 2026-08-30 isolation test - see TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL's comment. Must read 0 for
+  // the whole test run; a nonzero value here means the isolation isn't clean.
+  health["touchSpiDiagnosticDisableAll"] = TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL;
+  health["touchSpiTransactionCount"] = touchSpiTransactionCount;
   health["cloudUploadFreeHeapBeforeBytes"] = lastCloudUploadFreeHeapBeforeBytes;
   health["cloudUploadFreeHeapAfterBytes"] = lastCloudUploadFreeHeapAfterBytes;
   health["cloudConsecutiveUploadFailures"] = cloudConsecutiveUploadFailures;
@@ -6354,42 +6889,13 @@ float interpolateBatteryPercent(float mvolts)
   return 0; // unreachable - the two bounds checks above cover the full range
 }
 
-// Charging current flows through the cell's + path resistance in the opposite direction
-// from discharge, so terminal voltage while charging sits ABOVE true rest/open-circuit
-// voltage by roughly I*R - documented battery-industry behavior, not a bug (see the
-// 2026-07-25 chat log in the probe's git history). Subtracting an estimated offset before
-// running the curve approximates "what would this cell read at rest." PROVISIONAL: derived
-// from one observed transition, needs refinement from a real logged charge cycle.
-const float CHARGING_IR_COMPENSATION_MV = 400.0F;
-
-// The IR-drop overshoot is proportional to actual charge CURRENT, which tapers toward zero
-// during the constant-voltage phase as the cell approaches full - a fixed compensation right
-// up until charging stops made the correction snap away all at once instead of tapering with
-// it, showing up as a jump around 85%->100% (2026-07-25 chat log). Tapering the compensation
-// itself to zero as the reading approaches full fixes that.
-const float CHARGE_TAPER_START_MV = 4100.0F; // full compensation still applies at/below this
-const float CHARGE_TAPER_END_MV = 4200.0F;   // compensation is fully gone at/above this (full)
-
-float chargeCompensationMv(float mvolts)
+// Use the measured cell voltage directly. The former global 400mV charging offset was
+// inferred from one older probe and made a measured 3.74V MSV3 cell display as 1-3% while
+// USB was connected. Charge-path voltage effects are hardware/current dependent and cannot
+// be corrected by one cross-probe constant; preserve rawCharging as a diagnostic instead.
+uint8_t batteryMvToPercent(float mvolts)
 {
-  if (mvolts <= CHARGE_TAPER_START_MV)
-  {
-    return CHARGING_IR_COMPENSATION_MV;
-  }
-
-  if (mvolts >= CHARGE_TAPER_END_MV)
-  {
-    return 0.0F;
-  }
-
-  float remainingFrac = (CHARGE_TAPER_END_MV - mvolts) / (CHARGE_TAPER_END_MV - CHARGE_TAPER_START_MV);
-  return CHARGING_IR_COMPENSATION_MV * remainingFrac;
-}
-
-uint8_t batteryMvToPercent(float mvolts, bool isCharging)
-{
-  float restEquivalentMv = isCharging ? mvolts - chargeCompensationMv(mvolts) : mvolts;
-  return (uint8_t)(interpolateBatteryPercent(restEquivalentMv) + 0.5f);
+  return (uint8_t)(interpolateBatteryPercent(mvolts) + 0.5f);
 }
 
 // Per-sensor EMA smoothing state - was a single global on the probe (one probe, one
@@ -6399,52 +6905,17 @@ uint8_t batteryMvToPercent(float mvolts, bool isCharging)
 // zero-initialize, so smoothedBatteryReady[] starts all-false as intended.
 float smoothedBatteryPercent[MAX_SENSOR_ID + 1];
 bool smoothedBatteryReady[MAX_SENSOR_ID + 1];
-bool lastChargingStateBySensor[MAX_SENSOR_ID + 1];
-// A candidate charging-state flip awaiting confirmation - see the debounce comment
-// inside calibrateRawBattery() below.
-bool pendingChargingStateBySensor[MAX_SENSOR_ID + 1];
-bool chargingStatePendingBySensor[MAX_SENSOR_ID + 1];
 
-// A confirmed charge/discharge transition is a real, instantaneous jump in what the
-// corrected curve reads (the IR-drop offset direction flips), not sensor noise - blending
-// it through the normal EMA would just smear the jump across several readings instead of
-// reflecting it. Snap straight to the new curve's reading on the packet where the state
-// actually changes, then resume normal smoothing within that state.
-uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool charging)
+uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv)
 {
   if (sensorId > MAX_SENSOR_ID)
   {
-    return (uint8_t)(batteryMvToPercent(rawMv, charging) + 0.5f);
+    return batteryMvToPercent(rawMv);
   }
 
-  // The probe's ~CHG-pin read is a single un-debounced digitalRead() - a misread there
-  // (noise, or the genuinely uncertain signal right at end-of-charge termination) used to
-  // be indistinguishable from a real transition below, discarding all prior smoothing and
-  // jumping straight to one fresh packet's reading under whatever might be the WRONG
-  // IR-compensation curve for the true battery state. Require the same new state on a
-  // second consecutive unique packet before treating it as real; a one-off disagreement is
-  // held as a candidate and this packet still uses the last confirmed state's curve -
-  // mirrors smoothMoistureForDisplay()'s watering-rise debounce.
-  bool useCharging;
-  if (!smoothedBatteryReady[sensorId] || charging == lastChargingStateBySensor[sensorId])
-  {
-    useCharging = charging;
-    chargingStatePendingBySensor[sensorId] = false;
-  }
-  else if (chargingStatePendingBySensor[sensorId] && pendingChargingStateBySensor[sensorId] == charging)
-  {
-    useCharging = charging; // confirmed on a second consecutive packet
-  }
-  else
-  {
-    pendingChargingStateBySensor[sensorId] = charging;
-    chargingStatePendingBySensor[sensorId] = true;
-    useCharging = lastChargingStateBySensor[sensorId];
-  }
+  float raw = batteryMvToPercent(rawMv);
 
-  float raw = batteryMvToPercent(rawMv, useCharging);
-
-  if (!smoothedBatteryReady[sensorId] || useCharging != lastChargingStateBySensor[sensorId])
+  if (!smoothedBatteryReady[sensorId])
   {
     smoothedBatteryPercent[sensorId] = raw;
     smoothedBatteryReady[sensorId] = true;
@@ -6454,7 +6925,6 @@ uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool charging)
     smoothedBatteryPercent[sensorId] += 0.2f * (raw - smoothedBatteryPercent[sensorId]);
   }
 
-  lastChargingStateBySensor[sensorId] = useCharging;
   return (uint8_t)(smoothedBatteryPercent[sensorId] + 0.5f);
 }
 
@@ -6589,7 +7059,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // physical wake in the EMA or race another callback for this sensor's filter state.
     if (hasRaw)
     {
-      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, rawCharging);
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
     }
     uint16_t displayMoisture = smoothMoistureForDisplay(sensorId, moisture, presentationSpan);
 
@@ -6711,7 +7181,7 @@ void bleScanTask(void* parameter)
 // every time, no session reuse) capped at an 8s timeout, but observed taking ~1.6-2.1s
 // even on success. Running them inline in loop() meant the shared render/WebServer loop
 // was blocked for that long on every one of these calls - the config pull alone fires
-// every ~30s (CLOUD_CONFIG_PULL_INTERVAL_MS), which was frequent enough on its own to
+// periodically (CLOUD_CONFIG_PULL_INTERVAL_MS), which was frequent enough on its own to
 // read as "periodic freezes" even with a perfectly calm probe (see 2026-07-26 chat log).
 // Pinned to core 0, same as bleScanTask, leaving core 1 free for rendering/WebServer.
 // bleScanTask runs one priority level higher, preventing this task's blocking TLS work from
@@ -7583,7 +8053,6 @@ void loop()
 
 #if MSV2_ENABLE_DISPLAY
   handleTouchInput(now);
-  resolvePendingDashboardTap(now);
   if (brightnessOverlayOpen)
   {
     // Keep the modal stable while a finger is dragging. Sensor data remains
@@ -7617,7 +8086,10 @@ void loop()
   serviceWaterAlert(now, blinkNeeded);
   bool detailOpen = expandedCardSlot >= 0;
   uint32_t renderIntervalMs = blinkNeeded ? 500 : SENSOR_RENDER_INTERVAL_MS;
-  if ((sensorDataDirty || blinkNeeded || detailOpen) && now - lastSensorRenderMs >= renderIntervalMs)
+  // touchAcquisitionPending gates all three periodic display writers below - see its own
+  // comment. A gesture in the middle of acquiring its one coordinate read needs a genuinely
+  // quiet bus, so these just wait their turn for a few ms rather than racing the touch read.
+  if (!touchAcquisitionPending && (sensorDataDirty || blinkNeeded || detailOpen) && now - lastSensorRenderMs >= renderIntervalMs)
   {
     bool realDataChanged = sensorDataDirty;
     sensorDataDirty = false;
@@ -7625,6 +8097,7 @@ void loop()
     if (artSlotCount > 0)
     {
       renderDashboardDataOnly(!realDataChanged);
+      lastDisplaySpiActivityMs = now;
     }
     else
     {
@@ -7632,20 +8105,22 @@ void loop()
     }
   }
 
-  if (now - lastArtFrameMs >= ART_RENDER_POLL_MS)
+  if (!touchAcquisitionPending && now - lastArtFrameMs >= ART_RENDER_POLL_MS)
   {
     lastArtFrameMs = now;
     if (!displayDirty)
     {
       renderAnimatedPlantArt();
+      lastDisplaySpiActivityMs = now;
     }
   }
 
-  if (displayDirty)
+  if (!touchAcquisitionPending && displayDirty)
   {
     displayDirty = false;
     setCheckpoint("loop: render start");
     renderUi();
+    lastDisplaySpiActivityMs = now;
     setCheckpoint("loop: render done");
   }
 #endif

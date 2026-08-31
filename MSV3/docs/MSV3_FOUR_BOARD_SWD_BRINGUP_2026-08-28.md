@@ -1,5 +1,12 @@
 # MSV3 Four-Board SWD Bring-Up + EC-Check Analog Fix (2026-08-28)
 
+> **2026-08-30 source warning:** The field production sketch was corrected to wait on
+> `STATUS.CH0_UNREADCONV` after a temporary global-DRDY implementation stopped advertisements.
+> The currently modified `MSV3_Probe_Bringup_Test.ino` still calls `fdcWaitForDrdy()` without
+> explicitly enabling `ERROR_CONFIG.DRDY_2INT`. Reconcile it with the production readiness logic
+> before treating its FDC read/stream/wake commands as authoritative. This warning concerns the
+> current working-tree edit, not the 2026-08-28 binaries used for the four-board results below.
+
 ## Summary
 
 - All 4 freshly-assembled MSV3 boards: SWD bootloader install, then USB DFU flash of

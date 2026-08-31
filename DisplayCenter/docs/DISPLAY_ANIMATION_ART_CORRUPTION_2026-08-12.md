@@ -1,12 +1,25 @@
 # Display animation corruption investigation
 
-Status: **RESOLVED, user-confirmed 2026-08-12.** All four symptoms below (sprite-area
-corruption/"two animations at once", the 2 red pixels above "Moist", and probe 3 intermittently
-showing probe 1's sprite) are gone after Part 3 (the `T_IRQ` idle-gate) was flashed. Root cause
-was the combination of Part 1's command-heavy per-pixel renderer (fixed by batching into
-row bursts) and idle XPT2046 SPI polling leaking bytes onto the shared bus into whatever address
-window the display renderer last left open (fixed by not polling touch at all while T_IRQ reads
-idle-high). Kept below as a reference for the next time something in this area misbehaves.
+**CORRECTION (2026-08-30): the "RESOLVED" status below was wrong.** The four idle-polling
+symptoms it describes did stay fixed, but a related, previously-untested case - touch SPI
+traffic during an *active* gesture, not idle polling - silently recurred and caused real,
+user-reported card-art corruption again this session. See
+`DISPLAY_TOUCH_CORRUPTION_AND_OVERLAY_REDRAW_2026-08-30.md` for the full diagnosis (an isolation
+test finally ran the "Not yet tried" experiment below) and the fix (an IRQ-primary touch state
+machine plus a bidirectional bus-turnaround guard). That doc's closing note is the current,
+accurate status for this hardware; treat everything below as historical background on the
+shared-SPI-bus context, not a live status claim.
+
+---
+
+Status (original, 2026-08-12, since superseded - see correction above): **RESOLVED,
+user-confirmed 2026-08-12.** All four symptoms below (sprite-area corruption/"two animations at
+once", the 2 red pixels above "Moist", and probe 3 intermittently showing probe 1's sprite) are
+gone after Part 3 (the `T_IRQ` idle-gate) was flashed. Root cause was the combination of Part 1's
+command-heavy per-pixel renderer (fixed by batching into row bursts) and idle XPT2046 SPI polling
+leaking bytes onto the shared bus into whatever address window the display renderer last left
+open (fixed by not polling touch at all while T_IRQ reads idle-high). Kept below as a reference
+for the next time something in this area misbehaves.
 
 Part 1: Codex's "Recommended implementation direction" (below) was implemented and flashed.
 `drawPlantSpriteScaled()`/`drawPlantSpriteDiffScaled()` no longer exist - both are replaced by

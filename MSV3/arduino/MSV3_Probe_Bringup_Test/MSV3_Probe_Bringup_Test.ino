@@ -172,9 +172,12 @@ bool fdcReadReg(uint8_t reg, uint16_t &val) {
 // Datasheet-verified register config for single-channel (CH0) free-running
 // conversion. Values derived from TI SNOSCZ5B (fetched/read this session),
 // not recalled from memory -- see chat log for the bit-by-bit derivation.
+// 2026-08-30: ported the same three review-driven fixes as the production sketch
+// (MSV3_Moisture_BLE_Sleep.ino), so wakeprofile here actually profiles the config that ships,
+// not the old one. See that file's header comment for the full datasheet backing.
 bool fdcInit() {
   bool ok = true;
-  ok &= fdcWriteReg(0x08, 0x0400);  // RCOUNT_CH0: tC0 = 1024*16/fREF0 (~377us @ ~43MHz internal osc)
+  ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0: was 0x0400 (~14 ENOB); 0xFFFF ~24.2ms, near-max resolution
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0: tS0 = 100*16/fREF0 (~37us) -- default 0 is too short, causes amplitude warnings
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01 (divide-by-1, 0.01-8.75MHz range), FREF_DIVIDER=1
   ok &= fdcWriteReg(0x1E, 0x8000);  // DRIVE_CURRENT_CH0: IDRIVE=10000b (~0.169mA) starting point -- NOT bench-tuned, watch ERR_AHW/ERR_ALW
@@ -182,18 +185,35 @@ bool fdcInit() {
   // (single-channel CH0 mode, correct for this board -- only CH0 is wired to
   // real hardware, CH1-3 are grounded per netlist), DEGLITCH=111 (33MHz, safely
   // above the ~1.3-4.1MHz design target).
-  ok &= fdcWriteReg(0x1A, 0x1C01);  // CONFIG: ACTIVE_CHAN=00 (CH0), SLEEP_MODE_EN=0 (exit sleep), SENSOR_ACTIVATE_SEL=1, REF_CLK_SRC=0 (internal osc), INTB_DIS=0, required reserved bits set
+  ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: was 0x1C01 (SENSOR_ACTIVATE_SEL=1, Low Power) --
+                                    // now b0, Full Current Activation Mode, TI's recommendation.
+                                    // Every other bit already matched its required value.
   return ok;
 }
 
 bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 
+#define FDC_STATUS_DRDY_BIT 0x0040     // STATUS bit 6 (Table 7-36)
+#define FDC_DRDY_POLL_TIMEOUT_MS 60    // generous vs. ~24.2ms worst-case conversion at RCOUNT=0xFFFF
+
+bool fdcWaitForDrdy(uint16_t &statusOut) {
+  uint32_t start = millis();
+  do {
+    if (!fdcReadStatus(statusOut)) return false;
+    if (statusOut & FDC_STATUS_DRDY_BIT) return true;
+  } while (millis() - start < FDC_DRDY_POLL_TIMEOUT_MS);
+  return false;
+}
+
+// 2026-08-30: waits for DRDY and reads STATUS before DATA, not after -- a latched error is
+// cleared by reading either STATUS or DATA_CHx (Table 7-36), so the old DATA-then-STATUS order
+// could silently lose a real ERR_WD/ERR_AHW/ERR_ALW before STATUS ever saw it.
 bool fdcReadChannel0(uint32_t &data28, uint16_t &statusOut) {
+  if (!fdcWaitForDrdy(statusOut)) return false;
   uint16_t msb, lsb;
   if (!fdcReadReg(0x00, msb)) return false;  // must read MSB before LSB (latches result)
   if (!fdcReadReg(0x01, lsb)) return false;
   data28 = ((uint32_t)(msb & 0x0FFF) << 16) | lsb;
-  fdcReadStatus(statusOut);
   return true;
 }
 

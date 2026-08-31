@@ -1,8 +1,8 @@
 // The browser History-chart port (MobileAppPage.h) hand-transcribes the firmware's
-// LiPo voltage->percent curve and IR-compensation taper constants (MSV2_ESP32_Display_
-// Runtime.ino), with only a code comment ("keep in sync") enforcing agreement. This project
-// retunes those numbers as a matter of course - this script makes a divergence a build-time
-// failure instead of a silently wrong History chart.
+// LiPo voltage->percent curve (MSV2_ESP32_Display_Runtime.ino), with only a code comment
+// ("keep in sync") enforcing agreement. This script makes a divergence a build-time failure
+// instead of a silently wrong History chart. Battery percentage intentionally uses measured
+// voltage directly; raw charging state remains diagnostic-only.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -47,33 +47,19 @@ assert.deepEqual(
     "chart's battery smoothing would silently disagree with what the receiver actually displays.",
 );
 
-function parseCppFloatConst(source, name) {
-  const match = source.match(new RegExp(`const float ${name} = (-?\\d+(?:\\.\\d+)?)F?;`));
-  assert.ok(match, `Could not find firmware constant ${name} - has it been renamed?`);
-  return Number(match[1]);
-}
-
-function parseJsConst(source, name) {
-  const match = source.match(new RegExp(`const ${name} = (-?\\d+(?:\\.\\d+)?);`));
-  assert.ok(match, `Could not find embedded JS constant ${name} - has it been renamed?`);
-  return Number(match[1]);
-}
-
-const constantPairs = [
-  ["CHARGING_IR_COMPENSATION_MV", "BATTERY_CHARGE_IR_COMPENSATION_MV"],
-  ["CHARGE_TAPER_START_MV", "BATTERY_CHARGE_TAPER_START_MV"],
-  ["CHARGE_TAPER_END_MV", "BATTERY_CHARGE_TAPER_END_MV"],
-];
-for (const [cppName, jsName] of constantPairs) {
-  const cppValue = parseCppFloatConst(firmware, cppName);
-  const jsValue = parseJsConst(mobileApp, jsName);
-  assert.equal(
-    jsValue,
-    cppValue,
-    `${jsName} (embedded JS, ${jsValue}) must match ${cppName} (firmware, ${cppValue}).`,
+for (const removedSymbol of [
+  "CHARGING_IR_COMPENSATION_MV",
+  "CHARGE_TAPER_START_MV",
+  "CHARGE_TAPER_END_MV",
+  "BATTERY_CHARGE_IR_COMPENSATION_MV",
+  "batteryChargeCompensationMv",
+]) {
+  assert.ok(
+    !firmware.includes(removedSymbol) && !mobileApp.includes(removedSymbol),
+    `${removedSymbol} must remain removed; battery percentage uses measured voltage directly.`,
   );
 }
 
 console.log(
-  `PASS battery curve (${cppCurve.length} points) and IR-compensation constants match between firmware and the embedded browser port`,
+  `PASS battery curve (${cppCurve.length} points) matches and charging compensation remains removed`,
 );

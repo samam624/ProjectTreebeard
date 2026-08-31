@@ -31,6 +31,36 @@
 // proven-on-hardware *live*-switch settle figure as a safety margin here
 // too. This makes the settle-timing question moot for this test instead of
 // betting the whole test's visibility on an unverified hypothesis.
+// REMOVED the same day this comment was added to -- see the 2026-08-30 entry below.
+//
+// 2026-08-30 update: independent firmware/datasheet review (two Codex review workers, cross-
+// checked against the real TI FDC2214 PDF, no firmware changed at review time) found three
+// concrete FDC measurement bugs, fixed here -- see each site's own comment for the datasheet
+// table/formula backing it:
+// - RCOUNT_CH0 raised 0x0400 -> 0xFFFF (fdcInit()) -- was giving only ~14 effective bits at
+//   negligible time cost (~24ms of a 10s wake) to fix.
+// - CONFIG's SENSOR_ACTIVATE_SEL bit fixed Low-Power -> Full-Current activation, TI's
+//   recommended value (fdcInit(): 0x1C01 -> 0x1401) -- every other bit in that register
+//   already matched its datasheet-required value, verified field-by-field before changing it.
+// - fdcReadChannel0() now waits for CH0_UNREADCONV and reads STATUS before DATA, not after -- the
+//   datasheet states a latched error is cleared by reading either STATUS or the DATA_CHx
+//   register, so the old DATA-then-STATUS order could silently lose a real error flag before
+//   ever seeing it, not just mis-pair it with the wrong sample.
+// Explicitly NOT changed, and should not be guessed at without bench data: IDRIVE
+// (DRIVE_CURRENT_CH0, still un-tuned, needs a real oscilloscope amplitude measurement) and
+// SETTLECOUNT_CH0 (its datasheet formula needs real Vpk/IDRIVE/capacitance values this project
+// doesn't have yet).
+//
+// 2026-08-30, later same day: removed MUX_SWITCH_SETTLE_MS entirely (was 300ms, added just
+// above on 2026-08-29). Pulled the real TMUX1109 datasheet (SCDS406A) rather than continuing to
+// guess: worst case across -40..125C at VS=3V, tTRAN=19ns, tON(EN)=20ns, tOFF(EN)=9ns -- the
+// switch itself completes in tens of nanoseconds, and this board's actual mux-adjacent R/C
+// can't plausibly stretch that into more than tens of microseconds (see the removed constant's
+// own comment, still kept in place near MUX_SLEEP_CODE below, for the full arithmetic). The
+// delay ran before probeWake() deasserts SD, so it was never able to settle oscillator ring-up
+// or live-tank mux parasitics regardless -- see SETTLECOUNT_CH0 above for what actually governs
+// that. Removing it recovers ~300ms of the ~10s wake period on every wake, ~600ms on advertising
+// wakes (it ran twice there).
 //
 // REQUIRED build path, same as the bring-up sketch: raw arduino-cli/Arduino
 // IDE builds will fail at the compile-time guard below unless the installed
@@ -136,12 +166,35 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 
 // FDC2214 wake-sequencing constants -- see probeWake()/probeSleep() below.
 #define FDC_TSDWAKEUP_MS 3      // datasheet tSDWAKEUP = 2ms max; +1ms margin
-#define FDC_ACTIVATION_US 400   // sensor activation = 16,384 fINT cycles (~378us @ ~43.3MHz internal osc)
+// Sensor activation = 16,384 fINT cycles (~378us @ ~43.3MHz internal osc). This figure is the
+// Full-Current Activation Mode number (CONFIG.SENSOR_ACTIVATE_SEL=b0) -- before the 2026-08-30
+// fix below, CONFIG was actually left in Low Power Activation Mode (b1), so this delay didn't
+// match the mode the chip was really in. fdcReadChannel0()'s fresh-conversion wait (added the same day)
+// makes this no longer load-bearing on its own -- it's a warm-up floor before polling starts,
+// not the sole guarantee of a settled conversion.
+#define FDC_ACTIVATION_US 400
 #define MUX_SLEEP_CODE 0        // electrode-swap. NEVER 2 or 3 -- see probeSleep().
-// Settle margin after any setMux() that precedes a probeWake(), added 2026-08-29 -- see the file
-// header comment. Reuses the bring-up sketch's bench-proven live-switch figure rather than
-// trusting the unverified mux-during-shutdown assumption for this unattended test.
-#define MUX_SWITCH_SETTLE_MS 300
+// REMOVED 2026-08-30: MUX_SWITCH_SETTLE_MS (300ms, added 2026-08-29 as a preemptive safety
+// margin -- see the file header comment for that history). Checked the real TMUX1109 datasheet
+// (SCDS406A) against this board's actual load rather than continuing to guess: at VS=3V, worst
+// case across -40..125C, tTRAN=19ns, tON(EN)=20ns, tOFF(EN)=9ns, tOPEN(BBM)~1ns -- the switch
+// itself is done in low tens of nanoseconds. TI's own methodology note says system RC adds on
+// top of that device-only figure, but this board's mux-adjacent capacitance (~38-50pF) and
+// resistance (RON ~8.75 ohm; nothing else in the switched path is more than low-MOhm, and nowhere
+// near it) cap any real RC settling at tens of microseconds at the absolute worst -- roughly
+// 6 GOhm of series resistance would be needed to make an RC time constant reach 300ms against
+// that capacitance, which is not physically present anywhere in this signal path.
+// This delay ran BEFORE probeWake() deasserts SD (FDC still in shutdown, oscillator not yet
+// running), so it was never capable of settling oscillator ring-up or mux-injected tank
+// parasitics in the first place -- see SETTLECOUNT_CH0 in fdcInit() for the register that
+// actually governs oscillator settling, which is what a real settling problem would need to
+// address, bench-tuned against real Vpk/IDRIVE data this project doesn't have yet. The natural
+// gap between setMux() and the oscillator actually starting (FDC_TSDWAKEUP_MS's 3ms, plus the
+// I2C transactions inside fdcInit(), plus FDC_ACTIVATION_US's 400us) already leaves the mux
+// microseconds-to-nanoseconds switch several orders of magnitude of margin with zero added
+// delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and ~600ms on
+// every advertising wake (it ran twice there -- once for the electrode-swap phase, once for the
+// bare-tank EC-check mux code).
 #define PIN_CNF_DISCONNECTED 2UL  // nRF52840 reset default: input buffer disconnected, no pull.
 
 #define WDT_TIMEOUT_MS 5000UL
@@ -182,32 +235,89 @@ bool fdcReadReg(uint8_t reg, uint16_t &val)
 
 // Datasheet-verified register config for single-channel (CH0) free-running
 // conversion (TI SNOSCZ5B) -- identical to the bring-up sketch's fdcInit().
+//
+// 2026-08-30 review fixes (docs cross-checked against the real TI PDF, table/bit references
+// below all point at the local extracted copy):
+// - RCOUNT_CH0 raised 0x0400 -> 0xFFFF. Conversion time is (RCOUNT*16+4)/fREF (Table 7-6);
+//   at 0x0400 that's ~0.378ms, corresponding to only ~14 effective bits (the datasheet ties
+//   ENOB directly to RCOUNT -- Section 7.6, "if an ENOB of 13 bits is required... 8192 clock
+//   cycles... RCOUNT value of 0x0200"). 0xFFFF costs ~24ms, negligible against the 10s wake
+//   period, for close to the chip's full 28-bit resolution -- there was no real reason to be
+//   leaving that resolution on the table given the sensor's own signal is only a few pF on
+//   top of a ~300-370pF tank.
+// - CONFIG 0x1C01 -> 0x1401: clears bit 11 (SENSOR_ACTIVATE_SEL), the only bit in 0x1C01 that
+//   didn't already match its datasheet-required/recommended value (every other bit was
+//   already correct, including the two "reserved, must be b1" bits -- verified against Table
+//   7-38 field-by-field before changing anything). Bit 11 was b1 (Low Power Activation Mode --
+//   "uses the value programmed in DRIVE_CURRENT_CHx during sensor activation"); TI's field
+//   description recommends b0 (Full Current Activation Mode -- "drives maximum sensor current
+//   for a shorter sensor activation time"), the more robust-startup choice this file's own
+//   FDC_ACTIVATION_US comment already assumed (see that constant's comment above -- it cites
+//   the Full-Current-mode 16,384-cycle activation figure, which this fix now actually matches).
+//   The power cost of full-current activation only applies to the ~400us activation window
+//   inside a 10s duty-cycled wake, not a continuously-driven load -- immaterial here.
 bool fdcInit()
 {
   bool ok = true;
-  ok &= fdcWriteReg(0x08, 0x0400);  // RCOUNT_CH0
+  ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0 -- see 2026-08-30 comment above
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01, FREF_DIVIDER=1
   ok &= fdcWriteReg(0x1E, 0x8000);  // DRIVE_CURRENT_CH0: IDRIVE starting point, not bench-tuned
   // MUX_CONFIG (0x1B) left at power-on-reset default -- single-channel CH0,
   // correct for this board (CH1-3 grounded per netlist).
-  ok &= fdcWriteReg(0x1A, 0x1C01);  // CONFIG: CH0, exit sleep, internal osc -- written last, starts conversions
+  ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: CH0, exit sleep, internal osc, full-current
+                                    // sensor activation -- see 2026-08-30 comment above.
+                                    // Written last, starts conversions.
   return ok;
 }
 
 bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 
+// CH0_UNREADCONV, Address 0x18 STATUS bit 3 (Table 7-36): an unread conversion is present for
+// channel 0, and DATA_CH0 should be read to retrieve it. Poll this per-channel flag rather than
+// DRDY: ERROR_CONFIG.DRDY_2INT resets to b0 after every hardware shutdown, and Table 7-37 says
+// that setting prevents STATUS.DRDY from being updated. The prior DRDY poll therefore timed out
+// forever after the 2026-08-30 flash and suppressed every advertisement.
+#define FDC_STATUS_CH0_UNREADCONV_BIT 0x0008
+// Generous bound over the RCOUNT-driven worst-case conversion time (see fdcInit()'s RCOUNT_CH0
+// comment, ~24ms at RCOUNT=0xFFFF) -- this is a fail-fast ceiling for a genuinely stuck part/
+// oscillator, not a value tuned to be tight.
+#define FDC_CONVERSION_POLL_TIMEOUT_MS 60
+
+// 2026-08-30 review fix: waits for CH0_UNREADCONV before trusting a conversion, and reads STATUS before
+// DATA. Neither was true before. Both matter together, not separately:
+// - Table 7-36 (STATUS): "When flagged, any reported error is latched and maintained until
+//   either the STATUS register OR the DATA_CHx register corresponding to the Error Channel is
+//   read." The previous read order (DATA_CH0 MSB/LSB, then STATUS) meant a real ERR_WD/
+//   ERR_AHW/ERR_ALW on the very sample just captured could already be cleared by the DATA read
+//   before STATUS ever saw it -- not just "describes a later conversion", but potentially lost
+//   entirely.
+// - Nothing previously confirmed a fresh CH0 conversion before reading DATA at all -- the only
+//   settling guarantee was WAKE_DISCARD_CONVERSIONS' fixed discard-and-delay(1) loop in
+//   probeWake(), a bench-measured heuristic against the OLD, much shorter RCOUNT=0x0400
+//   conversion time. At the new RCOUNT=0xFFFF (~24ms/conversion), a 1ms inter-discard delay is
+//   far shorter than one conversion, so without this unread-conversion wait that loop would now just
+//   re-read the same stale conversion repeatedly instead of ever advancing to a new one.
+bool fdcWaitForCh0UnreadConversion(uint16_t &statusOut)
+{
+  uint32_t start = millis();
+  do
+  {
+    if (!fdcReadStatus(statusOut)) return false;
+    if (statusOut & FDC_STATUS_CH0_UNREADCONV_BIT) return true;
+  } while (millis() - start < FDC_CONVERSION_POLL_TIMEOUT_MS);
+  return false;  // timed out waiting for a fresh conversion -- same failure path as an I2C error
+}
+
 bool fdcReadChannel0(uint32_t &data28, uint16_t &statusOut)
 {
+  // See the 2026-08-30 comment on fdcWaitForCh0UnreadConversion() above for why this must run, and run,
+  // before DATA -- not just as an added check after the fact.
+  if (!fdcWaitForCh0UnreadConversion(statusOut)) return false;
   uint16_t msb, lsb;
   if (!fdcReadReg(0x00, msb)) return false;  // MSB must be read before LSB (latches result)
   if (!fdcReadReg(0x01, lsb)) return false;
   data28 = ((uint32_t)(msb & 0x0FFF) << 16) | lsb;
-  // A failed status read means ERR_WD/ERR_AHW/ERR_ALW can't be confirmed
-  // absent -- treat that the same as any other I2C failure (propagate false)
-  // rather than silently leaving statusOut at its caller-supplied default and
-  // letting loop()'s measurementOk gate advertise an unconfirmed reading.
-  if (!fdcReadStatus(statusOut)) return false;
   return true;
 }
 
@@ -364,7 +474,7 @@ void probeSleep()
 }
 
 // Brings everything back up and does not return until the analog front end
-// is producing trustworthy data. Returns false only on an I2C failure.
+// is producing trustworthy data. Returns false on an I2C failure or conversion timeout.
 bool probeWake(uint8_t discardConversions)
 {
   Wire.setPins(PIN_SDA, PIN_SCL);
@@ -386,7 +496,7 @@ bool probeWake(uint8_t discardConversions)
   {
     uint32_t d;
     uint16_t s;
-    fdcReadChannel0(d, s);
+    if (!fdcReadChannel0(d, s)) return false;
     delay(1);
   }
   return true;
@@ -636,10 +746,12 @@ void loop()
   // shutdown (probeSleep() left SD high and the mux parked on
   // MUX_SLEEP_CODE) -- switching here, before probeWake() deasserts SD,
   // means the tank isn't being actively driven across the mux transition.
-  // See the file header comment for MUX_SWITCH_SETTLE_MS.
+  // No settle delay needed here -- see the removed-MUX_SWITCH_SETTLE_MS comment
+  // near MUX_SLEEP_CODE above; the switch is done in tens of nanoseconds and
+  // probeWake()'s own tSDWAKEUP/I2C/activation sequence already leaves it
+  // orders of magnitude of margin before the oscillator starts.
   uint8_t phaseUsed = currentTankPhase;
   setMux(phaseUsed);
-  delay(MUX_SWITCH_SETTLE_MS);
 
   uint32_t rawData = 0;
   uint16_t fdcStatus = 0;
@@ -706,7 +818,8 @@ void loop()
     // runs straight through to its own probeSleep() call below).
     uint8_t bareTankMuxCode = 2 | phaseUsed;  // phase 0 -> code 2, phase 1 -> code 3
     setMux(bareTankMuxCode);
-    delay(MUX_SWITCH_SETTLE_MS);
+    // No settle delay here either -- same removed-MUX_SWITCH_SETTLE_MS reasoning as the
+    // electrode-swap mux switch above.
     bool bareWakeOk = probeWake(WAKE_DISCARD_CONVERSIONS);
     uint32_t bareTankData = 0;
     uint16_t bareTankStatus = 0;

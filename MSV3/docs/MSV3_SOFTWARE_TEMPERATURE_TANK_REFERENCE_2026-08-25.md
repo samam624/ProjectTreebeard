@@ -1,10 +1,30 @@
 # MSV3 software-only board temperature + bare-tank reference
 
 **Date:** 2026-08-25
-**Status:** Implemented and compile-verified (probe, receiver, cloud). Not flashed, not
-deployed. This is the first real implementation to come out of a live two-agent (Claude +
+**Status:** Implemented and originally compile-verified; deployed end to end on 2026-08-30.
+This is the first real implementation to come out of a live two-agent (Claude +
 Codex) design session run through `tools/agent-supervisor`'s new local live-pairing server
 (`src/live-server.ts`) - see that session's converged design brief for the original task text.
+
+## 2026-08-30 deployment and field update
+
+- The 23-byte diagnostic packet reached the receiver and cloud with non-null die temperature,
+  bare-tank count, and phase. The History page gained conditional charts for die temperature, raw
+  connected FDC count, bare-tank count, and the experimental same-row capacitance-above-bare ratio.
+- The first live 269-row window is analyzed in
+  [MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md](MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md).
+  The bare tank tracked die temperature closely and removed about half of the first observed
+  connected-count temperature slope, but did not remove the electrode/soil/coating residual.
+- A first fresh-data firmware revision mistakenly waited on global `STATUS.DRDY`. The FDC2214's
+  reset-default `ERROR_CONFIG.DRDY_2INT=0` prevents that bit from providing the assumed readiness
+  indication, so the probe stopped advertising. Production firmware was corrected to wait on
+  per-channel `STATUS.CH0_UNREADCONV`, after which transmissions returned.
+- The probe was subsequently removed from soil and water pockets were found underneath the nail
+  polish. Removing the polish caused the prior drift to reverse while drying and then become flat
+  in air. Current physical interpretation and repair steps are recorded in
+  [MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md](MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md).
+- The original compile-only language farther below is retained as the historical pre-deployment
+  gate list. It must not be read as the current deployment state.
 
 ## What this adds
 

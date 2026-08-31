@@ -48,7 +48,7 @@ assert.match(
 );
 assert.match(
   firmware,
-  /portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?if \(reading\.seen && wake == reading\.wake\)[\s\S]*?calibrateRawBattery\(sensorId, \(float\)rawBatteryMv, rawCharging\)[\s\S]*?smoothMoistureForDisplay\(sensorId, moisture, presentationSpan\)[\s\S]*?publishedReading = reading;[\s\S]*?portEXIT_CRITICAL\(&sensorsMux\);/,
+  /portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?if \(reading\.seen && wake == reading\.wake\)[\s\S]*?calibrateRawBattery\(sensorId, \(float\)rawBatteryMv\)[\s\S]*?smoothMoistureForDisplay\(sensorId, moisture, presentationSpan\)[\s\S]*?publishedReading = reading;[\s\S]*?portEXIT_CRITICAL\(&sensorsMux\);/,
   "Duplicate detection, stateful filters, record publication, and queue snapshot must share one sensors lock.",
 );
 assert.doesNotMatch(

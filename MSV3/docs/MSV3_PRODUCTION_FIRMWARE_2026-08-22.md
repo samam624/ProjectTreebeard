@@ -1,5 +1,16 @@
 # MSV3 Production Firmware — First Build (2026-08-22)
 
+> **2026-08-30 current-state update:** This document remains the history of the first production
+> build, not the current field definition. The later probe packet is 23 bytes and includes die
+> temperature, disconnected bare-tank count, and phase. Current production source also uses
+> `RCOUNT_CH0=0xFFFF`, full-current activation, `STATUS.CH0_UNREADCONV` readiness, and STATUS-before-
+> DATA ordering. A temporary DRDY-polling build suppressed advertisements and was replaced. The
+> current environmental failure and repair plan are documented in
+> [MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md](MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md);
+> the telemetry and ratiometric analysis are in
+> [MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md](MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md)
+> and [MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md](MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md).
+
 **Status:** The 2026-08-22 production probe and matching receiver were flashed and observed live.
 The review-remediated 2026-08-23 source compiles but has not been reflashed, so the physical probe
 must not yet be assumed to have the power-safe defaults below. Sections that say "not yet flashed,"

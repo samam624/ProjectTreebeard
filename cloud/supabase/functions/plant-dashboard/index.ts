@@ -239,43 +239,91 @@ async function shareHistoryApi(request: Request): Promise<Response> {
   const rawBeforeId = Number(url.searchParams.get("beforeId") ?? "0");
   const beforeId = Number.isFinite(rawBeforeId) ? Math.max(rawBeforeId, 0) : 0;
 
+  // Optional closed-range upper bound (e.g. "view 2026-10-29 through 2026-10-31") on top of
+  // the existing sinceHours/beforeId pagination - additive, not a replacement. Absent/invalid
+  // means "no upper bound", same as every existing caller before this parameter existed. Not
+  // clamped against `since` here - an until earlier than since just yields zero rows, same as
+  // any other empty-range query, rather than needing special-cased validation.
+  const rawUntilMs = Number(url.searchParams.get("untilMs") ?? "");
+  const until = Number.isFinite(rawUntilMs) && rawUntilMs > 0 ? new Date(rawUntilMs).toISOString() : null;
+
+  // Probe the eligible row count before reading any history payload. A normally reporting
+  // probe keeps every row; a dense probe is sampled at a stable one-in-N stride selected to
+  // fit HISTORY_POINT_BUDGET. At 2400 points the embedded 800px-wide chart still has three
+  // samples per horizontal pixel, while a 100k-row week shrinks from ~100 database RPCs and
+  // five large browser downloads to three small internal RPC pages and one response.
+  const HISTORY_POINT_BUDGET = 2400;
+
+  const supabase = serviceClient();
+  const { data: densityData, error: densityError } = await supabase.rpc(
+    "msv2_read_share_sensor_history_density",
+    {
+      p_share_token: shareToken,
+      p_receiver_id: receiverId,
+      p_sensor_id: sensorId,
+      p_since: since,
+      p_until: until,
+    },
+  );
+  if (densityError) {
+    return jsonResponse({ ok: false, error: densityError.message }, 401);
+  }
+
+  const density = (Array.isArray(densityData) ? densityData[0] : densityData) as
+    | { total_rows?: number | string; newest_id?: number | string; moisture_scale?: number | string | null }
+    | null;
+  const totalRows = Math.max(0, Math.floor(Number(density?.total_rows ?? 0)));
+  const newestId = Math.max(0, Math.floor(Number(density?.newest_id ?? 0)));
+  const moistureScale = Number(density?.moisture_scale);
+  const sampleEvery = Math.max(1, Math.ceil(totalRows / HISTORY_POINT_BUDGET));
+  const sampledTotal = Math.ceil(totalRows / sampleEvery);
+
+  if (totalRows === 0 || newestId === 0 || !Number.isFinite(moistureScale)) {
+    return jsonResponse({
+      ok: true,
+      readings: [],
+      hasMore: false,
+      totalReadings: totalRows,
+      sampleEvery: 1,
+      sampled: false,
+      pointBudget: HISTORY_POINT_BUDGET,
+    });
+  }
+
   // PostgREST's own "Max Rows" API setting hard-caps every RPC response to 1000 rows
-  // server-side no matter what p_limit asks for (confirmed live 2026-08-26 by requesting
-  // 1999/2000 and getting exactly 1000 back both times, while 200 correctly came back as
-  // 200 - see MobileAppPage.h's HISTORY_BATCH_ROWS comment for the full diagnosis). A
-  // single browser fetch used to map 1:1 to one RPC call and therefore silently topped out
-  // at 1000 rows. Instead of raising a project-wide dashboard setting (bigger blast radius,
-  // affects every table/endpoint), loop internally here: each RPC call still only returns
-  // up to 1000, but the loop runs server-to-server inside Supabase's own network instead of
-  // over the caller's (often mobile) connection, so many fast internal hops replace many
-  // slow browser round trips before we hand back one response.
+  // server-side no matter what p_limit asks for (confirmed live 2026-08-26). The edge
+  // function still loops internally so those pages stay on Supabase's network, but it now
+  // walks the bounded sample rather than exhaustively walking the underlying dense history.
   const RPC_PAGE_ROWS = 1000;
-  // Ceiling on how much a single browser round trip can request. Large enough to collapse
-  // a wide range into a handful of round trips; bounded so the response JSON and the loop's
-  // own run time stay reasonable.
-  const MAX_TOTAL_ROWS = 20000;
   // Wall-clock guard on the loop below, comfortably inside the edge function's own execution
   // ceiling. If it fires, `hasMore` is still reported honestly and the caller just makes
   // another round trip instead of this request hanging until it times out.
   const LOOP_TIME_BUDGET_MS = 20000;
 
   const rawLimit = Number(url.searchParams.get("limit") ?? "500");
-  const requestedTotal = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), MAX_TOTAL_ROWS) : 500;
+  const requestedTotal = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.floor(rawLimit), 1), HISTORY_POINT_BUDGET, sampledTotal)
+    : Math.min(500, sampledTotal);
 
   const rows: Record<string, unknown>[] = [];
   let cursor = beforeId;
-  let hasMore = false;
+  let exhausted = false;
+  let stoppedByTimeBudget = false;
   const loopStartedAt = Date.now();
 
   while (rows.length < requestedTotal) {
     const want = Math.min(RPC_PAGE_ROWS, requestedTotal - rows.length);
-    const { data, error } = await serviceClient().rpc("msv2_read_share_sensor_history", {
+    const { data, error } = await supabase.rpc("msv2_read_share_sensor_history_sampled", {
       p_share_token: shareToken,
       p_receiver_id: receiverId,
       p_sensor_id: sensorId,
       p_since: since,
+      p_at_or_before_id: newestId,
       p_before_id: cursor,
+      p_moisture_scale: moistureScale,
+      p_sample_every: sampleEvery,
       p_limit: want,
+      p_until: until,
     });
     if (error) {
       return jsonResponse({ ok: false, error: error.message }, 401);
@@ -285,19 +333,37 @@ async function shareHistoryApi(request: Request): Promise<Response> {
     rows.push(...page);
 
     if (page.length < want) {
-      hasMore = false;
+      exhausted = true;
       break;
     }
 
     cursor = Number(page[page.length - 1].id);
 
-    if (rows.length >= requestedTotal || Date.now() - loopStartedAt > LOOP_TIME_BUDGET_MS) {
-      hasMore = true;
+    if (rows.length >= requestedTotal) {
+      break;
+    }
+    if (Date.now() - loopStartedAt > LOOP_TIME_BUDGET_MS) {
+      stoppedByTimeBudget = true;
       break;
     }
   }
 
-  return jsonResponse({ ok: true, readings: rows, hasMore });
+  // On the initial request the exact density result tells us when the complete sample is
+  // present even if its last internal page happened to be exactly full. A deliberately
+  // smaller caller limit or the time guard continues through the existing beforeId cursor.
+  const hasMore = !exhausted && rows.length > 0 && !(
+    beforeId === 0 && rows.length >= sampledTotal
+  ) && (stoppedByTimeBudget || rows.length >= requestedTotal);
+
+  return jsonResponse({
+    ok: true,
+    readings: rows,
+    hasMore,
+    totalReadings: totalRows,
+    sampleEvery,
+    sampled: sampleEvery > 1,
+    pointBudget: HISTORY_POINT_BUDGET,
+  });
 }
 
 async function shareHistoryClearApi(request: Request): Promise<Response> {

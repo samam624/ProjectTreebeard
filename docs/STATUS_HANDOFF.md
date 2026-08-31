@@ -1,6 +1,135 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-24 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-08-30 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-08-30 DisplayCenter touch/display corruption and brightness overlay redraw bugs
+
+- Two independent bug threads on the ESP32-S3 receiver's shared ST7796/XPT2046 SPI bus, both
+  field-confirmed resolved. Full write-up:
+  `DisplayCenter/docs/DISPLAY_TOUCH_CORRUPTION_AND_OVERLAY_REDRAW_2026-08-30.md`. This also
+  corrects `DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md`'s stale "RESOLVED" status - that
+  bug's idle-polling case stayed fixed, but a related active-gesture case silently recurred.
+- **Card-art corruption during active touch.** An isolation test (touch SPI fully disabled)
+  proved touch SPI traffic during a gesture - not idle polling - was the trigger. Fixed by
+  rewriting `handleTouchInput()` to use the T_IRQ GPIO pin (zero SPI cost) as the primary
+  down/up signal, spending exactly one real SPI transaction per plain tap/long-press (down from
+  ~5-20+), plus a bidirectional bus-turnaround guard (`touchAcquisitionPending`,
+  `lastDisplaySpiActivityMs`) so that one read waits for quiet on both the touch and display
+  sides. Corruption dropped from most gestures to not reproduced in subsequent testing. Not
+  architecturally eliminated - full elimination would need a hardware check (verify `TFT_CS`
+  holds high at the ST7796 controller pin during an XPT2046 transfer), not done since the
+  deployed unit can't be reworked physically right now.
+- **Brightness overlay**, four separate bugs, all fixed: (1) most buttons were doing a full
+  modal repaint instead of the targeted redraw the drag path already had - added matching
+  targeted functions for the screen/sound buttons; (2) the slider's value text left stale
+  leading digits behind when shrinking (e.g. "100%" -> "9%" reading like "19%") - same
+  fixed-width-clear fix already used for the battery header; (3) rapid button-mashing could
+  drift the cached tap position outside a button's hitbox by release time and misfire the
+  overlay closed - fixed by latching the touched control once at the confirmed press
+  (`OverlayTouchTarget` enum) instead of re-deriving it from a possibly-drifted coordinate at
+  release; (4) closing the overlay either did a full flashing `renderUi()` rebuild or (after
+  replacing that with a lighter `restoreCardsFromCache()`) left gutter-colored residue between
+  cards, since only each card's own rect was repainted - fixed by filling the modal's panel
+  rect with the real background color first.
+- Two phone-a-friend (Codex) consultations under `display-touch-corruption-2026-08-30` directly
+  changed the outcome both times - once catching that a symptom's timing was inconsistent with
+  the working theory (leading to the real active-gesture mechanism), once correctly predicting
+  that a coordinate-pinning fix alone was too narrow and the right fix was latching an immutable
+  gesture target. Both consultations are worth reading in full if this area breaks again.
+- Deployed: `MSV2 runtime build` flashed to COM16 across several iterations this session, each
+  compiled clean and hash-verified; final state includes all fixes above.
+
+## 2026-08-30 Persistent phone-a-friend tandem lifecycle
+
+- The external `C:\Users\samca\Desktop\agent-supervisor` phone-a-friend MCP tool was upgraded from
+  an internally contradictory one-shot draft to version 0.2.0 with an explicit
+  `start -> continue -> finish` lifecycle.
+- One stable `consultation_id` now retains the same Claude/Codex advisor session across discovery,
+  planning, implementation, verification, and final review. Replies expose `active`, `turn`, and
+  `stage`; `finish` forces `final-review`, returns the last independent review, and closes the
+  session.
+- Server instructions now require the primary agent to bring meaningful new evidence back at each
+  checkpoint and to finish the consultation before its user-facing answer. The friend prompt asks
+  what evidence should be returned next, making the relationship iterative instead of one call that
+  resolves one narrow issue.
+- The privacy boundary remains context-only: no workspace/path argument, no direct project access,
+  no tools/network, and no recursive phone-a-friend. Each advisor receives an isolated temporary
+  directory that is removed on finish, failure, cancellation, timeout, or 12-hour idle expiry.
+- Same-ID calls are serialized; failed/timed-out sessions are discarded so a later call cannot
+  overlap a provider request that ignored cancellation. One server process allows at most 16 active
+  consultations.
+- `npm.cmd run check`, all 31 tests, and `npm.cmd run build` pass. The rebuilt
+  `dist/src/mcp-server.js` is registered globally with Codex and at Claude user scope; both point to
+  the same compiled file, and Claude reported the server connected. Restart existing editor chat
+  clients to guarantee they reload the new tool schema and server instructions.
+- Billing-safety guards were not modified.
+
+## 2026-08-30 MSV3 FDC diagnostics, field firmware, and coating finding
+
+- The original complaint was valid: the MSV3 connected FDC count had a repeatable daily movement of
+  roughly 0.68-1.00%, while the watering-adjacent stable step was only about -0.71% in count. A
+  complete audit verified CH0, coherent MSB-before-LSB reading, all 28 count bits, BLE byte order,
+  receiver decoding, and raw-history storage. This was not a wrong-channel or truncation problem.
+- The 23-byte MSV3 diagnostic packet is now represented end to end: nRF52840 die temperature,
+  disconnected bare-tank FDC count, and mux phase accompany the existing connected count and battery
+  voltage. The History page conditionally charts die temperature, connected raw count, bare count,
+  and an experimental `100*((Db/Dm)^2-1)` capacitance-above-bare trace.
+- In the first 269 paired rows (12:06-17:20 PDT), die temperature spanned 20.75-28.25 C. Bare count
+  correlated -0.9946 with die temperature; a first-order bare normalization reduced connected-count
+  slope by about 47.5%. This establishes that the reference is useful, but the residual still contains
+  electrode/soil/coating behavior and must not be labeled volumetric water content.
+- Probe acquisition source now uses `RCOUNT_CH0=0xFFFF`, full-current activation, a bounded wait for
+  `STATUS.CH0_UNREADCONV`, and STATUS-before-DATA ordering. The temporary 300 ms mux delay was removed:
+  it occurred while the FDC was shut down and could not settle the oscillator. IDRIVE and
+  SETTLECOUNT remain bench-tuning items, not guessed fixes.
+- A first fresh-data flash incorrectly polled global `STATUS.DRDY`. With reset-default
+  `ERROR_CONFIG.DRDY_2INT=0`, that readiness indication never appeared, so the probe stopped
+  advertising. The production sketch was corrected to poll `CH0_UNREADCONV`; data returned after the
+  reflash. The modified bring-up sketch still contains a DRDY poll and must be reconciled before its
+  FDC read commands are treated as authoritative.
+- The apparent battery collapse to approximately 3% was a display-calibration error, not a measured
+  cell collapse: VBAT was about 3.74 V. The receiver's old universal 400 mV charging correction pushed
+  that value to the bottom of the LiPo curve. Current working-tree code removes the inferred charging
+  voltage offset and uses measured voltage directly, retaining `raw_charging` only as diagnostic data.
+- The decisive physical finding was water trapped in pockets underneath the nail-polish blade
+  coating. After the nail polish was completely removed, the prior drift reversed while drying and
+  then settled to a very flat air baseline. This moves coating/edge water retention and soil/probe
+  equilibration ahead of intrinsic FDC thermal drift as the leading field cause.
+- Current repair plan: wait for 24-48 hours of stable dry-air data; seal the entire cut FR-4 perimeter
+  with a narrow MG Chemicals 832HD epoxy U-bead overlapping 0.5-1.0 mm onto both solder-mask faces;
+  cure; apply thin MG Chemicals 419D acrylic face coats; cure 48 hours; then run the staged air -> dry
+  soil -> measured watering -> return-to-air validation. Do not trap residual moisture under epoxy.
+- V4 should retain the accurate description "outer-layer copper under solder mask," reserve a 1 mm
+  copper/via-free routed-edge band, avoid mouse-bite edges in the sensing region, fully depanelize,
+  then use post-routing dielectric edge sealing. JLCPCB offers acrylic conformal coating and
+  epoxy-filled vias, but no documented standard routed-edge epoxy process; conductive edge plating is
+  not a substitute.
+- Deployment boundary at documentation time: the last explicit receiver flash record is
+  `MSV2 runtime build 2026-08-30 msv3-reference-normalization-v1`; the working tree now carries the
+  newer `history-custom-date-range-v1` source identity and the battery correction removal. A live
+  `/device` query was unavailable, so do not assume those later receiver changes are flashed without
+  checking. Migrations 036-038 and their cloud/UI changes are also present in the working tree; the
+  earlier deployment note still marks 036 pending, so verify linked migration/function state before
+  claiming them live.
+- Detailed records:
+  `MSV3/docs/MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md`,
+  `MSV3/docs/MSV3_FDC_THERMAL_DRIFT_ROOT_CAUSE_2026-08-30.md`, and
+  `MSV3/docs/MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md`.
+
+## 2026-08-29 Bounded History Downloads for Dense Probes
+
+- Root-caused Alocasia GP's failing seven-day History load: its >100,000 eligible rows forced
+  roughly 100 internal Supabase RPC pages plus multiple large browser responses, even though the
+  rendered chart is only 800 pixels wide.
+- Migration 036 adds an authorized density probe and stable sampled history reader. The edge
+  function now retains every row up to 2,400 points, then selects one real row out of every N
+  across the frozen range. A 100,001-row window becomes 2,381 transmitted points (every 42),
+  without deleting or rewriting stored history.
+- The embedded History page requests the same 2,400-point budget, limits continuation attempts,
+  guards an empty cursor page, and explicitly reports both stored and plotted counts.
+- Deployment is pending: apply migration 036, deploy `plant-dashboard`, then compile/flash
+  `MSV2 runtime build 2026-08-29 bounded-history-v1`.
+- Full design and verification: `DisplayCenter/docs/HISTORY_DENSITY_DOWNSAMPLING_2026-08-29.md`.
 
 ## 2026-08-24 Centered Moisture Presentation Filter
 

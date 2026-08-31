@@ -2,6 +2,21 @@
 
 **Recorded:** 2026-08-28
 
+## 2026-08-30 field result
+
+- Visible liquid pockets were found underneath the nail-polish protection after the probe was
+  removed from soil.
+- The nail polish was completely stripped. The previous drift then reversed while the blade dried
+  and settled to a very flat air baseline.
+- This partially executes the intent of the coating test without completing the controlled
+  fixed-depth-water A/B experiment. It strongly elevates coating/edge water retention, but does not
+  yet separate face-coating pockets from routed-edge/FR-4 uptake or soil-contact settling.
+- Do not seal the blade until the recovered air baseline remains stable for 24-48 hours. Then epoxy
+  the cut FR-4 perimeter, cure, apply thin 419D acrylic coats, cure, and perform the staged air -> dry
+  soil -> measured watering -> return-to-air validation in
+  [MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md](MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md).
+- The unpowered-in-soil, fixed-capacitor, pre-soaked-versus-dry, and cadence A/B tests remain open.
+
 Use this checklist to investigate the multi-day initialization rise without prematurely attributing
 it to C17.
 
@@ -25,4 +40,3 @@ it to C17.
 C17 remains questionable only if the BOM describes the intended component but the physical board
 was assembled with a different substitute. Otherwise, Claude's specific C17 hypothesis should be
 deprioritized.
-
