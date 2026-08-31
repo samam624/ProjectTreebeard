@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isValidInt32,
+  isValidRawFdcCount,
   MAX_HISTORY_ROWS_PER_UPLOAD,
   MAX_QUEUED_AGE_MS,
   normalizeObservationId,
@@ -52,6 +54,32 @@ test("a malformed row's identity is rejected without touching a well-formed sibl
   assert.equal(validateHistoryRowIdentity({ sensor: 3, observationId: "" }), null);
   assert.equal(validateHistoryRowIdentity({ sensor: 3 }), null);
   assert.equal(validateHistoryRowIdentity(null), null);
+  // Regression: msv2_store_sensor_reading_batch casts sensorId with `::integer` and has no
+  // per-row exception handler - a fractional or out-of-int4-range value used to pass the old
+  // Number.isFinite-only check here, reach the RPC, throw, and roll back every sibling row in
+  // the same batch (see isValidInt32's comment in history-batch.ts).
+  assert.equal(validateHistoryRowIdentity({ sensor: 3.5, observationId: "boot1-42" }), null);
+  assert.equal(validateHistoryRowIdentity({ sensor: 2147483648, observationId: "boot1-42" }), null);
+});
+
+test("isValidInt32 rejects fractional and out-of-int4-range values, matching the RPC's ::integer cast", () => {
+  assert.equal(isValidInt32(42), true);
+  assert.equal(isValidInt32(0), true);
+  assert.equal(isValidInt32(-1), true);
+  assert.equal(isValidInt32(3.5), false);
+  assert.equal(isValidInt32(Number.NaN), false);
+  assert.equal(isValidInt32(Infinity), false);
+  assert.equal(isValidInt32(2147483647), true);
+  assert.equal(isValidInt32(2147483648), false);
+  assert.equal(isValidInt32(-2147483649), false);
+});
+
+test("isValidRawFdcCount rejects negative and above-28-bit values, matching the FDC2214 count register domain", () => {
+  assert.equal(isValidRawFdcCount(0), true);
+  assert.equal(isValidRawFdcCount(0x0fffffff), true);
+  assert.equal(isValidRawFdcCount(0x0fffffff + 1), false);
+  assert.equal(isValidRawFdcCount(-1), false);
+  assert.equal(isValidRawFdcCount(1.5), false);
 });
 
 test("a batch with one malformed row still processes every other row (the receiver-snapshot fix this backs)", () => {

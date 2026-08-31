@@ -305,14 +305,25 @@ async function shareHistoryApi(request: Request): Promise<Response> {
     ? Math.min(Math.max(Math.floor(rawLimit), 1), HISTORY_POINT_BUDGET, sampledTotal)
     : Math.min(500, sampledTotal);
 
+  // Fetch one row past what the caller asked for ("lookahead") instead of exactly
+  // requestedTotal. Getting that extra row back proves more data exists past this page,
+  // full stop - no need to separately reason about whether a page happened to come back
+  // exactly full, or special-case the initial request against sampledTotal (the previous
+  // approach did both, and still had a gap: a continuation page - beforeId != 0 - that
+  // exactly exhausted the remaining sampled range wasn't covered by that special case, so
+  // hasMore was wrongly reported true and the client burned one extra round trip that came
+  // back empty). The lookahead row itself is trimmed off below before responding, so the
+  // client's own next-page cursor (derived client-side from the last row it actually
+  // receives - see MobileAppPage.h's loadHistoryInner) is always the last row we return,
+  // never the discarded lookahead row.
+  const overfetchTarget = requestedTotal + 1;
   const rows: Record<string, unknown>[] = [];
   let cursor = beforeId;
-  let exhausted = false;
   let stoppedByTimeBudget = false;
   const loopStartedAt = Date.now();
 
-  while (rows.length < requestedTotal) {
-    const want = Math.min(RPC_PAGE_ROWS, requestedTotal - rows.length);
+  while (rows.length < overfetchTarget) {
+    const want = Math.min(RPC_PAGE_ROWS, overfetchTarget - rows.length);
     const { data, error } = await supabase.rpc("msv2_read_share_sensor_history_sampled", {
       p_share_token: shareToken,
       p_receiver_id: receiverId,
@@ -333,13 +344,13 @@ async function shareHistoryApi(request: Request): Promise<Response> {
     rows.push(...page);
 
     if (page.length < want) {
-      exhausted = true;
+      // The underlying range is genuinely exhausted - fewer rows came back than asked for.
       break;
     }
 
     cursor = Number(page[page.length - 1].id);
 
-    if (rows.length >= requestedTotal) {
+    if (rows.length >= overfetchTarget) {
       break;
     }
     if (Date.now() - loopStartedAt > LOOP_TIME_BUDGET_MS) {
@@ -348,12 +359,14 @@ async function shareHistoryApi(request: Request): Promise<Response> {
     }
   }
 
-  // On the initial request the exact density result tells us when the complete sample is
-  // present even if its last internal page happened to be exactly full. A deliberately
-  // smaller caller limit or the time guard continues through the existing beforeId cursor.
-  const hasMore = !exhausted && rows.length > 0 && !(
-    beforeId === 0 && rows.length >= sampledTotal
-  ) && (stoppedByTimeBudget || rows.length >= requestedTotal);
+  // Stopping on the time budget means we bailed before proving exhaustion either way -
+  // report hasMore honestly so the caller retries, same as before. Otherwise the lookahead
+  // row (if present) is the whole signal: strictly more than requestedTotal rows came back
+  // only when there truly was another row past this page.
+  const hasMore = rows.length > 0 && (stoppedByTimeBudget || rows.length > requestedTotal);
+  if (rows.length > requestedTotal) {
+    rows.length = requestedTotal;
+  }
 
   return jsonResponse({
     ok: true,

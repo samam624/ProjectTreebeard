@@ -1,7 +1,24 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
-import { observedAtIso, selectHistoryRows, validateHistoryRowIdentity } from "./history-batch.ts";
+import {
+  isValidInt32,
+  isValidRawFdcCount,
+  observedAtIso,
+  selectHistoryRows,
+  validateHistoryRowIdentity,
+} from "./history-batch.ts";
 import { parseMsv3Diagnostics } from "./msv3-diagnostics.ts";
+
+// Permissive on purpose - not a full RFC 791/4291 validator, just enough to keep obviously
+// non-address content (a hostname, an empty segment, stray proxy annotations) from ever
+// reaching a Postgres `inet` cast.
+function looksLikeIpAddress(value: string): boolean {
+  const ipv4Match = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    return ipv4Match.slice(1).every((octet) => Number(octet) <= 255);
+  }
+  return value.includes(":") && /^[0-9a-fA-F:]+(%[\w.-]+)?$/.test(value);
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -267,7 +284,12 @@ Deno.serve(async (request) => {
     }
 
     const forwardedFor = request.headers.get("x-forwarded-for") ?? "";
-    const lastIp = forwardedFor.split(",")[0]?.trim() || null;
+    const forwardedForCandidate = forwardedFor.split(",")[0]?.trim() || null;
+    // x-forwarded-for is attacker/proxy-controlled and goes straight into msv2_touch_receiver's
+    // `p_last_ip inet` parameter - a value that doesn't parse as an address throws there and
+    // 500s the WHOLE snapshot POST (moisture/history included), not just the IP-logging update.
+    // Drop anything that doesn't look like an address instead of passing it through unchecked.
+    const lastIp = forwardedForCandidate && looksLikeIpAddress(forwardedForCandidate) ? forwardedForCandidate : null;
     const plantCount = Array.isArray(snapshot.plants) ? snapshot.plants.length : 0;
     const configVersion = typeof snapshot.config?.version === "number" ? snapshot.config.version : null;
 
@@ -328,30 +350,36 @@ Deno.serve(async (request) => {
 
         const displayMoisture = Number(plant?.moisture);
         const measuredMoisture = Number(plant?.measuredMoisture);
+        const moistureScale = Number(plant?.moistureScale);
+        // Every field below except rawCharging/observationId/receivedAt maps to an `integer`
+        // or `bigint` Postgres column that msv2_store_sensor_reading_batch casts with no
+        // per-row exception handler - a value that fails isValidInt32/isValidRawFdcCount would
+        // throw there and roll back the ENTIRE batch, not just this row (see history-batch.ts's
+        // comment on isValidInt32). Null out anything that doesn't validate instead of ever
+        // handing it to the RPC - this row is still stored, just without that one field, same
+        // as the existing degrade-to-null behavior these checks already had.
         readings.push({
           sensorId,
-          wake: Number.isFinite(Number(plant?.wake)) ? Number(plant.wake) : null,
-          moisture: Number.isFinite(measuredMoisture)
+          wake: isValidInt32(Number(plant?.wake)) ? Number(plant.wake) : null,
+          moisture: isValidInt32(measuredMoisture)
             ? measuredMoisture
-            : Number.isFinite(displayMoisture) ? displayMoisture : null,
-          displayMoisture: Number.isFinite(displayMoisture) ? displayMoisture : null,
-          moistureScale: Number.isInteger(Number(plant?.moistureScale)) && Number(plant?.moistureScale) > 0
-            ? Number(plant.moistureScale)
-            : 1,
-          rawMoistureKHz: Number.isFinite(Number(plant?.raw?.moistureKHz))
+            : isValidInt32(displayMoisture) ? displayMoisture : null,
+          displayMoisture: isValidInt32(displayMoisture) ? displayMoisture : null,
+          moistureScale: isValidInt32(moistureScale) && moistureScale > 0 ? moistureScale : 1,
+          rawMoistureKHz: isValidInt32(Number(plant?.raw?.moistureKHz))
             ? Number(plant.raw.moistureKHz)
             : null,
-          rawFdcCounts: Number.isFinite(Number(plant?.raw?.fdcCounts))
+          rawFdcCounts: isValidRawFdcCount(Number(plant?.raw?.fdcCounts))
             ? Number(plant.raw.fdcCounts)
             : null,
-          batteryPercent: Number.isFinite(Number(plant?.batteryPercent)) ? Number(plant.batteryPercent) : null,
+          batteryPercent: isValidInt32(Number(plant?.batteryPercent)) ? Number(plant.batteryPercent) : null,
           // Raw battery voltage/charging alongside the receiver's own smoothed percent, so
           // the History chart can re-derive/re-tune battery presentation from the original
           // signal instead of only ever seeing what the ingest-time filter already baked in.
-          rawBatteryMv: Number.isFinite(Number(plant?.raw?.batteryMv)) ? Number(plant.raw.batteryMv) : null,
+          rawBatteryMv: isValidInt32(Number(plant?.raw?.batteryMv)) ? Number(plant.raw.batteryMv) : null,
           rawCharging: typeof plant?.raw?.charging === "boolean" ? plant.raw.charging : null,
-          rssi: Number.isFinite(Number(plant?.rssi)) ? Number(plant.rssi) : null,
-          ageMs: Number.isFinite(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
+          rssi: isValidInt32(Number(plant?.rssi)) ? Number(plant.rssi) : null,
+          ageMs: isValidInt32(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
           observationId,
           receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs),
           ...parseMsv3Diagnostics(plant?.raw),

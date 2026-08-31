@@ -340,25 +340,41 @@ uint32_t countOscCycles(uint32_t windowMs)
     // time constant than Scindapsus's 10k, so under-charging here is if anything a
     // bigger risk, not a smaller one.
     uint32_t chargeStartUs = micros();
+    bool chargeTimedOut = false;
     while (digitalRead(SENSE_PIN) == LOW)
     {
       if (micros() - chargeStartUs >= OSC_CYCLE_TIMEOUT_US)
       {
+        chargeTimedOut = true;
         break; // never reached a clean HIGH (shorted/disconnected plate) - bail this half-cycle
       }
     }
 
     pinMode(SENSE_PIN, INPUT);
     uint32_t waitStartUs = micros();
+    bool dischargeTimedOut = false;
     while (digitalRead(SENSE_PIN) == HIGH)
     {
       if (micros() - waitStartUs >= OSC_CYCLE_TIMEOUT_US)
       {
+        dischargeTimedOut = true;
         break; // disconnected/open probe - bail this half-cycle
       }
     }
 
-    cycles++;
+    // Only count a cycle that actually completed both halves inside the timeout budget.
+    // A timed-out half is the "shorted/disconnected plate"/"disconnected/open probe" fault
+    // the comments above already call out - previously it still got counted as a real
+    // cycle, which for a fully open sense line (broken pulldown, cracked pad - the same
+    // field-failure class as MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md)
+    // deterministically produced exactly one fake "cycle" per averaging burst and read as
+    // the LOWEST possible oscillator frequency - which readAveragedMoisture() below inverts
+    // into the HIGHEST possible moisture reading, silently defeating LOW_MOISTURE_THRESHOLD
+    // for a sensor that isn't measuring anything at all.
+    if (!chargeTimedOut && !dischargeTimedOut)
+    {
+      cycles++;
+    }
   }
 
   // 2026-07-31 diagnostic, ported from the Scindapsus quantization-fix investigation:
@@ -402,12 +418,34 @@ uint32_t medianOf(uint32_t vals[], uint8_t n)
 uint16_t readAveragedMoisture()
 {
   uint32_t samples[OSC_MEDIAN_SAMPLES];
+  uint8_t validCount = 0;
   for (uint8_t i = 0; i < OSC_MEDIAN_SAMPLES; i++)
   {
-    samples[i] = countOscCycles(OSC_SAMPLE_WINDOW_MS);
+    // countOscCycles() now only counts a cycle that completed both halves within budget
+    // (see its own comment), so 0 here means this whole burst never saw one - exclude it
+    // from the median instead of letting a run of these fault samples drag a mix of
+    // real+fault bursts down to a false "very low frequency" (i.e. false "very wet").
+    uint32_t cycles = countOscCycles(OSC_SAMPLE_WINDOW_MS);
+    if (cycles > 0)
+    {
+      samples[validCount++] = cycles;
+    }
   }
 
-  uint32_t medianCycles = medianOf(samples, OSC_MEDIAN_SAMPLES);
+  if (validCount == 0)
+  {
+    // Every burst in this averaging pass failed to complete even one real charge/discharge
+    // cycle - a genuinely working sensor at any realistic soil capacitance oscillates far
+    // faster than OSC_CYCLE_TIMEOUT_US, so this means the sense line itself is shorted or
+    // open, not "maximally wet". Report as maximally DRY instead of running 0 cycles through
+    // the ceiling-inversion below (which would otherwise compute the ceiling itself, i.e.
+    // the false "fully saturated" reading this fix exists to prevent) - moisture=0 is <=
+    // LOW_MOISTURE_THRESHOLD, so the existing low-moisture LED/cloud alert path fires and
+    // draws attention to the probe instead of silently looking healthy forever.
+    return 0;
+  }
+
+  uint32_t medianCycles = medianOf(samples, validCount);
   uint16_t freqKHz = (uint16_t)(medianCycles * 1000UL / OSC_SAMPLE_WINDOW_MS / 1000UL);
 
   // The oscillator's raw frequency runs the "wrong" way for a value called moisture -

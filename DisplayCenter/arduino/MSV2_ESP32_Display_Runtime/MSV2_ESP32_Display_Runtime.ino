@@ -1169,9 +1169,24 @@ uint32_t lastTouchSpiMs = 0;
 // coordinate read never lands immediately adjacent to an unrelated TFT burst - see
 // handleTouchInput()'s use of it and loop()'s three gated call sites. lastDisplaySpiActivityMs is
 // stamped by loop() right after each of those calls runs, so handleTouchInput() can require
-// quiet on both sides (not just its own) before spending the read. Does not gate the brightness
-// slider's drag-mode reads - loop() already skips all three periodic calls unconditionally while
-// brightnessOverlayOpen is true, so no unrelated display traffic can occur during a drag anyway.
+// quiet on both sides (not just its own) before spending the read.
+//
+// 2026-08-31 follow-up, phone-a-friend consultation "treebeard-slider-fix-20260831": the
+// brightness slider was still visibly glitchy in the field after the above. The paragraph
+// this replaces was half right - loop() DOES skip all three periodic writers unconditionally
+// while brightnessOverlayOpen is true, so no THIRD-PARTY display traffic can land next to a
+// slider's touch read (see loop()'s own `if (brightnessOverlayOpen) { ...; return; }` gate).
+// But it wrongly concluded from that alone that the drag path didn't need its own turnaround
+// guard - every slider sample (the first one, embedded in the press-classification block, and
+// every drag-continuation sample after it) called previewTouchBrightness() to paint the new
+// knob position in the SAME poll as the touch SPI read that produced it, with no gap at all.
+// Since TOUCH_POST_SPI_BLACKOUT_MS == TOUCH_POLL_INTERVAL_MS, that read-then-immediate-write
+// adjacency repeated on every single poll for as long as a finger was moving on the slider -
+// the exact adjacency condition already proven to corrupt the display for taps, just recurring
+// dozens of times per drag instead of once per tap. See sliderPaintPending below for the fix:
+// split the read and its paint across two separate polls so they're never adjacent, reusing
+// this same proven blackout window symmetrically instead of guessing a smaller number with no
+// bench/scope evidence to justify it.
 volatile bool touchAcquisitionPending = false;
 volatile uint32_t lastDisplaySpiActivityMs = 0;
 // Set true the instant a long-press opens the overlay; blocks that SAME held contact from
@@ -1195,6 +1210,15 @@ bool overlayOpenedThisGesture = false;
 // re-deriving one from lastTouchX/lastTouchY.
 enum class OverlayTouchTarget : uint8_t { None, Minus, Plus, Slider, Screen, Sound, Close };
 OverlayTouchTarget overlayTouchTarget = OverlayTouchTarget::None;
+// True from the moment a slider touch read (the confirmed press itself, or a later drag
+// sample) has a coordinate waiting to be painted, until previewTouchBrightness() actually
+// paints it - see the 2026-08-31 comment on lastDisplaySpiActivityMs above for why this
+// exists: it lets the read and its paint land on two different polls instead of one, so
+// they're never SPI-adjacent. lastTouchX/lastTouchY carry the pending value - no separate
+// storage needed. Reset false on every new confirmed press and on release, so a gesture that
+// ends between its read and its paint just silently drops that last sample (displaySettings
+// stays at whatever was last actually painted) instead of leaking into the next gesture.
+bool sliderPaintPending = false;
 // 2026-08-30 ISOLATION TEST, phone-a-friend consultation "display-touch-corruption-2026-08-30":
 // DisplayCenter/docs/DISPLAY_ANIMATION_ART_CORRUPTION_2026-08-12.md's "Not yet tried" section
 // flagged this as the highest-value untried diagnostic and it was never actually run before two
@@ -3004,6 +3028,68 @@ void handleDashboardLongPress()
 
 void handleTouchInput(uint32_t now)
 {
+  // Slider-drag fast path, phone-a-friend consultation "treebeard-slider-fix-20260831" -
+  // runs on EVERY call, ahead of the TOUCH_POLL_INTERVAL_MS gate below, instead of sharing
+  // that gate's ~32ms-quantized cadence. Read/paint are still hard-limited to at most one
+  // transaction per TOUCH_POST_SPI_BLACKOUT_MS by the real elapsed-time checks inside this
+  // block - only the CHECKING frequency changes. This matters because lastTouchSpiMs and
+  // lastDisplaySpiActivityMs are now stamped with the transaction's actual completion time
+  // (see their own comments), not the poll's start time - a blackout that clears mid-poll-
+  // interval (the common case, since a real SPI transaction takes measurably nonzero time)
+  // would otherwise miss that poll-interval boundary and wait a full extra ~32ms for the
+  // next quantized one, roughly doubling the slider's real read-to-paint and paint-to-read
+  // cadence versus what TOUCH_POST_SPI_BLACKOUT_MS alone requires. Checking every call
+  // (loop() cycles every ~1-2ms while brightnessOverlayOpen, via its own `delay(1)`) lets a
+  // cleared blackout get acted on almost immediately instead of rounded up. No SPI is spent
+  // by the check itself - digitalRead(TOUCH_IRQ) and the two timestamp comparisons below are
+  // free - so this doesn't reintroduce the SPI-polling cost the T_IRQ redesign eliminated.
+  if (touchReady && !TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL && touchWasDown &&
+      overlayTouchTarget == OverlayTouchTarget::Slider && !touchWakeOnlyThisGesture &&
+      digitalRead(TOUCH_IRQ) == LOW)
+  {
+    const bool sliderInPostSpiBlackout = now - lastTouchSpiMs < TOUCH_POST_SPI_BLACKOUT_MS;
+    if (sliderPaintPending)
+    {
+      // A read is waiting to be painted (from this gesture's confirmed-press classification,
+      // or an earlier call through this same fast path). Wait for ITS post-SPI blackout to
+      // clear before spending the display write, so the read and the write are never
+      // SPI-adjacent - this was the actual glitch: previously both happened in one poll with
+      // no gap at all, repeating on every ~32ms poll for as long as the drag continued.
+      if (!sliderInPostSpiBlackout)
+      {
+        // Force both CS lines high before this transaction, same defensive reasoning as the
+        // read side below and the confirmed-press read above - don't assume the touch
+        // library left its own CS state exactly how the TFT library expects to find it.
+        digitalWrite(TFT_CS, HIGH);
+        digitalWrite(TOUCH_CS, HIGH);
+        previewTouchBrightness(lastTouchX);
+        lastDisplaySpiActivityMs = millis();
+        sliderPaintPending = false;
+      }
+    }
+    else if (!sliderInPostSpiBlackout && now - lastDisplaySpiActivityMs >= TOUCH_POST_SPI_BLACKOUT_MS)
+    {
+      // Symmetric to the confirmed-press read: force both CS lines high before this
+      // transaction so neither controller can still be mid-address-window, and require the
+      // display side quiet too (the previous phase's paint, if any) before spending it.
+      digitalWrite(TFT_CS, HIGH);
+      digitalWrite(TOUCH_CS, HIGH);
+      touchSpiTransactionCount++;
+      TS_Point point = touchScreen.getPoint();
+      // Re-read the clock rather than using this call's `now` - getPoint() is a real SPI
+      // transaction; stamping before it starts understates how recently touch was active.
+      lastTouchSpiMs = millis();
+      int16_t x = -1;
+      int16_t y = -1;
+      if (mapRawTouchToScreen(point.x, point.y, x, y))
+      {
+        lastTouchX = x;
+        lastTouchY = y;
+        sliderPaintPending = true;
+      }
+    }
+  }
+
   if (!touchReady || now - lastTouchPollMs < TOUCH_POLL_INTERVAL_MS)
   {
     return;
@@ -3074,9 +3160,12 @@ void handleTouchInput(uint32_t now)
     // edge.
     digitalWrite(TFT_CS, HIGH);
     digitalWrite(TOUCH_CS, HIGH);
-    lastTouchSpiMs = now;
     touchSpiTransactionCount++;
     TS_Point point = touchScreen.getPoint();
+    // Re-read the clock rather than reusing the pre-transaction `now` - getPoint() is a real
+    // SPI transaction and stamping before it starts understates how recently touch was
+    // actually active, the same class of gap already fixed for lastDisplaySpiActivityMs above.
+    lastTouchSpiMs = millis();
     int16_t x = -1;
     int16_t y = -1;
     if (!mapRawTouchToScreen(point.x, point.y, x, y))
@@ -3096,6 +3185,7 @@ void handleTouchInput(uint32_t now)
     overlayOpenedThisGesture = false;
     releaseCandidatePending = false;
     overlayTouchTarget = OverlayTouchTarget::None;
+    sliderPaintPending = false;
     lastTouchX = x;
     lastTouchY = y;
 
@@ -3136,9 +3226,12 @@ void handleTouchInput(uint32_t now)
       }
       else if (pointInside(x, y, sliderX - 12, sliderY - 20, sliderW + 24, 56))
       {
+        // Paint deferred to a later poll instead of done inline here - see
+        // sliderPaintPending's own comment. x/y are already this gesture's confirmed-press
+        // read (just stored into lastTouchX/lastTouchY above), so no extra SPI transaction
+        // is needed to have a value ready to paint.
         overlayTouchTarget = OverlayTouchTarget::Slider;
-        previewTouchBrightness(x);
-        lastDisplaySpiActivityMs = now;
+        sliderPaintPending = true;
       }
       else if (pointInside(x, y, panelX + 8, buttonY - 6, 128, 46))
       {
@@ -3177,8 +3270,17 @@ void handleTouchInput(uint32_t now)
       // appeared under it, on the very next poll while still held. Pure timestamp check - no
       // SPI transaction needed to fire a long-press.
       longPressFired = true;
+      // Snapshot before calling - handleDashboardLongPress() is a no-op (early-returns with
+      // no draw) if the overlay this same held contact already opened, or was already open
+      // for some other reason, so only stamp lastDisplaySpiActivityMs when a draw actually
+      // happened. The stale stamp this replaces cost a Slider-target gesture a spurious extra
+      // ~32ms of read/paint blackout once per drag, right at the 550ms long-press mark.
+      bool overlayWasOpenBeforeLongPress = brightnessOverlayOpen;
       handleDashboardLongPress();
-      lastDisplaySpiActivityMs = now;
+      if (!overlayWasOpenBeforeLongPress && brightnessOverlayOpen)
+      {
+        lastDisplaySpiActivityMs = millis();
+      }
       if (brightnessOverlayOpen)
       {
         overlayOpenedThisGesture = true;
@@ -3186,28 +3288,9 @@ void handleTouchInput(uint32_t now)
       return;
     }
 
-    // Live slider drag is the one case that legitimately needs continuous coordinates while
-    // held - gated on the LATCHED target (see overlayTouchTarget's comment), not a fresh
-    // per-poll hit-test, so a gesture that started on a button can never be reclassified as a
-    // drag just because a later, jittery sample happens to land inside the slider region.
-    // Naturally rate-limited to TOUCH_POLL_INTERVAL_MS by the top-of-function gate, and
-    // additionally skipped inside the post-SPI blackout so a just-finished conversion has time
-    // to settle before the next one starts.
-    if (overlayTouchTarget == OverlayTouchTarget::Slider && !touchWakeOnlyThisGesture && !inPostSpiBlackout)
-    {
-      lastTouchSpiMs = now;
-      touchSpiTransactionCount++;
-      TS_Point point = touchScreen.getPoint();
-      int16_t x = -1;
-      int16_t y = -1;
-      if (mapRawTouchToScreen(point.x, point.y, x, y))
-      {
-        lastTouchX = x;
-        lastTouchY = y;
-        previewTouchBrightness(x);
-        lastDisplaySpiActivityMs = now;
-      }
-    }
+    // Live slider drag is handled by the fast path at the top of this function instead of
+    // here - see that block's own comment for why the normal TOUCH_POLL_INTERVAL_MS-gated
+    // cadence below isn't fine-grained enough for it.
     return;
   }
 
@@ -3235,6 +3318,11 @@ void handleTouchInput(uint32_t now)
   }
   releaseCandidatePending = false;
   touchWasDown = false;
+  // If the finger lifted with a read still waiting to be painted, drop it rather than paint
+  // it here - release processing has its own timing-sensitive blackout requirements, and the
+  // dropped sample is at most one ~32ms-old position behind whatever was last actually
+  // painted (see sliderPaintPending's own comment).
+  sliderPaintPending = false;
 
   if (touchWakeOnlyThisGesture)
   {
@@ -3259,7 +3347,7 @@ void handleTouchInput(uint32_t now)
       // whether a second one followed. With that gesture gone (long-press owns the overlay
       // now), a plain tap can just act on release.
       handleDashboardSingleTap(lastTouchX, lastTouchY);
-      lastDisplaySpiActivityMs = now;
+      lastDisplaySpiActivityMs = millis();
     }
     return;
   }
@@ -3274,7 +3362,7 @@ void handleTouchInput(uint32_t now)
     // Only the value/slider changed - see drawBrightnessSliderRow()'s own comment for why a
     // full-panel repaint here is exactly the flashing anti-pattern it exists to avoid.
     drawBrightnessSliderRow(brightness, true);
-    lastDisplaySpiActivityMs = now;
+    lastDisplaySpiActivityMs = millis();
     return;
   }
   uint8_t brightness;
@@ -3297,7 +3385,7 @@ void handleTouchInput(uint32_t now)
       uint8_t newBrightness = (uint8_t)max(1, (int)brightness - 10);
       setDisplaySettingsLocal(newBrightness, true, "receiver-touch");
       drawBrightnessSliderRow(newBrightness, true);
-      lastDisplaySpiActivityMs = now;
+      lastDisplaySpiActivityMs = millis();
       break;
     }
     case OverlayTouchTarget::Plus:
@@ -3305,7 +3393,7 @@ void handleTouchInput(uint32_t now)
       uint8_t newBrightness = (uint8_t)min(100, (int)brightness + 10);
       setDisplaySettingsLocal(newBrightness, true, "receiver-touch");
       drawBrightnessSliderRow(newBrightness, true);
-      lastDisplaySpiActivityMs = now;
+      lastDisplaySpiActivityMs = millis();
       break;
     }
     case OverlayTouchTarget::Screen:
@@ -3317,7 +3405,7 @@ void handleTouchInput(uint32_t now)
         // Only this button's own color/label changed - see
         // drawBrightnessScreenButtonRow()'s comment.
         drawBrightnessScreenButtonRow(newScreenOn);
-        lastDisplaySpiActivityMs = now;
+        lastDisplaySpiActivityMs = millis();
       }
       break;
     }
@@ -3327,7 +3415,7 @@ void handleTouchInput(uint32_t now)
       // comment. setSoundEnabledLocal() updates the soundEnabled global synchronously, so it
       // already reflects the new state here.
       drawBrightnessSoundButtonRow(soundEnabled);
-      lastDisplaySpiActivityMs = now;
+      lastDisplaySpiActivityMs = millis();
       break;
     case OverlayTouchTarget::Close:
       brightnessOverlayOpen = false;
@@ -3339,7 +3427,7 @@ void handleTouchInput(uint32_t now)
       // comment. Also a genuinely large write burst, so tracked by lastDisplaySpiActivityMs
       // the same as loop()'s three periodic writers.
       restoreCardsFromCache();
-      lastDisplaySpiActivityMs = now;
+      lastDisplaySpiActivityMs = millis();
       break;
     case OverlayTouchTarget::Slider:
     case OverlayTouchTarget::None:
@@ -8097,7 +8185,11 @@ void loop()
     if (artSlotCount > 0)
     {
       renderDashboardDataOnly(!realDataChanged);
-      lastDisplaySpiActivityMs = now;
+      // Re-read the clock - `now` is loop()'s top-of-iteration snapshot, taken before this
+      // blocking call ran. Stamping with it instead of the actual completion time understates
+      // how recently the display bus was active and can let handleTouchInput() spend its touch
+      // SPI read while a slow render is still finishing on the wire.
+      lastDisplaySpiActivityMs = millis();
     }
     else
     {
@@ -8111,7 +8203,8 @@ void loop()
     if (!displayDirty)
     {
       renderAnimatedPlantArt();
-      lastDisplaySpiActivityMs = now;
+      // See the comment on the renderDashboardDataOnly() stamp above - same stale-`now` risk.
+      lastDisplaySpiActivityMs = millis();
     }
   }
 
@@ -8120,7 +8213,9 @@ void loop()
     displayDirty = false;
     setCheckpoint("loop: render start");
     renderUi();
-    lastDisplaySpiActivityMs = now;
+    // See the comment on the renderDashboardDataOnly() stamp above - same stale-`now` risk,
+    // and renderUi() is the slowest of the three (full JSON reparse + full-screen rebuild).
+    lastDisplaySpiActivityMs = millis();
     setCheckpoint("loop: render done");
   }
 #endif

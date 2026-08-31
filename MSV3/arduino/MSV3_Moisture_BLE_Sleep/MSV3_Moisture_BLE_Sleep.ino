@@ -620,6 +620,17 @@ void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, uint8_t 
   uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
   uint32_t bareTankField = bareTankValid ? bareTankDataCh0 : 0;
   uint8_t mfg[23];
+  // Enforce the "3+3+(2+23)=31" arithmetic from mfg[]'s own declaration comment at compile
+  // time, not just in prose. The runtime addData() failure check a few lines down exists too,
+  // but ENABLE_SERIAL_LOGS is false in production, which means Serial.begin() itself never
+  // runs (see setup()) - there is no field-observable channel for that log to reach, so a
+  // future field added to mfg[] without shrinking something else would overflow silently in
+  // the field with no diagnostic anyone could actually see. Catching it here instead means
+  // the build breaks for the developer making that change, before it ever reaches a probe.
+  static_assert(
+    3 /* Flags AD structure */ + 3 /* TxPower AD structure */ + 2 /* manufacturer-data AD header */ + sizeof(mfg) <= 31,
+    "MSV3 advertising payload (Flags + TxPower + manufacturer data) exceeds the 31-byte legacy PDU limit"
+  );
 
   mfg[0] = lowByte(BLE_COMPANY_ID);
   mfg[1] = highByte(BLE_COMPANY_ID);
