@@ -1488,3 +1488,312 @@ code (points at `R17` or the mux's `VDIV`-throw pins, not yet confirmed which). 
 item from the bench test plan: first confirmed real-bridge EC-check test on this design, both
 digital and analog paths, on a third, healthy board. Full detail, per-board results table, and open
 items: `docs/MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md`.
+
+## 2026-08-31: EC-check distilled-water / dry-soil bench check (confirmed-good board)
+
+Following up the 8/28 finger-bridge EC-check confirmation (`mux 2` + `divnode`, analog `P0.03`
+bodge) with two real substrates on the same board. `divnode` (EC-check, mux 2, `A=3V3 B=VDIV`)
+read `0/4095 (0.0 mV)` in both distilled water and dry soil, across 7 reads each. Electrode-swap
+phase (`fdcstream`, mux 1) `DATA_CH0` shifted between the two conditions (~15.93M in the distilled-
+water run vs. ~20.34M in the dry-soil run) — a plausible dielectric response to water immersion on
+the capacitive tank channel, not yet a controlled A/B (different runs, not alternated back-to-back
+on the same setup), so not conclusive on its own.
+
+**Reading:** this is the expected result, not evidence of a mis-sized `R17`. Distilled water has
+almost no free ions (poor conductor by design) and dry soil has no pore moisture to carry current —
+neither substrate should produce an EC-check signal, and neither did. Combined with the 8/28
+finger-bridge test (which did read nonzero), the EC-check path has now shown correct behavior at
+both ends: signal on a genuinely conductive bridge, silence on two non-conductive ones. The
+open item is still what Test 5/6 originally called for: **moist** soil (real pore-water conductivity,
+not bone-dry) or a salted-water reference, to see where a real deployment substrate lands in the
+range and inform the `R17` re-derivation already flagged in
+`docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md` Test 5.
+
+**Same-day follow-up — soil moistened with distilled water:** `divnode` stayed effectively at the
+noise floor (17 reads: fifteen at `0/4095`, two at `1-2/4095` / 0.7-1.5 mV) — still no real
+EC-check signal. Expected, for the same reason as above: distilled water carries the moisture but
+contributes no ions of its own, so this only tests whether the soil's *own* dissolved
+salts/minerals are enough to register, not whether the sensor works. `DATA_CH0` (mux 1,
+electrode-swap) sat at ~18.00-18.01M and drifted slightly upward over a 10-sample stream —
+between the dry-soil value (~20.34M) and the direct-distilled-water value (~15.93M) from the
+earlier runs. That ordering (dry highest, moist soil in between, standing water lowest) is a
+physically sensible permittivity gradient on the capacitive tank channel, worth tracking, though
+still not a controlled same-session A/B.
+
+**Still open, now more specifically:** this hasn't yet separated "R17 sized wrong" from "the water
+used had no ions to detect." The next test that actually distinguishes them is the same soil
+wetted with **tap water** (or a pinch of salt/fertilizer dissolved in water) instead of distilled —
+if that produces a clear `divnode` jump like the 8/28 finger bridge did, the circuit and `R17` are
+fine and today's zero readings were a test-medium artifact, not a hardware one. If it's still flat
+with real dissolved ions in the mix, that would actually support suspecting `R17`'s value.
+
+**Same-day follow-up — true dry-air baseline (no substrate at all):** `divnode` over 12 reads:
+mostly `0/4095`, occasional `1-5/4095` (0-3.7 mV), same noise-floor character as the "moist soil +
+distilled water" run above. This confirms that run's `0-2/4095` readings were indistinguishable
+from no substrate at all, not a weak signal — the ADC's real rest-noise floor is ~0-5 raw counts
+(~4 mV), so any future detection threshold should sit above that. `DATA_CH0` (mux 1) held tight at
+~20.500-20.506M, essentially matching the dry-soil run (~20.34M) and confirming the ordering seen
+so far on the capacitive tank channel: dry air ≈ dry soil (~20.3-20.5M) > moist soil (~18.0M) >
+standing distilled water (~15.9M) — a clean, monotonic, physically sensible permittivity gradient
+across four independent conditions now. The capacitive/moisture channel looks like it's genuinely
+discriminating substrate states; the EC-check/conductivity channel still has exactly one
+above-noise result (the 8/28 finger bridge) and needs the tap-water/saline test above to get a
+second.
+
+**Same-day follow-up — tap water, and a likely root cause:** `DATA_CH0` (mux 1) read ~16.04-16.05M,
+close to the standing-distilled-water value (~15.93M) as expected (water's dielectric constant
+dominates the tank reading regardless of dissolved ions). `divnode` (EC-check, mux 3, swapped
+polarity) stayed at the noise floor across 13 reads (eleven `0/4095`, two `2/4095`/1.5 mV) — no
+above-noise signal from a real, ion-bearing conductive medium. Combined with the dry-air baseline
+above, this is no longer ambiguous: tap water is definitely conductive, so the EC-check circuit's
+lack of response now points at the divider itself, not the test medium.
+
+Confirmed from the real netlist (`MSV3/hardware/MSV3_Probe_PCB/reference/netlist/MSV3_sch.NET`):
+`R17` = **100k**, wired `R17-1` to `GND` and `R17-2` to the `VDIV` net (also `MUX-7`, `MUX-11`,
+`U1-11`/old `P0.00`). So EC-check is a plain divider, `VDIV = 3.3V * R17/(R17 + R_electrodes)`,
+matching every observation to date: huge `R_electrodes` (dry/open) → ~0V, near-zero
+`R_electrodes` (wire-short/finger) → full-scale. With `R17` at 100k, clearing even the ~5-count
+noise floor needs `R_electrodes` below roughly 80-90 MΩ — tap water reading nothing implies this
+electrode geometry's actual resistance through water is far above that, well beyond what bulk
+tap-water resistivity would suggest, most likely because the electrode spacing/contact area is
+small enough to push the effective path resistance that high. A finger clears it easily because
+skin contact area/pressure gives a much lower resistance than these electrodes see in water.
+
+**Likely root cause, not yet fully confirmed:** `R17` (100k) is undersized for the real
+dry/wet-salty resistance range this electrode geometry presents — matches the re-derivation this
+doc already flagged as an open item once real analog data existed. **Next step:** multimeter the
+actual resistance between the two electrode pads directly (once in tap water, once in moist soil)
+to get a real number, then size a replacement `R17` around it (geometric mean of the dry/wet range,
+per the existing note) rather than more liquid trial-and-error.
+
+**Same-day follow-up — direct electrode-pad multimeter reading, board unplugged (medium not yet
+recorded):** measured `>2M` — pegged the meter's own range ceiling, not a real value. **Not yet
+confirmed which condition this was taken under** (electrodes in tap water/soil vs. disconnected in
+open air) — that distinction matters: dry/open reading `>2M` is trivial and expected, while a
+wet/in-medium reading `>2M` would be strong direct confirmation that real `R_electrodes` is well
+above the 100k `R17`, not just "somewhere above 90M" as inferred from the earlier `divnode` math.
+**Open item:** get a real number past the meter's ceiling — series a known large resistor (e.g.
+10M) between a known voltage and one electrode, put the electrodes in the actual medium, measure
+the divider midpoint, and solve `R_electrodes = V_meas * R_known / (V_supply - V_meas)` — same
+principle as the EC-check circuit itself. That number is what should actually size the replacement
+`R17`, rather than picking a value on a guess.
+
+**Same-day follow-up — measurement method, no soldering:** decided to build the known-resistor
+divider entirely off-board (breadboard + a separate spare ESP32 as the 3.3V source/ADC reader),
+clipping directly onto the same two bare electrode pads the multimeter already touched, with the
+MSV3 board fully powered off throughout. Powered off, the TMUX1109's switches sit open/undriven, so
+the mux, `R17`, and the E73 are fully out of the path — no need to "isolate" the mux by any special
+sequence, and zero risk to the working board's already-fussy mux. Chosen for exactly this reason:
+avoids any solder rework on the one confirmed-good board.
+
+**Same-day follow-up — external jig built, results likely confounded by body leakage.** Standalone
+ESP32-S3 breadboard jig (`3V3 -> Electrode A -> [medium] -> Electrode B -> GPIO1 -> R_known -> GND`,
+`analogReadMilliVolts()`), calibrated against a real wire-short: raw short-circuit reading was
+3129.0-3129.5 mV against an assumed 3300 mV, confirmed via direct multimeter (3V3-to-GND on the
+devkit reads 3.29V, rail is fine) to be entirely an ESP32-S3 ADC nonlinearity near the top of its
+range, not a supply issue — corrected by using the measured short as the live reference instead of
+an assumed constant.
+
+With that calibration in place: tap water, distilled water, and soil-wetted-with-distilled-water
+all read **~0.8 Mohm** — suspiciously identical. Distilled water should read far higher resistance
+than tap water; reading the same number is a strong sign something other than the medium is
+dominating all three, most likely the operator's own hand-to-hand body resistance in parallel
+across the electrodes while holding bare wire during the dip (same order of magnitude as the 8/28
+finger-bridge result, and a ~0.9M body path in parallel with true water resistance in the tens of
+Mohms computes to almost exactly ~0.8-0.9M — consistent with what was seen). Also inconsistent with
+the onboard `divnode` reading ~0 in tap water: a real 0.8M `R_ext` through the 100k `R17` should
+have produced a clearly visible ~367 mV signal there, and it never has.
+
+**Not yet confirmed, needs a hands-off re-test:** repeat with zero bare-skin contact on the exposed
+metal (hold only insulated wire, or leave alligator clips attached hands-off once clipped) before
+trusting any of today's three numbers for sizing `R17`. No salt/saline reference available yet
+either way — not blocking this specific re-test.
+
+**Same-day follow-up — second confound found: DC electrode polarization, resistance climbs with
+hold time.** Cross-check against the multimeter: it overloads (`>2M`) on the same wet electrodes
+where the jig read `0.8-1M`, which looked contradictory until noticing the jig's reading climbs the
+longer the leads are held in the medium. Likely cause: sustained DC across electrodes in an ionic
+medium drives electrode polarization (ion migration to the electrode surface, plus electrolysis gas
+bubbles at longer hold times), progressively reducing effective contact and raising the *apparent*
+resistance over time — a textbook reason simple two-wire DC conductivity probes drift, and part of
+why real conductivity meters use AC excitation instead of sustained DC. This reconciles rather than
+contradicts the multimeter: both are likely watching the same climb at different points in time,
+not disagreeing about a fixed value. Separately validated the jig itself: probing a known 20M
+resistor (dry, no electrode/electrolyte effects) reads back cleanly, confirming the circuit and
+calibration are sound — this confound is specific to wet-electrode DC behavior, not the
+measurement setup.
+
+**Directly relevant to the product, not just this bench test:** this is the same reason the real
+MSV3 firmware never holds a sustained DC bias on the electrodes — it takes a fast single-shot read,
+and the mux alternates electrode polarity between reads for the related reason of canceling
+DC-bias-driven drift. A fast jig reading (taken within ~1s of first contact) is therefore the more
+representative number for sizing `R17` than a "let it settle" reading — the settled value reflects
+a polarization artifact the real firmware's read pattern is specifically designed to avoid, not the
+medium's true resistance. **Open item:** redo tap water / soil readings capturing the fast
+(near-instant) value specifically, alongside the hands-off requirement above.
+
+**Same-day follow-up — third confound found and fixed: mux ESD-diode injection while probing
+Node A/B on the live board.** Root cause of the multimeter-vs-jig disagreement, confirmed against
+the real TMUX1109 datasheet (SCDS406A): Absolute Maximum Ratings lists switch pin voltage (`VS`/
+`VD`, Sx/Dx) as **-0.5V to VDD+0.5V** — with the board powered off (`VDD=0V`), that's a hard limit
+of +0.5V, and the jig was driving 3.3V onto those same pins, ~2.8V past rated maximum every test.
+"Fail-Safe Logic" (section 6.3.4) does **not** cover this: it's explicitly scoped to the control
+pins (`EN`, `A0`, `A1`) only, not the switch/signal pins Node A/B connect to. 3.3V is well above a
+silicon diode's ~0.5-0.6V forward-conduction threshold, so this was almost certainly forward-biasing
+the switch pins' internal ESD/clamp diodes into the floating (unpowered) VDD rail, injecting a
+parasitic low-impedance path between Node A/B that has nothing to do with the medium — explaining
+both the multimeter disagreement (its ohmmeter test voltage stays well under that threshold, so it
+never triggered this path and was correctly reporting the true, much higher resistance) and the
+run-to-run scatter (floating VDD net's charge state varies). 10M in series limited the fault
+current to sub-microamp, so real damage risk to the board was low, but this is not a valid
+measurement path regardless. **Fix:** moved the divider to a spare unpopulated probe fork (same
+electrode geometry, zero chip in the path) instead of Node A/B on the working board.
+
+**Result on the clean setup — distilled water: 170-190 Mohm.** First trustworthy R_ext number in
+this whole investigation. Confirms the `divnode` noise-floor reads were never a broken circuit:
+at the current `R17`=100k, even this reading would produce `VDIV = 3.3V * 100k/(100k+180M) ~= 1.8
+mV` — below the ~5-count (~4mV) noise floor established by the dry-air baseline, in *distilled*
+water specifically (the least conductive realistic wet case). `R17` isn't wrong by a little, it's
+off by roughly three orders of magnitude from what's needed to see this. **Open item:** get a real
+soil number on this same clean (spare-probe, hands-off) setup — that's the deployment-relevant low
+end of the range. Once both ends exist (soil low end, distilled-water-or-better high end), size
+`R17` near their geometric mean per the original bench-plan note.
+
+**Same-day follow-up — first multi-medium comparison came back scrambled, then resolved cleanly
+after two more fixes.** Initial 10M-resistor pass across school tap water, the campus filtered-
+water bottle-filler, and soil wetted with the filtered water gave `600-700M` / `200-220M` / `550M`
+respectively — tap water reading *less* conductive than filtered water, and everything clustered
+within one order of magnitude despite media that should differ far more. Considered (and initially
+over-weighted) a soldermask-over-the-electrodes theory: since the nodes have no bare-metal contact
+with the medium, each electrode is technically a small capacitor in series with the medium's real
+resistance, and a step-response derivation showed a decaying-voltage-read-as-a-static-resistor
+would exactly produce the earlier "resistance climbs the longer I hold it" symptom. That theory was
+walked back once new data came in: on the clean spare-probe setup (no mux/chip in the path),
+readings now hold steady while held, which is much better explained by the already-diagnosed mux
+floating-VDD-diode charging effect (present in the earlier, mux-connected measurements the "climbs
+with hold time" observation was actually made on) than by an electrode-mask RC decay that would
+still be present regardless of whether a chip is anywhere in the circuit. Soldermask is real
+(no bare-metal galvanic contact exists here) but is not the dominant confound at these resistance
+levels — the scrambled comparison is attributed to human-timing inconsistency between the three
+separate cup tests instead, now considered resolved rather than open.
+
+Second fix: swapped `R_KNOWN` from 10M to 20M (the largest resistor on hand) since `R_ext` was
+consistently landing far above 10M, deep in the compressed/low-voltage part of that divider's
+range — roughly doubles the signal voltage at every reading for `R_ext` in the 100M+ range that
+this design is actually operating in.
+
+**Clean result, physically sensible for the first time this session:**
+
+| Medium | R_ext |
+|---|---|
+| Tap water | ~200M |
+| Moist soil | ~500M |
+| Filtered water | ~800-900M |
+| Air (open) | ~1000M |
+
+Ranking now matches expectation (tap water more conductive than filtered water, since filtration
+strips some of the dissolved minerals; soil in between; open air least conductive) and is
+internally consistent with the earlier "soil + filtered water" result (550M then vs. ~500M for
+moist soil now). Top end (filtered water, air) is expected to be less consistent/resolvable — the
+signal there is smallest and most noise-sensitive with any fixed reference resistor — which doesn't
+matter for the actual use case (distinguishing "needs water" from "well-watered" only requires
+resolution in the wet range, not at the dry end).
+
+**Provisional `R17` recommendation:** geometric mean of the realistic wet-to-near-dry range
+(~200M to ~900M) is `sqrt(200M * 900M) ~= 424M` — a standard value of **330M or 470M** would center
+the divider's sensitivity where irrigation decisions actually get made. Provisional because (a) no
+salty/high-conductivity reference exists yet to firm up the true low end (real wet-salty soil could
+read lower than plain tap water), and (b) this hasn't been validated with an actual `R17` swap and
+retest on real board hardware yet — still a breadboard/spare-probe estimate.
+
+## 2026-08-31 (closing): EC-check invalidated at the design level — soldermask/coating block it,
+## not the resistor. Four-board mux triage clean. Status below.
+
+**The `R17`-sizing effort above, while real and now in the BOM, does not make EC-check work.**
+Follow-up question crystallized the actual blocker: the electrode nodes have soldermask over them
+("there always has been and always will be" — not a manufacturing accident, and conformal coating
+is about to add a second insulating layer on top). A DC resistive conductivity measurement needs
+actual bare-metal galvanic contact with the soil; soldermask (+ soon coating) removes that
+entirely, regardless of `R17`'s value. Extrapolating the divider math to what conformal coating
+would additionally require (~10G-range `R17`) makes the underlying problem explicit: at that scale
+the "signal" (real soil resistance) becomes comparable to every other uncontrolled leakage path on
+the board (PCB surface leakage, mux off-state leakage, ADC input leakage) — the measurement stops
+being specific to soil conductivity at all. There is no resistor value that fixes a missing
+galvanic path. This is also consistent with a real, stated design goal (limiting current leakage
+into the soil), not just an accident of PCB fab defaults — soldermask and EC-check are directly in
+tension, and soldermask wins.
+
+**TMUX1109's remaining justification, now that EC-check is off the table:** two functions survive,
+both already real and unrelated to soil conductivity — (1) **electrode-swap** (mux codes 0/1),
+which periodically reverses which physical electrode is sense vs. reference on the *capacitive*
+tank measurement, to cancel DC-bias-driven electrode polarization/migration (this predates
+EC-check in the design history and has nothing to do with it); (2) **bare-tank reference read**
+(mux codes 2/3, repurposed from the dead EC-check use), disconnecting the electrodes for a
+parasitic-only capacitance baseline, already live in the production firmware for
+temperature/drift compensation. Confirmed via the real FDC2214 datasheet that its own
+`MUX_CONFIG`/`AUTOSCAN` feature is unrelated — that's channel-to-channel scanning across up to 4
+independent tanks, not the electrode-polarity swap TMUX provides; no redundancy, no overlap.
+**Forward-looking note for a future PCB revision only, not this batch:** EC-check specifically was
+what pushed this design to a full 4-destination-per-electrode mux (TMUX1109's shape — each
+electrode reaching `TANK_HOT`/`TANK_REF`/`3V3`/`VDIV`). The two surviving functions only need 3
+destinations per electrode (two swap roles + disconnect), so a cheaper/simpler mux could replace
+TMUX1109 next time. Not actionable on the four boards already built.
+
+**Bodge-wire disposition:** the `P0.03`→`VDIV` EC-check bodge wire is being removed from all four
+boards for a clean seal under conformal coat (cosmetic/reliability call, user's own decision — not
+required electrically, since `P0.03` was unused before this bodge and costs nothing left in place).
+Precedent already exists on this board for the equivalent situation: the old `P0.00` trace also
+stays physically wired to `VDIV` in parallel and is just `gpioDisconnect()`'d in firmware rather
+than removed. Once the bodge wire is gone, `divnode`/`DATA_CH0`-via-`VDIV` reads no meaning at all
+and should not be treated as data — not that they ever were valid soil-conductivity data to begin
+with.
+
+**Real FDC2214 tank capacitance, measured (see the two same-day entries above)**: fresh/never-wet
+dry ~50-60pF (matches original ~64-96pF bare-sensor RC estimate), fully wet ~500pF, moist soil
+~400-500pF, "dried after wet" plateaus ~360pF (residual moisture, not a fault). Both
+`MSV3_PROBE_BOM.md` and `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open items 1 and 7 updated with this
+and the `R17` finding. **Padding cap (`C17`) must stay** — without it, bare dry capacitance
+(~50-60pF) sits 5-6x below TI's 300pF floor for this LC-tank architecture, outside the
+characterized operating range. Good news buried in the miss: the full measured range still fits
+comfortably inside FDC2214's 300pF-2nF window with padding, so this is more real signal for free,
+not a rework trigger.
+
+**Four-board mux/tank triage, same day** (full detail, per-board data, and pass/fail methodology:
+`MSV3_FOUR_BOARD_MUX_TRIAGE_2026-08-31.md`): built to answer "does the mux still switch, and is
+the FDC tank reading real" now that EC-check itself is out of scope. Reused this project's own
+already-validated threshold (~11% step = healthy, <1% = dead mux) rather than inventing a new one.
+**All four boards passed.** Board 1 (previously marked broken from EC-check symptoms) and board 2
+(previously marked working) both confirmed healthy — the "broken" mark on board 1 is now understood
+as a false positive from testing a feature that can't pass on any board, not a hardware fault.
+Board 3 clean. **Board 4 was initially fully dead** (`DATA_CH0` pegged at the 28-bit max sentinel
+`0xFFFFFFF` on every mux code, `STATUS` never showing `ERR_WD`/`ERR_AHW`/`ERR_ALW` despite the
+stuck reading) — ruled out an `idrive` drive-current mismatch (0-31 sweep, no change; the sweep's
+own instant read-back was shown to be a timing artifact, confirmed by a clean separate `fdcinit`+
+`fdcread` reproducing the identical stuck value) and ruled out a soft/stuck firmware state (a full
+hardware reset via `sleep`→`wake`, genuine FDC2214 SD-pin shutdown with "registers cleared," made
+no difference). `L2`'s DC resistance measured normal throughout, which didn't contradict the real
+cause since a misaligned-but-still-contacting part can pass DC continuity while failing real
+oscillation. **Root cause: `L2` was physically seated sideways** — found by inspection, fixed by
+reseating, retested clean (11.37% step, matching the other three boards).
+
+---
+
+### Status: EC-check (soil-conductivity/salinity sensing) — **invalidated, not pursuing further**
+
+- Root cause: soldermask over the electrodes (permanent, by design/fab default) blocks the
+  galvanic contact a DC resistive measurement needs; conformal coating about to make it worse, not
+  better. No resistor value fixes a missing conductive path.
+- The `R17` sizing work this session (100k → 500M, Ohmite HVC0805Z5006JET, $1.13, now in the BOM)
+  is real and harmless to leave in place, but does not make EC-check functional — it was answering
+  the wrong layer of the problem, discovered only after the sizing work was already done.
+- `divnode`/`VDIV` should not be read as meaningful data going forward on any board. The bodge wire
+  enabling that analog read is being removed from all four boards (cosmetic/coating reasons, not
+  required electrically).
+- What still works and matters: the primary capacitive moisture tank (FDC2214) is healthy on all
+  four boards as of today's triage, with more real signal range than originally estimated. TMUX1109
+  still earns its keep on electrode-swap (polarization cancellation) and bare-tank reference
+  (temperature/drift compensation) — both independent of EC-check's failure.
+- Open, not urgent: settle-vs-polarization timing window for the moisture tank reading itself
+  (flagged in `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open item 7); a future PCB revision could drop
+  to a simpler/cheaper mux now that EC-check no longer demands the full 4-destination-per-electrode
+  shape.

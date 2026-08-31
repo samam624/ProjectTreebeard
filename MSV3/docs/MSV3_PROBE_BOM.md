@@ -49,6 +49,17 @@ Not itemized here — see the CSV directly for the full list (mostly 0805 thick-
 in the kΩ-MΩ range and 0805 ceramic caps, all sub-$0.02-0.13/unit even at 1pc). These don't
 meaningfully move total probe cost regardless of exact per-board count.
 
+**Exception: `R17` (EC-check divider resistor) — resolved 2026-08-31, not a sub-cent bulk part.**
+Originally 100k 0805 (per the real netlist), confirmed via bench characterization this session
+(`docs/STATUS_HANDOFF.md`, 2026-08-31 entries) to be roughly three orders of magnitude undersized
+for the real electrode/soil resistance range (measured ~200M-1000M depending on medium, after
+ruling out body-leakage, mux ESD-diode injection, and floating-VDD charging artifacts as
+confounds). Replacement:
+
+| Part | Mfr | Role | Package | Unit price | Notes |
+|---|---|---|---|---|---|
+| HVC0805Z5006JET | Ohmite | EC-check divider resistor (replaces 100k `R17`) | 0805 | **$1.13** | 500MΩ, ±5%, 1/8W. Nearest standard value to the ~424M geometric-mean target (200M-900M real bench range); same 0805 footprint as the part it replaces, no PCB rework. Real DigiKey pricing verified 2026-08-31 — notably more expensive than every other passive in this BOM, worth calling out explicitly rather than lumping in with the sub-cent bulk parts above. |
+
 **Known BOM error, confirmed 2026-08-16: `BLM21PG220SN1D` (Murata, 0805, $0.03, qty 20) is a
 ferrite bead, not a resistor.** It was meant to be a **22Ω USB D+/D- series resistor** (standard
 practice — damps reflections/ringing on the USB data lines, standard in USB reference designs).
