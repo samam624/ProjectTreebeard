@@ -4,6 +4,12 @@
 version 2 was transferred, validated, activated, and rebooted entirely over the computer's BLE
 radio. The production sensing sketch did not gain OTA support as part of this proof.
 
+> **2026-09-03 update: the production sensing sketch now HAS OTA, and it has been proven on
+> hardware.** See "Production sketch integration" at the end of this document. The adoption
+> sequence below is unchanged and still gates field use — in particular, **do not conformal-coat a
+> probe yet**: the single-bank bootloader is still the blocking item, and OTA cannot replace a
+> bootloader.
+
 The checked-in test sketch is now version 3 at +8 dBm after the later fixed-position RSSI A/B test;
 version 3 was loaded over USB and does not change the version-1-to-version-2 BLE proof below.
 
@@ -127,3 +133,82 @@ power-loss rollback.
 The first battery-only trial should remain physically accessible with USB/SWD recovery nearby. A
 successful update while USB happens to be absent is not enough; interrupted updates are the
 acceptance test that makes future no-USB maintenance safe.
+
+## Production sketch integration — 2026-09-03
+
+Step 2 of the adoption sequence above is done and proven on hardware. `MSV3_Moisture_BLE_Sleep.ino`
+now registers `ResetSafeBLEDfu` and can be updated entirely over BLE.
+
+### What was added
+
+- `ResetSafeBLEDfu.{h,cpp}` copied into the production sketch folder. Arduino only compiles files
+  inside a sketch folder, so this is a duplicate of the copies in `MSV3_BLE_OTA_Test/`. **If either
+  copy changes, change both.**
+- `bledfu.begin()` in `bleInit()`. The service is registered **in GATT only** and deliberately not
+  added to the advertising payload: `startAdv()`'s `static_assert` shows Flags(3) + TxPower(3) +
+  mfg header(2) + mfg(23) = exactly the 31-byte legacy PDU limit, leaving no room for a service
+  UUID. An updater finds the probe by `DEVICE_NAME` in the scan response. **The manufacturer
+  payload is byte-for-byte unchanged**, verified live: `mfg[0:8]=4d 53 56 32 63 02 00 00`
+  (`MSV2` magic, sensor id, wake count) with `mfg_len=21` = the 23-byte payload minus the 2-byte
+  company ID the scanner strips.
+- An OTA connection watch plus a hold (`OTA_ADV_LISTEN_MS`, `OTA_CONNECTED_HOLD_MS`) in `loop()`.
+
+### The hold is the part that actually makes it work
+
+Registering the DFU service alone is decorative. At the original 500 ms advertising window the
+probe stopped advertising and slept before any central could finish connecting.
+
+**Three consecutive OTA attempts failed identically** with the client reporting `Could not get GATT
+services: Unreachable` about 8 s after connecting. The probe's own serial log showed why: no OTA
+hold was ever entered and the cycle ran its normal 9.96 s. The first implementation checked
+`Bluefruit.connected()` exactly **once**, at the end of the 500 ms window, and the client's
+connection completes at roughly 0.6 s — just past that one-shot check. Polling across the whole
+window instead fixed it.
+
+Successful run, from the probe's serial log:
+
+```
+14:38:23.013  advertising window opens (wake=2)
+14:38:29.642  COM12 dropped        <- DFU write landed, chip reset into the bootloader
+   ... 3m31s of BLE transfer; no USB CDC because the application is not running ...
+14:42:00.945  COM12 reconnects
+14:42:01.364  [DIAG] MSV3 production probe booting
+```
+
+The **6.6 s** between the advertising window opening and the reset is the proof the hold worked: in
+the failed attempts that same span was the full 9.96 s cycle with the probe ignoring the client.
+Transfer took 3 m 31 s, comparable to this document's original 3 m 40 s.
+
+Verified by BLE scan afterwards: the same board (`DB:AD:4D:9D:21:BA`) came back advertising the v2
+name, having been sent only over the radio.
+
+Note there is **no `[DIAG] OTA hold ended` line on a successful update** — `resetSafeDfuWrite()`
+system-resets before execution reaches that print. Its absence is expected on success, not a fault.
+
+### Test setup
+
+Client rebuilt to match this document's original: `recrof/nrf_dfu_py` at commit `409e4b7` and
+**bleak pinned to 1.1.1** (pip resolves to 3.x by default, a major-version jump away from what was
+proven). Installed into an isolated venv at `MSV3/.arduino-build/dfu-venv` rather than the original
+portable Python — same guarantee that no system package is touched. All of it is under the ignored
+`.arduino-build/`, so it must be rebuilt on a fresh clone.
+
+The default 5 s scan is too short to find a probe advertising this rarely — **`--wait` is required**
+(it retries every 2 s until found; it took five cycles). The bench probe used a temporary
+non-production identity (`SENSOR_ID = 99`, `MSV3-MOISTURE-099/098`) so a DisplayCenter in range
+could not ingest open-air bench readings as sensor 5's real plant data — `BLE_MAGIC` is the real
+production magic. That identity was reverted before commit.
+
+### Open, and deliberately not resolved
+
+- **`OTA_ADV_LISTEN_MS = 5000` is not power-validated.** It raises advertising radio time from
+  500 ms to up to 5 s per minute when nobody connects — 10x the duty the +8 dBm estimate was based
+  on. The loop exits immediately once a connection appears, so the cost is only paid when idle, but
+  this needs a real battery/solar budget before field deployment. `ADVERTISE_MS` was renamed
+  `ADVERTISE_MS_HISTORICAL_ONLY` because it no longer times anything.
+- **Interrupted-transfer testing has not been done** (item 6 of the adoption sequence). Only clean,
+  USB-powered, close-range updates have been proven. This is the acceptance test for no-USB
+  maintenance and it is still outstanding.
+- **The bootloader is unchanged** — still single-bank 0.11.0 with no `DEFAULT_TO_OTA_DFU`. A failed
+  transfer after bank 0 is invalidated still loses the application. This remains the reason not to
+  conformal-coat.

@@ -87,6 +87,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <bluefruit.h>
+// Byte-for-byte copy of MSV3_BLE_OTA_Test/ResetSafeBLEDfu.{h,cpp}. Arduino compiles only the
+// files inside a sketch folder, so a shared copy is the practical option; if either copy is
+// changed, change both. See MSV3_BLE_OTA_PROOF_2026-09-02.md for why this exists instead of the
+// core's stock BLEDfu (bootloader 0.11.0 soft-jump/ACL stall, Adafruit bootloader issue 399).
+#include "ResetSafeBLEDfu.h"
 
 #if !defined(USE_LFRC) || defined(USE_LFXO)
 #error "MSV3 requires USE_LFRC and no USE_LFXO. Build with scripts/arduino_msv3_probe.ps1; see docs/KNOWN_ISSUES.md."
@@ -160,7 +165,11 @@ const uint8_t SENSOR_ID = 5;
 // current/time-probed on real hardware yet.
 const uint32_t WAKE_PERIOD_MS = 10000;
 const uint32_t ADVERTISE_INTERVAL_MS = 60000;
-const uint32_t ADVERTISE_MS = 500;
+// SUPERSEDED 2026-09-03 and deliberately no longer used to time the advertising window -- the
+// window is now OTA_ADV_LISTEN_MS, which advertises AND watches for an incoming OTA connection.
+// Kept only to document the historical 500ms value the +8 dBm power estimate above was based on.
+// Changing this constant no longer changes any behaviour; change OTA_ADV_LISTEN_MS instead.
+const uint32_t ADVERTISE_MS_HISTORICAL_ONLY = 500;
 // PROVISIONAL, same status as MSV2's own MOISTURE_SWING_THRESHOLD was before
 // real soil data existed for it. Bench-only reference points so far: dry
 // electrodes in air ~20.33M, direct finger-touch contact ~18.35-18.5M (~9%
@@ -631,6 +640,43 @@ uint32_t wakeCount = 0;
 // and its unverified-on-hardware status as of first flash.
 uint8_t currentTankPhase = 0;
 
+// OTA maintenance hold. If a central connects during an ADVERTISE_MS window, stay awake instead
+// of dropping into the sleep cycle 500ms later.
+//
+// This only has to cover connect + service discovery + ONE write to the DFU control
+// characteristic. It does NOT have to cover the transfer: resetSafeDfuWrite() sets GPREGRET=0xA8
+// and system-resets, so the ~3m40s image transfer happens entirely in the bootloader, which owns
+// its own timing and never returns here. 30s is therefore generous for a slow central rather than
+// tight, and a failed attempt is retryable on the next advertising window.
+//
+// The upper bound matters because a central that connects and then does nothing (a phone scanning
+// for BLE devices, say) holds the radio up for the whole window. At 500ms/min normal duty this is
+// ~60x the advertising energy for that minute, which is survivable occasionally and is why this
+// is not set to minutes.
+const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
+
+// How long to keep advertising and actively watch for an incoming connection.
+//
+// 2026-09-03 bench evidence for why this exists: with only ADVERTISE_MS (500ms) of advertising and
+// a SINGLE Bluefruit.connected() check at the end of it, three consecutive OTA attempts failed
+// identically. The probe's own serial log showed no OTA hold was ever entered and the cycle ran
+// its normal 9.96s, while the client reported "Could not get GATT services: Unreachable" ~8s after
+// connecting. The client's connection completes around 0.6s after the advertisement appears --
+// just past a one-shot 500ms check -- so the probe stopped advertising and carried on while the
+// client sat on a link the application never acknowledged.
+//
+// 500ms/min is also simply a small target: the Windows BLE stack needed five 7s scan cycles just
+// to SEE the probe before it could attempt a connection.
+//
+// COST: this raises advertising radio time from 500ms to up to OTA_ADV_LISTEN_MS per advertising
+// interval whenever nothing connects. At 5s/60s that is 10x the advertising duty the +8 dBm
+// power estimate at ADVERTISE_MS was based on, so this value is a real battery/solar decision and
+// NOT yet validated against a power budget. The loop exits immediately once a connection is seen,
+// so the full cost is only paid when no one is updating.
+const uint32_t OTA_ADV_LISTEN_MS = 5000;
+
+ResetSafeBLEDfu bledfu;
+
 void bleInit()
 {
   Bluefruit.autoConnLed(false);
@@ -640,6 +686,14 @@ void bleInit()
   // estimated incremental average draw is only about 1.6-2.1 uA.
   Bluefruit.setTxPower(8);
   Bluefruit.setName(DEVICE_NAME);
+
+  // Registered in GATT only -- deliberately NOT added to the advertising payload. startAdv()'s
+  // static_assert shows Flags(3) + TxPower(3) + mfg header(2) + mfg(23) = exactly the 31-byte
+  // legacy PDU limit, so there is no room for a service UUID and the manufacturer payload stays
+  // byte-for-byte unchanged. An updater finds the probe by DEVICE_NAME in the scan response,
+  // which is how the 2026-09-02 proof's client located MSV3-OTA-TEST.
+  bledfu.begin();
+
   g_bleInited = true;
 }
 
@@ -918,7 +972,50 @@ void loop()
 
     startAdv(rawData, batteryMv, charging, phaseUsed, boardTempValid, boardTempQuarterC,
              bareTankValid, bareTankData);
-    delayFeedingWatchdog(ADVERTISE_MS);
+    // Watch for an incoming connection across the whole advertising window rather than checking
+    // once at the end -- see OTA_ADV_LISTEN_MS for the bench evidence that a one-shot check races
+    // the client and always loses. Exits the moment a connection appears, so a probe nobody is
+    // updating still pays only the listen window, and a probe being updated pays nothing extra.
+    uint32_t advStart = millis();
+    bool sawConnection = false;
+    while ((millis() - advStart) < OTA_ADV_LISTEN_MS)
+    {
+      feedWatchdog();
+      if (Bluefruit.connected())
+      {
+        sawConnection = true;
+        break;
+      }
+      delay(20);
+    }
+
+    // OTA maintenance hold -- see OTA_CONNECTED_HOLD_MS. Holds the probe awake long enough for the
+    // central to finish service discovery and write the DFU control characteristic; without it the
+    // probe sleeps out from under the handshake and registering the DFU service is decorative.
+    //
+    // Feeding the watchdog inside the loop is mandatory, not defensive: WDT_TIMEOUT_MS is 5s and
+    // the hold can run 30s, so an unfed loop guarantees a watchdog reset mid-handshake.
+    //
+    // If the DFU write does land, resetSafeDfuWrite() system-resets into the bootloader and this
+    // function never returns -- so there is no "resume normal operation after OTA" path here by
+    // design.
+    if (sawConnection)
+    {
+      uint32_t holdStart = millis();
+      while (Bluefruit.connected() && (millis() - holdStart) < OTA_CONNECTED_HOLD_MS)
+      {
+        feedWatchdog();
+        delay(50);
+      }
+      if (ENABLE_SERIAL_LOGS)
+      {
+        Serial.print(F("[DIAG] OTA hold ended after "));
+        Serial.print(millis() - holdStart);
+        Serial.println(F("ms"));
+        Serial.flush();
+      }
+    }
+
     Bluefruit.Advertising.stop();
 
     lastAdvertiseMs = millis();
