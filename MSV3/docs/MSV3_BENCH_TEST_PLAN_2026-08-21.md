@@ -294,11 +294,11 @@ to **35 / 43.4 / 55 MHz** — a ±23% part-to-part spread — and every capacita
 | Implied total tank C at that frequency | ≈ 345 pF |
 | **Implied stray + electrode C beyond C17** | **≈ 75 pF** |
 
-- [ ] Run `fdcinit` so the tank is actively driven, then scope TANK_HOT with a **10× probe** and read the frequency
-- [ ] **At that same moment**, run `fdcread` and record `DATA_CH0` — see the warning below, this is what makes the result valid
-- [ ] Compute the real internal oscillator frequency for this chip
-- [ ] Back out total tank capacitance, then subtract C17 for the stray + electrode figure
-- [ ] Repeat with electrodes in wet soil — the two numbers bracket the real sensing range
+- [x] Run `fdcinit` so the tank is actively driven, then scope TANK_HOT with a **10× probe** and read the frequency — 3.30 MHz dry, 2026-09-03
+- [x] **At that same moment**, run `fdcread` and record `DATA_CH0` — see the warning below, this is what makes the result valid — 20,012,154, 2026-09-03
+- [x] Compute the real internal oscillator frequency for this chip — **f_INT = 44.27 MHz**
+- [x] Back out total tank capacitance, then subtract C17 for the stray + electrode figure — 329 pF unprobed, **59 pF** stray + electrode
+- [ ] Repeat with electrodes in wet soil — the two numbers bracket the real sensing range *(partially done 2026-09-03: hands-on proxy gives 523 pF / 2.67 MHz as a high-permittivity upper bound; real wet soil still outstanding)*
 - [ ] *Optional true ringdown:* `sleep` to shut the FDC down, inject a small step across the tank, measure the decay envelope for unloaded f₀ and Q
 
 ```
@@ -315,6 +315,241 @@ C_total = 1 / ((2π · f_sensor)² · L)
 **What this unlocks:** once f_INT is known for this chip, every future `DATA_CH0` converts to an
 absolute capacitance instead of a relative number — which is what makes cross-probe comparison and
 a physically-grounded calibration curve possible.
+
+### 2026-09-03: first real scope measurements on the tank
+
+Bench setup: HP 54600B, **two 10× probes**, both channels **DC coupled and ground referenced**,
+200 mV/div, 100 ns/div. Probes on TANK_HOT and TANK_REF, both ground clips on board GND.
+
+| Electrode state | f_scope | Implied C_total | Δ vs dry |
+|---|---|---|---|
+| Fully dry, in air | **3.30 MHz** | **342 pF** | — |
+| Both hands on the electrodes | **2.67 MHz** | **523 pF** | **+181 pF (+53%)** |
+
+**These capacitances need no f_INT assumption.** They come straight from the scope frequency and
+L2 via `C = 1/((2πf)²L)`, so unlike every previous capacitance figure in this document they do not
+inherit the FDC2214's ±23% internal-oscillator spread. The only assumption left is L2 = 6.8 µH
+nominal.
+
+Hands-on is not wet soil, but it is a strong high-permittivity upper-bound proxy: **the tank moves
+~19% in frequency / ~53% in capacitance** between the dry and heavily-loaded extremes, which is
+plenty of dynamic range for the sensing application.
+
+### 2026-09-03: f_INT SOLVED for this chip — 44.27 MHz
+
+The paired reading this test has needed since 8/21 was finally captured: `fdcstream 10` taken in
+the dry-air state **with the 10× probes still attached**, at the same moment as the 3.30 MHz scope
+reading.
+
+```
+DATA_CH0 (mean of 10)   = 20,012,154      (spread 787 counts = 0.004%, exceptionally tight)
+ratio                   = 20012154 / 2^28 = 0.0745511
+f_INT = f_scope / ratio = 3.30 MHz / 0.0745511 = 44.27 MHz
+```
+
+**f_INT = 44.27 MHz**, against the datasheet's 35 / 43.4 / 55 MHz min/typ/max — comfortably in
+range and slightly above typical. Note this value is **independent of L2**: it derives only from
+f_scope and DATA_CH0, so it does not inherit the inductor's tolerance. Its accuracy is limited by
+the scope frequency reading (3 significant figures ⇒ roughly ±0.7 MHz on f_INT).
+
+**Every `DATA_CH0` on this board now converts to absolute capacitance:**
+
+```
+f_sensor (Hz)  = DATA_CH0 × 0.164892
+C_total  (pF)  = 1.370 × 10^17 / DATA_CH0²
+```
+
+Applying it to every reading recorded so far:
+
+| State | `DATA_CH0` | f_sensor | C_total | Stray + electrode (− C17) |
+|---|---|---|---|---|
+| Dry, no probes | 20.40 M | 3.364 MHz | 329 pF | **59 pF** |
+| Dry, two 10× probes | 20.012 M | 3.300 MHz | 342 pF | 72 pF |
+| Dry, two 1× probes | 18.32 M | 3.021 MHz | 408 pF | 138 pF |
+| Both hands on, 10× probes | — | 2.670 MHz | 523 pF | 253 pF |
+
+Two things fall out of that table:
+- **The true unprobed stray + electrode capacitance is ~59 pF**, against this document's original
+  ~75 pF estimate. The old figure was high precisely because it assumed f_INT = 43.4 MHz; the real
+  44.27 MHz corrects it. This supersedes the ~75 pF row in the prediction table above.
+- **The two 10× probes add only ~13 pF combined (~6.5 pF each)** — properly in spec. The two 1×
+  probes added ~79 pF (~40 pF each), a 6× worse perturbation, confirming the attenuation-setting
+  diagnosis below.
+
+Unlike the capacitance column (which carries L2's tolerance — a ±20% part would move every C
+figure proportionally), the **frequency** column is now fully measured rather than assumed.
+
+### 2026-09-03: IDRIVE bench-tuned for the first time — code 16 → code 25
+
+The `DRIVE_CURRENT_CH0` value has carried a `NOT bench-tuned` warning since 2026-08-22. It has now
+been swept against a real oscilloscope, per TI's own prescribed method (§8: *"measure the
+oscillation amplitude on an oscilloscope and adjust the IDRIVE value"*).
+
+Measured peaks, DC coupled and ground referenced, 10× probes on TANK_HOT / TANK_REF:
+
+| Code | IDRIVE | Dry hot | Dry cold | 2-hands hot | 2-hands cold |
+|---|---|---|---|---|---|
+| 16 (old default) — run 1 | 0.169 mA | 0.512 V | 0.425 V | 0.300 V | 0.287 V |
+| 16 — run 2 (repeat) | 0.169 mA | 0.525 V | 0.437 V | 0.300 V | 0.256 V |
+| 24 | 0.555 mA | *(not measured)* | | | |
+| **25 (chosen)** | **0.644 mA** | **1.9 V** | **1.6 V** | **1.3 V** | **1.0 V** |
+| 26 | 0.747 mA | 2.3 V | 1.894 V | 1.4 V | 1.3 V |
+| 31 | 1.571 mA | 2.875 V* | 6 V* | | |
+
+\* The code-31 row was taken before the probe-attenuation error was found and shows an implausible
+2.09× hot/cold asymmetry. **Treat it as unreliable** — it is recorded only because it was what
+first showed max drive was unusable.
+
+**Drive response is linear.** From code 16 → 26, `V ∝ I^1.01`. An earlier sublinear fit
+(`I^0.77`) was an artifact of trusting the bad code-31 point; discard it. Linear scaling predicted
+code 25 at 1.98/1.63/1.21/1.12 V against 1.9/1.6/1.3/1.0 V measured — good enough to plan a sweep
+with.
+
+**Repeatability: dry air is trustworthy, the hands-on proxy is not.** Code 16 was measured twice.
+Dry air repeated to within **±2.8%** (512→525 mV hot, 425→437 mV cold) and loaded hot repeated
+exactly, but loaded cold moved **−10.8%** (287→256 mV). Grip pressure, contact area and skin
+moisture all vary shot to shot. Treat every dry-air number here as a real measurement and every
+loaded number as carrying roughly ±10%. This is the strongest argument for replacing the proxy
+with real wet soil before any of this is treated as final.
+
+**The load swing exceeds the spec window, and that is a real design finding.** The spec band
+(1.2–1.8 Vpk) spans exactly 1.5×, but dry→hands-on drops amplitude by **1.46–1.75× across all
+runs, centering ~1.6×**. So no fixed IDRIVE keeps both extremes in spec simultaneously:
+
+- dry air at the 1.8 V ceiling ⇒ heavily-loaded falls to ~1.05–1.1 V, under VSENSORMIN
+- heavily-loaded at the 1.2 V floor ⇒ dry air rises to ~2.0 V, over VSENSORMAX
+
+Note `HIGH_CURRENT_DRV` (CONFIG 0x1A bit 6, 1.5 mA → 6 mA) does **not** solve this — it raises the
+ceiling, while this is a ratio problem, and scaling current scales both ends equally. It remains
+the right tool only if the 1.2 V floor becomes unreachable at max drive.
+
+The swing is Q degradation from **resistive** loading — bare skin and wet soil are conductive, not
+merely high-permittivity. A properly insulated electrode loads the tank mostly capacitively, which
+shifts frequency without collapsing Q. That makes the coating work in
+`MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md` an amplitude fix as well as an ingress
+fix.
+
+**Why code 25 was chosen.** It is the best available compromise, and it optimizes for the
+condition the probe is actually deployed in rather than the bench extremes:
+
+- Loaded hot 1.3 V sits inside the band; loaded cold 1.0 V is modestly under.
+- Dry hot 1.9 V is ~6% over VSENSORMAX — within CRT-cursor measurement error of the limit, and it
+  only occurs during handling/storage, never in soil. VSENSORMAX is a recommended operating limit,
+  not an absolute maximum (that is VDD+0.3 V = 3.6 V), so overshoot costs accuracy, not the part.
+- Real soil loads *between* dry air and bare hands, so in-soil operation should land mid-band.
+- Versus the old code 16, loaded amplitude improves **0.30 V → 1.3 V, a 4.3× gain in the deployed
+  condition.**
+
+**CONFIRMED 2026-09-03: IDRIVE shifts `DATA_CH0`. This is a calibration migration, not a free
+swap.** An A-B-A sweep in still air separates the drive effect from thermal drift:
+
+| Comparison | code 16 | code 25 | Δ |
+|---|---|---|---|
+| Pair 1 (separated in time) | 20,012,154 | 19,955,880 | 56,274 (0.281%) |
+| Pair 2 (back-to-back) | 20,007,567 | 19,967,378 | **40,189 (0.201%)** |
+| Drift at a *fixed* code across the session | −4,587 (0.023%) | +11,498 (0.058%) | — |
+
+The shift reproduces at both codes and is **4–10× larger than the same-code drift**, so it is a
+genuine drive-current effect, not thermal wander. Use pair 2 (back-to-back, least drift-
+contaminated) as the estimate: **≈40,200 counts, 0.20%, or ~1.05% of the ~3.82 M-count dry→loaded
+span** — roughly one moisture point of systematic offset.
+
+The trade is therefore explicit: **4.3× loaded amplitude in exchange for ~1% full-scale offset.**
+Worth taking, given noise and drift are this sensor's documented weaknesses — but it must ship as
+a deliberate re-baseline, because every deployed probe will step ~1% when updated.
+
+### 2026-09-03: DECISION — code 25 adopted in firmware, tuning closed
+
+`DRIVE_CURRENT_CH0` changed `0x8000` → `0xC800` in **both** `MSV3_Moisture_BLE_Sleep.ino` and
+`MSV3_Probe_Bringup_Test.ino`.
+
+**The justification is amplitude compliance and oscillator robustness, not noise.** Two 200-sample
+streams settled the SNR question: the gain is **1.40×** (within-level SD 383 → 274 counts,
+F = 1.95 on df 176/174, p ≪ 0.001) — real and statistically decisive, but worthless in
+application terms. Everything measured here sits far below the actual signal:
+
+| Effect | Counts | % of the ~3.8 M-count drying-cycle span |
+|---|---|---|
+| Within-level measurement noise | 383 | 0.010% |
+| Level-switching artifact (below) | 5,739 | 0.15% |
+| IDRIVE calibration shift | 39,950 | 1.05% |
+
+A drying cycle moves the reading by millions of counts. Chasing sub-1% terms is not where this
+sensor's error budget lives, and the tuning is closed on that basis.
+
+What *does* justify the change: code 16 oscillated at ~0.5 Vpk dry and ~0.3 Vpk loaded — about a
+third of VSENSORMIN. Code 25 gives 1.9 Vpk dry / 1.3 Vpk loaded. That matters for the oscillator
+reliably starting and sustaining in conditions never bench-tested: cold, saturated soil, low
+battery.
+
+**Migration cost:** deployed probes step ~39,950 counts (~1 moisture point) on taking this
+firmware. Re-baseline; do not treat as a drop-in.
+
+**Deliberately left unresolved** (all judged not worth the bench time against a multi-million-count
+signal):
+- Offset vs gain — both A-B-A comparisons were dry-air only, so it is unknown whether the 0.2%
+  shift is additive or multiplicative under load.
+- The sweep was measured single-ended per-node, never against the **A−B differential** that the
+  1.2–1.8 Vpk spec actually refers to.
+- The 2-hands load remains a proxy; **real wet soil** was never measured.
+
+### 2026-09-03: `DATA_CH0` switches between two discrete levels — unexplained
+
+Found while collecting the 200-sample SNR streams, and **more significant than anything the IDRIVE
+tuning produced.** Both streams are bimodal:
+
+| Code | HIGH | LOW | gap | time in LOW |
+|---|---|---|---|---|
+| 16 | 20,013,528 | 20,007,789 | 5,739 (0.0287%) | 11.5% |
+| 25 | 19,973,596 | 19,968,169 | 5,428 (0.0272%) | 12.5% |
+
+The gap and duty cycle are nearly identical across a 3.8× change in drive current, and the level
+changes arrive in **bursts of consecutive samples** (indices 120–128 and 140–153 at code 16;
+174–185 and 192–199 at code 25), not as sample-to-sample randomness.
+
+**This artifact is 5–6.6× larger than the real measurement noise** (raw SD 1874 vs within-level SD
+383), which means it dominates every noise figure this project has computed from an `fdcstream`,
+and it invalidates naive SD comparisons — raw SD showed *no* IDRIVE difference (1.03×) and the
+successive-difference estimator showed the change going the *wrong way* (0.80×). Only a
+within-level comparison recovers the true 1.40×.
+
+It also retroactively explains an earlier confusion: a 4,587-count "session drift" between two
+code-16 runs was almost certainly one run landing in each level.
+
+Because the gap is roughly constant in absolute counts while drive current changes 3.8×, the cause
+is more likely **outside the tank — a supply-rail step rather than an oscillator effect.** Given
+`MOISTURE_SENSOR_FDC2212_FRONTEND.md` already documents real battery-voltage coupling on this
+design, the first suspect is BQ25170 charge cycling or USB supply negotiation.
+
+Cheap untried test: run `fdcstream 200` alongside `chgstatus` / `vbat` and check whether STAT/PG
+transitions line up with the level jumps.
+
+Not chased further this session — at 0.15% of the drying-cycle span it does not justify bench time
+on its own. Recorded because it is a concrete, reproducible lead for
+`MSV3_FDC_THERMAL_DRIFT_ROOT_CAUSE_2026-08-30.md` if noise or drift ever does become the binding
+problem.
+
+### 2026-09-03: probe loading is far larger than this document assumed
+
+The "10× probe adds 10–15 pF / ~2% shift" note above understates the bench reality badly, because
+the first session's probes were set to **1×**, not 10×:
+
+| Tank state | `DATA_CH0` |
+|---|---|
+| No probes attached | 20.4 M |
+| Two **1×** probes attached | 18.32 M |
+
+Since C ∝ 1/f² ∝ 1/DATA², that is `(20.4/18.32)² = 1.240` → **+24% capacitance, ≥65 pF added,
+≥32 pF per probe** — impossible for spec 10× probes, and the measurement that identified the
+mis-set attenuation. Two spec 10× probes would only have pulled 20.4 M to about 19.7 M.
+
+Two consequences worth carrying forward:
+- **Always confirm the scope's per-channel probe factor reads 10.0:1 before trusting any
+  amplitude or frequency number.** A 1× setting also under-reads voltage by 10×, which is what
+  initially made the tank look like it was oscillating at ~100 mV pk-pk.
+- The perturbation is itself a **second, independent route to f_INT** that needs no scope:
+  `A = C_probe / (1/D_loaded² − 1/D_unloaded²)`, then `f_INT = 2²⁸ · √(1/(A·L)) / 2π`. Worth
+  running as a cross-check once the probe's real capacitance is known.
 
 ---
 

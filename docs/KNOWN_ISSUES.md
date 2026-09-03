@@ -88,6 +88,34 @@ The wrapper finds the active installed Adafruit nRF52 core, repairs/verifies `va
 
 Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades and another PC will not inherit it. See [the complete LFCLK/RTC1 investigation](../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md).
 
+## MSV3: never poll `STATUS.DRDY` on the FDC2214 — it never updates
+
+**Status:** Recurring. Fixed in the production sketch 2026-08-30 and in the bring-up sketch
+2026-09-03. This is the **third** time the project has hit it.
+
+**Affected:** any FDC2214 read path in `MSV3/arduino/*`.
+
+**Symptom:** every conversion read fails while the I2C bus is provably healthy. In the bring-up
+sketch this surfaces as a stream of `I2C read failed` even with nothing attached to the board; in
+the production sketch it silently suppressed every BLE advertisement. The tell is that **`fdcid`
+still returns correct values** (`MANUFACTURER_ID=0x5449`, `DEVICE_ID=0x3055`) while every
+`fdcread`/`fdcstream`/`muxsweep` fails — a broken bus cannot read two registers correctly.
+
+**Cause:** `ERROR_CONFIG` (0x19) resets to all zeros, and neither sketch's `fdcInit()` writes it.
+Per Table 7-37, `DRDY_2INT=0` *prevents `STATUS.DRDY` from being updated at all*. A DRDY poll
+therefore always times out, and because that timeout shares a return path with genuine I2C errors,
+it reports itself as an I2C failure.
+
+**Fix:** poll `STATUS.CH0_UNREADCONV` (bit 3, `0x0008`) instead — the per-channel flag, which does
+update. Do not "simplify" it back to `STATUS.DRDY` without also explicitly writing and verifying
+`ERROR_CONFIG.DRDY_2INT` after every hardware shutdown, since shutdown resets the register.
+
+**Also affected by the same register:** `WD_ERR2INT=0` means `STATUS.ERR_WD` never updates, and
+`AH_WARN2OUT`/`AL_WARN2OUT=0` mean amplitude warnings are not reported in `DATA_CHx`. **An absent
+`ERR_WD`/`ERR_AHW`/`ERR_ALW` proves nothing** — those flags are switched off, not clear. Any
+firmware that wants to trust them must write `ERROR_CONFIG` first. As of 2026-09-03 neither sketch
+does.
+
 ## Adafruit Wire polling loops
 
 **Status:** Observed upstream-core weakness; not required for the resolved MSV3 clock fault and not patched automatically.

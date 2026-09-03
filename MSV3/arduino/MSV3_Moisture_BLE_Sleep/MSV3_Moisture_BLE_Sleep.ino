@@ -46,10 +46,23 @@
 //   datasheet states a latched error is cleared by reading either STATUS or the DATA_CHx
 //   register, so the old DATA-then-STATUS order could silently lose a real error flag before
 //   ever seeing it, not just mis-pair it with the wrong sample.
-// Explicitly NOT changed, and should not be guessed at without bench data: IDRIVE
-// (DRIVE_CURRENT_CH0, still un-tuned, needs a real oscilloscope amplitude measurement) and
+// Explicitly NOT changed, and should not be guessed at without bench data:
 // SETTLECOUNT_CH0 (its datasheet formula needs real Vpk/IDRIVE/capacitance values this project
 // doesn't have yet).
+//
+// 2026-09-03: IDRIVE (DRIVE_CURRENT_CH0) IS now bench-tuned -- 0x8000 (code 16) -> 0xC800
+// (code 25, 0.644mA), swept against a real oscilloscope per the datasheet's own method. Code 16
+// oscillated at only ~0.5Vpk in dry air, roughly a THIRD of the 1.2Vpk VSENSORMIN, and ~0.3Vpk
+// under heavy load. Code 25 gives 1.9Vpk dry / 1.3Vpk loaded. The reason for the change is
+// amplitude compliance and oscillator robustness in untested conditions (cold, saturated soil,
+// low battery) -- NOT noise: the measured SNR gain is only 1.40x, which is negligible against a
+// drying cycle that spans millions of counts.
+//
+// THIS SHIFTS THE READING. DATA_CH0 drops ~39,950 counts (0.200%, about 1% of the dry->saturated
+// span) going from code 16 to code 25 -- confirmed by an A-B-A sweep and by 200-sample streams at
+// each code, and independent of the level-switching artifact noted below. Deployed probes will
+// step ~1 moisture point when they take this firmware. Re-baseline rather than treating it as a
+// drop-in. See MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4 for the full sweep and derivation.
 //
 // 2026-08-30, later same day: removed MUX_SWITCH_SETTLE_MS entirely (was 300ms, added just
 // above on 2026-08-29). Pulled the real TMUX1109 datasheet (SCDS406A) rather than continuing to
@@ -283,7 +296,7 @@ bool fdcInit()
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0 -- see 2026-08-30 comment above
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01, FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0x8000);  // DRIVE_CURRENT_CH0: IDRIVE starting point, not bench-tuned
+  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=25 (0.644mA), bench-tuned 2026-09-03
   // MUX_CONFIG (0x1B) left at power-on-reset default -- single-channel CH0,
   // correct for this board (CH1-3 grounded per netlist).
   ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: CH0, exit sleep, internal osc, full-current

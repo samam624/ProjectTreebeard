@@ -180,7 +180,11 @@ bool fdcInit() {
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0: was 0x0400 (~14 ENOB); 0xFFFF ~24.2ms, near-max resolution
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0: tS0 = 100*16/fREF0 (~37us) -- default 0 is too short, causes amplitude warnings
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01 (divide-by-1, 0.01-8.75MHz range), FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0x8000);  // DRIVE_CURRENT_CH0: IDRIVE=10000b (~0.169mA) starting point -- NOT bench-tuned, watch ERR_AHW/ERR_ALW
+  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=11001b (code 25, 0.644mA) -- bench-tuned
+                                    // 2026-09-03 against a scope (was 0x8000 / code 25's predecessor code 16,
+                                    // ~0.169mA, which ran at ~0.5Vpk dry: a THIRD of the 1.2Vpk VSENSORMIN).
+                                    // Code 25 measures 1.9Vpk dry / 1.3Vpk under heavy load. Changing this
+                                    // shifts DATA_CH0 by ~0.2%; see MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4.
   // MUX_CONFIG (0x1B) left at its power-on-reset default (0x020F): AUTOSCAN_EN=0
   // (single-channel CH0 mode, correct for this board -- only CH0 is wired to
   // real hardware, CH1-3 are grounded per netlist), DEGLITCH=111 (33MHz, safely
@@ -193,23 +197,40 @@ bool fdcInit() {
 
 bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 
-#define FDC_STATUS_DRDY_BIT 0x0040     // STATUS bit 6 (Table 7-36)
-#define FDC_DRDY_POLL_TIMEOUT_MS 60    // generous vs. ~24.2ms worst-case conversion at RCOUNT=0xFFFF
+// CH0_UNREADCONV, Address 0x18 STATUS bit 3 (Table 7-36): an unread conversion is present for
+// channel 0, and DATA_CH0 should be read to retrieve it. Poll this per-channel flag rather than
+// DRDY: ERROR_CONFIG.DRDY_2INT resets to b0 after every hardware shutdown, and Table 7-37 says
+// that setting prevents STATUS.DRDY from being updated. fdcInit() never writes ERROR_CONFIG
+// (0x19), so STATUS.DRDY is never updated on this board and a DRDY poll times out forever --
+// every fdcread/fdcstream/idrive/muxsweep then prints the shared "I2C read failed" string
+// despite a perfectly healthy bus. The tell is that `fdcid` still reads 0x7E/0x7F correctly
+// while every conversion read fails.
+// 2026-09-03: ported from MSV3_Moisture_BLE_Sleep.ino, which hit and fixed this exact bug on
+// 2026-08-30 (there it timed out forever and suppressed every BLE advertisement). The bring-up
+// sketch kept the broken DRDY poll until now, so this is the third time this project has been
+// bitten by it -- see MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md and
+// MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md. Do not "simplify" this back to STATUS.DRDY without
+// also explicitly writing and verifying ERROR_CONFIG.DRDY_2INT after every shutdown reset.
+#define FDC_STATUS_CH0_UNREADCONV_BIT 0x0008
+// Generous bound over the RCOUNT-driven worst-case conversion time (see fdcInit()'s RCOUNT_CH0
+// comment, ~24.2ms at RCOUNT=0xFFFF) -- a fail-fast ceiling for a genuinely stuck part or a tank
+// that truly isn't oscillating, not a value tuned to be tight.
+#define FDC_CONVERSION_POLL_TIMEOUT_MS 60
 
-bool fdcWaitForDrdy(uint16_t &statusOut) {
+bool fdcWaitForCh0UnreadConversion(uint16_t &statusOut) {
   uint32_t start = millis();
   do {
     if (!fdcReadStatus(statusOut)) return false;
-    if (statusOut & FDC_STATUS_DRDY_BIT) return true;
-  } while (millis() - start < FDC_DRDY_POLL_TIMEOUT_MS);
-  return false;
+    if (statusOut & FDC_STATUS_CH0_UNREADCONV_BIT) return true;
+  } while (millis() - start < FDC_CONVERSION_POLL_TIMEOUT_MS);
+  return false;  // no fresh conversion -- same failure path as a real I2C error
 }
 
 // 2026-08-30: waits for DRDY and reads STATUS before DATA, not after -- a latched error is
 // cleared by reading either STATUS or DATA_CHx (Table 7-36), so the old DATA-then-STATUS order
 // could silently lose a real ERR_WD/ERR_AHW/ERR_ALW before STATUS ever saw it.
 bool fdcReadChannel0(uint32_t &data28, uint16_t &statusOut) {
-  if (!fdcWaitForDrdy(statusOut)) return false;
+  if (!fdcWaitForCh0UnreadConversion(statusOut)) return false;
   uint16_t msb, lsb;
   if (!fdcReadReg(0x00, msb)) return false;  // must read MSB before LSB (latches result)
   if (!fdcReadReg(0x01, lsb)) return false;
@@ -710,10 +731,11 @@ const float IDRIVE_MA[32] = {
   0.555, 0.644, 0.747, 0.867, 1.006, 1.167, 1.354, 1.571
 };
 
-// Kept in sync with fdcInit()'s DRIVE_CURRENT_CH0 starting value (0x8000 ->
-// code 16) so `idrive` reports the true setting even before it's ever been
-// called.
-uint8_t g_idriveCode = 16;
+// Kept in sync with fdcInit()'s DRIVE_CURRENT_CH0 starting value (0xC800 ->
+// code 25 since the 2026-09-03 bench tuning) so `idrive` reports the true
+// setting even before it's ever been called. fdcInit() rewrites 0x1E, so any
+// hand-set `idrive` is lost across a re-init -- re-issue it after fdcinit.
+uint8_t g_idriveCode = 25;
 
 void doIdrive(int code) {
   if (code < 0 || code > 31) {
