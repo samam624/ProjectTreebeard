@@ -493,6 +493,34 @@ signal):
   1.2–1.8 Vpk spec actually refers to.
 - The 2-hands load remains a proxy; **real wet soil** was never measured.
 
+### 2026-09-03: wake settle re-verified after the IDRIVE retune — no transient
+
+`MSV3_Probe_Bringup_Test.ino` requires (at its `BLE_WAKE_DISCARD_CONVERSIONS` comment) that
+`wakeprofile` be re-run "if the tank or IDRIVE is ever retuned." IDRIVE was retuned, so it was.
+Probe reflashed with code 25 as the compiled default first, then `wakeprofile 12`, dry air:
+
+```
+wake sequence took 4883us
+[ 0] 19,974,224          <- first conversion after cold wake
+[ 5] 19,974,275          <- HIGHER than [0]
+[ 6]-[11] band: 19,973,802 .. 19,974,071   mean 19,974,002
+full 12-sample spread: 473 counts
+```
+
+Sample `[0]` is 222 counts from the `[6]`–`[11]` mean — **0.8σ** against the 274-count within-level
+SD measured from 175 samples the same session. The decisive evidence is that **`[5]` exceeds
+`[0]`**: a settling transient decays monotonically from the first sample, and this does not. The
+entire 12-sample spread is under 2× the known single-sample noise.
+
+**`BLE_WAKE_DISCARD_CONVERSIONS = 2` remains valid**; the retune did not slow the oscillator's
+settle. Also confirms code 25 is live on the hardware, not merely in source — the readback reports
+`IDRIVE code=25 (0.644mA)` and `DATA_CH0 ≈ 19,974,000` matches the code-25 HIGH level of
+19,973,596 from that session's 200-sample stream.
+
+Dry air only. Test 6 still wants this repeated in wet soil, where higher sensor capacitance and
+lower tank Q are precisely the conditions that could introduce a transient. The absence of `ERR_`
+flags here is **not** evidence of anything, since `ERROR_CONFIG` remains unwritten.
+
 ### 2026-09-03: `DATA_CH0` switches between two discrete levels — unexplained
 
 Found while collecting the 200-sample SNR streams, and **more significant than anything the IDRIVE
