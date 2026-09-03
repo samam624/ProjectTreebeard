@@ -12,8 +12,8 @@
 > and [MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md](MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md).
 > A complete application-only BLE OTA update has since been demonstrated on the real MSV3 board;
 > its reset-safe implementation, live evidence, and required battery/bootloader qualification are
-> documented in [MSV3_BLE_OTA_PROOF_2026-09-02.md](MSV3_BLE_OTA_PROOF_2026-09-02.md). OTA is not
-> yet part of this production image.
+> documented in [MSV3_BLE_OTA_PROOF_2026-09-02.md](MSV3_BLE_OTA_PROOF_2026-09-02.md). OTA is now
+> integrated in the production source, but the present single-bank bootloader is not field-safe.
 
 **Status:** The 2026-08-22 production probe and matching receiver were flashed and observed live.
 The review-remediated 2026-08-23 source compiles but has not been reflashed, so the physical probe
@@ -86,7 +86,7 @@ sketch:
 |---|---|---|
 | `SENSOR_ID` | 5 (was 4 until 2026-08-31) | 1=Scindapsus, 2=Alocasia, 3=AFE bench board, 4=first MSV3 field unit (see `MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md`). This constant and `DEVICE_NAME` are edited in place per-board, not kept as separate per-board sketch files like MSV2 - reflashing the id=4 unit requires manually setting both back first. |
 | `WAKE_PERIOD_MS` / `ADVERTISE_INTERVAL_MS` | 10000 / 60000 | Mirrors MSV2's proven cadence |
-| BLE TX power | +8 dBm | Staged 2026-09-02 after a fixed-position A/B test improved mean RSSI from -69.45 dBm at +4 dBm to -66.25 dBm at +8 dBm (49/48 packets). Estimated incremental draw at the 500 ms/minute advertising duty cycle is about 1.6-2.1 uA average. |
+| BLE TX power | +8 dBm | Staged 2026-09-02 after a fixed-position A/B test improved mean RSSI from -69.45 dBm at +4 dBm to -66.25 dBm at +8 dBm (49/48 packets). The OTA-capable source now uses 1 s at a 20 ms advertising interval followed by 4 s at 250 ms: about 66 scheduled events rather than the first OTA integration's 250, while retaining the five-second connection opportunity. Whole-board average current still needs measurement. |
 | `MOISTURE_SWING_THRESHOLD` | 300000 raw counts (~1.5% of dry baseline) | **Provisional** — no real soil range exists yet, same status MSV2's own threshold had before real data |
 | `WAKE_DISCARD_CONVERSIONS` | 2 | Measured on real hardware via `wakeprofile`, not guessed |
 

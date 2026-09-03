@@ -82,6 +82,9 @@ void setup()
   // This Nordic-compatible buttonless service enters the resident bootloader
   // through GPREGRET=0xA8 plus a full reset (see ResetSafeBLEDfu.h).
   bledfu.begin();
+  // This USB-powered proof sketch has no VBAT/PG policy input. Production defaults the gate
+  // closed and opens it only from a fresh charger/battery measurement.
+  bledfu.setDfuAllowed(true);
   startAdvertising();
 
   Serial.print("[OTA] MSV3 BLE OTA test version ");

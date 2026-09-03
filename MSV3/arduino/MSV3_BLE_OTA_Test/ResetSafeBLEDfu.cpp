@@ -9,6 +9,8 @@
 
 namespace
 {
+volatile bool gDfuAllowed = false;
+
 const uint8_t kDfuServiceUuid[16] = {
   0x23, 0xD1, 0xBC, 0xEA, 0x5F, 0x78, 0x23, 0x15,
   0xDE, 0xEF, 0x12, 0x12, 0x30, 0x15, 0x00, 0x00
@@ -65,7 +67,21 @@ void resetSafeDfuWrite(uint16_t connHandle,
   }
 
   reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;
-  sd_ble_gatts_rw_authorize_reply(connHandle, &reply);
+  if (sd_ble_gatts_rw_authorize_reply(connHandle, &reply) != NRF_SUCCESS)
+  {
+    return;
+  }
+
+  // The application refreshes this immediately before each advertising window from a fresh
+  // VBAT/charger-PG measurement. Do not enter a multi-minute flash operation from a marginal
+  // battery. Recovery mode itself deliberately has no such gate: after an interrupted transfer,
+  // the board must become reachable as soon as harvested/USB power is restored.
+  if (request->len > 0 && request->data[0] == 1 && !gDfuAllowed)
+  {
+    reply.params.write.gatt_status = BLE_GATT_STATUS_ATTERR_WRITE_NOT_PERMITTED;
+    sd_ble_gatts_rw_authorize_reply(connHandle, &reply);
+    return;
+  }
 
   if (request->len == 0 || request->data[0] != 1)
   {
@@ -108,19 +124,42 @@ void resetSafeDfuWrite(uint16_t connHandle,
   }
   peer->crc = crc16(reinterpret_cast<uint8_t*>(peer), offsetof(PeerData, crc));
 
+  // Never reset unless the bootloader request was actually stored and read back. The former
+  // implementation ignored both SVC return values, so a rare SoftDevice failure could perform a
+  // normal application reset after the client had been told that DFU entry succeeded.
+  constexpr uint8_t kDfuOtaResetMagic = 0xA8;
+  if (sd_power_gpregret_clr(0, 0xFF) != NRF_SUCCESS ||
+      sd_power_gpregret_set(0, kDfuOtaResetMagic) != NRF_SUCCESS)
+  {
+    sd_power_gpregret_clr(0, 0xFF);
+    return;
+  }
+
+  uint32_t gpregret = 0;
+  if (sd_power_gpregret_get(0, &gpregret) != NRF_SUCCESS ||
+      (gpregret & 0xFF) != kDfuOtaResetMagic)
+  {
+    sd_power_gpregret_clr(0, 0xFF);
+    return;
+  }
+
   Bluefruit.Advertising.restartOnDisconnect(false);
   connection->disconnect();
 
-  constexpr uint8_t kDfuOtaResetMagic = 0xA8;
-  sd_power_gpregret_clr(0, 0xFF);
-  sd_power_gpregret_set(0, kDfuOtaResetMagic);
-  sd_nvic_SystemReset();
+  // Success does not return. Clear the retained request if an unexpected NVIC error does return,
+  // otherwise a later unrelated watchdog/reset-pin event could enter OTA without a client.
+  if (sd_nvic_SystemReset() != NRF_SUCCESS) sd_power_gpregret_clr(0, 0xFF);
 }
 }  // namespace
 
 ResetSafeBLEDfu::ResetSafeBLEDfu()
   : BLEService(kDfuServiceUuid), control_(kDfuControlUuid)
 {
+}
+
+void ResetSafeBLEDfu::setDfuAllowed(bool allowed)
+{
+  gDfuAllowed = allowed;
 }
 
 err_t ResetSafeBLEDfu::begin()

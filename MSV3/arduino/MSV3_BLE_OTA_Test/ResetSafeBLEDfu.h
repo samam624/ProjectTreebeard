@@ -12,6 +12,7 @@ class ResetSafeBLEDfu : public BLEService
 public:
   ResetSafeBLEDfu();
   err_t begin() override;
+  void setDfuAllowed(bool allowed);
 
 private:
   BLECharacteristic control_;

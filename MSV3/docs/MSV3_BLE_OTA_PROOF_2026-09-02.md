@@ -201,14 +201,42 @@ production magic. That identity was reverted before commit.
 
 ### Open, and deliberately not resolved
 
-- **`OTA_ADV_LISTEN_MS = 5000` is not power-validated.** It raises advertising radio time from
-  500 ms to up to 5 s per minute when nobody connects — 10x the duty the +8 dBm estimate was based
-  on. The loop exits immediately once a connection appears, so the cost is only paid when idle, but
-  this needs a real battery/solar budget before field deployment. `ADVERTISE_MS` was renamed
-  `ADVERTISE_MS_HISTORICAL_ONLY` because it no longer times anything.
+- **The OTA-capable advertising schedule is not power-validated.** The first integration used the
+  20 ms advertising interval for the entire 5 s window, roughly 250 scheduled events/minute. The
+  post-integration audit below keeps the full 5 s opportunity but uses 20 ms for the first second
+  and 250 ms for the remaining four, roughly 66 events (about 74% fewer). That is a scheduling
+  reduction, not a measured whole-board current result; a real battery/solar budget is still due.
 - **Interrupted-transfer testing has not been done** (item 6 of the adoption sequence). Only clean,
   USB-powered, close-range updates have been proven. This is the acceptance test for no-USB
   maintenance and it is still outstanding.
 - **The bootloader is unchanged** — still single-bank 0.11.0 with no `DEFAULT_TO_OTA_DFU`. A failed
   transfer after bank 0 is invalidated still loses the application. This remains the reason not to
   conformal-coat.
+
+## Post-integration OTA audit — 2026-09-03
+
+Compile-verified in both the production and proof sketches; hardware re-test is still required.
+
+- Advertising now uses Bluefruit's native fast-to-slow mode: 20 ms for 1 s, then 250 ms for the
+  rest of the unchanged 5 s discovery window. The SoftDevice also owns a 5 s hard timeout, so an
+  application-side stall cannot accidentally leave advertising enabled indefinitely.
+- A Bluefruit connection callback latches the connection handle, and the code stops advertising
+  before its final connection check. This closes the boundary race where a connection could land
+  between the last 20 ms poll and `Advertising.stop()` and then remain active unnoticed.
+- A peer that connects but never writes the DFU command is explicitly disconnected after the 30 s
+  service-discovery hold. Previously it remained connected indefinitely, kept radio connection
+  events running through later sleep cycles, and could prevent later advertisements.
+- Manufacturer payload, scan-response-name, and advertising-start failures now return failure.
+  The cadence is advanced only after the SoftDevice accepts the advertisement, so a failed send is
+  retried on the next 10 s wake rather than being silently treated as delivered for a full minute.
+- DFU-service registration is checked. Normal sensor telemetry retains a 500 ms window if service
+  setup failed, rather than paying five seconds for an OTA path that is unavailable.
+- The reset-safe service now checks the authorized-write reply and verifies `GPREGRET=0xA8` before
+  resetting. If the reset call unexpectedly returns, it clears that retained request so a later
+  watchdog or pin reset cannot enter OTA spuriously. Both sketch-local copies remain identical.
+
+Required bench checks before accepting this revision: verify normal packets during both the fast
+and slow portions, repeat a complete application-to-bootloader OTA handoff, connect without issuing
+DFU and confirm forced disconnect/recovery after 30 s, and measure average current across at least
+one complete 60 s no-client cycle. These changes do not solve the single-bank/interrupted-transfer
+or unsigned-image blockers above.

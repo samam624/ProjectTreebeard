@@ -165,11 +165,6 @@ const uint8_t SENSOR_ID = 5;
 // current/time-probed on real hardware yet.
 const uint32_t WAKE_PERIOD_MS = 10000;
 const uint32_t ADVERTISE_INTERVAL_MS = 60000;
-// SUPERSEDED 2026-09-03 and deliberately no longer used to time the advertising window -- the
-// window is now OTA_ADV_LISTEN_MS, which advertises AND watches for an incoming OTA connection.
-// Kept only to document the historical 500ms value the +8 dBm power estimate above was based on.
-// Changing this constant no longer changes any behaviour; change OTA_ADV_LISTEN_MS instead.
-const uint32_t ADVERTISE_MS_HISTORICAL_ONLY = 500;
 // PROVISIONAL, same status as MSV2's own MOISTURE_SWING_THRESHOLD was before
 // real soil data existed for it. Bench-only reference points so far: dry
 // electrodes in air ~20.33M, direct finger-touch contact ~18.35-18.5M (~9%
@@ -181,6 +176,12 @@ const uint32_t ADVERTISE_MS_HISTORICAL_ONLY = 500;
 // reasoning as MSV2's threshold, so it stays on the probe.
 const uint32_t MOISTURE_SWING_THRESHOLD = 300000UL;
 const uint32_t MIN_SWING_ADVERTISE_INTERVAL_MS = 30000;
+// A legacy BLE DFU transfer takes several minutes. Permit the app-to-bootloader handoff only
+// while USB input is power-good or a valid LiPo reading is at least 3.80V. This is intentionally
+// well above the harvester's ~3.04V VBAT_UV threshold: crossing the hardware cutoff says the
+// board can run, not that it has enough stored energy to finish a flash operation. The dual-bank
+// recovery bootloader remains available after any interrupted transfer once power returns.
+const uint16_t OTA_MIN_BATTERY_MV = 3800;
 // Conversions discarded after each cold wake before a reading is trusted.
 // MEASURED on real hardware via `wakeprofile`, not guessed -- see
 // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md / msv3_ble_sleep_port notes. Kept
@@ -422,13 +423,6 @@ void readChargerPins(bool &statHigh, bool &pgHigh)
   gpioDisconnect(PIN_CHG_PG);
 }
 
-bool isBatteryCharging()
-{
-  bool stat, pg;
-  readChargerPins(stat, pg);
-  return stat == LOW;
-}
-
 // ========================================================= Board temp ====
 // nRF52840 die temperature via the SoftDevice's sd_temp_get(), NOT the raw NRF_TEMP peripheral
 // directly (that path is only safe when the SoftDevice is disabled -- see wiring.c's
@@ -614,7 +608,8 @@ void delayFeedingWatchdog(uint32_t ms)
 // [10-13] raw FDC2214 DATA_CH0, 32-bit LE
 // [14-15] raw battery mV, 16-bit LE
 // [16]    flags: bit0=charging (existing meaning, unchanged), bit1=moisture/reference phase
-//         used (0/1), bit2=board temp valid, bit3=bare-tank reference valid, bits4-7=reserved/0
+//         used (0/1), bit2=board temp valid, bit3=bare-tank reference valid,
+//         bit4=OTA power gate open (USB PG or VBAT >= OTA_MIN_BATTERY_MV), bits5-7=reserved/0
 // [17-18] board temperature, signed int16 LE, quarter-degrees C (sd_temp_get() native units;
 //         0/invalid when bit2 is clear) -- see readBoardTempQuarterC(). This is nRF52840 die
 //         temperature, NOT soil or blade temperature.
@@ -640,8 +635,8 @@ uint32_t wakeCount = 0;
 // and its unverified-on-hardware status as of first flash.
 uint8_t currentTankPhase = 0;
 
-// OTA maintenance hold. If a central connects during an ADVERTISE_MS window, stay awake instead
-// of dropping into the sleep cycle 500ms later.
+// OTA maintenance hold. If a central connects during the OTA advertising window, stay awake
+// instead of returning to the normal sleep cycle.
 //
 // This only has to cover connect + service discovery + ONE write to the DFU control
 // characteristic. It does NOT have to cover the transfer: resetSafeDfuWrite() sets GPREGRET=0xA8
@@ -649,15 +644,14 @@ uint8_t currentTankPhase = 0;
 // its own timing and never returns here. 30s is therefore generous for a slow central rather than
 // tight, and a failed attempt is retryable on the next advertising window.
 //
-// The upper bound matters because a central that connects and then does nothing (a phone scanning
-// for BLE devices, say) holds the radio up for the whole window. At 500ms/min normal duty this is
-// ~60x the advertising energy for that minute, which is survivable occasionally and is why this
-// is not set to minutes.
+// The upper bound matters because a central that connects and then does nothing holds periodic
+// connection events open. It is deliberately seconds rather than minutes, and loop() now forces
+// that idle peer off when the deadline expires.
 const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
 
 // How long to keep advertising and actively watch for an incoming connection.
 //
-// 2026-09-03 bench evidence for why this exists: with only ADVERTISE_MS (500ms) of advertising and
+// 2026-09-03 bench evidence for why this exists: with only the historical 500ms of advertising and
 // a SINGLE Bluefruit.connected() check at the end of it, three consecutive OTA attempts failed
 // identically. The probe's own serial log showed no OTA hold was ever entered and the cycle ran
 // its normal 9.96s, while the client reported "Could not get GATT services: Unreachable" ~8s after
@@ -668,22 +662,53 @@ const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
 // 500ms/min is also simply a small target: the Windows BLE stack needed five 7s scan cycles just
 // to SEE the probe before it could attempt a connection.
 //
-// COST: this raises advertising radio time from 500ms to up to OTA_ADV_LISTEN_MS per advertising
-// interval whenever nothing connects. At 5s/60s that is 10x the advertising duty the +8 dBm
-// power estimate at ADVERTISE_MS was based on, so this value is a real battery/solar decision and
-// NOT yet validated against a power budget. The loop exits immediately once a connection is seen,
-// so the full cost is only paid when no one is updating.
+// COST: the application remains in this connectable window for up to five seconds per advertising
+// interval. The fast-to-slow schedule immediately below reduces the planned radio events by about
+// 74% versus the original all-fast implementation, but the resulting whole-board average current
+// is still NOT bench-validated. The loop exits immediately once a connection is seen.
 const uint32_t OTA_ADV_LISTEN_MS = 5000;
 
+// Keep the full proven five-second OTA discovery opportunity without transmitting at 20ms for
+// all five seconds. Bluefruit advertises fast for the first second, which covers both the normal
+// receiver burst and the observed ~0.6s Windows connection, then automatically changes to 250ms
+// for the remaining four seconds. That is roughly 66 scheduled advertising events instead of
+// 250 (about 74% fewer) while preserving the same listen-window duration. The SoftDevice timeout
+// is also set to the full window so an unexpected application stall cannot leave advertising on
+// indefinitely.
+const uint16_t ADV_FAST_INTERVAL_UNITS = 32;   // 20ms, before BLE's 0-10ms random adv delay
+const uint16_t ADV_SLOW_INTERVAL_UNITS = 400;  // 250ms
+const uint16_t ADV_FAST_TIMEOUT_SECONDS = 1;
+const uint16_t OTA_ADV_HARD_TIMEOUT_SECONDS = OTA_ADV_LISTEN_MS / 1000;
+const uint32_t OTA_UNAVAILABLE_ADV_MS = 500;
+static_assert(OTA_ADV_LISTEN_MS >= 1000 && OTA_ADV_LISTEN_MS % 1000 == 0,
+              "OTA_ADV_LISTEN_MS must be a whole number of seconds for the SoftDevice timeout");
+
 ResetSafeBLEDfu bledfu;
+
+bool g_otaServiceReady = false;
+volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+
+void otaConnectCallback(uint16_t connHandle)
+{
+  // Latched by Bluefruit's BLE event task. Polling Bluefruit.connected() alone has a boundary
+  // race: a connection can complete between the loop's final poll and Advertising.stop().
+  g_otaConnectionHandle = connHandle;
+}
+
+void otaDisconnectCallback(uint16_t connHandle, uint8_t reason)
+{
+  (void)reason;
+  if (g_otaConnectionHandle == connHandle) g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+}
 
 void bleInit()
 {
   Bluefruit.autoConnLed(false);
-  Bluefruit.begin();
+  if (!Bluefruit.begin()) return;
   // Bench A/B on 2026-09-02: +8 dBm improved mean RSSI by 3.2 dB versus +4 dBm
-  // (same fixed placement). At this 500 ms/min advertising duty cycle the
-  // estimated incremental average draw is only about 1.6-2.1 uA.
+  // (same fixed placement). The earlier +8 dBm incremental-current estimate was made against the
+  // historical 500ms/min window; the fast-to-slow schedule above now needs a direct whole-board
+  // current measurement rather than extrapolating that stale estimate.
   Bluefruit.setTxPower(8);
   Bluefruit.setName(DEVICE_NAME);
 
@@ -692,7 +717,11 @@ void bleInit()
   // legacy PDU limit, so there is no room for a service UUID and the manufacturer payload stays
   // byte-for-byte unchanged. An updater finds the probe by DEVICE_NAME in the scan response,
   // which is how the 2026-09-02 proof's client located MSV3-OTA-TEST.
-  bledfu.begin();
+  g_otaServiceReady = bledfu.begin() == ERROR_NONE;
+
+  Bluefruit.Periph.setConnectCallback(otaConnectCallback);
+  Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
+  Bluefruit.Advertising.setFastTimeout(ADV_FAST_TIMEOUT_SECONDS);
 
   g_bleInited = true;
 }
@@ -702,11 +731,14 @@ void bleInit()
 #define ADV_FLAG_PHASE           (1U << 1)
 #define ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
 #define ADV_FLAG_BARE_TANK_OK    (1U << 3)
+#define ADV_FLAG_OTA_POWER_OK    (1U << 4)
 
-void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, uint8_t phaseUsed,
+bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk, uint8_t phaseUsed,
               bool boardTempValid, int16_t boardTempQuarterC,
               bool bareTankValid, uint32_t bareTankDataCh0)
 {
+  if (!g_bleInited) return false;
+
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
   uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
   uint32_t bareTankField = bareTankValid ? bareTankDataCh0 : 0;
@@ -739,7 +771,8 @@ void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, uint8_t 
   mfg[16] = (isCharging ? ADV_FLAG_CHARGING : 0) |
             (phaseUsed ? ADV_FLAG_PHASE : 0) |
             (boardTempValid ? ADV_FLAG_BOARD_TEMP_OK : 0) |
-            (bareTankValid ? ADV_FLAG_BARE_TANK_OK : 0);
+            (bareTankValid ? ADV_FLAG_BARE_TANK_OK : 0) |
+            (otaPowerOk ? ADV_FLAG_OTA_POWER_OK : 0);
   mfg[17] = (uint8_t)(boardTempField & 0xFF);
   mfg[18] = (uint8_t)((boardTempField >> 8) & 0xFF);
   mfg[19] = (uint8_t)(bareTankField & 0xFF);
@@ -753,23 +786,24 @@ void startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, uint8_t 
   ok &= Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   ok &= Bluefruit.Advertising.addTxPower();
   ok &= Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
+  ok &= Bluefruit.ScanResponse.addName();
   if (!ok)
   {
-    // A silently-truncated/missing manufacturer-data AD structure would advertise with no
-    // sensor payload at all -- make that loud rather than letting an empty-looking advertisement
-    // go unnoticed. sizeof(mfg)=23 plus Flags(3B)+TxPower(3B) is designed to exactly fill the
-    // 31-byte legacy limit; a failure here almost certainly means that arithmetic is wrong for
-    // whatever data was actually added above, not a transient condition.
+    // A missing manufacturer-data structure would produce a useless sensor advertisement, and a
+    // missing scan-response name would make the OTA client unable to find this probe. Reject both
+    // rather than transmitting a partial packet. sizeof(mfg)=23 plus Flags(3B)+TxPower(3B) is
+    // designed to exactly fill the 31-byte legacy limit; a failure usually means that arithmetic
+    // or the name no longer fits, not a transient condition.
     if (ENABLE_SERIAL_LOGS)
     {
-      Serial.println(F("[ERROR] Advertising data failed to fit (Flags/TxPower/manufacturer data) -- advertising WITHOUT sensor payload"));
+      Serial.println(F("[ERROR] BLE advertisement/scan response build failed -- not advertising"));
       Serial.flush();
     }
+    return false;
   }
-  Bluefruit.ScanResponse.addName();
   Bluefruit.Advertising.restartOnDisconnect(false);
-  Bluefruit.Advertising.setInterval(32, 32);  // 20-30ms while awake, same as MSV2
-  Bluefruit.Advertising.start(0);
+  Bluefruit.Advertising.setInterval(ADV_FAST_INTERVAL_UNITS, ADV_SLOW_INTERVAL_UNITS);
+  return Bluefruit.Advertising.start(OTA_ADV_HARD_TIMEOUT_SECONDS);
 }
 
 // ================================================================= setup ==
@@ -897,7 +931,14 @@ void loop()
   currentTankPhase = phaseUsed ? 0 : 1;
 
   float batteryMv = readVbatMv();
-  bool charging = isBatteryCharging();
+  bool statHigh, pgHigh;
+  readChargerPins(statHigh, pgHigh);
+  bool charging = statHigh == LOW;
+  bool usbPowerGood = pgHigh == LOW;
+  bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+  bool otaPowerOk = usbPowerGood ||
+                    (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+  bledfu.setDfuAllowed(otaPowerOk);
   probeSleep();
 
   bool intervalElapsed = lastAdvertiseMs == 0 || (millis() - lastAdvertiseMs >= ADVERTISE_INTERVAL_MS);
@@ -970,56 +1011,104 @@ void loop()
       Serial.flush();
     }
 
-    startAdv(rawData, batteryMv, charging, phaseUsed, boardTempValid, boardTempQuarterC,
-             bareTankValid, bareTankData);
-    // Watch for an incoming connection across the whole advertising window rather than checking
-    // once at the end -- see OTA_ADV_LISTEN_MS for the bench evidence that a one-shot check races
-    // the client and always loses. Exits the moment a connection appears, so a probe nobody is
-    // updating still pays only the listen window, and a probe being updated pays nothing extra.
-    uint32_t advStart = millis();
-    bool sawConnection = false;
-    while ((millis() - advStart) < OTA_ADV_LISTEN_MS)
-    {
-      feedWatchdog();
-      if (Bluefruit.connected())
-      {
-        sawConnection = true;
-        break;
-      }
-      delay(20);
-    }
+    // Clear the callback latch before advertising begins. There cannot be a legitimate existing
+    // connection here: every non-DFU connection is now explicitly disconnected below before the
+    // probe returns to its sleep cadence.
+    g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+    bool advStarted = startAdv(rawData, batteryMv, charging, otaPowerOk, phaseUsed,
+                               boardTempValid, boardTempQuarterC,
+                               bareTankValid, bareTankData);
 
-    // OTA maintenance hold -- see OTA_CONNECTED_HOLD_MS. Holds the probe awake long enough for the
-    // central to finish service discovery and write the DFU control characteristic; without it the
-    // probe sleeps out from under the handshake and registering the DFU service is decorative.
-    //
-    // Feeding the watchdog inside the loop is mandatory, not defensive: WDT_TIMEOUT_MS is 5s and
-    // the hold can run 30s, so an unfed loop guarantees a watchdog reset mid-handshake.
-    //
-    // If the DFU write does land, resetSafeDfuWrite() system-resets into the bootloader and this
-    // function never returns -- so there is no "resume normal operation after OTA" path here by
-    // design.
-    if (sawConnection)
+    if (advStarted)
     {
-      uint32_t holdStart = millis();
-      while (Bluefruit.connected() && (millis() - holdStart) < OTA_CONNECTED_HOLD_MS)
+      // If DFU service registration ever failed, preserve normal sensor telemetry but don't pay a
+      // five-second OTA window for a service that cannot accept an update. A healthy build uses
+      // the full OTA_ADV_LISTEN_MS duration.
+      uint32_t listenMs = g_otaServiceReady ? OTA_ADV_LISTEN_MS : OTA_UNAVAILABLE_ADV_MS;
+      uint32_t advStart = millis();
+      uint16_t connectionHandle = BLE_CONN_HANDLE_INVALID;
+      while ((millis() - advStart) < listenMs)
       {
         feedWatchdog();
-        delay(50);
+        uint16_t latchedHandle = g_otaConnectionHandle;
+        if (latchedHandle != BLE_CONN_HANDLE_INVALID && Bluefruit.connected(latchedHandle))
+        {
+          connectionHandle = latchedHandle;
+          break;
+        }
+        if (Bluefruit.connected())
+        {
+          connectionHandle = Bluefruit.connHandle();
+          break;
+        }
+        delay(20);
       }
-      if (ENABLE_SERIAL_LOGS)
+
+      // Stop first, then make one final connection check. This closes the old end-of-window race:
+      // after stop() succeeds no new connection can begin, while a connection that won the race
+      // makes advertising stop itself and is visible through the callback/connection table.
+      if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+      if (connectionHandle == BLE_CONN_HANDLE_INVALID)
       {
-        Serial.print(F("[DIAG] OTA hold ended after "));
-        Serial.print(millis() - holdStart);
-        Serial.println(F("ms"));
-        Serial.flush();
+        delay(1);  // give Bluefruit's higher-priority event task one scheduling point
+        uint16_t latchedHandle = g_otaConnectionHandle;
+        if (latchedHandle != BLE_CONN_HANDLE_INVALID && Bluefruit.connected(latchedHandle))
+        {
+          connectionHandle = latchedHandle;
+        }
+        else if (Bluefruit.connected())
+        {
+          connectionHandle = Bluefruit.connHandle();
+        }
       }
+
+      // OTA maintenance hold -- see OTA_CONNECTED_HOLD_MS. If the DFU write lands,
+      // resetSafeDfuWrite() resets into the bootloader and this code never resumes. If the peer is
+      // idle or the handshake fails, explicitly disconnect it at the deadline; the old code left
+      // that connection alive indefinitely, keeping periodic connection events (and therefore the
+      // radio) running throughout later "sleep" cycles and preventing reliable new advertising.
+      if (connectionHandle != BLE_CONN_HANDLE_INVALID)
+      {
+        uint32_t holdStart = millis();
+        while (Bluefruit.connected(connectionHandle) &&
+               (millis() - holdStart) < OTA_CONNECTED_HOLD_MS)
+        {
+          feedWatchdog();
+          delay(50);
+        }
+
+        bool forcedDisconnect = Bluefruit.connected(connectionHandle);
+        if (forcedDisconnect)
+        {
+          Bluefruit.disconnect(connectionHandle);
+          uint32_t disconnectStart = millis();
+          while (Bluefruit.connected(connectionHandle) && millis() - disconnectStart < 500)
+          {
+            feedWatchdog();
+            delay(10);
+          }
+        }
+
+        if (ENABLE_SERIAL_LOGS)
+        {
+          Serial.print(F("[DIAG] OTA hold ended after "));
+          Serial.print(millis() - holdStart);
+          Serial.println(forcedDisconnect ? F("ms (idle peer disconnected)") : F("ms"));
+          Serial.flush();
+        }
+      }
+
+      // Only advance the cadence/baseline after the SoftDevice actually accepted the advertising
+      // start. The old code silently suppressed retries for a full minute after any payload or
+      // start failure even though no packet had gone over the air.
+      lastAdvertiseMs = millis();
+      lastAdvertisedRaw = (long)rawData;
     }
-
-    Bluefruit.Advertising.stop();
-
-    lastAdvertiseMs = millis();
-    lastAdvertisedRaw = (long)rawData;
+    else if (ENABLE_SERIAL_LOGS)
+    {
+      Serial.println(F("[ERROR] Advertising failed to start -- retaining cadence for retry"));
+      Serial.flush();
+    }
   }
   else if (ENABLE_SERIAL_LOGS)
   {
