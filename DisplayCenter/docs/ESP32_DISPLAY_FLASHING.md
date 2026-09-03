@@ -4,7 +4,7 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-09-01, the display receiver was reflashed on `COM16` with the normal production build:
+As of 2026-09-02, the display receiver was reflashed on `COM16` with the normal production build:
 
 ```text
 Treebeard runtime build 2026-09-02 treebeard-rename-v1
@@ -60,9 +60,13 @@ USBMode=hwcdc
 CDCOnBoot=cdc
 PartitionScheme=huge_app
 FlashSize=4M
-PSRAM=disabled
+PSRAM=opi
 EraseFlash=none
 ```
+
+`PSRAM=opi` is required for the receiver's ESP32-S3-WROOM-1U-N16R8 module. Keep `FlashSize=4M`
+until the persisted LittleFS data has an explicit partition migration; changing that setting can
+relocate the filesystem even though the physical module has 16 MB of flash.
 
 ## Useful Commands
 

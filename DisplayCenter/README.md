@@ -382,8 +382,6 @@ The display helper defaults to `COM13`; the MSV2 probe helper defaults to `COM5`
 powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13
 ```
 
-You can still call `arduino-cli` directly if you prefer.
-
 Install the ESP32 core and libraries once:
 
 ```powershell
@@ -398,17 +396,10 @@ Find the board port:
 arduino-cli board list
 ```
 
-Compile:
-
-```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32s3 arduino/Treebeard_ESP32_Display_Runtime
-```
-
-Upload, replacing `COM7` with your port:
-
-```powershell
-arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32s3 arduino/Treebeard_ESP32_Display_Runtime
-```
+Use `scripts\arduino_display.ps1` for compilation and upload rather than a bare
+`arduino-cli compile --fqbn esp32:esp32:esp32s3` command. The wrapper carries the receiver's
+required N16R8 octal-PSRAM and partition settings, preserves LittleFS, separates diagnostic build
+artifacts, and runs the DisplayCenter regression gate before a binary can be flashed.
 
 ## BLE Packet-Loss Testing
 

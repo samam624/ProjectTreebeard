@@ -46,8 +46,9 @@ function Resolve-ProjectPath {
   throw "Antenna test sketch not found at '$Path' (checked the repository root, DisplayCenter folder, and current directory)"
 }
 
-# Same FQBN as scripts/arduino_display.ps1 - this is the same ESP32-S3-WROOM-1U-N16R8
-# module, just now on its own PCB instead of the devkit breadboard build.
+# Same ESP32-S3-WROOM-1U-N16R8 hardware options as scripts/arduino_display.ps1 except that this
+# small diagnostic intentionally leaves PSRAM disabled because it does not allocate receiver UI,
+# history, or TLS state.
 $Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUFreq=240,FlashMode=qio,FlashSize=4M,PartitionScheme=huge_app,DebugLevel=none,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default"
 $BuildPath = Join-Path $RepoRoot ".arduino-build\antenna-test"
 

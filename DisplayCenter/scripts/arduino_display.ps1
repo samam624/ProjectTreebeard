@@ -60,14 +60,28 @@ function Invoke-ReceiverRegressionChecks {
     throw "node is required to run DisplayCenter receiver regression checks before compile/upload"
   }
 
-  $RegressionScript = Join-Path $ScriptDir "verify_receiver_cloud_recovery.mjs"
-  if (!(Test-Path -LiteralPath $RegressionScript)) {
-    throw "Receiver regression check not found at '$RegressionScript'"
-  }
+  # Keep every dependency-free firmware contract in the compile/upload gate. Running only
+  # verify_receiver_cloud_recovery.mjs let display geometry, moisture, battery, and MSV3
+  # reference regressions compile and flash even though dedicated checks already existed.
+  $RegressionScripts = @(
+    "verify_receiver_cloud_recovery.mjs",
+    "verify_display_card_layout.mjs",
+    "verify_moisture_alert_thresholds.mjs",
+    "verify_receiver_moisture_filter.mjs",
+    "verify_battery_curve_sync.mjs",
+    "verify_msv3_reference_compensation.mjs"
+  )
 
-  & $NodeCommand.Source $RegressionScript
-  if ($LASTEXITCODE -ne 0) {
-    throw "Receiver cloud/display regression checks failed; refusing to compile or flash"
+  foreach ($RegressionName in $RegressionScripts) {
+    $RegressionScript = Join-Path $ScriptDir $RegressionName
+    if (!(Test-Path -LiteralPath $RegressionScript)) {
+      throw "Receiver regression check not found at '$RegressionScript'"
+    }
+
+    & $NodeCommand.Source $RegressionScript
+    if ($LASTEXITCODE -ne 0) {
+      throw "Receiver regression check '$RegressionName' failed; refusing to compile or flash"
+    }
   }
 }
 
