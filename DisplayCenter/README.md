@@ -6,7 +6,7 @@ web app, and bootstraps itself with the cloud backend (`../cloud/`) for remote h
 
 ## Fast ESP32 Display Update Loop
 
-Flash `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` once to the ESP32 devkit. The sketch renders probe readings on an SPI TFT through `GFX Library for Arduino`, scans MSV2/MSV3 BLE advertisements, and hosts a tiny WiFi updater for live UI JSON pushes.
+Flash `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` once to the ESP32 devkit. The sketch renders probe readings on an SPI TFT through `GFX Library for Arduino`, scans MSV2/MSV3 BLE advertisements, and hosts a tiny WiFi updater for live UI JSON pushes.
 
 Install Arduino libraries:
 
@@ -33,10 +33,10 @@ The display driver and GPIOs are configured directly in the ESP32 display sketch
 For developer convenience, you may still put WiFi credentials in a local file:
 
 ```text
-arduino/MSV2_ESP32_Display_Runtime/WiFiCredentials.h
+arduino/Treebeard_ESP32_Display_Runtime/WiFiCredentials.h
 ```
 
-Use [WiFiCredentials.example.h](arduino/MSV2_ESP32_Display_Runtime/WiFiCredentials.example.h) as the template:
+Use [WiFiCredentials.example.h](arduino/Treebeard_ESP32_Display_Runtime/WiFiCredentials.example.h) as the template:
 
 ```cpp
 #define WIFI_SSID "Your WiFi SSID"
@@ -125,7 +125,7 @@ Moisture alert semantics are intentionally different from battery semantics:
 - `0%`: red, flashing, and eligible for the receiver's watering buzzer.
 
 Battery keeps its own existing warning thresholds. See
-[MSV2 Adaptive Moisture Calibration](../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md) for the
+[Treebeard Adaptive Moisture Calibration](../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md) for the
 model, deployment, diagnostics, and reset behavior.
 
 The ESP32 also serves a web app manifest, service worker, and icon. After opening the app on your phone, use the browser's add-to-home-screen/install action if your browser offers it. Some browsers treat local `http://` device pages as shortcuts rather than full PWAs; the later cloud app will solve that with HTTPS. True remote monitoring still requires the cloud relay described in the product roadmap.
@@ -184,7 +184,7 @@ For backend prototyping on your PC, run the local mock cloud (lives in `cloud/`,
 python ..\cloud\scripts\mock_cloud_server.py --host 0.0.0.0 --port 8088
 ```
 
-It implements the draft claim and snapshot endpoints from [MSV2 Cloud API Draft](../cloud/docs/CLOUD_API_DRAFT.md), stores latest snapshots in memory, and exposes a tiny auto-refreshing dashboard at:
+It implements the draft claim and snapshot endpoints from [Treebeard Cloud API Draft](../cloud/docs/CLOUD_API_DRAFT.md), stores latest snapshots in memory, and exposes a tiny auto-refreshing dashboard at:
 
 ```text
 http://localhost:8088/
@@ -290,9 +290,9 @@ python scripts\generate_plant_sprites.py
 
 The generator writes:
 
-- `arduino/MSV2_ESP32_Display_Runtime/plant_sprites.h`
-- `arduino/MSV2_ESP32_Display_Runtime/PlantSpriteCatalog.h`
-- `arduino/MSV2_ESP32_Display_Runtime/MobileAppPage.h` art picker options and previews
+- `arduino/Treebeard_ESP32_Display_Runtime/plant_sprites.h`
+- `arduino/Treebeard_ESP32_Display_Runtime/PlantSpriteCatalog.h`
+- `arduino/Treebeard_ESP32_Display_Runtime/MobileAppPage.h` art picker options and previews
 - `generated/plant_sprites/previews/*.png`
 - `generated/plant_sprites/mobile_art_catalog_snippet.js`
 
@@ -321,7 +321,7 @@ python -m pip install -r ../requirements.txt
 Near the top of the ESP32 display sketch is the bring-up stage:
 
 ```cpp
-#define MSV2_BRINGUP_STAGE 3
+#define TREEBEARD_BRINGUP_STAGE 3
 ```
 
 Use `0` for serial-only safe boot, `1` for display-only, `2` for display plus WiFi updater, and `3` for the full display/WiFi/BLE dashboard runtime.
@@ -329,8 +329,8 @@ Use `0` for serial-only safe boot, `1` for display-only, `2` for display plus Wi
 If the board reboots, open Serial Monitor at `115200` and look for:
 
 ```text
-[MSV2 boot] previous checkpoint before reset:
-[MSV2 boot] reset reason:
+[Treebeard boot] previous checkpoint before reset:
+[Treebeard boot] reset reason:
 ```
 
 Those two lines identify the last subsystem touched before the panic.
@@ -401,13 +401,13 @@ arduino-cli board list
 Compile:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32s3 arduino/MSV2_ESP32_Display_Runtime
+arduino-cli compile --fqbn esp32:esp32:esp32s3 arduino/Treebeard_ESP32_Display_Runtime
 ```
 
 Upload, replacing `COM7` with your port:
 
 ```powershell
-arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32s3 arduino/MSV2_ESP32_Display_Runtime
+arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32s3 arduino/Treebeard_ESP32_Display_Runtime
 ```
 
 ## BLE Packet-Loss Testing

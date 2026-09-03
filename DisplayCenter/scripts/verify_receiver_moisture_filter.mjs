@@ -11,10 +11,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // every regex to tolerate \r, keeps this file's other patterns simple and correct regardless
 // of which line-ending convention a given checkout renders.
 const firmware = (
-  await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MSV2_ESP32_Display_Runtime.ino"), "utf8")
+  await readFile(join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "Treebeard_ESP32_Display_Runtime.ino"), "utf8")
 ).replace(/\r\n/g, "\n");
 const mobileApp = (
-  await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8")
+  await readFile(join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8")
 ).replace(/\r\n/g, "\n");
 
 const scriptBlocks = [...mobileApp.matchAll(/<script>([\s\S]*?)<\/script>/g)];

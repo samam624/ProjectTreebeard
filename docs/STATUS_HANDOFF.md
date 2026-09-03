@@ -1,6 +1,35 @@
 # MSV2 Status Handoff
 
-Date: 2026-08-30 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-09-01 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-09-01 DisplayCenter learned percentages, periodic freeze, and cloud reliability
+
+- **Resolved and deployed to COM16.** Canonical incident record:
+  `DisplayCenter/docs/RECEIVER_PERCENT_RANGES_DISPLAY_FREEZE_AND_UPLOAD_FIX_2026-09-01.md`.
+  Production identity is `MSV2 runtime build 2026-08-31 durable-cloud-outbox-v7-smooth-display`.
+- Supabase was not dropping accepted readings and was not over capacity. The apparent connection
+  refusals were local `mbedtls_ssl_setup()` contiguous-allocation failures: the receiver built a
+  large history `String` before TLS reserved its buffers. TLS now connects first and compact rows
+  stream through one bounded row buffer.
+- Missing percentages were a receiver scheduler regression. Treating any nonempty history queue
+  as emergency pressure indefinitely starved `runCloudAutoCalPull()` on a continuously reporting
+  system. State pulls now yield only at 75% outbox capacity, and learned core ranges are cached in
+  `/autocal-cache-v1.json` for immediate post-reset display recovery.
+- The every-few-seconds display pause was one LittleFS open/append/flush/close per unique probe
+  wake; measured transactions took 29-240 ms. Healthy uploads now copy and acknowledge a
+  checksum-protected 64-row RTC ingress ring directly. LittleFS is used only as 8,192-row outage
+  spillover, so `cloudJournalWriteDiag.atMs` stayed `0` across healthy live cycles.
+- Capacity is suitable for the intended 10-16 sensor fleet: 96 rows per paced upload versus
+  10-16 normal rows/minute, or about 35/minute with one three-second bench sensor plus 15 normal
+  sensors. Sixteen sensors all producing unique rows every three seconds (320/minute) is explicitly
+  outside the supported envelope.
+- Final live acceptance: three HTTP 200 upload cycles, consecutive failures `0`, dropped rows `0`,
+  journal storage errors `0`, durable backlog `0` after acknowledgement, and learned percentages
+  restored for sensors 1-3. Sensor 4 is intentionally `auto=false`; sensor 5 remains cloud
+  `ready=false`.
+- `DisplayCenter/scripts/verify_receiver_cloud_recovery.mjs` encodes the scheduler, RTC, direct
+  upload, TLS-first streaming, and capacity invariants. The standard DisplayCenter compile/upload
+  wrapper runs this check before Arduino CLI so a regression is blocked before flashing.
 
 ## 2026-08-30 DisplayCenter touch/display corruption and brightness overlay redraw bugs
 
@@ -312,7 +341,7 @@ Date: 2026-08-30 (the section immediately below is current; older deployment-sta
   receivers still consume `ready`, `dryBound`, and `wetBound`. The alert-threshold firmware
   change does require a receiver flash, which the production receiver has now received.
 - Full design and operations reference:
-  `docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`.
+  `docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md`.
 
 ## 2026-08-17 Netlify Service Worker Stale-Data Bug
 
@@ -566,7 +595,7 @@ The 2026-07-24 run confirmed the one-shot RC precharge/discharge approach is fun
 
 - **Oscillator sensing ported into `MSV2_Moisture_BLE_Sleep.ino`**, replacing `readMoistureFallUs()`/`readAveragedMoisture()` entirely. Architecture (bench-validated separately in `arduino/MSV2_Moisture_Probe_Test/` + `docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md`, same free-running-astable-plus-frequency-counting principle as the MSV1 555-timer proof-of-concept): free-run the sensing node (charge to HIGH, discharge to LOW, immediately recharge, repeat) and count cycles in a fixed window, rather than timing a single discharge. Median-of-5 × 1ms bursts (`OSC_SAMPLE_WINDOW_MS`/`OSC_MEDIAN_SAMPLES`) rejects scheduler-jitter outliers; total active sensing time per reading is 5ms (down from up to several hundred ms worst-case). **Requires a 100kΩ pulldown resistor populated on `SENSE_PIN`** (the earlier unpopulated/DNC footprint from 2026-07-24) — this is a hardware precondition the firmware can't compensate for.
 - **Moisture value inverted at the source**: raw oscillator frequency runs backwards for a field called "moisture" (drier soil oscillates faster), so `readAveragedMoisture()` now transmits `MOISTURE_INVERT_CEILING (200) - frequencyKHz` instead of raw frequency, restoring the original "higher = wetter" convention for every consumer downstream.
-- **Calibration recalibrated twice** as the transmitted scale moved (RC-µs hundreds/thousands → raw kHz 10-90 → inverted ~110-190) across every hardcoded dry/wet default: `MSV2_ESP32_Display_Runtime.ino`'s 8-card default config and 4 fallback sites, `MobileAppPage.h`'s preset table, `ui/display_default.json`. Current defaults: dry≈120, wet≈175 (herb preset). **These remain provisional** — no real-soil calibration data exists yet (all bench validation used touch/hand proximity as a moisture stimulus).
+- **Calibration recalibrated twice** as the transmitted scale moved (RC-µs hundreds/thousands → raw kHz 10-90 → inverted ~110-190) across every hardcoded dry/wet default: `Treebeard_ESP32_Display_Runtime.ino`'s 8-card default config and 4 fallback sites, `MobileAppPage.h`'s preset table, `ui/display_default.json`. Current defaults: dry≈120, wet≈175 (herb preset). **These remain provisional** — no real-soil calibration data exists yet (all bench validation used touch/hand proximity as a moisture stimulus).
 - **Auto mode added** (`supabase/migrations/017_msv2_sensor_auto_calibration.sql`, `receiver-snapshot/index.ts`'s new `autocal=1` branch, `runCloudAutoCalPull()` in the `.ino`) to stop this recalibration treadmill: per-sensor moisture range self-learned from history using the 5th/95th percentile over a trailing 21-day window (not raw min/max — a single outlier or a probe-removal transient barely moves a percentile, whereas it would permanently redefine a raw max). Gated by a "ready" check (≥50 samples, ≥3 days of history) before trusting/showing a percentage — shows "Learning..." (web) / muted (physical display) until then, **falling back to the manual/preset range as a working estimate** while learning (not blocking to nothing), since that range is at least on the current sensing scale. Also detects watering events (≥15% of range rise within ≤3h, clustered within 12h into one event) and predicts a watering interval from the median gap of the last ≤6 events, driving an "overdue" flag that forces the existing danger-color styling. Setup tab gained a per-card "Auto-calibrate" checkbox that disables the now-irrelevant manual dry/wet inputs.
 - **Battery reading smoothed** with an exponential moving average (`smoothedBatteryPercent`, 0.2 factor, same constant already used for the oscillator's own frequency smoothing) so the History tab's charging curve isn't dominated by per-sample ADC noise — still one real ADC read per wake, only the transmitted/charted value is smoothed.
 - **Probe power rework for tonight's test**: measure/check cadence dropped to every 10s (cheap, ~5ms active), but actual BLE advertising (the expensive radio-on part) now only happens every 60s normally, or immediately if moisture swings ≥15 units between checks (a real watering/removal event, not sensor noise) — matches the "measure often, radio rarely" pattern already sketched in `docs/PRODUCT_ROADMAP.md`'s probe section. `wakeCount` now only increments on actual advertises so the receiver's missed-packet diagnostic still means "real over-the-air loss," not artificially inflated by the new power-saving skips. External LED no longer pulses per-advertise (pure battery cost, no signal value) — now blinks 3× per wake only while moisture is at/below a **fixed** threshold (134, matching the 25%-of-default-range "danger" cutoff used elsewhere) - fixed because the probe is advertise-only with no BLE receive path, so it has no way to learn the live auto-calibrated or per-plant manual range.
@@ -834,7 +863,7 @@ not just committed - see the deploy status note at the end of this section.
   Updated to match the deployed, validated approach so future bench A/B comparisons
   aren't measuring already-fixed bugs.
 
-**Display receiver (`MSV2_ESP32_Display_Runtime.ino`, `MobileAppPage.h`) - flashed
+**Display receiver (`Treebeard_ESP32_Display_Runtime.ino`, `MobileAppPage.h`) - flashed
 and user-confirmed working on the physical receiver (`COM16`):**
 
 - `isAdminActionAllowed()` used a raw `millis() >=` comparison instead of the
@@ -872,7 +901,7 @@ and user-confirmed working on the physical receiver (`COM16`):**
   receiver - this is the "cosmetic, not fixed" item first noted in the
   2026-07-24 section, closed here for this sketch; the main receiver's own
   version turned out to already be fixed on inspection, just undocumented).
-- `MSV2_ESP32_DeviceIdentity_Dump.ino`: `LittleFS.begin(true)` was formatting the
+- `Treebeard_ESP32_DeviceIdentity_Dump.ino`: `LittleFS.begin(true)` was formatting the
   filesystem on the exact mount-failure case this "never writes/formats" rescue
   tool exists to recover data from. Changed to `begin(false)`.
 - `README.md`: TFT pin table (DC/RST/CS) was cyclically swapped vs the real
@@ -972,7 +1001,7 @@ tested against the real DB; both edited edge functions redeployed and verified;
 web dashboard on Netlify production, verified; display receiver firmware flashed
 and user-confirmed working on physical hardware. **Not yet flashed to physical
 hardware**: the Alocasia probe fix and the other Arduino sketch fixes
-(`MSV2_BLE_Adv_Receiver`, `MSV2_ESP32_DeviceIdentity_Dump`,
+(`MSV2_BLE_Adv_Receiver`, `Treebeard_ESP32_DeviceIdentity_Dump`,
 `MSV2_Moisture_Probe_Test`) - committed to git, compiled clean, deliberately
 deferred per the user ("no lets do that later").
 
@@ -987,7 +1016,7 @@ Implements all six items from the "2026-08-16 Auto-Calibration ('Learning Mode')
 Redesign" section directly below. Code changes only in this pass - **not yet deployed**:
 the new migration hasn't been pushed to Supabase, the two edge functions haven't been
 redeployed, the Netlify site hasn't been redeployed, and no firmware has been flashed to
-physical hardware. Both firmware sketches (`MSV2_ESP32_Display_Runtime`,
+physical hardware. Both firmware sketches (`Treebeard_ESP32_Display_Runtime`,
 `MSV2_Moisture_AFE_Test`) compile clean via `arduino_display.ps1`/`arduino_moisture_afe_test.ps1
 -Action compile`.
 
@@ -1017,7 +1046,7 @@ implementing:
   24h window - this can only be done client-side, since the server has no idea what
   timezone the viewer is in. Compiled, deployed (`receiver-snapshot` redeployed), and
   reflashed to the physical receiver same session - confirmed live.
-- Firmware (`MSV2_ESP32_Display_Runtime.ino`): `resolveMoistureColor()` deleted entirely
+- Firmware (`Treebeard_ESP32_Display_Runtime.ino`): `resolveMoistureColor()` deleted entirely
   (call sites now call `healthColor()` directly, per the punch list's own note that it
   "collapses to plain healthColor()"). `resolveMoistureBounds()`/`refreshSlotMoistureBounds()`
   no longer output/track `overdue`; `slotNeedsBlink()` (shared by the blink alert and the
@@ -1194,7 +1223,7 @@ slower-moving average - straightforward once the EMA is actually in the transmit
 **5. Once the 3-day calibration period finishes, switch the displayed value from raw to
 percentage as a visual "done calibrating" indicator.** Confirmed the physical display currently
 always shows the raw value as text regardless of calibration state - `drawPlantCard()`
-(`MSV2_ESP32_Display_Runtime.ino` ~line 3086-3094): `snprintf(moistureText, ..., "%u",
+(`Treebeard_ESP32_Display_Runtime.ino` ~line 3086-3094): `snprintf(moistureText, ..., "%u",
 reading->moisture)`, with the percent value only driving the color bar underneath, never the
 text itself. Same pattern repeats in the diff-redraw siblings (`drawPlantCardDataOnly()`
 ~3126-3154, `computeDetailStats()` ~3258-3280) - all three need the same change, not just one.
@@ -1262,7 +1291,7 @@ not by completion):
 1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
    section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
    `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
-   (now on `app.v13.js`), flash `MSV2_ESP32_Display_Runtime` to the physical receiver, and
+   (now on `app.v13.js`), flash `Treebeard_ESP32_Display_Runtime` to the physical receiver, and
    flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
    the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
    text switch once a sensor calibrates, and (once enough history exists to actually drift)
@@ -1277,7 +1306,7 @@ that session's software review pass didn't touch and are presumably still open):
    physical boards - explicitly deferred this session ("no lets do that later").
    Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
    fix, a real quantization-risk bug on live hardware. Lower priority:
-   `MSV2_BLE_Adv_Receiver.ino`, `MSV2_ESP32_DeviceIdentity_Dump.ino`,
+   `MSV2_BLE_Adv_Receiver.ino`, `Treebeard_ESP32_DeviceIdentity_Dump.ino`,
    `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
 2. Decide whether the registration-race mitigation in migration 021 (claim-code-
    required first registration + a global new-receiver rate limit) is sufficient,

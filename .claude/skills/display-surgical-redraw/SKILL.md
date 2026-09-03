@@ -1,6 +1,6 @@
 ---
 name: display-surgical-redraw
-description: Core rendering rule for the MSV2 ESP32 display firmware (DisplayCenter/arduino/MSV2_ESP32_Display_Runtime) - any new or changed display feature's steady-state/periodic redraw must only repaint the pixels that actually changed, never a whole card or the whole screen. Load this before writing or reviewing any drawPlantCard*/render*/draw* function, before adding a new touchscreen UI element (modal, card, overlay, expanded view), or when a redraw is causing visible flicker.
+description: Core rendering rule for the MSV2 ESP32 display firmware (DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime) - any new or changed display feature's steady-state/periodic redraw must only repaint the pixels that actually changed, never a whole card or the whole screen. Load this before writing or reviewing any drawPlantCard*/render*/draw* function, before adding a new touchscreen UI element (modal, card, overlay, expanded view), or when a redraw is causing visible flicker.
 ---
 
 # Display: only touch the pixels that changed

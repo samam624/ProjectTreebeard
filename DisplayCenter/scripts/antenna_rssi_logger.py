@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Log RSSI data from the MSV2_Antenna_Test firmware over serial.
+"""Log RSSI data from the Treebeard_Antenna_Test firmware over serial.
 
 Tees the antenna-test board's serial output to the console (so you still see
 the human-readable WiFi scan / BLE table blocks) and writes every machine-
@@ -53,7 +53,7 @@ def parse_report_line(line: str) -> dict | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Log RSSI reports from MSV2_Antenna_Test over serial.")
+    parser = argparse.ArgumentParser(description="Log RSSI reports from Treebeard_Antenna_Test over serial.")
     parser.add_argument("--port", required=True, help="Serial port of the antenna-test board (e.g. COM14).")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate.")
     parser.add_argument("--duration", type=float, default=0, help="Stop after this many seconds. 0 = run until Ctrl+C.")

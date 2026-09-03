@@ -39,7 +39,7 @@ and threads them through `msv2_store_sensor_reading`, `msv2_store_sensor_reading
 `msv2_read_sensor_history`, and `msv2_read_share_sensor_history` (all nullable/optional, same
 backward-compatibility pattern as every prior migration in this history).
 
-Firmware (`MSV2_ESP32_Display_Runtime.ino`) now carries `rawBatteryMv`/`rawCharging` through
+Firmware (`Treebeard_ESP32_Display_Runtime.ino`) now carries `rawBatteryMv`/`rawCharging` through
 the history upload queue (`PendingHistoryReading`, `enqueueHistoryReading()`) and into the
 per-row JSON built by `snapshotJsonWithHistory()` - previously only the live `/data` and
 "latest snapshot" paths included these fields; the actual per-history-row upload string

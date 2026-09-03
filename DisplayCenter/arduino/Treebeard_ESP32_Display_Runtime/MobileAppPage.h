@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-const char MSV2_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
+const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
 <!doctype html>
 <html lang="en">
 <head>
@@ -725,7 +725,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
   </script>
 
   <script>
-    // MSV2_ART_CATALOG_BEGIN
+    // TREEBEARD_ART_CATALOG_BEGIN
     const artOptions = [
       ["cactus_cluster", "Cactus Cluster"],
       ["color_bonsai_bowl", "Color Bonsai Bowl"],
@@ -756,7 +756,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       "sprout_pot": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFQAAABUCAYAAAAcaxDBAAAB9UlEQVR4nO3boUsDURzA8W0aDIIgiKCI2WBeEfQfGGZh0SL+PWJZHJhFsAuWZYNZhmEIFg0Wncl0vzf2uO/tjvn9xAvvnl8ee77brT1tTVvidOqewLIxKMygMIPCDAozKMygsFVikO7+Vql/Zkcvb+0670/M4Y8rFGZQmEFhBoVlbUqpD//du36pSXR7xXFTm0Q0h7L3z53DLK5QmEFhBoUZFGZQWDv1FUhVu+m8XnvD8HoT5jBr93eFwgwKMyjMoLCso+f4/iO83rm+LTWJn4vT4pgZcyh7/9w5zOIKhRkUZlCYQWFZJ6WUKr5kizaJVivegIgv2Ki/1xUKMyjMoDCDwgwKSx49c3ZO4lWYMnwVZ4kZFGZQmEFhyKs4m2vrhWtn3b3CtZvROBz3/eszZxpz3T93DtHf5qs4DWBQmEFhBoUZFJZ8wBxJ7fKXxwfYhOpy9fBcuOYu3wAGhRkUZlAY8tPE6AP9v3KFwgwKMyjMoDCDwpBdfrh9RAxTq/7kERnHFQozKMygMIPCsp6HpkTPSc+/D0uPW4XBylN43VdxGsqgMIPCDAozKAw5ekZOdjaqGrqUwaTa8V2hMIPCDAozKAw5ekai4+iin5tGzzipI2aKKxRmUJhBYQaFGRRW2S4fWfRvQqve0SOuUJhBYQaFGRT2C4Kbfu9A836YAAAAAElFTkSuQmCC",
       "wide_planter": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFQAAABUCAYAAAAcaxDBAAACrklEQVR4nO2aMU8UQRTHZxELjI1GSzksLSCxwKvBhlhIQmNjY4lfwM/gF5DSxsbGBAtjA9SEDgpLPC1JsDFYEDy7zcy727c7t/+7E/j9qt3M3DD88ubl7cwU/dAPoGNm2hO4aiBUDELFIFQMQsUgVAxCxSBUDELFIFQMQsUgVAxCxSBUDELFIFQMQsUgVAxCxSBUDELFIFQMQsUgVAxCxcxOewKWbud+5VWW/d5JMcm5jAIRKgahYhAqZmw51MuFHvvfv1aPuTDamCFMLv8SoWIQKgahYoo2N5i9PHnr3avG4+w9e1E+9799ruxXPHqevK98+dj4b5y9fl/ZpsyvRKgYhIrJWvJ2iccljrf84iU9jI2jD+Xzp8WXjfrV9c2ZU3dhLWlrkwKIUDEIFYNQMW4O9XJmCGmJs3r8J2lrWgqFkJZDNk/G2JyZM67Np7sP54b2C6FdTiVCxSBUzNjKpjsPzsvnuvJmXGVT3P/Xz5tJG2XTJQGhYhAqJqts8naQvM9LrxQKIc2FObtNOeNavM9SuzNF2TRFECoGoWKSHFp3Uvl3cz15P3izWT632WlvWrPanOnVljlzWn67lbTNbG1X/q4unxKhYhAqpnjSuVcu86edpaRxp3eYvNslf3vxbvnslU11h2m/j06Hjun1q+ubMyc7rl3ysRfrxEKEikGoGISKSS6LLc3fSBp3ev6P49yzEqrzpM1RTcds21c1p9hLnRMiVAxCxSBUjHvhdqAuNfVZXJfm5KRJ0XROXt2ZCxEqBqFi3CVvy6gQ/BRwWbFLfPD/bg4RKgahYhAqJsmhhz8ukkabSwbfH49pWv8X1osHESoGoWJm40OnbrCHdKN/MVwl4l16DukmDELFIFRM5qfn9aRulz6GCBWDUDEIFZN14fa6woXbKYJQMf8A/hPoev536O8AAAAASUVORK5CYII=",
     };
-    // MSV2_ART_CATALOG_END
+    // TREEBEARD_ART_CATALOG_END
 
     // Dry/wet thresholds are in the oscillator sensor's raw units. The probe firmware
     // now inverts its raw frequency reading (higher = wetter, matching the field name -
@@ -791,7 +791,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // clamp below zero: a reading drier than anything on record keeps counting down as a
     // negative number instead of pinning at 0 forever, so "how much drier than ever before"
     // stays visible. Still clamped at 100 on top - "more than fully watered" isn't
-    // meaningful. Mirrors moisturePercent() in MSV2_ESP32_Display_Runtime.ino exactly.
+    // meaningful. Mirrors moisturePercent() in Treebeard_ESP32_Display_Runtime.ino exactly.
     const pct = (value, dry, wet) => {
       if (value == null || wet === dry) return null;
       return Math.min(100, Math.round((value - dry) * 100 / (wet - dry)));
@@ -815,7 +815,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // left MOISTURE_BAR_NEGATIVE_WIDTH_PCT% is a fixed, finite strip for the open-ended
     // negative range to render into before the bar goes fully empty ("goes off the end of
     // the bar and can't be displayed anymore") - the number itself (pct()) stays unclamped.
-    // Mirrors drawBar()'s barPct calculation in MSV2_ESP32_Display_Runtime.ino exactly.
+    // Mirrors drawBar()'s barPct calculation in Treebeard_ESP32_Display_Runtime.ino exactly.
     const barPercent = (p) => {
       if (p == null) return 0;
       const positiveSpan = 100 - MOISTURE_BAR_NEGATIVE_WIDTH_PCT;
@@ -1264,7 +1264,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     // Client-side, retroactive presentation smoothing (2026-08-23) ---------------------------
     // Ports the receiver firmware's robust centered moisture filter (smoothMoistureForDisplay(),
-    // MSV2_ESP32_Display_Runtime.ino) and battery EMA
+    // Treebeard_ESP32_Display_Runtime.ino) and battery EMA
     // (calibrateRawBattery()) so the History chart recomputes "displayed" from the stored RAW
     // signal every time it renders, instead of only ever showing whatever the receiver's
     // filter baked in at ingest time. A parameter change therefore applies to the ENTIRE
@@ -1348,7 +1348,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return sorted[Math.floor(sorted.length / 2)];
     }
 
-    // Browser port of smoothMoistureForDisplay() in MSV2_ESP32_Display_Runtime.ino.
+    // Browser port of smoothMoistureForDisplay() in Treebeard_ESP32_Display_Runtime.ino.
     // The robust median center rejects isolated spikes before a symmetric low-pass tracks
     // it in both directions. The old drying ratchet accepted low excursions while ignoring
     // equal high excursions, which inevitably pulled a stationary signal below its centroid
@@ -1413,7 +1413,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     }
 
     // Battery voltage -> percent curve, ported verbatim from BATTERY_CURVE/batteryMvToPercent()
-    // in MSV2_ESP32_Display_Runtime.ino. Percentage uses measured voltage directly; charging
+    // in Treebeard_ESP32_Display_Runtime.ino. Percentage uses measured voltage directly; charging
     // remains visible as a diagnostic but does not apply a cross-probe voltage offset.
     const BATTERY_CURVE = [
       { mv: 4200, pct: 100 }, { mv: 4150, pct: 95 }, { mv: 4110, pct: 90 }, { mv: 4080, pct: 85 }, { mv: 4020, pct: 80 },
@@ -1444,7 +1444,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return Math.round(interpolateBatteryPercent(mv));
     }
 
-    // Faithful port of calibrateRawBattery() in MSV2_ESP32_Display_Runtime.ino. Rows that predate raw-battery history (before
+    // Faithful port of calibrateRawBattery() in Treebeard_ESP32_Display_Runtime.ino. Rows that predate raw-battery history (before
     // migration 032) or come from a probe still on the legacy no-raw packet format have no
     // rawBatteryMv/rawCharging - those pass straight through as whatever the receiver's own
     // ingest-time filter already computed, with no raw overlay possible, and reset the filter
@@ -2380,7 +2380,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 </html>
 )rawliteral";
 
-const char MSV2_WEB_MANIFEST[] PROGMEM = R"rawliteral(
+const char TREEBEARD_WEB_MANIFEST[] PROGMEM = R"rawliteral(
 {
   "name": "MSV2 Plant Monitor",
   "short_name": "MSV2 Plants",
@@ -2401,18 +2401,18 @@ const char MSV2_WEB_MANIFEST[] PROGMEM = R"rawliteral(
 }
 )rawliteral";
 
-const char MSV2_SERVICE_WORKER_JS[] PROGMEM = R"rawliteral(
-const MSV2_CACHE = "msv2-app-v2";
-const MSV2_SHELL = ["/app", "/manifest.webmanifest", "/app-icon.svg"];
+const char TREEBEARD_SERVICE_WORKER_JS[] PROGMEM = R"rawliteral(
+const TREEBEARD_CACHE = "msv2-app-v2";
+const TREEBEARD_SHELL = ["/app", "/manifest.webmanifest", "/app-icon.svg"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(MSV2_CACHE).then((cache) => cache.addAll(MSV2_SHELL)));
+  event.waitUntil(caches.open(TREEBEARD_CACHE).then((cache) => cache.addAll(TREEBEARD_SHELL)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== MSV2_CACHE).map((key) => caches.delete(key))))
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== TREEBEARD_CACHE).map((key) => caches.delete(key))))
   );
   self.clients.claim();
 });
@@ -2427,7 +2427,7 @@ self.addEventListener("fetch", (event) => {
 });
 )rawliteral";
 
-const char MSV2_APP_ICON_SVG[] PROGMEM = R"rawliteral(
+const char TREEBEARD_APP_ICON_SVG[] PROGMEM = R"rawliteral(
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <rect width="256" height="256" rx="56" fill="#0e141b"/>
   <rect x="56" y="154" width="144" height="42" rx="12" fill="#d96b8a"/>

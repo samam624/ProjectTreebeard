@@ -8,7 +8,7 @@ const repoRoot = join(cloudRoot, "..");
 
 const [edgeFunction, mobilePage, migration] = await Promise.all([
   readFile(join(cloudRoot, "supabase", "functions", "plant-dashboard", "index.ts"), "utf8"),
-  readFile(join(repoRoot, "DisplayCenter", "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8"),
+  readFile(join(repoRoot, "DisplayCenter", "arduino", "Treebeard_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8"),
   readFile(join(cloudRoot, "supabase", "migrations", "036_msv2_bounded_share_history.sql"), "utf8"),
 ]);
 

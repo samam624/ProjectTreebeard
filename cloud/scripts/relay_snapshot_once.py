@@ -29,7 +29,7 @@ def post_json(url: str, payload: dict, token: str = "") -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Relay one MSV2 receiver snapshot to a cloud/mock endpoint.")
+    parser = argparse.ArgumentParser(description="Relay one Treebeard receiver snapshot to a cloud/mock endpoint.")
     parser.add_argument("--receiver", required=True, help="Receiver base URL, e.g. http://10.0.0.236")
     parser.add_argument("--cloud", default="http://127.0.0.1:8088", help="Cloud base URL")
     parser.add_argument("--token", default="", help="Optional receiver API token")

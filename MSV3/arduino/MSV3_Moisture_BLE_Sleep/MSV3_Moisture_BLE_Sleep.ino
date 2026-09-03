@@ -116,15 +116,24 @@
 #define PIN_CHG_PG   41  // P1.09 -- LOW=input power good
 
 // ======================================================= Configuration ====
-const char DEVICE_NAME[] = "MSV3-MOISTURE-004";
+const char DEVICE_NAME[] = "MSV3-MOISTURE-005";
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
-    // MSV2_ESP32_Display_Runtime.ino's receiver only looks past this once it
+    // Treebeard_ESP32_Display_Runtime.ino's receiver only looks past this once it
     // matches, same family as every deployed MSV2 probe.
-// First unused ID as of 2026-08-22: 1=Scindapsus, 2=Alocasia, 3=AFE
-// bench-test board (see MOISTURE_INVERT_CEILING_BY_SENSOR in the receiver).
-// Easy to change before first deploy if a different id is wanted.
-const uint8_t SENSOR_ID = 4;
+// 2026-08-31: bumped to 5 (first unused ID as of 2026-08-22 was 4: 1=Scindapsus,
+// 2=Alocasia, 3=AFE bench-test board; 4 went to the field unit documented in
+// MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md) for a second MSV3 board added
+// to service the same day, health-checked via the bring-up sketch's muxsweep/divnode
+// commands first (real ~20% mux step present, divnode reads LOW at rest - neither of the
+// two hardware fault signatures MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md documents).
+// This constant and DEVICE_NAME above are edited in place per-board rather than kept as
+// separate per-board sketch files (unlike MSV2's per-plant .ino convention) - deliberate
+// simplicity trade-off. IMPORTANT: this means reflashing the ORIGINAL id=4 field unit
+// (e.g. for a firmware update) requires manually setting this back to 4 and DEVICE_NAME
+// back to "...-004" first - there is currently no per-board source file to prevent
+// accidentally flashing the wrong id onto the wrong physical probe.
+const uint8_t SENSOR_ID = 5;
 
 // Same cadence MSV2 ships with: check every 10s, only radio out every 60s
 // unless a real swing is seen. MSV3's own full wake (FDC reconfigure +
@@ -165,7 +174,19 @@ const bool OVERNIGHT_LED_BURN_TEST = false;
 const uint32_t BOOT_HOST_WAIT_MS = 3000;
 
 // FDC2214 wake-sequencing constants -- see probeWake()/probeSleep() below.
-#define FDC_TSDWAKEUP_MS 3      // datasheet tSDWAKEUP = 2ms max; +1ms margin
+#define FDC_TSDWAKEUP_US 2500   // datasheet tSDWAKEUP = 2ms; 500us margin.
+// 2026-09-01: was `delay(FDC_TSDWAKEUP_MS)` with FDC_TSDWAKEUP_MS=3 and a comment claiming
+// "+1ms margin". That margin did not exist. Adafruit nRF52 core 1.7.0's delay() is
+// vTaskDelay(pdMS_TO_TICKS(ms)) (cores/nRF5/delay.c) against configTICK_RATE_HZ=1024, so one
+// tick is 0.9766ms and pdMS_TO_TICKS(3) truncates to 3 ticks. vTaskDelay unblocks on a tick
+// BOUNDARY, so the real wait was (3 - f) ticks for f = however far into the current tick the
+// call landed: 1.953ms to 2.930ms. It fell UNDER the datasheet's 2ms whenever f > 0.952 --
+// about 4.8% of wakes, roughly 1 in 21. A short tSDWAKEUP NACKs fdcInit()'s first write, so
+// probeWake() returns false and the wake advertises nothing (no retry, see loop()) -- an
+// intermittent silent dropped reading, which matters because unattended solar-test telemetry
+// is gated on a clean FDC read. delayMicroseconds() is nrfx_coredep_delay_us() (delay.h), a
+// cycle-accurate busy-wait with no tick quantization, so 2500us is really 2500us. The spin
+// costs nothing once per ~10s wake. Do not convert this back to delay().
 // Sensor activation = 16,384 fINT cycles (~378us @ ~43.3MHz internal osc). This figure is the
 // Full-Current Activation Mode number (CONFIG.SENSOR_ACTIVATE_SEL=b0) -- before the 2026-08-30
 // fix below, CONFIG was actually left in Low Power Activation Mode (b1), so this delay didn't
@@ -189,7 +210,7 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 // parasitics in the first place -- see SETTLECOUNT_CH0 in fdcInit() for the register that
 // actually governs oscillator settling, which is what a real settling problem would need to
 // address, bench-tuned against real Vpk/IDRIVE data this project doesn't have yet. The natural
-// gap between setMux() and the oscillator actually starting (FDC_TSDWAKEUP_MS's 3ms, plus the
+// gap between setMux() and the oscillator actually starting (FDC_TSDWAKEUP_US's 2.5ms, plus the
 // I2C transactions inside fdcInit(), plus FDC_ACTIVATION_US's 400us) already leaves the mux
 // microseconds-to-nanoseconds switch several orders of magnitude of margin with zero added
 // delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and ~600ms on
@@ -482,7 +503,7 @@ bool probeWake(uint8_t discardConversions)
   Wire.setClock(100000);
 
   digitalWrite(PIN_FDC_SD, LOW);  // leave Shutdown
-  delay(FDC_TSDWAKEUP_MS);        // tSDWAKEUP before the part will answer I2C
+  delayMicroseconds(FDC_TSDWAKEUP_US);  // tSDWAKEUP before the part will answer I2C
 
   // Shutdown resets every register -- full reconfigure is mandatory.
   // fdcInit() writes CONFIG (0x1A, SLEEP_MODE_EN=0) last, which is what
@@ -560,7 +581,7 @@ void delayFeedingWatchdog(uint32_t ms)
 // (real values ~18-22 million on this board) -- doesn't fit in 2 bytes.
 // Widened to 4. Company ID, magic, sensorId, and the 24-bit wake counter
 // stay byte-for-byte identical to MSV2's layout (bytes 0-9), so this is
-// still immediately recognized by MSV2_ESP32_Display_Runtime.ino's existing
+// still immediately recognized by Treebeard_ESP32_Display_Runtime.ino's existing
 // company-ID/magic check -- only the receiver's raw-field parsing needs a
 // new length-gated branch (see that file's onResult(), MSV2_RAW_PACKET_WIDE_LEN).
 //
@@ -581,7 +602,7 @@ void delayFeedingWatchdog(uint32_t ms)
 //         temperature or a moisture reading.
 //
 // 23 total bytes. First 17 bytes are byte-for-byte unchanged from the prior wire format --
-// MSV2_ESP32_Display_Runtime.ino's existing MSV2_RAW_PACKET_WIDE_LEN=17 parse path (including
+// Treebeard_ESP32_Display_Runtime.ino's existing MSV2_RAW_PACKET_WIDE_LEN=17 parse path (including
 // its `flags & 0x01` charging read) still works unmodified against this packet; only a receiver
 // that specifically checks for length>=23 sees the new fields. Sized to exactly fill the 31-byte
 // legacy advertising-data payload alongside the Flags (3B) and TX Power (3B) AD structures
@@ -601,7 +622,10 @@ void bleInit()
 {
   Bluefruit.autoConnLed(false);
   Bluefruit.begin();
-  Bluefruit.setTxPower(4);
+  // Bench A/B on 2026-09-02: +8 dBm improved mean RSSI by 3.2 dB versus +4 dBm
+  // (same fixed placement). At this 500 ms/min advertising duty cycle the
+  // estimated incremental average draw is only about 1.6-2.1 uA.
+  Bluefruit.setTxPower(8);
   Bluefruit.setName(DEVICE_NAME);
   g_bleInited = true;
 }

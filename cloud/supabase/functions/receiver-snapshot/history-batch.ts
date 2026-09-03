@@ -1,5 +1,7 @@
 export const MAX_HISTORY_ROWS_PER_UPLOAD = 128;
 export const MAX_QUEUED_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const MAX_ABSOLUTE_HISTORY_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+export const MAX_OBSERVED_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 // msv2_store_sensor_reading_batch (migration 035) casts every one of these fields with
 // `::integer` in a loop with no per-row exception handler - a non-integer-formatted value
@@ -26,6 +28,25 @@ export type HistoryBatchEnvelope<T> = {
   plants?: T[];
   historyBatch?: T[];
 };
+
+export function mergeLatestPlants<T extends { sensor?: unknown }>(
+  existingPlants: T[] | null | undefined,
+  latestPlants: T[] | null | undefined,
+): T[] {
+  const merged = new Map<number, T>();
+  for (const plant of Array.isArray(existingPlants) ? existingPlants : []) {
+    const sensorId = Number(plant?.sensor);
+    if (isValidInt32(sensorId) && sensorId > 0) merged.set(sensorId, plant);
+  }
+  // Bound the receiver-supplied latest cache independently of historyBatch. The current
+  // firmware has at most 16 sensors; 128 leaves rollout room without accepting an
+  // unbounded object merge from the network.
+  for (const plant of (Array.isArray(latestPlants) ? latestPlants : []).slice(0, 128)) {
+    const sensorId = Number(plant?.sensor);
+    if (isValidInt32(sensorId) && sensorId > 0) merged.set(sensorId, plant);
+  }
+  return [...merged.entries()].sort(([left], [right]) => left - right).map(([, plant]) => plant);
+}
 
 export function selectHistoryRows<T>(snapshot: HistoryBatchEnvelope<T>): {
   usesBatch: boolean;
@@ -61,7 +82,18 @@ export function validateHistoryRowIdentity(
   return { sensorId, observationId };
 }
 
-export function observedAtIso(serverNowMs: number, queuedAgeMs: unknown): string {
+export function observedAtIso(serverNowMs: number, queuedAgeMs: unknown, observedAtMs?: unknown): string {
+  // Durable receiver journals can outlive a reboot, while millis()/queuedAgeMs cannot.
+  // Prefer the receiver's server-anchored absolute time when it falls in a conservative
+  // window. Values outside the window are untrusted input and use the bounded legacy age.
+  const absoluteMs = Number(observedAtMs);
+  if (
+    Number.isSafeInteger(absoluteMs) &&
+    absoluteMs >= serverNowMs - MAX_ABSOLUTE_HISTORY_AGE_MS &&
+    absoluteMs <= serverNowMs + MAX_OBSERVED_FUTURE_SKEW_MS
+  ) {
+    return new Date(absoluteMs).toISOString();
+  }
   const numericAge = Number(queuedAgeMs);
   const ageMs = Number.isFinite(numericAge)
     ? Math.min(Math.max(Math.trunc(numericAge), 0), MAX_QUEUED_AGE_MS)

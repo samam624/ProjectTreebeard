@@ -122,7 +122,7 @@ session below. Before leaving a probe unattended on this firmware:
 
 - `arduino/MSV3_Moisture_BLE_Sleep/MSV3_Moisture_BLE_Sleep.ino` - `readBoardTempQuarterC()`, the
   bare-tank acquisition block in `loop()`, the 23-byte `startAdv()`.
-- `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` - `MSV3_DIAGNOSTIC_PACKET_LEN`,
+- `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` - `MSV3_DIAGNOSTIC_PACKET_LEN`,
   new `SensorReading`/`PendingHistoryReading` fields, `onResult()` decode + receiver-side
   independent range re-check, `enqueueHistoryReading()` copy-through, three JSON serialization
   sites (`/data`, cloud snapshot, history batch), serial diagnostics.

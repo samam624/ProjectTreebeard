@@ -1,6 +1,6 @@
 # ESP32-S3 as an SWD flasher for nRF52840
 
-`arduino/MSV2_ESP32_SWD_Flasher` turns a spare ESP32-S3 devkit into a standalone
+`arduino/Treebeard_ESP32_SWD_Flasher` turns a spare ESP32-S3 devkit into a standalone
 SWD debug adapter for nRF52840 targets — built for and bench-validated against
 a bare Ebyte E73-2G4M08S1C module (the MCU used on MSV3), and equally usable
 against XIAO nRF52840 Sense probes. It bit-bangs the ARM SWD protocol from
@@ -152,7 +152,7 @@ parses a `.hex` file into its contiguous segments and drives one `flash` call
 per segment, handling addresses automatically:
 
 ```powershell
-python scripts/swd_flash_hex.py --port COM3 --hex arduino/MSV2_ESP32_SWD_Flasher/bootloaders/pca10056_bootloader-0.11.0_s140_6.1.1.hex --mass-erase
+python scripts/swd_flash_hex.py --port COM3 --hex arduino/Treebeard_ESP32_SWD_Flasher/bootloaders/pca10056_bootloader-0.11.0_s140_6.1.1.hex --mass-erase
 ```
 
 That bundled hex is Nordic's generic **pca10056** (nRF52840-DK) board profile
@@ -209,7 +209,7 @@ contact" above, that's noise passing the parity check, not a real link.
 
 Once contact holds for the full window, it **always** mass-erases regardless
 of `--mass-erase`/no flag (skipping it here is never correct, per the
-paragraph above), then flashes `arduino/MSV2_ESP32_SWD_Flasher/bootloaders/pca10056_bootloader-0.11.0_s140_6.1.1.hex`
+paragraph above), then flashes `arduino/Treebeard_ESP32_SWD_Flasher/bootloaders/pca10056_bootloader-0.11.0_s140_6.1.1.hex`
 (pass `--hex` to use a different image). Once the first board of a session
 has confirmed the wiring is actually correct (SWCLK/SWDIO not swapped, etc.
 — worth checking once with `id`/`probe` per the bring-up sequence above), the

@@ -1,5 +1,5 @@
 // The browser History-chart port (MobileAppPage.h) hand-transcribes the firmware's
-// LiPo voltage->percent curve (MSV2_ESP32_Display_Runtime.ino), with only a code comment
+// LiPo voltage->percent curve (Treebeard_ESP32_Display_Runtime.ino), with only a code comment
 // ("keep in sync") enforcing agreement. This script makes a divergence a build-time failure
 // instead of a silently wrong History chart. Battery percentage intentionally uses measured
 // voltage directly; raw charging state remains diagnostic-only.
@@ -10,11 +10,11 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const firmware = await readFile(
-  join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MSV2_ESP32_Display_Runtime.ino"),
+  join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "Treebeard_ESP32_Display_Runtime.ino"),
   "utf8",
 );
 const mobileApp = await readFile(
-  join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"),
+  join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "MobileAppPage.h"),
   "utf8",
 );
 

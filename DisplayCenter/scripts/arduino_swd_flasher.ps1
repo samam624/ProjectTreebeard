@@ -2,7 +2,7 @@ param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
   [string]$Port = "COM3",
-  [string]$Sketch = "DisplayCenter/arduino/MSV2_ESP32_SWD_Flasher",
+  [string]$Sketch = "DisplayCenter/arduino/Treebeard_ESP32_SWD_Flasher",
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 )
 

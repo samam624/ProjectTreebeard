@@ -14,7 +14,7 @@ packets - a "falls below center, then jumps up to compensate" pattern.
 ## Root cause
 
 `smoothMoistureForDisplay()` in
-`arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` (see
+`arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` (see
 `docs/RECEIVER_MOISTURE_SMOOTHING_2026-08-22.md` for the full filter design) is
 intentionally asymmetric: every dry-side (downward) move is guarded by an adaptive
 deadband and a per-packet step cap, but any single packet whose rise over the current

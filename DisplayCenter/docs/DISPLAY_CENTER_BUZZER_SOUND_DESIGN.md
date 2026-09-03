@@ -1,6 +1,6 @@
 # Display Center Buzzer Sound Design
 
-This document records the sound choices bench-tested on the MSV2 Display
+This document records the sound choices bench-tested on the Project Treebeard Display
 Center PCB on 2026-08-14. The standalone audition firmware is in:
 
 ```text
@@ -85,7 +85,7 @@ minute indefinitely.
 ## Runtime Integration Notes
 
 - **Done (2026-08-14, commit `42a36b0`)**: the normal display runtime now plays both
-  sounds. `MSV2_ESP32_Display_Runtime.ino` has a non-blocking LEDC tone sequencer
+  sounds. `Treebeard_ESP32_Display_Runtime.ino` has a non-blocking LEDC tone sequencer
   (`startBuzzerPattern()`/`serviceBuzzer()`) driven off `millis()` deadlines only - no
   `delay()` - so it can't stall BLE/WiFi/touch/render the way the standalone bench
   sketch's blocking player would.

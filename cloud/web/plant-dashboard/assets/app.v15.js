@@ -547,7 +547,7 @@ function artSrc(key) {
 // below zero: a reading drier than anything on record keeps counting down as a negative
 // number instead of pinning at 0 forever, so "how much drier than ever before" stays
 // visible. Still clamped at 100 on top - "more than fully watered" isn't meaningful.
-// Mirrors moisturePercent() in MSV2_ESP32_Display_Runtime.ino exactly.
+// Mirrors moisturePercent() in Treebeard_ESP32_Display_Runtime.ino exactly.
 function percent(value, dry, wet) {
   if (typeof value !== "number" || wet === dry) return null;
   return Math.min(100, Math.round(((value - dry) * 100) / (wet - dry)));
@@ -576,14 +576,14 @@ function healthClass(pct) {
 // MOISTURE_BAR_NEGATIVE_WIDTH_PCT% is a fixed, finite strip for the open-ended negative
 // range to render into before the bar goes fully empty ("goes off the end of the bar and
 // can't be displayed anymore") - the number itself (percent()) stays unclamped. Mirrors
-// drawBar()'s barPct calculation in MSV2_ESP32_Display_Runtime.ino exactly.
+// drawBar()'s barPct calculation in Treebeard_ESP32_Display_Runtime.ino exactly.
 function barPercent(pct) {
   if (pct == null) return 0;
   const positiveSpan = 100 - MOISTURE_BAR_NEGATIVE_WIDTH_PCT;
   return Math.max(0, Math.min(100, MOISTURE_BAR_NEGATIVE_WIDTH_PCT + (pct * positiveSpan) / 100));
 }
 
-// Mirrors the firmware's refreshSlotMoistureBounds() (see MSV2_ESP32_Display_Runtime.ino)
+// Mirrors the firmware's refreshSlotMoistureBounds() (see Treebeard_ESP32_Display_Runtime.ino)
 // and the local app's renderStatus() (MobileAppPage.h) so this dashboard's colors never
 // diverge from the physical display's: once a sensor's auto-calibration is ready, the
 // learned dry/wet bounds replace the static manual/preset ones. (This used to also force

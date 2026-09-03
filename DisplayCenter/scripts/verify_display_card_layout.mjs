@@ -6,8 +6,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const firmwarePath = path.join(
   repoRoot,
   "arduino",
-  "MSV2_ESP32_Display_Runtime",
-  "MSV2_ESP32_Display_Runtime.ino",
+  "Treebeard_ESP32_Display_Runtime",
+  "Treebeard_ESP32_Display_Runtime.ino",
 );
 const source = fs.readFileSync(firmwarePath, "utf8");
 
@@ -15,7 +15,9 @@ function check(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-check(source.includes('snprintf(out, outSize, "Batt: %s", percent);'), "compact battery header formatter is missing");
+check(source.includes("formatBatteryPercent(batteryPct, out, outSize);"), "compact battery header formatter is missing");
+check(!source.includes('snprintf(out, outSize, "Batt: %s", percent);'), 'legacy "Batt:" header label is still present');
+check(source.includes("const int CARD_INFO_COLUMN_WIDTH = 24;"), "compact battery/temperature column width is missing");
 check(!/drawBar\([^\n]*batteryPct/.test(source), "a battery progress bar is still rendered");
 check(!/drawTextLeft\("Moist"/.test(source), 'legacy "Moist" label is still rendered');
 check(source.match(/drawTextLeft\("Moisture"/g)?.length >= 4, 'the full "Moisture" label is not used in every card path');
@@ -45,7 +47,7 @@ for (let count = 1; count <= 16; count += 1) {
   const compact = cardHeight < 76;
   const inset = compact ? 5 : 7;
   const innerWidth = cardWidth - inset * 2;
-  check(innerWidth >= 60, `${count} cards: Batt: 100% does not fit the header`);
+  check(innerWidth >= 24, `${count} cards: 100% does not fit the compact header column`);
 
   if (compact) {
     let moistureY = Math.max(18, cardHeight - 25);

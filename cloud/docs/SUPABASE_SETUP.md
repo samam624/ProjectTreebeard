@@ -80,7 +80,7 @@ In Supabase Dashboard:
 37. Paste it into the SQL editor.
 38. Run it.
 39. Apply every remaining file in `supabase/migrations/` from `013` through the
-    highest-numbered migration present (currently `038`) in numerical order. In particular,
+    highest-numbered migration present (currently `039`) in numerical order. In particular,
     024-027 are one staged moisture-calibration rollout;
     030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
     upserts; 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
@@ -173,7 +173,7 @@ authenticated receiver. Migrations 024-027 make that result time-weighted and ad
 The RPC itself remains `service_role` only. Do not call it directly from a browser or place
 the service-role key in firmware. Operational behavior, alert thresholds, production
 evidence, and verification commands are documented in
-[MSV2 Adaptive Moisture Calibration](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md).
+[Treebeard Adaptive Moisture Calibration](../../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md).
 
 The claim endpoint URL should be:
 
@@ -405,7 +405,7 @@ Body:
   "receiverId": "MSV2...",
   "receiverSecret": "DEVICE_SECRET_FROM_DEVICE_JSON",
   "claimCode": "ABCD-1234",
-  "build": "MSV2 Display Runtime ..."
+  "build": "Project Treebeard Display Runtime ..."
 }
 ```
 

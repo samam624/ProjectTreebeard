@@ -14,7 +14,7 @@
 // 100% = full brightness).
 const int BKLED_PIN = 11;
 
-// LED0/1/2 (GPIO40/41/42, confirmed working in MSV2_ESP32_LED_Test.ino) driven at the same
+// LED0/1/2 (GPIO40/41/42, confirmed working in Treebeard_ESP32_LED_Test.ino) driven at the same
 // duty as BKLED every step -- a visual proxy for backlight brightness so it's readable at a
 // glance while both hands are on multimeter probes. Perceived LED brightness vs. linear PWM
 // duty is a steep, non-linear curve to the human eye (looks "stuck" near 0%/100% even though

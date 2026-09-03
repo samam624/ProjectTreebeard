@@ -28,12 +28,12 @@ that predated the current wiring revision.
    brightness. This was confirmed by direct bench probe today
    (2026-08-11) — an earlier pinout read had `ESP_BKLED` on GPIO10 instead,
    which is actually `TFT_MISO`, a display data line, not the backlight.
-   The `TFT_eSPI_User_Setup_MSV2_ESP32S3.h` comment previously said
+   The `TFT_eSPI_User_Setup_Treebeard_ESP32S3.h` comment previously said
    "Backlight is tied to 3.3V/5V in the current wiring, so TFT_eSPI does not
    control it" — that's now false for this board revision.
-2. Neither the display-only smoke-test path (`MSV2_BRINGUP_STAGE == 1`) nor
+2. Neither the display-only smoke-test path (`TREEBEARD_BRINGUP_STAGE == 1`) nor
    the full runtime's display-init path in
-   `MSV2_ESP32_Display_Runtime.ino` ever drove GPIO11. `Arduino_GFX` (the
+   `Treebeard_ESP32_Display_Runtime.ino` ever drove GPIO11. `Arduino_GFX` (the
    library actually used at runtime — the `TFT_eSPI` header exists mainly as
    a pin-mapping reference doc) doesn't touch a backlight pin on its own, so
    SPI init/draw completed successfully every time and the panel just sat
@@ -47,7 +47,7 @@ that predated the current wiring revision.
 
 ## Exact changes needed on another checkout
 
-### 1. `arduino/MSV2_ESP32_Display_Runtime/TFT_eSPI_User_Setup_MSV2_ESP32S3.h`
+### 1. `arduino/Treebeard_ESP32_Display_Runtime/TFT_eSPI_User_Setup_Treebeard_ESP32S3.h`
 
 ```diff
 -#define TFT_MISO -1
@@ -66,37 +66,37 @@ that predated the current wiring revision.
 +#define TFT_CS   16
 +
 +// Backlight is switched via Q1 (DMP3098L-7 high-side P-FET), gated by Q2
-+// (2N7002) off GPIO11 -- see MSV2_ESP32_Backlight_Test for the bench-verified
++// (2N7002) off GPIO11 -- see Treebeard_ESP32_Backlight_Test for the bench-verified
 +// PWM sweep. Non-inverted: duty cycle maps directly to backlight brightness.
 +#define TFT_BL   11
 ```
 
-### 2. `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino`
+### 2. `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino`
 
 Two separate spots need the same backlight-enable added: the stage-1
 display-only smoke test, and the full runtime's real display init. Also
 correct the SPI pin constants/args to match the header above.
 
-**a) Stage-1 smoke test (`#if MSV2_DISPLAY_TEST` block in `setup()`):**
+**a) Stage-1 smoke test (`#if TREEBEARD_DISPLAY_TEST` block in `setup()`):**
 
 ```diff
- #if MSV2_DISPLAY_TEST
+ #if TREEBEARD_DISPLAY_TEST
 +  // Backlight is gated by Q2 (2N7002) on GPIO11, non-inverted -- see
-+  // MSV2_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
++  // Treebeard_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
 +  // so it has to be switched on explicitly or the panel stays dark even
 +  // though SPI init/draw succeeds.
-+  Serial.println("[MSV2 display test] enabling backlight (GPIO11)");
++  Serial.println("[Treebeard display test] enabling backlight (GPIO11)");
 +  pinMode(11, OUTPUT);
 +  digitalWrite(11, HIGH);
 +
-   Serial.println("[MSV2 display test] initializing Arduino_GFX");
+   Serial.println("[Treebeard display test] initializing Arduino_GFX");
 -  Arduino_DataBus* testBus = new Arduino_ESP32SPI(15, 14, 12, 13, -1);
 -  Arduino_GFX* testGfx = new Arduino_ST7796(testBus, 16, 1, false, 320, 480);
 +  Arduino_DataBus* testBus = new Arduino_ESP32SPI(14, 16, 12, 13, -1);
 +  Arduino_GFX* testGfx = new Arduino_ST7796(testBus, 15, 1, false, 320, 480);
 ```
 
-**b) Pin constants (global scope, `#if MSV2_ENABLE_DISPLAY`):**
+**b) Pin constants (global scope, `#if TREEBEARD_ENABLE_DISPLAY`):**
 
 ```diff
  const int TFT_SCK = 12;
@@ -109,13 +109,13 @@ correct the SPI pin constants/args to match the header above.
 +const int TFT_CS = 16;
 ```
 
-**c) Full runtime display init (`#if MSV2_ENABLE_DISPLAY` block in the real
+**c) Full runtime display init (`#if TREEBEARD_ENABLE_DISPLAY` block in the real
 `setup()`, right before `busPtr = new Arduino_ESP32SPI(...)`):**
 
 ```diff
- #if MSV2_ENABLE_DISPLAY
+ #if TREEBEARD_ENABLE_DISPLAY
 +  // Backlight is gated by Q2 (2N7002) on GPIO11, non-inverted -- see
-+  // MSV2_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
++  // Treebeard_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
 +  // so it has to be switched on explicitly or the panel stays dark even
 +  // though SPI init/draw succeeds.
 +  bootLog("enabling backlight (GPIO11)");
@@ -126,13 +126,13 @@ correct the SPI pin constants/args to match the header above.
    busPtr = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, -1);
 ```
 
-`MSV2_BRINGUP_STAGE` should be left at (or restored to) `3` — full runtime
+`TREEBEARD_BRINGUP_STAGE` should be left at (or restored to) `3` — full runtime
 with BLE scanning — which is the shipped default. It only needs to be
 dropped to `1` temporarily if you're isolating a display-only problem again.
 
 ### 3. Toolchain: `ArduinoJson` library may be missing
 
-Compiling anything at `MSV2_BRINGUP_STAGE >= 2` requires `ArduinoJson.h`. If
+Compiling anything at `TREEBEARD_BRINGUP_STAGE >= 2` requires `ArduinoJson.h`. If
 `arduino-cli compile` fails with `ArduinoJson.h: No such file or directory`,
 install it:
 
@@ -151,7 +151,7 @@ and only exercise raw GPIOs, so they're useful for verifying backlight/LED/
 buzzer hardware in isolation before touching the display driver at all.
 Recreate them locally if useful — full contents below.
 
-**`arduino/MSV2_ESP32_Backlight_Test/MSV2_ESP32_Backlight_Test.ino`** — sweeps
+**`arduino/Treebeard_ESP32_Backlight_Test/Treebeard_ESP32_Backlight_Test.ino`** — sweeps
 the backlight FET through its full PWM range via GPIO11 so brightness (and
 BKLED net voltage) can be probed with a multimeter, using LED0/1/2 as a
 visual proxy:
@@ -173,7 +173,7 @@ visual proxy:
 // 100% = full brightness).
 const int BKLED_PIN = 11;
 
-// LED0/1/2 (GPIO40/41/42, confirmed working in MSV2_ESP32_LED_Test.ino) driven at the same
+// LED0/1/2 (GPIO40/41/42, confirmed working in Treebeard_ESP32_LED_Test.ino) driven at the same
 // duty as BKLED every step -- a visual proxy for backlight brightness so it's readable at a
 // glance while both hands are on multimeter probes. Perceived LED brightness vs. linear PWM
 // duty is a steep, non-linear curve to the human eye (looks "stuck" near 0%/100% even though
@@ -230,7 +230,7 @@ void loop() {
 }
 ```
 
-**`arduino/MSV2_ESP32_LED_Test/MSV2_ESP32_LED_Test.ino`** — chases
+**`arduino/Treebeard_ESP32_LED_Test/Treebeard_ESP32_LED_Test.ino`** — chases
 LED0→LED1→LED2 and exercises the piezo buzzer (LS1) via `ledcWrite`, never
 `digitalWrite`, per the datasheet's DC-bias warning:
 
@@ -292,20 +292,20 @@ void loop() {
 1. Board on `COM10` wasn't being picked up; a reboot of the host machine
    fixed device detection (no firmware cause identified — treated as a host
    USB/driver hiccup, not a board defect).
-2. Reflashed `MSV2_ESP32_Display_Runtime` at `MSV2_BRINGUP_STAGE 1`
+2. Reflashed `Treebeard_ESP32_Display_Runtime` at `TREEBEARD_BRINGUP_STAGE 1`
    (display-only smoke test, already staged as the checkout's working state
    before this session started). Serial capture confirmed
    `begin()`/drawing/`init/draw complete` all completed successfully and the
    safe-boot heartbeat loop ran cleanly — but the physical panel showed
    nothing, not even backlight.
-3. Diffed the working tree and found `TFT_eSPI_User_Setup_MSV2_ESP32S3.h`
+3. Diffed the working tree and found `TFT_eSPI_User_Setup_Treebeard_ESP32S3.h`
    already had an uncommitted note that the backlight wiring changed to a
    GPIO-gated FET (GPIO11, confirmed by bench probe earlier the same day),
    but the `.ino`'s actual `setup()` paths had never been updated to
    actually drive that pin — see [Root cause](#root-cause) above.
 4. Added the GPIO11 backlight-enable to the stage-1 smoke test, reflashed,
    and the user visually confirmed text was now visible on the panel.
-5. Restored `MSV2_BRINGUP_STAGE` to `3` (the committed default — full
+5. Restored `TREEBEARD_BRINGUP_STAGE` to `3` (the committed default — full
    runtime with WiFi + BLE) and added the identical backlight-enable fix to
    the full runtime's real display-init path, since it had the same gap.
 6. First compile attempt at stage 3 failed: `ArduinoJson.h: No such file or

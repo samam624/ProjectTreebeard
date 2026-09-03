@@ -33,7 +33,7 @@ scamezcua@ucdavis.edu
 > per-plant calibration. Field deployment surfaced RTC-timing quantization, supply-coupling,
 > polarization, and battery-drain failure modes, most of which were root-caused and fixed. MSV3
 > replaces MCU-timed sensing with a dedicated FDC2214 LC-tank front end and a TMUX1109 electrode
-> mux on a solar-harvesting custom PCB, while retaining the MSV2 receiver and cloud stack unchanged.
+> mux on a solar-harvesting custom PCB, while retaining the Treebeard receiver and cloud stack unchanged.
 > Bench bring-up reduced sleep current to 10–15 µA and reached 900/900 clean acquisition cycles
 > after correcting a low-frequency clock misconfiguration; several sensing and power-path items
 > remain open.
@@ -68,7 +68,7 @@ MSV1: comb electrodes -> astable 555 -> monostable 555 -> LPF -> comparator/tran
 MSV2: comb electrodes (alternating dual-plate) -> nRF52840 relaxation-oscillator timing
       -> BLE advertisement -> ESP32-S3 receiver -> TFT + local app -> Supabase + web dashboard
 MSV3: comb electrodes <-> TMUX1109 <-> FDC2214 + LC tank (6.8uH / 270pF)
-      -> E73 (nRF52840) BLE -> same MSV2 receiver + cloud stack
+      -> E73 (nRF52840) BLE -> same Treebeard receiver + cloud stack
 ```
 
 ### A. MSV1 (brief — full treatment is the cited prior paper [1])

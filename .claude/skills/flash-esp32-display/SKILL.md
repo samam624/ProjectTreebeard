@@ -7,7 +7,7 @@ description: Compile and flash the MSV2 ESP32-S3 display receiver firmware to a 
 
 Full reference: [DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md](../../../DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md) — read it if anything below is ambiguous or the known-good status/build tag needs checking.
 
-This flashes `DisplayCenter/arduino/MSV2_ESP32_Display_Runtime` using the Arduino IDE's bundled `arduino-cli.exe` via `DisplayCenter/scripts/arduino_display.ps1`. No `-ExecutionPolicy Bypass` needed — call the script directly.
+This flashes `DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime` using the Arduino IDE's bundled `arduino-cli.exe` via `DisplayCenter/scripts/arduino_display.ps1`. No `-ExecutionPolicy Bypass` needed — call the script directly.
 
 ## Before flashing
 

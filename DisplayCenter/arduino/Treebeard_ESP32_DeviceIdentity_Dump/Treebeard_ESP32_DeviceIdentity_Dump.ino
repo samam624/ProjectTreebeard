@@ -1,5 +1,5 @@
 // One-off diagnostic: dump the contents of /device.json (and /cloud.json, for reference)
-// from this board's LittleFS over Serial. MSV2_ESP32_Display_Runtime.ino never exposes
+// from this board's LittleFS over Serial. Treebeard_ESP32_Display_Runtime.ino never exposes
 // receiverSecret over HTTP or serial by design (see deviceInfoJson()), so pulling it off a
 // board that's being physically retired/replaced requires a one-shot read like this instead.
 //

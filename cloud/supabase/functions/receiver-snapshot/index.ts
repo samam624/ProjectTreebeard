@@ -3,6 +3,7 @@ import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
 import {
   isValidInt32,
   isValidRawFdcCount,
+  mergeLatestPlants,
   observedAtIso,
   selectHistoryRows,
   validateHistoryRowIdentity,
@@ -54,16 +55,22 @@ type PlantReading = {
   ageMs?: number;
   observationId?: string;
   queuedAgeMs?: number;
+  // Server-time-anchored timestamp from durable receiver outboxes. Unlike queuedAgeMs,
+  // this remains meaningful after the ESP32 reboots while rows are waiting on flash.
+  observedAtMs?: number;
 };
 
 type Snapshot = {
   receiverId?: string;
   claimCode?: string;
   build?: string;
+  sentAtMs?: number;
+  historyOnly?: boolean;
   config?: {
     version?: number;
   };
   plants?: PlantReading[];
+  latestPlants?: PlantReading[];
   historyBatch?: PlantReading[];
 };
 
@@ -290,8 +297,8 @@ Deno.serve(async (request) => {
     // 500s the WHOLE snapshot POST (moisture/history included), not just the IP-logging update.
     // Drop anything that doesn't look like an address instead of passing it through unchecked.
     const lastIp = forwardedForCandidate && looksLikeIpAddress(forwardedForCandidate) ? forwardedForCandidate : null;
-    const plantCount = Array.isArray(snapshot.plants) ? snapshot.plants.length : 0;
-    const configVersion = typeof snapshot.config?.version === "number" ? snapshot.config.version : null;
+    let plantCount = Array.isArray(snapshot.plants) ? snapshot.plants.length : 0;
+    let configVersion = typeof snapshot.config?.version === "number" ? snapshot.config.version : null;
 
     const { error: receiverError } = await supabase.rpc("msv2_touch_receiver", {
       p_receiver_id: receiverId,
@@ -303,10 +310,49 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: receiverError.message }, 500);
     }
 
-    // historyBatch is an ingestion envelope, not current receiver state. Keeping it in
-    // the upsert-only latest snapshot would needlessly retain a large transient queue.
-    const snapshotForLatest = { ...snapshot };
+    // A compact history-only upload avoids the ESP32's 18KB full-snapshot JSON document
+    // while a backlog is draining. Merge its tiny latestPlants cache into the previous
+    // latest snapshot so the dashboard remains current without overwriting config/display
+    // metadata. The read-before-write is safe here: one authenticated receiver is the only
+    // writer for its own receiver id, and history idempotency is handled separately below.
+    let snapshotForLatest: Record<string, unknown>;
+    if (snapshot.historyOnly === true) {
+      const { data: latestRows, error: latestError } = await supabase.rpc("msv2_read_latest_snapshots", {
+        p_receiver_id: receiverId,
+        p_limit: 1,
+      });
+      if (latestError) {
+        return jsonResponse({ ok: false, error: latestError.message }, 500);
+      }
+      const latestRow = Array.isArray(latestRows) ? latestRows[0] : null;
+      const existingSnapshot = latestRow?.snapshot && typeof latestRow.snapshot === "object"
+        ? latestRow.snapshot as Record<string, unknown>
+        : {};
+      const mergedPlants = mergeLatestPlants(
+        existingSnapshot.plants as PlantReading[] | undefined,
+        snapshot.latestPlants,
+      );
+      snapshotForLatest = {
+        ...existingSnapshot,
+        receiverId,
+        build: snapshot.build ?? existingSnapshot.build ?? null,
+        sentAtMs: snapshot.sentAtMs ?? existingSnapshot.sentAtMs ?? null,
+        plants: mergedPlants,
+      };
+      configVersion = Number.isInteger(Number(latestRow?.config_version))
+        ? Number(latestRow.config_version)
+        : typeof (existingSnapshot.config as { version?: unknown } | undefined)?.version === "number"
+        ? Number((existingSnapshot.config as { version: number }).version)
+        : null;
+      plantCount = mergedPlants.length;
+    } else {
+      snapshotForLatest = { ...snapshot };
+    }
+    // Queue/transport fields are not current receiver state and must never bloat the
+    // upsert-only latest snapshot.
     delete snapshotForLatest.historyBatch;
+    delete snapshotForLatest.historyOnly;
+    delete snapshotForLatest.latestPlants;
     const { error: snapshotError } = await supabase.rpc("msv2_store_latest_snapshot", {
       p_receiver_id: receiverId,
       p_snapshot: snapshotForLatest,
@@ -381,7 +427,7 @@ Deno.serve(async (request) => {
           rssi: isValidInt32(Number(plant?.rssi)) ? Number(plant.rssi) : null,
           ageMs: isValidInt32(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
           observationId,
-          receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs),
+          receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs, plant?.observedAtMs),
           ...parseMsv3Diagnostics(plant?.raw),
         });
       }

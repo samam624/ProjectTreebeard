@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny local MSV2 cloud mock.
+"""Tiny local Treebeard cloud mock.
 
 This is intentionally just a test harness for the draft API. It stores the
 latest snapshot in memory and prints received receiver IDs.
@@ -351,9 +351,9 @@ def web_manifest() -> dict[str, Any]:
 
 
 def service_worker() -> str:
-    return """const MSV2_MOCK_CACHE = "msv2-mock-cloud-v1";
+    return """const TREEBEARD_MOCK_CACHE = "msv2-mock-cloud-v1";
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(MSV2_MOCK_CACHE).then((cache) => cache.addAll(["/app", "/manifest.webmanifest", "/app-icon.svg"])));
+  event.waitUntil(caches.open(TREEBEARD_MOCK_CACHE).then((cache) => cache.addAll(["/app", "/manifest.webmanifest", "/app-icon.svg"])));
   self.skipWaiting();
 });
 self.addEventListener("activate", (event) => {

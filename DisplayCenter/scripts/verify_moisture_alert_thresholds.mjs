@@ -9,8 +9,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // else this file reads.
 const cloudRoot = resolve(repoRoot, "..", "cloud");
 
-const firmware = await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MSV2_ESP32_Display_Runtime.ino"), "utf8");
-const localApp = await readFile(join(repoRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8");
+const firmware = await readFile(join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "Treebeard_ESP32_Display_Runtime.ino"), "utf8");
+const localApp = await readFile(join(repoRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "MobileAppPage.h"), "utf8");
 const dashboardHtml = await readFile(join(cloudRoot, "web", "plant-dashboard", "index.html"), "utf8");
 const serviceWorker = await readFile(join(cloudRoot, "web", "plant-dashboard", "sw.js"), "utf8");
 const appMatch = dashboardHtml.match(/src="assets\/(app\.v(\d+)\.js)"/);

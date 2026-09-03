@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   isValidInt32,
   isValidRawFdcCount,
+  MAX_ABSOLUTE_HISTORY_AGE_MS,
   MAX_HISTORY_ROWS_PER_UPLOAD,
+  MAX_OBSERVED_FUTURE_SKEW_MS,
   MAX_QUEUED_AGE_MS,
+  mergeLatestPlants,
   normalizeObservationId,
   observedAtIso,
   selectHistoryRows,
@@ -35,6 +38,30 @@ test("queued age reconstructs observation time and clamps untrusted values", () 
   assert.equal(observedAtIso(now, 60_000), "2026-08-23T04:59:00.000Z");
   assert.equal(observedAtIso(now, -50), "2026-08-23T05:00:00.000Z");
   assert.equal(observedAtIso(now, MAX_QUEUED_AGE_MS + 1), new Date(now - MAX_QUEUED_AGE_MS).toISOString());
+});
+
+test("a valid absolute observation time survives receiver reboot and invalid clocks fall back", () => {
+  const now = Date.parse("2026-08-31T23:00:00.000Z");
+  const observed = now - 36 * 60 * 60 * 1000;
+  assert.equal(observedAtIso(now, 0, observed), new Date(observed).toISOString());
+  assert.equal(
+    observedAtIso(now, 60_000, now - MAX_ABSOLUTE_HISTORY_AGE_MS - 1),
+    new Date(now - 60_000).toISOString(),
+  );
+  assert.equal(
+    observedAtIso(now, 60_000, now + MAX_OBSERVED_FUTURE_SKEW_MS + 1),
+    new Date(now - 60_000).toISOString(),
+  );
+});
+
+test("compact outbox uploads replace only current sensors and preserve the rest of the latest snapshot", () => {
+  assert.deepEqual(
+    mergeLatestPlants(
+      [{ sensor: 1, moisture: 10 }, { sensor: 2, moisture: 20 }],
+      [{ sensor: 2, moisture: 21 }, { sensor: 3, moisture: 30 }, { sensor: 0, moisture: 999 }],
+    ),
+    [{ sensor: 1, moisture: 10 }, { sensor: 2, moisture: 21 }, { sensor: 3, moisture: 30 }],
+  );
 });
 
 test("observation ids are required and bounded for idempotent batches", () => {

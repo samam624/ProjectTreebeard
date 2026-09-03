@@ -7,7 +7,7 @@ as the detailed record; that doc still has the original hardware/library-level i
 notes and should be read first for background on the shared-SPI-bus context.
 
 All code changes are in
-`DisplayCenter/arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino`. Two
+`DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino`. Two
 independent phone-a-friend (Codex) consultations under consultation_id
 `display-touch-corruption-2026-08-30` are cited inline; both directly changed the outcome and
 are worth reading in full if this area breaks again.

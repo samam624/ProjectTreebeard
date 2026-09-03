@@ -7,7 +7,7 @@ import vm from "node:vm";
 const displayCenterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileApp = (
   await readFile(
-    join(displayCenterRoot, "arduino", "MSV2_ESP32_Display_Runtime", "MobileAppPage.h"),
+    join(displayCenterRoot, "arduino", "Treebeard_ESP32_Display_Runtime", "MobileAppPage.h"),
     "utf8",
   )
 ).replace(/\r\n/g, "\n");

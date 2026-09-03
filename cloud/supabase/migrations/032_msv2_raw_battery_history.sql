@@ -4,7 +4,7 @@
 -- presentation smoothing after the fact, unlike moisture (whose `moisture` column has always
 -- been the unsmoothed measurement). Nullable/optional throughout: older receivers, and any
 -- probe still on the pre-rework legacy packet format (no raw fields at all - see hasRaw in
--- MSV2_ESP32_Display_Runtime.ino), simply omit these and callers fall back to
+-- Treebeard_ESP32_Display_Runtime.ino), simply omit these and callers fall back to
 -- `battery_percent` as before.
 
 alter table public.msv2_sensor_history

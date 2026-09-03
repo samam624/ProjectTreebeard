@@ -2,7 +2,7 @@ param(
   [ValidateSet("compile", "upload", "monitor", "board-list")]
   [string]$Action = "upload",
   [string]$Port,
-  [string]$Sketch = "DisplayCenter/arduino/MSV2_Antenna_Test",
+  [string]$Sketch = "DisplayCenter/arduino/Treebeard_Antenna_Test",
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
 )
 

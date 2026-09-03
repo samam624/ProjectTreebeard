@@ -1,6 +1,6 @@
 -- MSV3 software-only board (die) temperature + bare-tank FDC reference (2026-08-25). Two
 -- independent raw observables from arduino/MSV3_Moisture_BLE_Sleep/MSV3_Moisture_BLE_Sleep.ino's
--- new 23-byte packet extension (see that file and MSV2_ESP32_Display_Runtime.ino's
+-- new 23-byte packet extension (see that file and Treebeard_ESP32_Display_Runtime.ino's
 -- MSV3_DIAGNOSTIC_PACKET_LEN). Nullable throughout: absent for every existing sensor and for any
 -- MSV3 probe still on pre-diagnostics firmware. This migration intentionally does NOT add or
 -- enable any temperature-compensation/ratio formula - see

@@ -74,7 +74,7 @@ separate command-volume fix to the sprite renderer itself.
 
 `ESP_BKLED` GPIO11 drives Q2 (2N7002), which pulls down the Q1 DMP3098L-7 P-FET gate. The behavior
 is non-inverted: zero duty is off and full duty is full brightness. This was bench-confirmed with
-`arduino/MSV2_ESP32_Backlight_Test`.
+`arduino/Treebeard_ESP32_Backlight_Test`.
 
 Runtime settings:
 

@@ -1,4 +1,4 @@
-# MSV2 Cloud API Draft
+# Treebeard Cloud API Draft
 
 This is the first narrow contract for remote monitoring. It is intentionally small so the receiver can stay local-first while a cloud relay is prototyped.
 
@@ -18,7 +18,7 @@ Request body:
 {
   "receiverId": "MSV2AABBCCDDEEFF",
   "claimCode": "ABCD-2345",
-  "build": "MSV2 runtime build ...",
+  "build": "Treebeard runtime build ...",
   "sentAtMs": 123456,
   "config": {
     "schema": 1,

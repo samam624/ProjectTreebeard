@@ -31,7 +31,7 @@ An ESP32-S3 receiver performs calibration, display, history recovery, and cloud 
 
 ### C. MSV3: Resonant Conversion, Electrode Multiplexing, and Solar Power
 
-MSV3 replaces GPIO timing with an FDC2214 28-bit converter and a 6.8 uH/270 pF LC tank [2]. A TMUX1109 routes two electrodes through four states: two swapped capacitance phases and two auxiliary EC/bare-tank phases [4]. The E73 nRF52840 PCB lacks a 32.768 kHz crystal, requiring internal LFRC selection before the RTOS/SoftDevice start [3]. Its power path uses a BQ25504 harvester, BQ25170 charger, and TPS7A0233 regulator [5]. MSV3 preserves the MSV2 receiver/cloud path; its observed packet is 17 bytes. A 23-byte die-temperature/bare-tank format is compile-tested but not confirmed deployed.
+MSV3 replaces GPIO timing with an FDC2214 28-bit converter and a 6.8 uH/270 pF LC tank [2]. A TMUX1109 routes two electrodes through four states: two swapped capacitance phases and two auxiliary EC/bare-tank phases [4]. The E73 nRF52840 PCB lacks a 32.768 kHz crystal, requiring internal LFRC selection before the RTOS/SoftDevice start [3]. Its power path uses a BQ25504 harvester, BQ25170 charger, and TPS7A0233 regulator [5]. MSV3 preserves the Treebeard receiver/cloud path; its observed packet is 17 bytes. A 23-byte die-temperature/bare-tank format is compile-tested but not confirmed deployed.
 
 > **Suggested Fig. 1.** A three-column block diagram: MSV1 comb -> 555/LPF/comparator; MSV2 dual electrodes -> GPIO relaxation timing -> BLE; MSV3 dual electrodes -> TMUX1109/FDC2214 -> BLE, with the common ESP32 receiver/cloud path shown beneath MSV2 and MSV3.
 

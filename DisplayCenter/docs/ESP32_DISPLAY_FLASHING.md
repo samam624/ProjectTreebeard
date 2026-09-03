@@ -4,11 +4,15 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-07-07, the display receiver was reflashed on `COM13` with the normal (non-forced-setup) build, as part of a security hardening pass. The build tag string is unchanged from the source (this pass didn't touch `MSV2_BUILD_TAG`):
+As of 2026-09-01, the display receiver was reflashed on `COM16` with the normal production build:
 
 ```text
-MSV2 runtime build 2026-07-05 reboot-screen-fix
+Treebeard runtime build 2026-09-02 treebeard-rename-v1
 ```
+
+The learned-percentage, periodic-freeze, and cloud-upload incident is resolved. The enforced
+architecture and live evidence are in
+`RECEIVER_PERCENT_RANGES_DISPLAY_FREEZE_AND_UPLOAD_FIX_2026-09-01.md`.
 
 Notable behavior changes from the 2026-07-07 flash (see `docs/STATUS_HANDOFF.md` for the full writeup):
 
@@ -28,10 +32,13 @@ Known-good behavior from bench testing (pre-2026-07-07, still holds):
 From the repo root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM16
 ```
 
-The `upload` action compiles first, then flashes. If an older version of the helper does not compile first, run `compile` once before `upload`.
+The `upload` action runs the receiver cloud/display regression gate, compiles, then flashes. Do
+not bypass a failed gate: it protects RTC staging, auto-calibration scheduling/cache recovery,
+outage-only journal writes, TLS-first streaming, acknowledgement ordering, and the 10-16 sensor
+capacity assumptions.
 
 The helper uses Arduino IDE's bundled `arduino-cli.exe` at:
 
@@ -42,7 +49,7 @@ C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe
 It uploads:
 
 ```text
-arduino/MSV2_ESP32_Display_Runtime
+DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime
 ```
 
 with this board profile:
@@ -62,25 +69,25 @@ EraseFlash=none
 List ports:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 board-list
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action board-list
 ```
 
 Compile only:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 compile
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action compile
 ```
 
 Upload to a different port:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM16
 ```
 
 Serial monitor:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 monitor -Port COM13
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action monitor -Port COM16
 ```
 
 ## First-Boot Verification
@@ -88,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 monitor -Po
 To verify the first-time setup path without erasing identity, cloud config, or plant setup:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13 -ForceWifiSetup
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM16 -ForceWifiSetup
 ```
 
 This build ignores saved WiFi and `WiFiCredentials.h` until you save a choice from the setup app. The TFT should stay on the setup instructions and the receiver should keep broadcasting the open `MSV2-Display` setup network.
@@ -108,15 +115,15 @@ The forced setup build writes `/wifi-setup-unlock-v2.flag` when you save home Wi
 To restore normal behavior:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\arduino_display.ps1 upload -Port COM13
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM16
 ```
 
 The underlying firmware switch lives near the top of
-`arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` and defaults to normal mode:
+`DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` and defaults to normal mode:
 
 ```cpp
-#ifndef MSV2_FORCE_WIFI_SETUP
-#define MSV2_FORCE_WIFI_SETUP 0
+#ifndef TREEBEARD_FORCE_WIFI_SETUP
+#define TREEBEARD_FORCE_WIFI_SETUP 0
 #endif
 ```
 
@@ -134,6 +141,7 @@ That directory is outside the workspace sandbox. If a Codex command reports `Acc
 
 Current common ports:
 
-- `COM13`: ESP32-S3 display receiver.
+- `COM16`: ESP32-S3 display receiver at the 2026-09-01 deployment (the number can change after
+  USB re-enumeration; use `-Action board-list` rather than assuming it permanently).
 - `COM5`: XIAO/nRF moisture probe helper default.
 - `COM11`: another serial device may appear depending on what is plugged in.

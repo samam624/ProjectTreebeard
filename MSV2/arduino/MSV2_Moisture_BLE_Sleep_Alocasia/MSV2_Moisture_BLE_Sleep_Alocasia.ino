@@ -80,7 +80,7 @@ const bool ENABLE_SERIAL_LOGS = false; // disabled for the unattended 10-day vac
 // or per-plant manual range configured on the receiver - this probe is advertise-only
 // (no BLE receive path), so it has no way to learn either of those without a real
 // architecture change. Matches the same 25%-of-default-range "danger" cutoff already
-// used everywhere else in this project (MSV2_ESP32_Display_Runtime.ino's healthColor()),
+// used everywhere else in this project (Treebeard_ESP32_Display_Runtime.ino's healthColor()),
 // off the default dry=120/wet=175 calibration scale: 120 + 0.25*(175-120) = 134.
 const int EXTERNAL_LED_PIN = D1;
 const bool EXTERNAL_LED_ACTIVE_HIGH = true;

@@ -3,7 +3,7 @@
 -- msv2_register_receiver's very first insert for a never-before-seen receiver_id is
 -- accepted from whoever calls it first, no proof of physical possession required.
 -- receiver_id is derived directly from the device's own MAC address
--- (ensureDeviceIdentity() in MSV2_ESP32_Display_Runtime.ino: "MSV2" + hex(efuse MAC)),
+-- (ensureDeviceIdentity() in Treebeard_ESP32_Display_Runtime.ino: "MSV2" + hex(efuse MAC)),
 -- which is passively observable by anyone in WiFi range of the device's own
 -- MSV2-Display open setup AP before it ever reaches home WiFi - it is not a secret.
 -- An attacker who front-runs the real device's own automatic post-WiFi-setup

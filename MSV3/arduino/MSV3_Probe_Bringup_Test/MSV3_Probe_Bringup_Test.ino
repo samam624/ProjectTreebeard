@@ -378,7 +378,7 @@ void delayFeedingWatchdog(uint32_t ms) {
 // just reads manufacturer-specific data out of the advertisement.
 //
 // Deliberately uses a DIFFERENT magic ("MSV3" not "MSV2") and device name
-// from the real product line. MSV2_ESP32_Display_Runtime.ino's receiver
+// from the real product line. Treebeard_ESP32_Display_Runtime.ino's receiver
 // only recognizes packets starting with its own MSV2_MAGIC[]={'M','S','V','2'}
 // before it ever looks at sensorId -- this bring-up firmware physically
 // cannot be mistaken for real plant data even if a production receiver
@@ -1174,7 +1174,19 @@ void doDivNode() {
 //                       all. No MCU control routed. Nothing to sequence.
 //   nRF52840 (U1)    -- System ON + FreeRTOS tickless idle (already validated).
 //
-#define FDC_TSDWAKEUP_MS 3      // datasheet tSDWAKEUP = 2ms max; +1ms margin
+#define FDC_TSDWAKEUP_US 2500   // datasheet tSDWAKEUP = 2ms; 500us margin.
+// 2026-09-01: was `delay(FDC_TSDWAKEUP_MS)` with FDC_TSDWAKEUP_MS=3 and a comment claiming
+// "+1ms margin". That margin did not exist. Adafruit nRF52 core 1.7.0's delay() is
+// vTaskDelay(pdMS_TO_TICKS(ms)) (cores/nRF5/delay.c) against configTICK_RATE_HZ=1024, so one
+// tick is 0.9766ms and pdMS_TO_TICKS(3) truncates to 3 ticks. vTaskDelay unblocks on a tick
+// BOUNDARY, so the real wait was (3 - f) ticks for f = however far into the current tick the
+// call landed: 1.953ms to 2.930ms. It fell UNDER the datasheet's 2ms whenever f > 0.952 --
+// about 4.8% of wakes, roughly 1 in 21. A short tSDWAKEUP NACKs fdcInit()'s first write, so
+// probeWake() returns false and the wake advertises nothing (no retry, see loop()) -- an
+// intermittent silent dropped reading, which matters because unattended solar-test telemetry
+// is gated on a clean FDC read. delayMicroseconds() is nrfx_coredep_delay_us() (delay.h), a
+// cycle-accurate busy-wait with no tick quantization, so 2500us is really 2500us. The spin
+// costs nothing once per ~10s wake. Do not convert this back to delay().
 #define FDC_ACTIVATION_US 400   // sensor activation = 16,384 fINT cycles; at the
                                  // ~43.3MHz internal osc that is ~378us
 #define MUX_SLEEP_CODE 0        // electrode-swap. NEVER 2 or 3 here -- see above.
@@ -1245,7 +1257,7 @@ bool probeWake(uint8_t discardConversions) {
   Wire.setClock(100000);
 
   digitalWrite(PIN_FDC_SD, LOW);   // leave Shutdown
-  delay(FDC_TSDWAKEUP_MS);          // tSDWAKEUP before the part will answer I2C
+  delayMicroseconds(FDC_TSDWAKEUP_US);  // tSDWAKEUP before the part will answer I2C
 
   // Shutdown reset every register, so a full reconfigure is mandatory, not
   // optional. fdcInit() deliberately writes CONFIG (0x1A) LAST: the datasheet
@@ -1286,7 +1298,7 @@ void doWakeProfile(int n) {
   Wire.setClock(100000);
   digitalWrite(PIN_FDC_SD, LOW);
   uint32_t t0 = micros();
-  delay(FDC_TSDWAKEUP_MS);
+  delayMicroseconds(FDC_TSDWAKEUP_US);
   if (!fdcInit()) { printLineResilient("  wakeprofile: fdcInit FAILED"); return; }
   delayMicroseconds(FDC_ACTIVATION_US);
   uint32_t tReady = micros() - t0;

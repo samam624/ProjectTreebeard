@@ -38,7 +38,7 @@
 - Some historical notes use “Scindapsus” for the Thaumatophyllum lineage. This is a naming inconsistency, not a third architecture.
 - Power wording: MSV2 uses timed low-power **System-ON** sleep. Do not call it the deepest System-OFF mode.
 
-**Primary evidence:** [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](../../MSV2/docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md), [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md), and [`STATUS_HANDOFF.md`](../STATUS_HANDOFF.md)
+**Primary evidence:** [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](../../MSV2/docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md), [`TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md), and [`STATUS_HANDOFF.md`](../STATUS_HANDOFF.md)
 
 ### MSV3
 
@@ -162,7 +162,7 @@ The documents record a rapid sequence rather than one clean release:
 - Roadmap/open work: [`PRODUCT_ROADMAP.md`](../PRODUCT_ROADMAP.md)
 - Known issues: [`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)
 - MSV2 oscillator: [`MOISTURE_SENSOR_OSCILLATOR_REPORT.md`](../../MSV2/docs/MOISTURE_SENSOR_OSCILLATOR_REPORT.md)
-- Adaptive calibration: [`MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md)
+- Adaptive calibration: [`TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md`](../../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md)
 - MSV3 FDC front end: [`MOISTURE_SENSOR_FDC2212_FRONTEND.md`](../../MSV3/docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md)
 - MSV3 BOM: [`MSV3_PROBE_BOM.md`](../../MSV3/docs/MSV3_PROBE_BOM.md)
 - MSV3 LFCLK failure analysis: [`MSV3_LFCLK_RTC1_HANG_2026-08-21.md`](../../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md)

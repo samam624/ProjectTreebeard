@@ -2,6 +2,39 @@
 
 This is the portable index for hardware/toolchain problems that are easy to lose when moving the repository to another PC. Detailed investigations remain in their linked documents; this page records what a fresh clone must do.
 
+## DisplayCenter: do not restore per-reading flash writes or queue-based state starvation
+
+**Status:** Resolved, deployed, and repo-enforced as of 2026-09-01.
+
+**Affected:** `DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime`, especially BLE history ingress,
+`cloudSyncTask()`, `runCloudAutoCalPull()`, and `runCloudSnapshotUploader()`.
+
+**Symptoms:** Learned percentage cards revert to raw values after restart; the physical display
+pauses every few seconds; cloud history becomes intermittent; HTTPS may misleadingly report
+`connection refused`. Adding sensors makes the symptoms more frequent.
+
+**Causes:** Three receiver-side errors combined: any nonempty queue blocked the auto-calibration
+pull; every unique wake forced a LittleFS flush; and a batch-sized JSON allocation fragmented heap
+before mbedTLS reserved its contiguous buffers. Supabase was not dropping accepted requests.
+
+**Portable enforcement:** Build and upload the receiver only through:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action compile
+powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COMx
+```
+
+The wrapper runs `verify_receiver_cloud_recovery.mjs` first. Do not bypass a failure from that
+check. The required invariants are: 64-row checksum-protected RTC staging, direct healthy-path
+upload/acknowledgement, LittleFS only for outage spillover, state-pull blocking only at the 75%
+emergency threshold, cached learned ranges loaded at boot, TLS connection before streamed payload
+serialization, no five-second backlog upload loop, and no BLE-callback filesystem/network work.
+
+Supported load is 10-16 sensors at the intended roughly one unique row/minute cadence, including
+one three-second bench sensor plus 15 normal sensors. Sixteen probes all producing unique rows every
+three seconds indefinitely is unsupported. See
+[the complete root cause, architecture, capacity math, durability boundary, and live evidence](../DisplayCenter/docs/RECEIVER_PERCENT_RANGES_DISPLAY_FREEZE_AND_UPLOAD_FIX_2026-09-01.md).
+
 ## MSV3: soil-exposed blade coating and routed-edge water retention
 
 **Status:** Confirmed physical failure mode on the current field blade; repair process defined but

@@ -1,8 +1,8 @@
-# MSV2 Display Receiver — Cloud Upload Reliability & Telemetry (2026-08-23)
+# Project Treebeard Display Receiver — Cloud Upload Reliability & Telemetry (2026-08-23)
 
 ## Starting point
 
-User-reported symptoms on the display receiver (`arduino/MSV2_ESP32_Display_Runtime`):
+User-reported symptoms on the display receiver (`arduino/Treebeard_ESP32_Display_Runtime`):
 periodic unexplained reboots, the local History tab lagging the physical display/Status
 view, and moisture values appearing "stuck" for long stretches. An earlier same-day
 Claude+Codex collaboration session (via `tools/agent-supervisor`) produced a synthesized

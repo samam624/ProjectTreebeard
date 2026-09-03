@@ -2,9 +2,9 @@
 """Generate ESP32 plant sprite assets from source GIFs.
 
 Source GIFs live in assets/plant_gifs. The generator writes:
-  - arduino/MSV2_ESP32_Display_Runtime/plant_sprites.h
-  - arduino/MSV2_ESP32_Display_Runtime/PlantSpriteCatalog.h
-  - arduino/MSV2_ESP32_Display_Runtime/MobileAppPage.h art dropdown/previews
+  - arduino/Treebeard_ESP32_Display_Runtime/plant_sprites.h
+  - arduino/Treebeard_ESP32_Display_Runtime/PlantSpriteCatalog.h
+  - arduino/Treebeard_ESP32_Display_Runtime/MobileAppPage.h art dropdown/previews
   - generated/plant_sprites/previews/*.png
   - generated/plant_sprites/mobile_art_catalog_snippet.js
 
@@ -32,8 +32,8 @@ except ImportError as exc:  # pragma: no cover - user-facing dependency guard
 
 
 TRANSPARENT_RGB565 = 0xF81F
-MOBILE_ART_BEGIN = "    // MSV2_ART_CATALOG_BEGIN"
-MOBILE_ART_END = "    // MSV2_ART_CATALOG_END"
+MOBILE_ART_BEGIN = "    // TREEBEARD_ART_CATALOG_BEGIN"
+MOBILE_ART_END = "    // TREEBEARD_ART_CATALOG_END"
 
 
 @dataclass
@@ -459,7 +459,7 @@ def update_mobile_app_catalog(path: Path, sprites: list[Sprite], art_images: dic
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate MSV2 plant sprite firmware/web assets from GIFs.")
     parser.add_argument("--source", type=Path, default=Path("assets/plant_gifs"), help="Folder containing source GIFs.")
-    parser.add_argument("--out-sketch", type=Path, default=Path("arduino/MSV2_ESP32_Display_Runtime"), help="ESP32 display sketch folder.")
+    parser.add_argument("--out-sketch", type=Path, default=Path("arduino/Treebeard_ESP32_Display_Runtime"), help="ESP32 display sketch folder.")
     parser.add_argument("--generated", type=Path, default=Path("generated/plant_sprites"), help="Generated preview/snippet output folder.")
     parser.add_argument("--scale", type=float, default=0.5, help="Nearest-neighbor scale applied to GIF frames.")
     parser.add_argument("--target-width", type=int, default=84, help="Transparent output canvas width for every sprite. Use 0 to keep per-sprite widths.")

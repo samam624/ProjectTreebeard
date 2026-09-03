@@ -10,6 +10,10 @@
 > the telemetry and ratiometric analysis are in
 > [MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md](MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md)
 > and [MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md](MSV3_FDC_REFERENCE_COMPENSATION_2026-08-30.md).
+> A complete application-only BLE OTA update has since been demonstrated on the real MSV3 board;
+> its reset-safe implementation, live evidence, and required battery/bootloader qualification are
+> documented in [MSV3_BLE_OTA_PROOF_2026-09-02.md](MSV3_BLE_OTA_PROOF_2026-09-02.md). OTA is not
+> yet part of this production image.
 
 **Status:** The 2026-08-22 production probe and matching receiver were flashed and observed live.
 The review-remediated 2026-08-23 source compiles but has not been reflashed, so the physical probe
@@ -43,7 +47,7 @@ starts a new calibration epoch, and history readers return only the latest scale
 older rows. Receiver build `MSV2 runtime build 2026-08-22 msv3-hires-moisture-v2` is live on
 COM16; observed raw `20,243,803` maps to `37,561` exactly as designed.
 **New files:** `arduino/MSV3_Moisture_BLE_Sleep/MSV3_Moisture_BLE_Sleep.ino`
-**Changed files:** `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino`,
+**Changed files:** `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino`,
 `arduino/MSV3_Probe_Bringup_Test/MSV3_Probe_Bringup_Test.ino`
 
 This is the first real deployment firmware for the MSV3 probe — not another bring-up console, the
@@ -80,8 +84,9 @@ sketch:
 
 | Constant | Value | Basis |
 |---|---|---|
-| `SENSOR_ID` | 4 | First unused slot (1=Scindapsus, 2=Alocasia, 3=AFE bench board) |
+| `SENSOR_ID` | 5 (was 4 until 2026-08-31) | 1=Scindapsus, 2=Alocasia, 3=AFE bench board, 4=first MSV3 field unit (see `MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md`). This constant and `DEVICE_NAME` are edited in place per-board, not kept as separate per-board sketch files like MSV2 - reflashing the id=4 unit requires manually setting both back first. |
 | `WAKE_PERIOD_MS` / `ADVERTISE_INTERVAL_MS` | 10000 / 60000 | Mirrors MSV2's proven cadence |
+| BLE TX power | +8 dBm | Staged 2026-09-02 after a fixed-position A/B test improved mean RSSI from -69.45 dBm at +4 dBm to -66.25 dBm at +8 dBm (49/48 packets). Estimated incremental draw at the 500 ms/minute advertising duty cycle is about 1.6-2.1 uA average. |
 | `MOISTURE_SWING_THRESHOLD` | 300000 raw counts (~1.5% of dry baseline) | **Provisional** — no real soil range exists yet, same status MSV2's own threshold had before real data |
 | `WAKE_DISCARD_CONVERSIONS` | 2 | Measured on real hardware via `wakeprofile`, not guessed |
 
@@ -154,7 +159,7 @@ Now branches on `wideRaw` and omits the (wrong) unit suffix for FDC-counts senso
 
 Both sketches compile clean:
 - `MSV3_Moisture_BLE_Sleep`: 128072 bytes (15% flash), 15572 bytes (6% RAM).
-- `MSV2_ESP32_Display_Runtime`: 2131812 bytes (67% flash), 58380 bytes (17% RAM) — unchanged from
+- `Treebeard_ESP32_Display_Runtime`: 2131812 bytes (67% flash), 58380 bytes (17% RAM) — unchanged from
   before this session's edits, i.e. the additive changes cost effectively nothing measurable.
 
 ## Bring-up sketch addition: `sensesweep <n>`
@@ -184,7 +189,7 @@ soil.
 
 1. **Neither new/changed sketch has been flashed or run on real hardware yet.** Everything above is
    compile-verified only. First real test: flash `MSV3_Moisture_BLE_Sleep`, confirm the receiver
-   picks it up as sensor 4 (watch the `[MSV2 debug]` serial line for `rawFdcCounts=...` and a
+   picks it up as sensor 4 (watch the `[Treebeard debug]` serial line for `rawFdcCounts=...` and a
    sane `moisture` value), and run `sensesweep` on the bring-up sketch to confirm the alternation
    behaves sanely before trusting it.
 2. **Backend/Supabase/Netlify frontend untouched.** The new `raw.fdcCounts` JSON field and sensor 4
@@ -310,7 +315,7 @@ window looks clean.
 ### Raw FDC counts: where they actually live (correction)
 
 `rawFdcCounts`/`DATA_CH0` full-precision values are only ever available over BLE (the wire packet),
-the receiver's own serial debug log (`[MSV2 debug] ... rawFdcCounts=...`), and the receiver's local
+the receiver's own serial debug log (`[Treebeard debug] ... rawFdcCounts=...`), and the receiver's local
 `/data` JSON (`raw.fdcCounts`) — **not** in Supabase history. `snapshotJson()`/the Supabase
 upload path stores only the *derived* `moisture` (post `scaleMsv3RawForCeiling()` +
 `calibrateRawMoisture()`) and `batteryPercent`, same as every other sensor, not the raw counts
@@ -328,12 +333,12 @@ themselves. If raw-count-level analysis of the overnight run is wanted afterward
    watched live) — this is the only durable record of raw `DATA_CH0`/status-flag detail, since
    Supabase only ever receives the derived values (see above). Before walking away, confirm
    cloud sync is active on this physical unit: require
-   `[MSV2 cloud] bootstrap ok; cloud sync enabled`, then observe at least two
-   `[MSV2 cloud] upload ok: HTTP 2xx` results after sensor-4 packets arrive. Also confirm sensor 4's
+   `[Treebeard cloud] bootstrap ok; cloud sync enabled`, then observe at least two
+   `[Treebeard cloud] upload ok: HTTP 2xx` results after sensor-4 packets arrive. Also confirm sensor 4's
    derived `moisture` and `batteryPercent` are visible remotely before leaving the setup unattended.
 4. Leave it at least 8 hours.
 5. **Pass criteria:**
-   - Receiver serial log shows `[MSV2 debug]`-style lines for sensor 4 continuing in ~500ms
+   - Receiver serial log shows `[Treebeard debug]`-style lines for sensor 4 continuing in ~500ms
      advertisement bursts on the existing ~60s cadence (or ~30s when a real swing is detected) —
      not "continuous" advertising, and not silence for extended stretches.
    - The probe's own `wake` counter (visible via `rawFdcCounts`/wake fields the receiver logs)
@@ -351,7 +356,7 @@ themselves. If raw-count-level analysis of the overnight run is wanted afterward
    - `MOISTURE_INVERT_CEILING_BY_SENSOR[4] = 25000` and `MOISTURE_SWING_THRESHOLD = 300000` remain
      provisional — success for this run is a coherent, explainable trend (dry -> wet step ->
      gradual dry-down), not a specific calibrated moisture percentage.
-   - The receiver's serial log shows repeated `[MSV2 cloud] upload ok: HTTP 2xx` results, and sensor
+   - The receiver's serial log shows repeated `[Treebeard cloud] upload ok: HTTP 2xx` results, and sensor
      4's derived `moisture`/`batteryPercent` history is visible remotely in Supabase through the
      morning. Missing 2xx confirmations or missing remote sensor-4 history fails the requested
      end-to-end overnight test even if the local BLE path remains healthy; preserve the receiver log

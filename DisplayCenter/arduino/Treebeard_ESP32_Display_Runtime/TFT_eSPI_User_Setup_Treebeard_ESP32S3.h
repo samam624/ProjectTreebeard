@@ -32,7 +32,7 @@
 #define TFT_CS   16
 
 // Backlight is switched via Q1 (DMP3098L-7 high-side P-FET), gated by Q2
-// (2N7002) off GPIO11 -- see MSV2_ESP32_Backlight_Test for the bench-verified
+// (2N7002) off GPIO11 -- see Treebeard_ESP32_Backlight_Test for the bench-verified
 // PWM sweep. Non-inverted: duty cycle maps directly to backlight brightness.
 #define TFT_BL   11
 

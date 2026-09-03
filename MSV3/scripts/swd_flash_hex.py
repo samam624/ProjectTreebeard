@@ -3,7 +3,7 @@
 
 The flasher's `flash <hexaddr> <declen>` command only handles one contiguous
 byte range per call, but a real firmware/bootloader image (see
-arduino/MSV2_ESP32_SWD_Flasher/bootloaders/) is usually several disjoint
+arduino/Treebeard_ESP32_SWD_Flasher/bootloaders/) is usually several disjoint
 regions -- e.g. a bootloader hex writes MBR, SoftDevice, bootloader code, the
 bootloader settings page, and a UICR register, all at different addresses.
 This parses the hex file into contiguous segments and drives one `flash`
@@ -37,7 +37,7 @@ import serial
 
 DEFAULT_BOOTLOADER_HEX = (
     Path(__file__).resolve().parent.parent
-    / "arduino" / "MSV2_ESP32_SWD_Flasher" / "bootloaders"
+    / "arduino" / "Treebeard_ESP32_SWD_Flasher" / "bootloaders"
     / "pca10056_bootloader-0.11.0_s140_6.1.1.hex"
 )
 

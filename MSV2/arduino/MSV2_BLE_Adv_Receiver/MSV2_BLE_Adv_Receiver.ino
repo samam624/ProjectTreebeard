@@ -96,7 +96,7 @@ void scan_callback(ble_gap_evt_adv_report_t* report)
   // Guard the reboot case explicitly (wake counter resets to a small value on
   // probe power-cycle/reflash) instead of letting `wake - lastWake - 1` underflow
   // into a huge, nonsensical 24-bit-masked count - same fix already applied to
-  // MSV2_ESP32_Display_Runtime.ino's onResult().
+  // Treebeard_ESP32_Display_Runtime.ino's onResult().
   uint32_t missed = 0;
   if (haveLastWakeBySensor[sensorId] && wake > lastWakeBySensor[sensorId])
   {

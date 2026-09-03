@@ -8,8 +8,8 @@ the physical display, the receiver's local web page, and the Netlify cloud dashb
 
 | Surface | File(s) |
 | --- | --- |
-| Physical display (color, bar, buzzer/blink) | `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` |
-| Receiver's local page (Status cards) | `arduino/MSV2_ESP32_Display_Runtime/MobileAppPage.h` |
+| Physical display (color, bar, buzzer/blink) | `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` |
+| Receiver's local page (Status cards) | `arduino/Treebeard_ESP32_Display_Runtime/MobileAppPage.h` |
 | Netlify cloud dashboard | `web/plant-dashboard/assets/app.v15.js`, `web/plant-dashboard/index.html` |
 
 Cross-surface agreement is enforced by `scripts/verify_moisture_alert_thresholds.mjs`, which

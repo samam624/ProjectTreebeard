@@ -23,7 +23,7 @@ cloud/supabase/.env
 
 # arduino-cli build output -- regenerable, and no build/ dir has ever been
 # tracked here (the only committed .hex files are the deliberately-kept
-# bootloader images under DisplayCenter/arduino/MSV2_ESP32_SWD_Flasher/bootloaders/).
+# bootloader images under DisplayCenter/arduino/Treebeard_ESP32_SWD_Flasher/bootloaders/).
 # One extra */ level vs. before the project-treebeard reorg (2026-08-29): sketches now
 # live under <MSV1|MSV2|MSV3|DisplayCenter>/arduino/<Sketch>/, not arduino/<Sketch>/ directly.
 */arduino/*/build/
@@ -39,4 +39,10 @@ cloud/supabase/.env
 # Desktop\latex-tools\tex_compile.ps1 (not part of this repo); only the .tex source and figures/
 # are tracked.
 docs/paper/build/
+
+# Local one-off research/export artifacts; canonical source/output files are tracked separately.
+/tmux1574.pdf
+/tmux1574_full.txt
+/generated/MSV_Evolution_Slides.pptx.bak
+/generated/MSV_Evolution_Slides.zip
 

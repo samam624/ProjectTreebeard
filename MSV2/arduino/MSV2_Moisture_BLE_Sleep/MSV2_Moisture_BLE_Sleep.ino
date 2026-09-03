@@ -152,7 +152,7 @@ const uint8_t OSC_MEDIAN_SAMPLES = 5; // 5 x OSC_SAMPLE_WINDOW_MS bursts, median
 // Safety cap per half-cycle so a disconnected/open probe can't hang a burst.
 const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
 // 2026-07-28: moisture inversion (raw kHz -> "higher = wetter") moved to the receiver -
-// see MSV2_ESP32_Display_Runtime.ino's moistureCeilingForSensor()/calibrateRawMoisture().
+// see Treebeard_ESP32_Display_Runtime.ino's moistureCeilingForSensor()/calibrateRawMoisture().
 // The probe now transmits the raw median cycle count untouched. Reason: the ceiling this
 // inversion needs is a per-hardware-revision calibration constant that keeps changing as
 // the sensor design iterates (10-90kHz on the old single-plate/100k build, 220-360kHz on
@@ -178,7 +178,7 @@ const uint32_t OSC_CYCLE_TIMEOUT_US = 5000UL;
 // moved everything downstream of it - the charge-current IR-drop compensation curve, its
 // taper, and the LiPo mV->percent lookup table - to the receiver. The probe now just reports
 // the raw mV reading plus this one raw boolean and lets the receiver interpret both; see
-// MSV2_ESP32_Display_Runtime.ino's calibrateRawBattery(). Same rationale as the moisture
+// Treebeard_ESP32_Display_Runtime.ino's calibrateRawBattery(). Same rationale as the moisture
 // ceiling above: those curves are tuned constants that keep getting revised (see the
 // 2026-07-25 charge-jump chat log and the taper fix that followed it) and reflashing this
 // probe to update them isn't worth it when the raw mV is all the receiver actually needs.
@@ -457,7 +457,7 @@ uint32_t medianOf(uint32_t vals[], uint8_t n)
 // for the 2026-07-30 change from 1ms to 5ms.
 // Returned RAW - no inversion, no calibration. Lower value = wetter (the oscillator
 // slows down as sensed capacitance rises), but that's left for the receiver to interpret
-// (see MSV2_ESP32_Display_Runtime.ino's calibrateRawMoisture()) - see the 2026-07-28
+// (see Treebeard_ESP32_Display_Runtime.ino's calibrateRawMoisture()) - see the 2026-07-28
 // raw-values rework note above OSC_CYCLE_TIMEOUT_US.
 uint16_t readRawMoistureKHz()
 {
@@ -499,7 +499,7 @@ bool isBatteryCharging(void)
 
 // 2026-07-28: everything downstream of the raw mV reading - the LiPo mV->percent curve,
 // the charge-current IR-drop compensation and its taper, and the smoothing across wakes -
-// moved to the receiver (see MSV2_ESP32_Display_Runtime.ino's calibrateRawBattery()). Same
+// moved to the receiver (see Treebeard_ESP32_Display_Runtime.ino's calibrateRawBattery()). Same
 // rationale as the moisture ceiling above: those are tuned constants that have already
 // been revised twice (2026-07-24 divider cal, 2026-07-25 charge-jump taper fix) and each
 // revision used to mean reflashing this physically-installed probe. The probe now just

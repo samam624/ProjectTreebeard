@@ -29,6 +29,13 @@ def main() -> int:
     parser.add_argument("--duration", type=float, default=20.0, help="Total seconds to capture.")
     parser.add_argument("--out", type=Path, required=True, help="Log file to write (overwritten).")
     parser.add_argument("--retry-interval", type=float, default=0.3, help="Seconds between reconnect attempts.")
+    # 2026-09-02: pyserial asserts DTR/RTS on open, which on this ESP32-S3 board drives the
+    # auto-reset circuit - fine for the original use (catch boot output right after a DFU
+    # upload) but wrong when attaching to a RUNNING device to catch a spontaneous panic,
+    # since the act of attaching destroys the state you came to observe. Opt-in so existing
+    # post-upload capture behaviour is unchanged.
+    parser.add_argument("--no-reset", action="store_true",
+                        help="Open without asserting DTR/RTS, so attaching does not reset a running board.")
     args = parser.parse_args()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -50,7 +57,16 @@ def main() -> int:
     while time.monotonic() < deadline:
         if ser is None:
             try:
-                ser = serial.Serial(args.port, args.baud, timeout=0.2)
+                if args.no_reset:
+                    ser = serial.Serial()
+                    ser.port = args.port
+                    ser.baudrate = args.baud
+                    ser.timeout = 0.2
+                    ser.dtr = False
+                    ser.rts = False
+                    ser.open()
+                else:
+                    ser = serial.Serial(args.port, args.baud, timeout=0.2)
                 connected_once = True
                 emit(f"--- connected to {args.port} ---")
             except serial.SerialException:

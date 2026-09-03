@@ -38,7 +38,7 @@ before it can be ruled in or out quantitatively.
   charging cannot explain that entire run.
 - MSV3 uses the deterministic mapping `(24,000,000 - raw_fdc) / 100`; the display is not inventing the
   direction of the drift. See
-  `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` near line 6019.
+  `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` near line 6019.
 - The AFE test firmware runs the FDC continuously, whereas production MSV3 wakes it on schedule. Both
   architectures exhibit the broad phenomenon, which makes one particular wake implementation a less
   likely universal cause.

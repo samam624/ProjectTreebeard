@@ -35,8 +35,8 @@ python scripts\generate_plant_sprites.py
 
 Generated outputs are written to:
 
-- `arduino/MSV2_ESP32_Display_Runtime/plant_sprites.h`
-- `arduino/MSV2_ESP32_Display_Runtime/PlantSpriteCatalog.h`
-- `arduino/MSV2_ESP32_Display_Runtime/MobileAppPage.h` art picker options and previews
+- `arduino/Treebeard_ESP32_Display_Runtime/plant_sprites.h`
+- `arduino/Treebeard_ESP32_Display_Runtime/PlantSpriteCatalog.h`
+- `arduino/Treebeard_ESP32_Display_Runtime/MobileAppPage.h` art picker options and previews
 - `generated/plant_sprites/previews/`
 - `generated/plant_sprites/mobile_art_catalog_snippet.js`

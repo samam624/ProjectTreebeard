@@ -61,7 +61,7 @@ blocking cloud HTTP calls in the core-1 render/WebServer loop caused obvious per
 2. Confirm serial boot logs show both cloud and BLE tasks started.
 3. Run two or three probes, including the formerly silent sensor 2, for longer than one full normal
    advertising interval.
-4. Compare `[MSV2 debug] sensor ... wake ...` messages with cloud upload messages. Packets must not
+4. Compare `[Treebeard debug] sensor ... wake ...` messages with cloud upload messages. Packets must not
    cause an upload five seconds later.
 5. Confirm snapshot upload spacing settles near 300 seconds except immediately after an intentional
    UI/display configuration change or reconnect/bootstrap.

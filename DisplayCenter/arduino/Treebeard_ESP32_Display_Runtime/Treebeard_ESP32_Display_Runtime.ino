@@ -24,82 +24,86 @@
 //   1 = display-only smoke test
 //   2 = display + WiFi updater runtime, BLE off
 //   3 = full runtime with BLE scanning
-#define MSV2_BRINGUP_STAGE 3
+#define TREEBEARD_BRINGUP_STAGE 3
 
-#define MSV2_SAFE_BOOT (MSV2_BRINGUP_STAGE == 0)
-#define MSV2_DISPLAY_TEST (MSV2_BRINGUP_STAGE == 1)
-#define MSV2_ENABLE_DISPLAY (MSV2_BRINGUP_STAGE >= 1)
-#define MSV2_ENABLE_WIFI (MSV2_BRINGUP_STAGE >= 2)
-#define MSV2_ENABLE_BLE (MSV2_BRINGUP_STAGE >= 3)
-#define MSV2_SAFE_BOOT_LED_PIN 2
-#define MSV2_SAFE_BOOT_BLINK_MS 500
-#define MSV2_BUILD_TAG "MSV2 runtime build 2026-08-30 detail-view-self-heal-v1"
+#define TREEBEARD_SAFE_BOOT (TREEBEARD_BRINGUP_STAGE == 0)
+#define TREEBEARD_DISPLAY_TEST (TREEBEARD_BRINGUP_STAGE == 1)
+#define TREEBEARD_ENABLE_DISPLAY (TREEBEARD_BRINGUP_STAGE >= 1)
+#define TREEBEARD_ENABLE_WIFI (TREEBEARD_BRINGUP_STAGE >= 2)
+#define TREEBEARD_ENABLE_BLE (TREEBEARD_BRINGUP_STAGE >= 3)
+#define TREEBEARD_SAFE_BOOT_LED_PIN 2
+#define TREEBEARD_SAFE_BOOT_BLINK_MS 500
+// 2026-09-02: build-tag prefix changed MSV2 -> Treebeard with the project rename. Given its
+// own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
+// the same tag - every historical record at or before 2026-08-31 legitimately reads
+// "MSV2 runtime build ..." because that is what those binaries actually reported.
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-02 treebeard-rename-v1"
 
-#ifndef MSV2_FORCE_WIFI_SETUP
-#define MSV2_FORCE_WIFI_SETUP 0
+#ifndef TREEBEARD_FORCE_WIFI_SETUP
+#define TREEBEARD_FORCE_WIFI_SETUP 0
 #endif
 
 #include <Arduino.h>
 #include "esp_heap_caps.h"
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 #include <FS.h>
 using fs::FS;
 using fs::File;
 #endif
 
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
 #include <Arduino_GFX_Library.h>
 #include <SPI.h>
 #include <XPT2046_Touchscreen.h>
 #include "PlantSpriteCatalog.h"
 #endif
 
-#if MSV2_SAFE_BOOT || MSV2_DISPLAY_TEST
+#if TREEBEARD_SAFE_BOOT || TREEBEARD_DISPLAY_TEST
 
 void setup()
 {
-  pinMode(MSV2_SAFE_BOOT_LED_PIN, OUTPUT);
-  digitalWrite(MSV2_SAFE_BOOT_LED_PIN, LOW);
+  pinMode(TREEBEARD_SAFE_BOOT_LED_PIN, OUTPUT);
+  digitalWrite(TREEBEARD_SAFE_BOOT_LED_PIN, LOW);
 
   Serial.begin(115200);
   uint32_t startMs = millis();
   while (millis() - startMs < 5000)
   {
-    Serial.println("[MSV2 safe boot] waiting for serial");
-    digitalWrite(MSV2_SAFE_BOOT_LED_PIN, !digitalRead(MSV2_SAFE_BOOT_LED_PIN));
+    Serial.println("[Treebeard safe boot] waiting for serial");
+    digitalWrite(TREEBEARD_SAFE_BOOT_LED_PIN, !digitalRead(TREEBEARD_SAFE_BOOT_LED_PIN));
     delay(250);
   }
 
   Serial.println();
-  Serial.println("[MSV2 safe boot] setup reached");
-#if MSV2_DISPLAY_TEST
+  Serial.println("[Treebeard safe boot] setup reached");
+#if TREEBEARD_DISPLAY_TEST
   // Backlight is gated by Q2 (2N7002) on GPIO11, non-inverted -- see
-  // MSV2_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
+  // Treebeard_ESP32_Backlight_Test. Arduino_GFX doesn't drive this pin itself,
   // so it has to be switched on explicitly or the panel stays dark even
   // though SPI init/draw succeeds.
-  Serial.println("[MSV2 display test] enabling 75% backlight PWM (GPIO11)");
+  Serial.println("[Treebeard display test] enabling 75% backlight PWM (GPIO11)");
   if (!ledcAttach(11, 1000, 10))
   {
-    Serial.println("[MSV2 display test] backlight PWM attach failed");
+    Serial.println("[Treebeard display test] backlight PWM attach failed");
   }
   ledcWrite(11, 575); // 75%^2 perceived-brightness curve, 10-bit duty
 
-  Serial.println("[MSV2 display test] initializing Arduino_GFX");
+  Serial.println("[Treebeard display test] initializing Arduino_GFX");
   Arduino_DataBus* testBus = new Arduino_ESP32SPI(14, 16, 12, 13, -1);
   Arduino_GFX* testGfx = new Arduino_ST7796(testBus, 15, 1, false, 320, 480);
   if (testBus == nullptr || testGfx == nullptr)
   {
-    Serial.println("[MSV2 display test] allocation failed");
+    Serial.println("[Treebeard display test] allocation failed");
     return;
   }
-  Serial.println("[MSV2 display test] allocation complete");
+  Serial.println("[Treebeard display test] allocation complete");
 
-  Serial.println("[MSV2 display test] calling begin()");
+  Serial.println("[Treebeard display test] calling begin()");
   testGfx->begin();
-  Serial.println("[MSV2 display test] begin() complete");
+  Serial.println("[Treebeard display test] begin() complete");
 
-  Serial.println("[MSV2 display test] drawing");
+  Serial.println("[Treebeard display test] drawing");
   testGfx->setRotation(1);
   testGfx->fillScreen(0x0000);
   testGfx->setTextColor(0xFFFF, 0x0000);
@@ -110,11 +114,11 @@ void setup()
   testGfx->setCursor(8, 32);
   testGfx->setTextSize(1);
   testGfx->println("If you see this, display works.");
-  Serial.println("[MSV2 display test] init/draw complete");
+  Serial.println("[Treebeard display test] init/draw complete");
 #else
-  Serial.println("[MSV2 safe boot] no display, WiFi, BLE, LittleFS, or ArduinoJson loaded");
+  Serial.println("[Treebeard safe boot] no display, WiFi, BLE, LittleFS, or ArduinoJson loaded");
 #endif
-  Serial.println("[MSV2 safe boot] GPIO 2 heartbeat active if your board has that LED");
+  Serial.println("[Treebeard safe boot] GPIO 2 heartbeat active if your board has that LED");
   Serial.flush();
 }
 
@@ -125,17 +129,17 @@ void loop()
   static bool blinkState = false;
   uint32_t now = millis();
 
-  if (now - lastBlinkMs >= MSV2_SAFE_BOOT_BLINK_MS)
+  if (now - lastBlinkMs >= TREEBEARD_SAFE_BOOT_BLINK_MS)
   {
     lastBlinkMs = now;
     blinkState = !blinkState;
-    digitalWrite(MSV2_SAFE_BOOT_LED_PIN, blinkState ? HIGH : LOW);
+    digitalWrite(TREEBEARD_SAFE_BOOT_LED_PIN, blinkState ? HIGH : LOW);
   }
 
   if (now - lastPrintMs >= 1000)
   {
     lastPrintMs = now;
-    Serial.print("[MSV2 safe boot] alive ms=");
+    Serial.print("[Treebeard safe boot] alive ms=");
     Serial.println(now);
   }
 }
@@ -143,14 +147,17 @@ void loop()
 #else
 
 #include <ArduinoJson.h>
-#if MSV2_ENABLE_BLE
+#if TREEBEARD_ENABLE_BLE
 #include <BLEDevice.h>
 #include <BLEScan.h>
 #endif
 #include <esp_system.h>
 #include <string.h>
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 #include <LittleFS.h>
+// 2026-08-31: for the postErrno diagnostic in runCloudSnapshotUploader() - lwIP sets errno on
+// the failing socket call even though NetworkClientSecure collapses its return to -1.
+#include <errno.h>
 #include "MobileAppPage.h"
 #include <DNSServer.h>
 #include <HTTPClient.h>
@@ -168,7 +175,7 @@ void loop()
 // currently presents a GTS Root R4 cross-signed by the long-lived GlobalSign Root CA (for older
 // trust stores) rather than the modern self-signed GTS Root R4; either one alone completes a
 // chain that the other configuration would need.
-static const char MSV2_TRUSTED_ROOT_CA_PEM[] PROGMEM = R"PEM(
+static const char TREEBEARD_TRUSTED_ROOT_CA_PEM[] PROGMEM = R"PEM(
 -----BEGIN CERTIFICATE-----
 MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
 VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
@@ -218,12 +225,12 @@ const char LOCAL_CONFIG_SOURCE[] = "receiver-local";
 #define WIFI_PASSWORD ""
 #endif
 
-#ifndef MSV2_CLOUD_BOOTSTRAP_URL
-#define MSV2_CLOUD_BOOTSTRAP_URL "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-bootstrap"
+#ifndef TREEBEARD_CLOUD_BOOTSTRAP_URL
+#define TREEBEARD_CLOUD_BOOTSTRAP_URL "https://lyemomfpzkawqecpfufm.supabase.co/functions/v1/receiver-bootstrap"
 #endif
 
-#ifndef MSV2_HOSTED_APP_URL
-#define MSV2_HOSTED_APP_URL "https://msv2-plants.netlify.app/"
+#ifndef TREEBEARD_HOSTED_APP_URL
+#define TREEBEARD_HOSTED_APP_URL "https://msv2-plants.netlify.app/"
 #endif
 
 const char UI_PATH[] = "/ui.json";
@@ -235,6 +242,8 @@ const char CLOUD_CONFIG_PATH[] = "/cloud.json";
 const char DISPLAY_SETTINGS_PATH[] = "/display.json";
 const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
 const char SOUND_SETTINGS_PATH[] = "/sound.json";
+const char AUTOCAL_CACHE_PATH[] = "/autocal-cache-v1.json";
+const char AUTOCAL_CACHE_TEMP_PATH[] = "/autocal-cache-v1.tmp";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
@@ -273,8 +282,12 @@ const size_t MSV3_DIAGNOSTIC_PACKET_LEN = 23;
 // without deleting older measurements or mixing incompatible numeric ranges.
 const uint8_t MSV2_MOISTURE_SCALE_VERSION = 1;
 const uint8_t MSV3_MOISTURE_SCALE_VERSION = 2;
-const uint32_t BLE_SCAN_SECONDS = 3;
-const uint32_t BLE_SCAN_IDLE_MS = 250;
+// Keep a passive scan session alive long enough that advertisements from several probes do
+// not repeatedly collide with stop/clear/restart gaps. Results are still cleared between
+// sessions, bounding NimBLE's discovered-device storage, but the allocator churn now happens
+// twice per minute instead of roughly eighteen times per minute.
+const uint32_t BLE_SCAN_SECONDS = 30;
+const uint32_t BLE_SCAN_IDLE_MS = 50;
 // 2026-08-13: back down from 3900s (65 min). That value was sized for a 30-minute
 // probe wake/advertise cadence that's since been superseded (see 2026-08-09 in
 // docs/STATUS_HANDOFF.md) - probes are back on the same ~10s-measure/60s-advertise
@@ -311,19 +324,33 @@ const uint32_t CLOUD_SYNC_DEFAULT_SECONDS = 60;
 // one-time migration in loadCloudConfig().
 const uint32_t CLOUD_SYNC_LEGACY_DEFAULT_SECONDS = 300;
 const uint32_t CLOUD_SYNC_SOON_MS = 5000;
-// Preserve every unique BLE reading between the deliberately slower HTTPS snapshot
-// uploads. At four normal one-advertise-per-minute production probes, 512 entries provide
-// roughly two hours of network-outage headroom. Fast bench firmware reduces that duration
-// proportionally (sensor 3 currently advertises about every three seconds), but a backlog
-// drains in additional five-second-spaced batches without moving the normal TLS cadence
-// back onto every BLE packet.
-const size_t HISTORY_QUEUE_CAPACITY = 512;
-// The 32-row body worked intermittently but failed again in the live 2026-08-23 recovery
-// with HTTPClient's `send payload failed`, after which the 512-row queue refilled. Keep
-// enough throughput for the fast sensor-3 bench transmitter while cutting the appended
-// body roughly in half for the non-PSRAM TLS path.
-const size_t HISTORY_UPLOAD_BATCH_SIZE = 16;
-const uint32_t HISTORY_BACKLOG_DRAIN_MS = 5000;
+// BLE callbacks only touch this RAM ingress ring. A checksum-protected RTC mirror preserves
+// it across receiver crashes/resets; cloudSyncTask coalesces many observations into one
+// LittleFS transaction instead of synchronously programming flash for every probe wake.
+// Sixty-four slots cover well over two minutes at the measured five-sensor ingress rate.
+const size_t HISTORY_STAGING_CAPACITY = 64;
+const size_t HISTORY_JOURNAL_WRITE_BATCH_SIZE = 32;
+// Healthy uploads read directly from the RTC-backed ring, so normal operation performs no
+// journal writes at all. These are outage-only spillover limits: commit before the ring fills
+// or after two minutes without successful acknowledgement. This removes the measured 29-240ms
+// periodic flash pause while still retaining a large, power-safe LittleFS backlog in an outage.
+const size_t HISTORY_JOURNAL_FLUSH_RECORDS = 56;
+const size_t HISTORY_JOURNAL_EMERGENCY_RECORDS = 60;
+const uint32_t HISTORY_JOURNAL_MAX_STAGING_MS = 120000;
+const uint32_t HISTORY_FLASH_DISPLAY_QUIET_MS = 100;
+const size_t HISTORY_QUEUE_CAPACITY = 8192;
+// The backend accepts at most 128 rows. Ninety-six drains the measured ~24-row/minute bench
+// load with 4x headroom while retaining stack margin in the 16KB cloud task. Compact uploads
+// are streamed a row at a time after TLS connects, so this no longer creates a 30-40KB String.
+const size_t HISTORY_UPLOAD_BATCH_SIZE = 96;
+// Worst-case current MSV3 row (all diagnostics present and maximum-width integers) is 362
+// bytes. The streaming encoder reuses one allocation above that bound for every row.
+const size_t HISTORY_JSON_BYTES_PER_ROW = 384;
+const char HISTORY_JOURNAL_PATH[] = "/history-outbox-v1.bin";
+const char HISTORY_JOURNAL_COMPACT_PATH[] = "/history-outbox-v1.compact";
+const char HISTORY_STATE_A_PATH[] = "/history-outbox-v1-state-a.bin";
+const char HISTORY_STATE_B_PATH[] = "/history-outbox-v1-state-b.bin";
+const uint32_t HISTORY_JOURNAL_COMPACT_HEAD_BYTES = 65536;
 // Deliberately not 30s: config/display pulls also run every 30s, and matching retry
 // periods phase-locked a failed history connection directly behind another TLS call.
 const uint32_t HISTORY_UPLOAD_RETRY_MS = 17000;
@@ -333,6 +360,10 @@ const uint32_t HISTORY_UPLOAD_RETRY_MS = 17000;
 // can never recreate the packet-triggered ~15-35s cadence measured to cause BLE/cloud
 // task contention on shared core 0 (see docs/BLE_CLOUD_CONTENTION_FIX_2026-08-11.md).
 const uint32_t CLOUD_MIN_UPLOAD_SPACING_MS = 60000;
+const uint32_t CLOUD_FULL_SNAPSHOT_INTERVAL_MS = 600000;
+// Every cloud operation uses the same TLS client and radio. Space auxiliary pulls away from
+// one another so a timer collision cannot launch five handshakes in one cloud-task tick.
+const uint32_t CLOUD_NETWORK_MIN_GAP_MS = 15000;
 // 2026-08-23 hardening: live /device telemetry caught each failed snapshot-upload attempt
 // costing real, unrecovered heap (observed 11-44KB per attempt, before/after readings taken
 // around the actual POST call) rather than failing cleanly - a known ESP32 WiFiClientSecure/
@@ -382,11 +413,27 @@ const uint32_t CLOUD_CONFIG_PULL_INTERVAL_MS = 120000;
 const uint32_t CLOUD_DISPLAY_PULL_INTERVAL_MS = 120000;
 const uint32_t CLOUD_DISPLAY_FAILURE_BACKOFF_MAX_MS = 300000;
 const uint32_t CLOUD_AUTOCAL_PULL_INTERVAL_MS = 600000; // 10 min - learned range/schedule changes slowly
+const uint32_t CLOUD_AUTOCAL_RETRY_MS = 30000;
 // Cloud HTTP/TLS and BLE scanning intentionally stay off the render/WebServer core.
 // BLE gets the higher application-task priority so a due cloud request cannot delay the
 // next scan window. The ESP32 BLE host/controller tasks retain their own higher priorities.
 const UBaseType_t CLOUD_SYNC_TASK_PRIORITY = 1;
 const UBaseType_t BLE_SCAN_TASK_PRIORITY = 2;
+// 2026-09-02: stack sizes named rather than inlined at the xTaskCreate call sites, so
+// /device can report size alongside high-water and a reader can see the real margin
+// instead of having to cross-reference two places. Values unchanged from what was already
+// being passed - only the loopTask size below is actually new.
+const uint32_t CLOUD_SYNC_TASK_STACK_BYTES = 16384;
+const uint32_t BLE_SCAN_TASK_STACK_BYTES = 8192;
+// Arduino's loopTask default. It runs the WebServer, display rendering, touch handling and
+// WiFi maintenance, and was the only task with no stack telemetry until 2026-09-02.
+// Briefly raised to 12288 that day on the theory that sensorDataJson()'s
+// StaticJsonDocument<4096> sat on this stack. It does not: ArduinoJson 7 (7.4.3 here)
+// allocates JsonDocument on the HEAP, and StaticJsonDocument is only a deprecated alias.
+// Measurement then showed loopTask peaking at 3,608 bytes with the default 8192 already
+// giving ~56% headroom, so this was reverted - task stacks come out of the same heap that is
+// this receiver's real constraint. Left as a named constant so /device can report it.
+const uint32_t TREEBEARD_LOOP_TASK_STACK_BYTES = 8192;
 const uint8_t WIFI_CONNECT_REBOOT_RETRIES = 2;
 const uint32_t WIFI_HEALTH_CHECK_INTERVAL_MS = 1000;
 const uint32_t WIFI_RECONNECT_MIN_DELAY_MS = 5000;
@@ -503,8 +550,12 @@ struct SensorReading
 // observation timestamp instead of assigning every row in a batch the same server time.
 struct PendingHistoryReading
 {
+  // Stored with the row (rather than read from the current boot) so an observation keeps
+  // the same idempotency key after a reset and can safely be uploaded again.
+  uint32_t bootId = 0;
   uint32_t sequence = 0;
   uint32_t capturedMs = 0;
+  uint64_t observedAtMs = 0;
   uint32_t wake = 0;
   uint32_t rawFdcCounts = 0;
   uint16_t moisture = 0;
@@ -531,11 +582,67 @@ struct PendingHistoryReading
   uint8_t tankPhase = 0;
 };
 
+// Fixed-version envelope around each append. A checksum lets startup discard only a torn
+// power-loss tail instead of treating the whole journal as corrupt. The state is separate
+// and double-buffered; losing the newest head update can only replay already-accepted rows,
+// which the cloud observation-id uniqueness constraint handles idempotently.
+struct HistoryJournalRecord
+{
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  uint16_t payloadSize = 0;
+  PendingHistoryReading reading;
+  uint32_t checksum = 0;
+};
+
+struct HistoryJournalState
+{
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  uint16_t size = 0;
+  uint32_t generation = 0;
+  uint32_t headOffset = 0;
+  uint32_t dropped = 0;
+  uint32_t highWaterMark = 0;
+  uint32_t checksum = 0;
+};
+
+// RTC slow memory survives watchdog/panic/software resets without touching flash. It closes
+// the durability gap introduced by batching LittleFS writes: a crash between commits restores
+// the exact ingress ring on the next boot. A cold power loss still relies on the last journal
+// commit, as expected for memory that has no independent power source.
+struct RtcHistoryStaging
+{
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  uint16_t size = 0;
+  uint8_t head = 0;
+  uint8_t count = 0;
+  uint16_t reserved = 0;
+  PendingHistoryReading readings[HISTORY_STAGING_CAPACITY];
+  uint32_t checksum = 0;
+};
+
 // Arduino's sketch preprocessor otherwise emits these prototypes above the custom
 // struct definitions, where their parameter types do not exist yet.
+uint32_t historyChecksum(const void* data, size_t length);
+bool validHistoryJournalRecord(const HistoryJournalRecord& record);
+bool validHistoryJournalState(const HistoryJournalState& state);
+bool readHistoryJournalState(const char* path, HistoryJournalState& state);
+bool persistHistoryJournalState();
+bool replaceHistoryJournalPrefix(uint32_t validBytes);
 bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading);
 size_t copyHistoryUploadBatch(PendingHistoryReading* destination, size_t capacity);
 size_t acknowledgeHistoryUploadBatch(const PendingHistoryReading* uploaded, size_t count);
+bool initializeHistoryJournal();
+bool restoreHistoryStagingFromRtc();
+void checkpointHistoryStagingToRtcLocked();
+void serviceHistoryJournal();
+bool compactHistoryJournal();
+String historyOutboxJson(const PendingHistoryReading* historyBatch, size_t historyCount);
+String historyOutboxPrefixJson(uint32_t serializedAtMs);
+void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pending,
+                                uint32_t serializedAtMs, bool prependComma);
 String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t historyCount);
 bool copySensorReading(uint8_t sensorId, SensorReading& destination);
 
@@ -564,8 +671,10 @@ struct AutoCalState
 
 AutoCalState autoCal[MAX_SENSOR_ID + 1];
 bool copyAutoCalState(uint8_t sensorId, AutoCalState& destination);
+bool loadAutoCalCache();
+bool saveAutoCalCache();
 
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
 const int TFT_SCK = 12;
 const int TFT_MOSI = 13;
 const int TOUCH_IRQ = 7;
@@ -665,22 +774,54 @@ SPIClass displaySpi(FSPI);
 // XPT2046_Touchscreen's isrWake false forever and makes every later touch look absent.
 XPT2046_Touchscreen touchScreen(TOUCH_CS);
 #endif
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 WebServer* serverPtr = nullptr;
 DNSServer* dnsServerPtr = nullptr;
 #endif
-#if MSV2_ENABLE_BLE
+#if TREEBEARD_ENABLE_BLE
 BLEScan* bleScan = nullptr;
 TaskHandle_t bleScanTaskHandle = nullptr;
+volatile bool cloudRadioExclusive = false;
+// 2026-08-31 diagnostic, live-hardware investigation into intermittent snapshot-upload
+// "connection refused" failures: cloudSyncTask runs at a deliberately LOWER FreeRTOS priority
+// than bleScanTask (see CLOUD_SYNC_TASK_PRIORITY's own comment - intentional, so cloud work
+// can never delay a BLE scan window) on the same core, and the BLE host/controller tasks
+// underneath both of them run higher still. beginCloudRadioSlot() calls bleScan->stop() and
+// waits a fixed 75ms before letting the cloud task proceed, on the assumption that's enough
+// time for any in-flight scan to actually quiesce - these fields capture whether that
+// assumption held on each real attempt, correlated against that attempt's upload outcome via
+// /cloud's own lastAttemptMs, without changing any actual scheduling/timing behavior.
+uint32_t lastRadioSlotAtMs = 0;
+bool lastRadioSlotWasScanning = false;
+bool lastRadioSlotStillScanningAfterSettle = false;
+uint32_t lastRadioSlotStopCallMs = 0;
 #endif
 SensorReading sensors[MAX_SENSOR_ID + 1];
-PendingHistoryReading pendingHistory[HISTORY_QUEUE_CAPACITY];
-uint16_t pendingHistoryHead = 0;
-uint16_t pendingHistoryCount = 0;
+PendingHistoryReading pendingHistory[HISTORY_STAGING_CAPACITY];
+uint8_t pendingHistoryHead = 0;
+uint8_t pendingHistoryCount = 0;
+uint32_t pendingHistoryOldestStagedAtMs = 0;
+RTC_NOINIT_ATTR RtcHistoryStaging rtcHistoryStaging;
+size_t durableHistoryCount = 0;
+uint32_t historyJournalHeadOffset = 0;
+uint32_t historyJournalValidBytes = 0;
+uint32_t historyJournalStateGeneration = 0;
+bool historyJournalReady = false;
+uint32_t historyJournalStorageErrors = 0;
+// Latest outage-spill journal cost. Healthy uploads bypass LittleFS and acknowledge the
+// RTC-backed ring directly, so these values should remain unchanged during ordinary online
+// operation; they expose the rarer flash cost when WiFi/backend downtime forces spillover.
+uint32_t lastJournalWriteAtMs = 0;
+uint32_t lastJournalWriteDurationMs = 0;
+uint32_t lastJournalWriteRecords = 0;
+uint32_t lastJournalCompactDurationMs = 0;
+bool lastJournalCompactedThisWrite = false;
 uint32_t pendingHistorySequence = 0;
 uint32_t pendingHistoryDropped = 0;
-uint16_t pendingHistoryHighWaterMark = 0;
+uint32_t pendingHistoryHighWaterMark = 0;
 uint32_t historyQueueBootId = 0;
+uint64_t cloudTimeAnchorEpochMs = 0;
+uint32_t cloudTimeAnchorMillis = 0;
 portMUX_TYPE historyQueueMux = portMUX_INITIALIZER_UNLOCKED;
 // Guards every sensors[] read/write. Readers take a short value copy and release the
 // lock before rendering or JSON allocation; the BLE callback publishes one complete
@@ -691,6 +832,13 @@ portMUX_TYPE sensorsMux = portMUX_INITIALIZER_UNLOCKED;
 // and BLE presentation filtering read on other tasks/cores. Treat each state as one
 // record for the same reason as sensors[].
 portMUX_TYPE autoCalMux = portMUX_INITIALIZER_UNLOCKED;
+
+#if TREEBEARD_ENABLE_DISPLAY
+// Defined with the rest of the touch/display state below. Journal commits avoid an active
+// touch acquisition and the short post-render SPI settling window whenever capacity permits.
+extern volatile bool touchAcquisitionPending;
+extern volatile uint32_t lastDisplaySpiActivityMs;
+#endif
 
 bool copySensorReading(uint8_t sensorId, SensorReading& destination)
 {
@@ -718,11 +866,385 @@ bool copyAutoCalState(uint8_t sensorId, AutoCalState& destination)
 
 static_assert(HISTORY_UPLOAD_BATCH_SIZE <= HISTORY_QUEUE_CAPACITY,
               "history upload batch must fit inside the receiver queue");
+static_assert(sizeof(PendingHistoryReading) * HISTORY_UPLOAD_BATCH_SIZE <= 8192,
+              "history upload batch must leave margin on the cloud task stack");
+static_assert(HISTORY_JOURNAL_WRITE_BATCH_SIZE <= HISTORY_STAGING_CAPACITY,
+              "journal write batch must fit inside the staging ring");
+static_assert(sizeof(RtcHistoryStaging) <= 6144,
+              "RTC history staging must leave room for reset checkpoints");
+
+const uint32_t HISTORY_RECORD_MAGIC = 0x31545348UL; // "HST1" little-endian
+const uint32_t HISTORY_STATE_MAGIC = 0x31535348UL;  // "HSS1" little-endian
+const uint32_t HISTORY_RTC_MAGIC = 0x31525448UL;    // "HTR1" little-endian
+const uint16_t HISTORY_JOURNAL_VERSION = 1;
+
+uint32_t historyChecksum(const void* data, size_t length)
+{
+  // FNV-1a is compact and sufficient here: this is torn-write/corruption detection, not
+  // authentication. Authentication remains the receiver bearer token over TLS.
+  const uint8_t* bytes = static_cast<const uint8_t*>(data);
+  uint32_t hash = 2166136261UL;
+  for (size_t i = 0; i < length; i++)
+  {
+    hash ^= bytes[i];
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+void checkpointHistoryStagingToRtcLocked()
+{
+  // checksum is written last. If a reset interrupts this copy, restore rejects the partial
+  // mirror instead of replaying a mixture of old and new ring state.
+  rtcHistoryStaging.magic = HISTORY_RTC_MAGIC;
+  rtcHistoryStaging.version = HISTORY_JOURNAL_VERSION;
+  rtcHistoryStaging.size = sizeof(RtcHistoryStaging);
+  rtcHistoryStaging.head = pendingHistoryHead;
+  rtcHistoryStaging.count = pendingHistoryCount;
+  rtcHistoryStaging.reserved = 0;
+  for (size_t i = 0; i < HISTORY_STAGING_CAPACITY; i++)
+  {
+    rtcHistoryStaging.readings[i] = pendingHistory[i];
+  }
+  rtcHistoryStaging.checksum = historyChecksum(
+      &rtcHistoryStaging, offsetof(RtcHistoryStaging, checksum));
+}
+
+bool restoreHistoryStagingFromRtc()
+{
+  const bool valid = rtcHistoryStaging.magic == HISTORY_RTC_MAGIC &&
+                     rtcHistoryStaging.version == HISTORY_JOURNAL_VERSION &&
+                     rtcHistoryStaging.size == sizeof(RtcHistoryStaging) &&
+                     rtcHistoryStaging.head < HISTORY_STAGING_CAPACITY &&
+                     rtcHistoryStaging.count <= HISTORY_STAGING_CAPACITY &&
+                     rtcHistoryStaging.checksum == historyChecksum(
+                         &rtcHistoryStaging, offsetof(RtcHistoryStaging, checksum));
+
+  portENTER_CRITICAL(&historyQueueMux);
+  pendingHistoryHead = 0;
+  pendingHistoryCount = 0;
+  memset(pendingHistory, 0, sizeof(pendingHistory));
+  if (valid)
+  {
+    pendingHistoryHead = rtcHistoryStaging.head;
+    pendingHistoryCount = rtcHistoryStaging.count;
+    for (size_t i = 0; i < HISTORY_STAGING_CAPACITY; i++)
+    {
+      pendingHistory[i] = rtcHistoryStaging.readings[i];
+    }
+    // capturedMs belongs to the previous boot's millis() epoch. Start a fresh spill timer
+    // instead of interpreting that timestamp against this boot and forcing an immediate
+    // flash commit during startup.
+    pendingHistoryOldestStagedAtMs = pendingHistoryCount > 0 ? millis() : 0;
+  }
+  else
+  {
+    memset(&rtcHistoryStaging, 0, sizeof(rtcHistoryStaging));
+    pendingHistoryOldestStagedAtMs = 0;
+  }
+  checkpointHistoryStagingToRtcLocked();
+  portEXIT_CRITICAL(&historyQueueMux);
+
+  if (valid && pendingHistoryCount > 0)
+  {
+    Serial.print("[Treebeard history] restored RTC-staged rows=");
+    Serial.println(pendingHistoryCount);
+  }
+  return valid;
+}
+
+bool loadAutoCalCache()
+{
+  File file = LittleFS.open(AUTOCAL_CACHE_PATH, FILE_READ);
+  if (!file)
+  {
+    return false;
+  }
+  DynamicJsonDocument doc(2048);
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error || (doc["schema"] | 0) != 1)
+  {
+    return false;
+  }
+
+  AutoCalState restored[MAX_SENSOR_ID + 1];
+  JsonArray ranges = doc["ranges"].as<JsonArray>();
+  for (JsonObject row : ranges)
+  {
+    uint16_t sensorId = row["sensor"] | 0;
+    if (sensorId == 0 || sensorId > MAX_SENSOR_ID)
+    {
+      continue;
+    }
+    const int dry = row["dry"] | 0;
+    const int wet = row["wet"] | 0;
+    const bool ready = row["ready"] | false;
+    restored[sensorId].ready = ready && dry >= 0 && wet > dry && wet <= 65535;
+    restored[sensorId].dryBound = dry;
+    restored[sensorId].wetBound = wet;
+    restored[sensorId].dryBoundTrendingLower = row["trend"] | false;
+  }
+
+  portENTER_CRITICAL(&autoCalMux);
+  for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    autoCal[sensorId] = restored[sensorId];
+  }
+  portEXIT_CRITICAL(&autoCalMux);
+  Serial.println("[Treebeard cloud] restored cached auto-calibration ranges");
+  return true;
+}
+
+bool saveAutoCalCache()
+{
+  DynamicJsonDocument doc(2048);
+  doc["schema"] = 1;
+  JsonArray ranges = doc.createNestedArray("ranges");
+  for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    AutoCalState learned;
+    copyAutoCalState(sensorId, learned);
+    JsonObject row = ranges.createNestedObject();
+    row["sensor"] = sensorId;
+    row["ready"] = learned.ready;
+    row["dry"] = learned.dryBound;
+    row["wet"] = learned.wetBound;
+    row["trend"] = learned.dryBoundTrendingLower;
+  }
+
+  String nextJson;
+  serializeJson(doc, nextJson);
+  if (LittleFS.exists(AUTOCAL_CACHE_PATH))
+  {
+    File current = LittleFS.open(AUTOCAL_CACHE_PATH, FILE_READ);
+    if (current)
+    {
+      String currentJson = current.readString();
+      current.close();
+      if (currentJson == nextJson)
+      {
+        return true;
+      }
+    }
+  }
+
+  File temp = LittleFS.open(AUTOCAL_CACHE_TEMP_PATH, FILE_WRITE);
+  if (!temp)
+  {
+    return false;
+  }
+  const bool complete = temp.print(nextJson) == nextJson.length();
+  temp.flush();
+  temp.close();
+  if (!complete)
+  {
+    LittleFS.remove(AUTOCAL_CACHE_TEMP_PATH);
+    return false;
+  }
+  LittleFS.remove(AUTOCAL_CACHE_PATH);
+  if (!LittleFS.rename(AUTOCAL_CACHE_TEMP_PATH, AUTOCAL_CACHE_PATH))
+  {
+    LittleFS.remove(AUTOCAL_CACHE_TEMP_PATH);
+    return false;
+  }
+  return true;
+}
+
+bool validHistoryJournalRecord(const HistoryJournalRecord& record)
+{
+  return record.magic == HISTORY_RECORD_MAGIC &&
+         record.version == HISTORY_JOURNAL_VERSION &&
+         record.payloadSize == sizeof(PendingHistoryReading) &&
+         record.checksum == historyChecksum(&record, offsetof(HistoryJournalRecord, checksum));
+}
+
+bool validHistoryJournalState(const HistoryJournalState& state)
+{
+  return state.magic == HISTORY_STATE_MAGIC &&
+         state.version == HISTORY_JOURNAL_VERSION &&
+         state.size == sizeof(HistoryJournalState) &&
+         state.checksum == historyChecksum(&state, offsetof(HistoryJournalState, checksum));
+}
+
+bool readHistoryJournalState(const char* path, HistoryJournalState& state)
+{
+  File file = LittleFS.open(path, FILE_READ);
+  if (!file)
+  {
+    return false;
+  }
+  const bool complete = file.read(reinterpret_cast<uint8_t*>(&state), sizeof(state)) == sizeof(state);
+  file.close();
+  return complete && validHistoryJournalState(state);
+}
+
+bool persistHistoryJournalState()
+{
+  HistoryJournalState state = {};
+  state.magic = HISTORY_STATE_MAGIC;
+  state.version = HISTORY_JOURNAL_VERSION;
+  state.size = sizeof(state);
+  state.generation = historyJournalStateGeneration + 1;
+  portENTER_CRITICAL(&historyQueueMux);
+  state.headOffset = historyJournalHeadOffset;
+  state.dropped = pendingHistoryDropped;
+  state.highWaterMark = pendingHistoryHighWaterMark;
+  portEXIT_CRITICAL(&historyQueueMux);
+  state.checksum = historyChecksum(&state, offsetof(HistoryJournalState, checksum));
+
+  const char* path = (state.generation & 1U) != 0 ? HISTORY_STATE_A_PATH : HISTORY_STATE_B_PATH;
+  File file = LittleFS.open(path, FILE_WRITE);
+  if (!file)
+  {
+    historyJournalStorageErrors++;
+    return false;
+  }
+  const bool complete = file.write(reinterpret_cast<const uint8_t*>(&state), sizeof(state)) == sizeof(state);
+  file.flush();
+  file.close();
+  if (!complete)
+  {
+    historyJournalStorageErrors++;
+    return false;
+  }
+
+  HistoryJournalState verified = {};
+  if (!readHistoryJournalState(path, verified) || verified.generation != state.generation)
+  {
+    historyJournalStorageErrors++;
+    return false;
+  }
+  historyJournalStateGeneration = state.generation;
+  return true;
+}
+
+bool replaceHistoryJournalPrefix(uint32_t validBytes)
+{
+  File source = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_READ);
+  File compact = LittleFS.open(HISTORY_JOURNAL_COMPACT_PATH, FILE_WRITE);
+  if (!compact)
+  {
+    if (source) source.close();
+    return false;
+  }
+
+  uint8_t buffer[256];
+  uint32_t copied = 0;
+  bool ok = true;
+  while (source && copied < validBytes)
+  {
+    size_t wanted = min((size_t)(validBytes - copied), sizeof(buffer));
+    size_t got = source.read(buffer, wanted);
+    if (got != wanted || compact.write(buffer, got) != got)
+    {
+      ok = false;
+      break;
+    }
+    copied += got;
+  }
+  if (source) source.close();
+  compact.flush();
+  compact.close();
+  if (!ok || copied != validBytes || !LittleFS.rename(HISTORY_JOURNAL_COMPACT_PATH, HISTORY_JOURNAL_PATH))
+  {
+    LittleFS.remove(HISTORY_JOURNAL_COMPACT_PATH);
+    return false;
+  }
+  return true;
+}
+
+bool initializeHistoryJournal()
+{
+  historyJournalReady = false;
+
+  HistoryJournalState stateA = {};
+  HistoryJournalState stateB = {};
+  const bool hasA = readHistoryJournalState(HISTORY_STATE_A_PATH, stateA);
+  const bool hasB = readHistoryJournalState(HISTORY_STATE_B_PATH, stateB);
+  HistoryJournalState recoveredState = {};
+  if (hasA && (!hasB || (int32_t)(stateA.generation - stateB.generation) > 0))
+  {
+    recoveredState = stateA;
+  }
+  else if (hasB)
+  {
+    recoveredState = stateB;
+  }
+
+  if (!LittleFS.exists(HISTORY_JOURNAL_PATH))
+  {
+    File created = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_WRITE);
+    if (!created)
+    {
+      historyJournalStorageErrors++;
+      return false;
+    }
+    created.close();
+  }
+
+  File file = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_READ);
+  if (!file)
+  {
+    historyJournalStorageErrors++;
+    return false;
+  }
+  const uint32_t fileBytes = (uint32_t)file.size();
+  uint32_t validBytes = 0;
+  HistoryJournalRecord record = {};
+  while (validBytes + sizeof(record) <= fileBytes)
+  {
+    if (file.read(reinterpret_cast<uint8_t*>(&record), sizeof(record)) != sizeof(record) ||
+        !validHistoryJournalRecord(record))
+    {
+      break;
+    }
+    validBytes += sizeof(record);
+  }
+  file.close();
+
+  if (validBytes != fileBytes)
+  {
+    Serial.print("[Treebeard history] removing torn journal tail bytes=");
+    Serial.println(fileBytes - validBytes);
+    if (!replaceHistoryJournalPrefix(validBytes))
+    {
+      historyJournalStorageErrors++;
+      return false;
+    }
+  }
+
+  uint32_t recoveredHead = (hasA || hasB) ? recoveredState.headOffset : 0;
+  if (recoveredHead > validBytes || recoveredHead % sizeof(HistoryJournalRecord) != 0)
+  {
+    // Replaying from zero is lossless and safe because observation ids are idempotent.
+    recoveredHead = 0;
+  }
+  portENTER_CRITICAL(&historyQueueMux);
+  historyJournalHeadOffset = recoveredHead;
+  historyJournalValidBytes = validBytes;
+  durableHistoryCount = (validBytes - recoveredHead) / sizeof(HistoryJournalRecord);
+  pendingHistoryDropped = (hasA || hasB) ? recoveredState.dropped : pendingHistoryDropped;
+  pendingHistoryHighWaterMark = max((uint32_t)(durableHistoryCount + pendingHistoryCount),
+                                    (hasA || hasB) ? recoveredState.highWaterMark : 0U);
+  portEXIT_CRITICAL(&historyQueueMux);
+  historyJournalStateGeneration = (hasA || hasB) ? recoveredState.generation : 0;
+  historyJournalReady = true;
+  if (!(hasA || hasB))
+  {
+    persistHistoryJournalState();
+  }
+  Serial.print("[Treebeard history] durable outbox ready queued=");
+  Serial.print(durableHistoryCount);
+  Serial.print(" bytes=");
+  Serial.println(validBytes);
+  return true;
+}
 
 size_t queuedHistoryCount()
 {
   portENTER_CRITICAL(&historyQueueMux);
-  size_t count = pendingHistoryCount;
+  size_t count = durableHistoryCount + pendingHistoryCount;
   portEXIT_CRITICAL(&historyQueueMux);
   return count;
 }
@@ -735,10 +1257,10 @@ uint32_t droppedHistoryCount()
   return count;
 }
 
-uint16_t historyQueueHighWaterMark()
+uint32_t historyQueueHighWaterMark()
 {
   portENTER_CRITICAL(&historyQueueMux);
-  uint16_t mark = pendingHistoryHighWaterMark;
+  uint32_t mark = pendingHistoryHighWaterMark;
   portEXIT_CRITICAL(&historyQueueMux);
   return mark;
 }
@@ -746,7 +1268,18 @@ uint16_t historyQueueHighWaterMark()
 bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
 {
   PendingHistoryReading pending;
+  pending.bootId = historyQueueBootId;
   pending.capturedMs = reading.lastSeenMs;
+  // Once any authenticated cloud response supplies server time, later records carry an
+  // absolute timestamp. That remains correct across a reset; pre-anchor rows retain the
+  // legacy queued-age fallback and are never assigned an invented wall-clock value.
+  portENTER_CRITICAL(&historyQueueMux);
+  if (cloudTimeAnchorEpochMs != 0)
+  {
+    pending.observedAtMs = cloudTimeAnchorEpochMs +
+                           (uint32_t)(reading.lastSeenMs - cloudTimeAnchorMillis);
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
   pending.wake = reading.wake;
   pending.rawFdcCounts = reading.rawFdcCounts;
   pending.moisture = reading.moisture;
@@ -770,7 +1303,8 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   pending.tankPhase = reading.tankPhase;
 
   portENTER_CRITICAL(&historyQueueMux);
-  if (pendingHistoryCount >= HISTORY_QUEUE_CAPACITY)
+  if (durableHistoryCount + pendingHistoryCount >= HISTORY_QUEUE_CAPACITY ||
+      pendingHistoryCount >= HISTORY_STAGING_CAPACITY)
   {
     pendingHistoryDropped++;
     portEXIT_CRITICAL(&historyQueueMux);
@@ -778,15 +1312,140 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   }
 
   pending.sequence = ++pendingHistorySequence;
-  uint16_t tail = (pendingHistoryHead + pendingHistoryCount) % HISTORY_QUEUE_CAPACITY;
+  if (pendingHistoryCount == 0)
+  {
+    pendingHistoryOldestStagedAtMs = reading.lastSeenMs;
+  }
+  uint8_t tail = (pendingHistoryHead + pendingHistoryCount) % HISTORY_STAGING_CAPACITY;
   pendingHistory[tail] = pending;
   pendingHistoryCount++;
-  if (pendingHistoryCount > pendingHistoryHighWaterMark)
+  const size_t totalQueued = durableHistoryCount + pendingHistoryCount;
+  if (totalQueued > pendingHistoryHighWaterMark)
   {
-    pendingHistoryHighWaterMark = pendingHistoryCount;
+    pendingHistoryHighWaterMark = totalQueued;
   }
+  checkpointHistoryStagingToRtcLocked();
   portEXIT_CRITICAL(&historyQueueMux);
   return true;
+}
+
+void serviceHistoryJournal()
+{
+  if (!historyJournalReady && !initializeHistoryJournal())
+  {
+    return;
+  }
+
+  const uint32_t now = millis();
+  size_t pendingCountSnapshot = 0;
+  uint32_t oldestCapturedMs = 0;
+  portENTER_CRITICAL(&historyQueueMux);
+  pendingCountSnapshot = pendingHistoryCount;
+  if (pendingCountSnapshot > 0)
+  {
+    oldestCapturedMs = pendingHistoryOldestStagedAtMs;
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
+  if (pendingCountSnapshot == 0)
+  {
+    return;
+  }
+
+  const bool capacityEmergency =
+      pendingCountSnapshot >= HISTORY_JOURNAL_EMERGENCY_RECORDS;
+  const bool ageDue = (uint32_t)(now - oldestCapturedMs) >= HISTORY_JOURNAL_MAX_STAGING_MS;
+  if (!capacityEmergency &&
+      pendingCountSnapshot < HISTORY_JOURNAL_FLUSH_RECORDS && !ageDue)
+  {
+    return;
+  }
+
+#if TREEBEARD_ENABLE_DISPLAY
+  // A normal commit can wait for a quiet display/touch window. Capacity emergencies cannot:
+  // dropping a row is worse than one bounded pause, and the larger RTC staging ring makes
+  // this branch exceptional rather than the steady-state path.
+  if (!capacityEmergency &&
+      (touchAcquisitionPending ||
+       (uint32_t)(now - lastDisplaySpiActivityMs) < HISTORY_FLASH_DISPLAY_QUIET_MS))
+  {
+    return;
+  }
+#endif
+
+  PendingHistoryReading staged[HISTORY_JOURNAL_WRITE_BATCH_SIZE];
+  size_t stagedCount = 0;
+  portENTER_CRITICAL(&historyQueueMux);
+  stagedCount = min((size_t)pendingHistoryCount, HISTORY_JOURNAL_WRITE_BATCH_SIZE);
+  for (size_t i = 0; i < stagedCount; i++)
+  {
+    staged[i] = pendingHistory[(pendingHistoryHead + i) % HISTORY_STAGING_CAPACITY];
+  }
+  portEXIT_CRITICAL(&historyQueueMux);
+  if (stagedCount == 0)
+  {
+    return;
+  }
+
+  uint32_t writeStartMs = millis();
+  File file = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_APPEND);
+  if (!file)
+  {
+    historyJournalStorageErrors++;
+    historyJournalReady = false;
+    return;
+  }
+  size_t written = 0;
+  for (; written < stagedCount; written++)
+  {
+    HistoryJournalRecord record = {};
+    record.magic = HISTORY_RECORD_MAGIC;
+    record.version = HISTORY_JOURNAL_VERSION;
+    record.payloadSize = sizeof(PendingHistoryReading);
+    record.reading = staged[written];
+    record.checksum = historyChecksum(&record, offsetof(HistoryJournalRecord, checksum));
+    if (file.write(reinterpret_cast<const uint8_t*>(&record), sizeof(record)) != sizeof(record))
+    {
+      break;
+    }
+  }
+  file.flush();
+  file.close();
+  lastJournalWriteAtMs = millis();
+  lastJournalWriteDurationMs = lastJournalWriteAtMs - writeStartMs;
+  lastJournalWriteRecords = written;
+  lastJournalCompactedThisWrite = false;
+
+  portENTER_CRITICAL(&historyQueueMux);
+  size_t removed = 0;
+  while (removed < written && pendingHistoryCount > 0 &&
+         pendingHistory[pendingHistoryHead].bootId == staged[removed].bootId &&
+         pendingHistory[pendingHistoryHead].sequence == staged[removed].sequence)
+  {
+    pendingHistoryHead = (pendingHistoryHead + 1) % HISTORY_STAGING_CAPACITY;
+    pendingHistoryCount--;
+    durableHistoryCount++;
+    historyJournalValidBytes += sizeof(HistoryJournalRecord);
+    removed++;
+  }
+  if (removed > 0)
+  {
+    pendingHistoryOldestStagedAtMs = pendingHistoryCount > 0 ? millis() : 0;
+  }
+  const size_t totalQueued = durableHistoryCount + pendingHistoryCount;
+  if (totalQueued > pendingHistoryHighWaterMark)
+  {
+    pendingHistoryHighWaterMark = totalQueued;
+  }
+  checkpointHistoryStagingToRtcLocked();
+  portEXIT_CRITICAL(&historyQueueMux);
+
+  if (written != stagedCount || removed != written)
+  {
+    historyJournalStorageErrors++;
+    // A short write can leave a partial tail. Startup recovery is reused on the next tick
+    // before another append, preventing corruption from ever being buried mid-file.
+    historyJournalReady = false;
+  }
 }
 
 size_t copyHistoryUploadBatch(PendingHistoryReading* destination, size_t capacity)
@@ -796,14 +1455,123 @@ size_t copyHistoryUploadBatch(PendingHistoryReading* destination, size_t capacit
     return 0;
   }
 
+  size_t durableAvailable = 0;
+  uint32_t headOffset = 0;
   portENTER_CRITICAL(&historyQueueMux);
-  size_t count = min((size_t)pendingHistoryCount, capacity);
-  for (size_t i = 0; i < count; i++)
+  durableAvailable = durableHistoryCount;
+  headOffset = historyJournalHeadOffset;
+  portEXIT_CRITICAL(&historyQueueMux);
+  const size_t durableWanted = min(durableAvailable, capacity);
+
+  size_t copied = 0;
+  if (durableWanted > 0)
   {
-    destination[i] = pendingHistory[(pendingHistoryHead + i) % HISTORY_QUEUE_CAPACITY];
+    if (!historyJournalReady)
+    {
+      return 0;
+    }
+    File file = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_READ);
+    if (!file || !file.seek(headOffset))
+    {
+      if (file) file.close();
+      historyJournalStorageErrors++;
+      return 0;
+    }
+    for (; copied < durableWanted; copied++)
+    {
+      HistoryJournalRecord record = {};
+      if (file.read(reinterpret_cast<uint8_t*>(&record), sizeof(record)) != sizeof(record) ||
+          !validHistoryJournalRecord(record))
+      {
+        historyJournalStorageErrors++;
+        break;
+      }
+      destination[copied] = record.reading;
+    }
+    file.close();
+  }
+
+  // Append an immutable snapshot of the RTC-backed ingress prefix. New BLE readings can join
+  // the tail during HTTPS without changing any row copied here; acknowledgement below removes
+  // only exact bootId/sequence matches from the head.
+  portENTER_CRITICAL(&historyQueueMux);
+  const size_t stagedWanted = min((size_t)pendingHistoryCount, capacity - copied);
+  for (size_t i = 0; i < stagedWanted; i++)
+  {
+    destination[copied + i] =
+        pendingHistory[(pendingHistoryHead + i) % HISTORY_STAGING_CAPACITY];
   }
   portEXIT_CRITICAL(&historyQueueMux);
-  return count;
+  return copied + stagedWanted;
+}
+
+bool compactHistoryJournal()
+{
+  if (!historyJournalReady)
+  {
+    return false;
+  }
+  size_t remaining = 0;
+  uint32_t oldHead = 0;
+  portENTER_CRITICAL(&historyQueueMux);
+  remaining = durableHistoryCount;
+  oldHead = historyJournalHeadOffset;
+  portEXIT_CRITICAL(&historyQueueMux);
+
+  File source = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_READ);
+  File compact = LittleFS.open(HISTORY_JOURNAL_COMPACT_PATH, FILE_WRITE);
+  if (!source || !compact || !source.seek(oldHead))
+  {
+    if (source) source.close();
+    if (compact) compact.close();
+    LittleFS.remove(HISTORY_JOURNAL_COMPACT_PATH);
+    historyJournalStorageErrors++;
+    return false;
+  }
+
+  uint8_t buffer[256];
+  const uint32_t bytesToCopy = remaining * sizeof(HistoryJournalRecord);
+  uint32_t copied = 0;
+  bool ok = true;
+  while (copied < bytesToCopy)
+  {
+    size_t wanted = min((size_t)(bytesToCopy - copied), sizeof(buffer));
+    size_t got = source.read(buffer, wanted);
+    if (got != wanted || compact.write(buffer, got) != got)
+    {
+      ok = false;
+      break;
+    }
+    copied += got;
+  }
+  source.close();
+  compact.flush();
+  compact.close();
+  if (!ok || copied != bytesToCopy)
+  {
+    LittleFS.remove(HISTORY_JOURNAL_COMPACT_PATH);
+    historyJournalStorageErrors++;
+    return false;
+  }
+
+  // Persisting head=0 first can at worst replay rows if power fails before rename. Reversing
+  // the order could point past the compacted file and lose rows, so the ordering matters.
+  portENTER_CRITICAL(&historyQueueMux);
+  historyJournalHeadOffset = 0;
+  portEXIT_CRITICAL(&historyQueueMux);
+  if (!persistHistoryJournalState() ||
+      !LittleFS.rename(HISTORY_JOURNAL_COMPACT_PATH, HISTORY_JOURNAL_PATH))
+  {
+    portENTER_CRITICAL(&historyQueueMux);
+    historyJournalHeadOffset = oldHead;
+    portEXIT_CRITICAL(&historyQueueMux);
+    persistHistoryJournalState();
+    LittleFS.remove(HISTORY_JOURNAL_COMPACT_PATH);
+    historyJournalStorageErrors++;
+    return false;
+  }
+  historyJournalValidBytes = bytesToCopy;
+  return true;
 }
 
 // Only acknowledge the exact prefix copied for this request. New BLE readings may be
@@ -816,21 +1584,87 @@ size_t acknowledgeHistoryUploadBatch(const PendingHistoryReading* uploaded, size
     return 0;
   }
 
-  size_t acknowledged = 0;
+  size_t durableToAcknowledge = 0;
+  uint32_t durableHeadOffset = 0;
   portENTER_CRITICAL(&historyQueueMux);
-  while (acknowledged < count && pendingHistoryCount > 0)
+  durableToAcknowledge = min(durableHistoryCount, count);
+  durableHeadOffset = historyJournalHeadOffset;
+  portEXIT_CRITICAL(&historyQueueMux);
+
+  size_t durableAcknowledged = 0;
+  if (durableToAcknowledge > 0)
   {
-    const PendingHistoryReading& current = pendingHistory[pendingHistoryHead];
-    if (current.sequence != uploaded[acknowledged].sequence)
+    if (!historyJournalReady)
+    {
+      return 0;
+    }
+    File file = LittleFS.open(HISTORY_JOURNAL_PATH, FILE_READ);
+    if (!file || !file.seek(durableHeadOffset))
+    {
+      if (file) file.close();
+      historyJournalStorageErrors++;
+      return 0;
+    }
+    while (durableAcknowledged < durableToAcknowledge)
+    {
+      HistoryJournalRecord record = {};
+      if (file.read(reinterpret_cast<uint8_t*>(&record), sizeof(record)) != sizeof(record) ||
+          !validHistoryJournalRecord(record) ||
+          record.reading.bootId != uploaded[durableAcknowledged].bootId ||
+          record.reading.sequence != uploaded[durableAcknowledged].sequence)
+      {
+        break;
+      }
+      durableAcknowledged++;
+    }
+    file.close();
+    if (durableAcknowledged != durableToAcknowledge)
+    {
+      historyJournalStorageErrors++;
+      return 0;
+    }
+  }
+
+  portENTER_CRITICAL(&historyQueueMux);
+  historyJournalHeadOffset += durableAcknowledged * sizeof(HistoryJournalRecord);
+  durableHistoryCount -= min(durableHistoryCount, durableAcknowledged);
+  portEXIT_CRITICAL(&historyQueueMux);
+  if (durableAcknowledged > 0)
+  {
+    persistHistoryJournalState();
+    const bool queueEmpty = durableHistoryCount == 0;
+    if (historyJournalHeadOffset >= HISTORY_JOURNAL_COMPACT_HEAD_BYTES &&
+        (queueEmpty || historyJournalHeadOffset >= historyJournalValidBytes / 2U))
+    {
+      uint32_t compactStartMs = millis();
+      compactHistoryJournal();
+      lastJournalCompactDurationMs = millis() - compactStartMs;
+      lastJournalCompactedThisWrite = true;
+    }
+  }
+
+  size_t stagedAcknowledged = 0;
+  const size_t stagedUploaded = count - durableAcknowledged;
+  portENTER_CRITICAL(&historyQueueMux);
+  while (stagedAcknowledged < stagedUploaded && pendingHistoryCount > 0)
+  {
+    const PendingHistoryReading& pending = pendingHistory[pendingHistoryHead];
+    const PendingHistoryReading& accepted = uploaded[durableAcknowledged + stagedAcknowledged];
+    if (pending.bootId != accepted.bootId || pending.sequence != accepted.sequence)
     {
       break;
     }
-    pendingHistoryHead = (pendingHistoryHead + 1) % HISTORY_QUEUE_CAPACITY;
+    pendingHistoryHead = (pendingHistoryHead + 1) % HISTORY_STAGING_CAPACITY;
     pendingHistoryCount--;
-    acknowledged++;
+    stagedAcknowledged++;
   }
+  if (pendingHistoryCount == 0)
+  {
+    pendingHistoryOldestStagedAtMs = 0;
+  }
+  checkpointHistoryStagingToRtcLocked();
   portEXIT_CRITICAL(&historyQueueMux);
-  return acknowledged;
+  return durableAcknowledged + stagedAcknowledged;
 }
 
 struct PlantArtSlot
@@ -990,14 +1824,14 @@ void drawPlantCardDetailInfoBand(PlantArtSlot& slot, const PlantDetailStats& s);
 void refreshSlotMoistureBounds(PlantArtSlot& slot);
 bool slotNeedsBlink(PlantArtSlot& slot);
 
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
 #define tft (*gfxPtr)
 // gfxPtr's declared type is the base Arduino_GFX, which doesn't expose writeAddrWindow()/
 // writePixels() (those are added by the Arduino_TFT subclass); gfxPtr is always actually
 // constructed as an Arduino_ST7796, which derives from Arduino_TFT, so this cast is safe.
 #define tftBus (*static_cast<Arduino_TFT*>(gfxPtr))
 #endif
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 #define server (*serverPtr)
 #define dnsServer (*dnsServerPtr)
 TaskHandle_t cloudSyncTaskHandle = nullptr;
@@ -1079,22 +1913,20 @@ bool isAdminActionAllowed()
   adminUnlockUntilMs = now + ADMIN_GRACE_WINDOW_MS;
   return true;
 }
-// 2026-08-29/30: shared across all five cloud network functions below (bootstrap, config
-// pull, display-settings pull, auto-cal pull, snapshot upload) instead of each declaring its
-// own local pair. Root-caused two live "panic/exception" reboots: WiFiClientSecure's mbedTLS
-// session buffers (~30-40KB, contiguous) were being allocated and freed fresh on every single
-// call across five independent call sites, constantly interleaved with unrelated JSON/String
-// allocations from other tasks - real heap fragmentation, not a leak (min free heap recorded
-// at 8,340 bytes; largest contiguous block already 45% smaller than total free heap only ~4.5
-// minutes into a fresh boot). Safe to share: all five functions only ever run sequentially on
-// cloudSyncTask's single task/loop (see that function below), never concurrently.
-WiFiClientSecure cloudSecureClient;
-WiFiClient cloudPlainClient;
+// Each network function owns a short-lived client. A retained client did avoid repeated
+// allocator churn, but also retained tens of kilobytes of TLS state and caused live resets.
+// Error-level ESP32-core logging later established the actual snapshot failure: the compact
+// JSON String was allocated before mbedtls_ssl_setup(), which then returned
+// MBEDTLS_ERR_SSL_ALLOC_FAILED. The uploader below now connects TLS before allocating that
+// String; local ownership then releases the session at the end of the single paced request.
+// See docs/RECEIVER_CLOUD_UPLOAD_CONNECTION_REFUSED_2026-08-31.md.
 bool cloudEnabled = false;
 char cloudUploadUrl[160] = "";
 char cloudApiToken[80] = "";
 uint32_t cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
 uint32_t nextCloudSyncMs = 0;
+uint32_t nextCloudFullSnapshotMs = 0;
+uint32_t nextCloudNetworkSlotMs = 0;
 uint32_t cloudLastAttemptMs = 0;
 uint32_t cloudLastSuccessMs = 0;
 int cloudLastHttpStatus = 0;
@@ -1116,6 +1948,11 @@ uint32_t pendingRestartMs = 0;
 // that needs to survive a reset. minFreeHeapEverBytes starts at UINT32_MAX so the first
 // loop()/cloud-task sample always records a real value.
 uint32_t minFreeHeapEverBytes = UINT32_MAX;
+// 2026-09-02: smallest free loopTask stack seen this boot. Tracked rather than only sampled
+// on demand because /device's own handler runs on loopTask at a shallower depth than the
+// paths we actually care about (sensorDataJson()'s 4KB document), so an on-demand read alone
+// would systematically under-report the real peak.
+uint32_t minLoopTaskStackFreeEverBytes = UINT32_MAX;
 uint32_t lastCloudUploadFreeHeapBeforeBytes = 0;
 uint32_t lastCloudUploadFreeHeapAfterBytes = 0;
 uint16_t cloudConsecutiveUploadFailures = 0;
@@ -1266,11 +2103,11 @@ struct BuzzerState
 
 BuzzerState buzzerState;
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 IPAddress currentIpAddress();
 const char* currentNetworkMode();
 #endif
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
 void renderWifiConnectingScreen(const char* ssid, const char* source);
 void renderWifiSetupScreen(const char* reason);
 void renderWifiSavedScreen();
@@ -1334,7 +2171,7 @@ void setCloudCheckpoint(const char* message)
 void bootLog(const char* message)
 {
   setCheckpoint(message);
-  Serial.print("[MSV2 boot] ");
+  Serial.print("[Treebeard boot] ");
   Serial.println(message);
   Serial.flush();
 }
@@ -1482,6 +2319,10 @@ void scheduleCloudSnapshotAfterStateChange()
   {
     nextCloudSyncMs = targetMs;
   }
+  if (nextCloudFullSnapshotMs == 0 || (int32_t)(nextCloudFullSnapshotMs - targetMs) > 0)
+  {
+    nextCloudFullSnapshotMs = targetMs;
+  }
 }
 
 bool writeUiJson(const String& body)
@@ -1610,9 +2451,9 @@ String claimInfoJson()
   StaticJsonDocument<768> doc;
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
-  doc["name"] = "MSV2 Display";
-  doc["build"] = MSV2_BUILD_TAG;
-#if MSV2_ENABLE_WIFI
+  doc["name"] = "Project Treebeard Display";
+  doc["build"] = TREEBEARD_BUILD_TAG;
+#if TREEBEARD_ENABLE_WIFI
   doc["networkMode"] = currentNetworkMode();
   doc["ip"] = currentIpAddress().toString();
   doc["localOnly"] = wifiLocalOnly;
@@ -1621,8 +2462,8 @@ String claimInfoJson()
   doc["ip"] = "0.0.0.0";
 #endif
   doc["claimPath"] = "/claim";
-  doc["appUrl"] = MSV2_HOSTED_APP_URL;
-  String claimUrl = MSV2_HOSTED_APP_URL;
+  doc["appUrl"] = TREEBEARD_HOSTED_APP_URL;
+  String claimUrl = TREEBEARD_HOSTED_APP_URL;
   claimUrl += "?rid=";
   claimUrl += receiverId;
   claimUrl += "&code=";
@@ -1729,6 +2570,7 @@ bool loadCloudConfig()
   cloudApiToken[0] = '\0';
   cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
   nextCloudSyncMs = 0;
+  nextCloudFullSnapshotMs = 0;
   cloudLastAttemptMs = 0;
   cloudLastSuccessMs = 0;
   cloudLastHttpStatus = 0;
@@ -1775,6 +2617,7 @@ bool loadCloudConfig()
   strlcpy(cloudApiToken, doc["apiToken"] | "", sizeof(cloudApiToken));
   cloudSyncIntervalSeconds = constrain((uint32_t)(doc["syncIntervalSeconds"] | CLOUD_SYNC_DEFAULT_SECONDS), 60UL, 86400UL);
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
+  nextCloudFullSnapshotMs = cloudEnabled ? millis() + CLOUD_FULL_SNAPSHOT_INTERVAL_MS : 0;
   nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
   nextCloudDisplaySyncMs = cloudEnabled ? millis() + 7000UL : 0;
 
@@ -1835,8 +2678,8 @@ String cloudConfigJson()
   displaySync["apiReady"] = cloudDisplayApiReady;
   displaySync["consecutiveFailures"] = cloudDisplayConsecutiveFailures;
   JsonObject bootstrap = doc.createNestedObject("bootstrap");
-  bootstrap["configured"] = strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0;
-  bootstrap["url"] = MSV2_CLOUD_BOOTSTRAP_URL;
+  bootstrap["configured"] = strlen(TREEBEARD_CLOUD_BOOTSTRAP_URL) > 0;
+  bootstrap["url"] = TREEBEARD_CLOUD_BOOTSTRAP_URL;
   bootstrap["lastAttemptMs"] = cloudBootstrapLastAttemptMs;
   bootstrap["lastSuccessMs"] = cloudBootstrapLastSuccessMs;
   bootstrap["lastHttpStatus"] = cloudBootstrapLastHttpStatus;
@@ -1912,6 +2755,7 @@ bool writeCloudConfigJson(const String& body)
   }
   cloudSyncIntervalSeconds = syncIntervalSeconds;
   nextCloudSyncMs = cloudEnabled ? millis() + 5000UL : 0;
+  nextCloudFullSnapshotMs = cloudEnabled ? millis() + CLOUD_FULL_SNAPSHOT_INTERVAL_MS : 0;
   nextCloudConfigPullMs = cloudEnabled ? millis() + 10000UL : 0;
   nextCloudDisplaySyncMs = cloudEnabled ? millis() + 7000UL : 0;
   cloudLastError[0] = '\0';
@@ -1937,6 +2781,7 @@ bool resetCloudConfig()
   cloudApiToken[0] = '\0';
   cloudSyncIntervalSeconds = CLOUD_SYNC_DEFAULT_SECONDS;
   nextCloudSyncMs = 0;
+  nextCloudFullSnapshotMs = 0;
   cloudLastAttemptMs = 0;
   cloudLastSuccessMs = 0;
   cloudLastHttpStatus = 0;
@@ -1970,7 +2815,7 @@ String wifiStatusJson()
   doc["configuredSsid"] = configuredWifiSsid;
   doc["localOnly"] = wifiLocalOnly;
   doc["setupPortalActive"] = wifiSetupPortalActive;
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   doc["connectedSsid"] = wifiStationConnected ? WiFi.SSID() : "";
   doc["rssi"] = wifiStationConnected ? WiFi.RSSI() : 0;
   doc["stationDesired"] = wifiStationDesired;
@@ -2043,7 +2888,7 @@ bool writeWifiConfigJson(const String& body)
   strlcpy(configuredWifiPassword, passwordToSave, sizeof(configuredWifiPassword));
   storedWifiLoaded = hasSsid;
   clearWifiRetryState();
-  if (MSV2_FORCE_WIFI_SETUP != 0)
+  if (TREEBEARD_FORCE_WIFI_SETUP != 0)
   {
     File unlockFile = LittleFS.open(FORCE_WIFI_SETUP_UNLOCK_PATH, "w");
     if (unlockFile)
@@ -2698,7 +3543,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
   }
   if (stillPressed)
   {
-    Serial.print("[MSV2 touch] input stuck pressed before target irq=");
+    Serial.print("[Treebeard touch] input stuck pressed before target irq=");
     Serial.println(digitalRead(TOUCH_IRQ));
     tft.fillScreen(TFT_BLACK);
     drawTextCenter("Release the screen", tft.width() / 2, tft.height() / 2, 2, TFT_WARNING, TFT_BLACK);
@@ -2715,7 +3560,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
   drawCalibrationTarget(targetX, targetY, TFT_DANGER);
   tft.drawPixel(tft.width() - 1, tft.height() - 1, TFT_BLACK);
   delay(350);
-  Serial.print("[MSV2 touch] waiting target x=");
+  Serial.print("[Treebeard touch] waiting target x=");
   Serial.print(targetX);
   Serial.print(" y=");
   Serial.print(targetY);
@@ -2727,7 +3572,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
     if (millis() - waitStart >= timeoutMs)
     {
       TS_Point timeoutPoint = touchScreen.getPoint();
-      Serial.print("[MSV2 touch] target timeout irq=");
+      Serial.print("[Treebeard touch] target timeout irq=");
       Serial.print(digitalRead(TOUCH_IRQ));
       Serial.print(" rawX=");
       Serial.print(timeoutPoint.x);
@@ -2760,7 +3605,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
   }
   if (samples < 4)
   {
-    Serial.print("[MSV2 touch] insufficient pressure samples=");
+    Serial.print("[Treebeard touch] insufficient pressure samples=");
     Serial.print(samples);
     Serial.print(" irq=");
     Serial.println(digitalRead(TOUCH_IRQ));
@@ -2771,7 +3616,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
 
   rawX = (int16_t)(sumX / samples);
   rawY = (int16_t)(sumY / samples);
-  Serial.print("[MSV2 touch] captured rawX=");
+  Serial.print("[Treebeard touch] captured rawX=");
   Serial.print(rawX);
   Serial.print(" rawY=");
   Serial.print(rawY);
@@ -2787,7 +3632,7 @@ bool captureCalibrationPoint(int targetX, int targetY, int16_t& rawX, int16_t& r
   }
   if (touchScreen.touched())
   {
-    Serial.print("[MSV2 touch] input stuck pressed after target irq=");
+    Serial.print("[Treebeard touch] input stuck pressed after target irq=");
     Serial.println(digitalRead(TOUCH_IRQ));
     return false;
   }
@@ -2854,7 +3699,7 @@ bool pointInside(int16_t x, int16_t y, int left, int top, int width, int height)
 // control activates unless dashboardControlsAllowed" guard.
 void handleDashboardSingleTap(int16_t x, int16_t y)
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (wifiSetupPortalActive || pendingRestartMs != 0)
   {
     return;
@@ -3012,7 +3857,7 @@ void previewTouchBrightness(int16_t x)
 // button/outside-tap release logic further down, unchanged).
 void handleDashboardLongPress()
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (wifiSetupPortalActive || pendingRestartMs != 0)
   {
     return;
@@ -3338,7 +4183,7 @@ void handleTouchInput(uint32_t now)
   if (!brightnessOverlayOpen)
   {
     bool dashboardControlsAllowed = true;
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
     dashboardControlsAllowed = !wifiSetupPortalActive && pendingRestartMs == 0;
 #endif
     if (dashboardControlsAllowed)
@@ -3934,16 +4779,43 @@ void formatBatteryPercent(uint8_t batteryPct, char* out, size_t outSize)
   }
 }
 
+// 2026-08-31: dropped the "Batt: "/"Temp: " labels that used to live here - see
+// cardInfoColumnLeftX()'s own comment for why. Bare "84%"/"24C" is still unambiguous: this
+// column is always the same two rows in the same corner of every card, battery first then
+// (when present) temperature, so the position alone carries the meaning the label used to.
 void formatBatteryHeader(uint8_t batteryPct, char* out, size_t outSize)
 {
-  char percent[8];
-  formatBatteryPercent(batteryPct, percent, sizeof(percent));
-  snprintf(out, outSize, "Batt: %s", percent);
+  formatBatteryPercent(batteryPct, out, outSize);
 }
 
 int cardHeaderInset(int h)
 {
   return h < 76 ? 5 : 7;
+}
+
+// Widest string either header field can ever produce at size-1 (6px/char): "100%", "-40C",
+// "--%", "--C" are all <=4 chars. Shared by drawCardHeader's name-width budget and both
+// drawCardBatteryHeader/drawCardTempHeader's clear rects via cardInfoColumnLeftX() below, so
+// the three can never independently drift apart the way they used to (a fixed-60px
+// reservation - sized for the old, longer "Batt: 100%" label - meant the plant name and this
+// column were computed from two different formulas that only agreed on wide cards; on a
+// narrow card added by growing the grid past ~5-6 columns, the name's leftover share of the
+// row shrank to 0 characters while this column kept its full width regardless, reading as
+// "the battery/temp text crowded out the name" - field-reported 2026-08-31).
+const int CARD_INFO_COLUMN_WIDTH = 24;
+const int CARD_INFO_GAP = 4;
+
+// Left edge of the header's right-hand info column (battery, and temp one row below it).
+// Clamped to never cross leftX - a future change to grid density/columns must not be able to
+// push this past the card's own left content edge, even though no width on this display's
+// current grid algorithm actually reaches that clamp (verified down to the narrowest
+// realistic card - see the 2026-08-31 consultation this fix came out of).
+int cardInfoColumnLeftX(int x, int w, int h)
+{
+  const int inset = cardHeaderInset(h);
+  const int leftX = x + inset;
+  const int rightX = x + w - inset;
+  return max(leftX, rightX - CARD_INFO_COLUMN_WIDTH);
 }
 
 void drawCardBatteryHeader(int x, int y, int w, int h, uint8_t batteryPct, uint16_t batteryColor, uint16_t surfaceColor, bool clearFirst)
@@ -3952,13 +4824,19 @@ void drawCardBatteryHeader(int x, int y, int w, int h, uint8_t batteryPct, uint1
   formatBatteryHeader(batteryPct, batteryHeader, sizeof(batteryHeader));
   const int inset = cardHeaderInset(h);
   const int rightX = x + w - inset;
+  const int infoLeft = cardInfoColumnLeftX(x, w, h);
+  const int infoWidth = rightX - infoLeft;
   if (clearFirst)
   {
-    // Fixed width covers the longest possible value ("Batt: 100%"), so a transition
-    // to a shorter value cannot leave stale pixels behind.
-    tft.fillRect(max(x + inset, rightX - 60), y + 5, min(60, w - inset * 2), 10, surfaceColor);
+    // Always exactly CARD_INFO_COLUMN_WIDTH wide (already covers the longest possible
+    // value), except on a card too narrow even for that - see cardInfoColumnLeftX()'s clamp -
+    // where infoWidth shrinks below it instead of ever extending further left.
+    tft.fillRect(infoLeft, y + 5, infoWidth, 10, surfaceColor);
   }
-  drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
+  if (infoWidth >= CARD_INFO_COLUMN_WIDTH)
+  {
+    drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
+  }
 }
 
 // MSV3-only board (die) temperature, quarter-degree C -> whole C for display. Raw/uncompensated
@@ -3968,34 +4846,48 @@ void drawCardBatteryHeader(int x, int y, int w, int h, uint8_t batteryPct, uint1
 bool formatBoardTempHeader(bool valid, int16_t tempQuarterC, char* out, size_t outSize)
 {
   if (!valid) return false;
+  // Matches the nRF52840 die-temp sensor's real spec range, same bounds
+  // cloud/supabase/functions/receiver-snapshot/msv3-diagnostics.ts already validates
+  // server-side (MSV3_BOARD_TEMP_MIN_Q4C/MAX_Q4C) - but that check happens after this data
+  // already reached the display, so a corrupted-but-valid-flagged BLE packet is still
+  // possible here. Reject to a neutral sentinel instead of formatting (and, worse, silently
+  // saturating into a believable-looking but wrong) an out-of-spec value - this also
+  // guarantees the formatted string can never exceed CARD_INFO_COLUMN_WIDTH's 4-char budget.
+  if (tempQuarterC < -160 || tempQuarterC > 340)
+  {
+    strlcpy(out, "--C", outSize);
+    return true;
+  }
   // Plain ASCII, deliberately no degree symbol - this project uses the GFX library's default
   // built-in font (no setFont() call anywhere in this file), which does not reliably render a
   // UTF-8 degree sign (0xC2 0xB0 came out as garbage glyphs on real hardware) or any other
   // single-byte code point above plain printable ASCII without visually verifying that font's
   // actual glyph table first - not worth the risk for one character.
-  snprintf(out, outSize, "Temp: %dC", (int)(tempQuarterC / 4));
+  snprintf(out, outSize, "%dC", (int)(tempQuarterC / 4));
   return true;
 }
 
-// Second header line directly below Batt:, right-aligned at the same rightX. Only present for
-// MSV3 probes with board-temp diagnostics live - absent (nothing drawn, no reserved blank row)
-// for every other sensor, so this never costs vertical space on a card that can't fill it in.
+// Second header line directly below the battery row, right-aligned at the same rightX. Only
+// present for MSV3 probes with board-temp diagnostics live - absent (nothing drawn, no
+// reserved blank row) for every other sensor, so this never costs vertical space on a card
+// that can't fill it in.
 void drawCardTempHeader(int x, int y, int w, int h, bool valid, int16_t tempQuarterC, uint16_t textColor, uint16_t surfaceColor, bool clearFirst)
 {
   const int inset = cardHeaderInset(h);
   const int rightX = x + w - inset;
-  // One size-1 text line below the Batt: row (which sits at y+6) - 9px matches this firmware's
-  // existing size-1 line spacing elsewhere (see the detail-view row pitch).
+  // One size-1 text line below the battery row (which sits at y+6) - 9px matches this
+  // firmware's existing size-1 line spacing elsewhere (see the detail-view row pitch).
   const int rowY = y + 15;
+  const int infoLeft = cardInfoColumnLeftX(x, w, h);
+  const int infoWidth = rightX - infoLeft;
   char tempHeader[16];
   const bool hasText = formatBoardTempHeader(valid, tempQuarterC, tempHeader, sizeof(tempHeader));
   if (clearFirst)
   {
-    // Same fixed-width clear rationale as drawCardBatteryHeader: covers the longest plausible
-    // value so a shrinking/disappearing reading can't leave stale pixels behind.
-    tft.fillRect(max(x + inset, rightX - 60), rowY - 1, min(60, w - inset * 2), 10, surfaceColor);
+    // Same fixed-width clear rationale as drawCardBatteryHeader.
+    tft.fillRect(infoLeft, rowY - 1, infoWidth, 10, surfaceColor);
   }
-  if (hasText)
+  if (hasText && infoWidth >= CARD_INFO_COLUMN_WIDTH)
   {
     drawTextRight(tempHeader, rightX, rowY, 1, textColor, surfaceColor);
   }
@@ -4008,10 +4900,14 @@ void drawCardHeader(int x, int y, int w, int h, const char* plant, uint8_t batte
   const int inset = cardHeaderInset(h);
   const int leftX = x + inset;
   const int rightX = x + w - inset;
-  // Always reserve the maximum header width, even while the current value is the
-  // shorter "Batt: --%" form. A later data-only update to 100% must not grow leftward
-  // across a plant-name glyph painted during the full render.
-  const int nameWidth = max(0, rightX - 60 - 4 - leftX);
+  const int infoLeft = cardInfoColumnLeftX(x, w, h);
+  const int infoWidth = rightX - infoLeft;
+  // Always reserve the maximum header width, even while the current value is the shorter
+  // "--%" form. A later data-only update to "100%" must not grow leftward across a
+  // plant-name glyph painted during the full render - infoLeft is the exact same boundary
+  // drawCardBatteryHeader/drawCardTempHeader clear against, via cardInfoColumnLeftX(), so
+  // this can never drift out of sync with them again.
+  const int nameWidth = max(0, infoLeft - CARD_INFO_GAP - leftX);
   const size_t maxChars = min((size_t)23, (size_t)(nameWidth / 6));
   char clippedPlant[24];
   if (maxChars == 0 || plant == nullptr)
@@ -4023,7 +4919,14 @@ void drawCardHeader(int x, int y, int w, int h, const char* plant, uint8_t batte
     strlcpy(clippedPlant, plant, maxChars + 1);
   }
   drawTextLeft(clippedPlant, leftX, y + 6, 1, textColor, surfaceColor);
-  drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
+  // Same width guard as drawCardBatteryHeader's data-only redraw - keeps this consistent
+  // with the clamp in cardInfoColumnLeftX() rather than assuming infoWidth is always the
+  // full CARD_INFO_COLUMN_WIDTH just because that's true for every width this display's
+  // current grid algorithm actually produces.
+  if (infoWidth >= CARD_INFO_COLUMN_WIDTH)
+  {
+    drawTextRight(batteryHeader, rightX, y + 6, 1, batteryColor, surfaceColor);
+  }
 }
 
 void drawCompactCardMetrics(
@@ -4842,7 +5745,7 @@ bool slotNeedsBlink(PlantArtSlot& slot)
 // flag doesn't track which specific card's data changed.
 void renderDashboardDataOnly(bool blinkOnly)
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   return;
 #endif
 
@@ -4939,7 +5842,7 @@ void drawSetupStep(int y, const char* number, const char* text, uint16_t textCol
 
 void renderWifiConnectingScreen(const char* ssid, const char* source)
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   (void)ssid;
   (void)source;
   return;
@@ -4958,7 +5861,7 @@ void renderWifiConnectingScreen(const char* ssid, const char* source)
 
 void renderWifiSetupScreen(const char* reason)
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   (void)reason;
   return;
 #else
@@ -4984,7 +5887,7 @@ void renderWifiSetupScreen(const char* reason)
 
 void renderWifiSavedScreen()
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   return;
 #else
   artSlotCount = 0;
@@ -5000,7 +5903,7 @@ void renderWifiSavedScreen()
 
 void renderWifiRetryScreen(const char* ssid, uint8_t attempt, uint8_t maxAttempts)
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   (void)ssid;
   (void)attempt;
   (void)maxAttempts;
@@ -5021,7 +5924,7 @@ void renderWifiRetryScreen(const char* ssid, uint8_t attempt, uint8_t maxAttempt
 
 void renderUi()
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   return;
 #endif
 
@@ -5058,7 +5961,7 @@ void renderUi()
   tft.fillScreen(backgroundColor);
   const char* title = doc["title"] | "MSV2";
   drawTextLeft(title, 8, 8, 2, textColor, backgroundColor);
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (!wifiSetupPortalActive)
   {
     char appAddress[36];
@@ -5194,7 +6097,7 @@ void renderUi()
 
 void renderAnimatedPlantArt()
 {
-#if !MSV2_ENABLE_DISPLAY
+#if !TREEBEARD_ENABLE_DISPLAY
   return;
 #endif
 
@@ -5320,6 +6223,350 @@ String sensorDataJson()
   return output;
 }
 
+String historyOutboxPrefixJson(uint32_t serializedAtMs)
+{
+  size_t seenSensors = 0;
+  for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    SensorReading reading;
+    if (copySensorReading(sensorId, reading) && reading.seen)
+    {
+      seenSensors++;
+    }
+  }
+
+  // Only the receiver metadata and latest-value cache are retained as one String. History
+  // rows are emitted by HistoryOutboxStream below, one bounded row at a time.
+  String output;
+  if (!output.reserve(512 + seenSensors * 320))
+  {
+    Serial.println("[Treebeard cloud] could not reserve compact history prefix");
+    return "";
+  }
+  output += F("{\"receiverId\":\"");
+  output += receiverId;
+  output += F("\",\"claimCode\":\"");
+  output += receiverClaimCode;
+  output += F("\",\"build\":\"");
+  output += TREEBEARD_BUILD_TAG;
+  output += F("\",\"sentAtMs\":");
+  output += (unsigned long)serializedAtMs;
+  output += F(",\"historyOnly\":true,\"latestPlants\":[");
+
+  bool firstPlant = true;
+  for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    SensorReading reading;
+    if (!copySensorReading(sensorId, reading) || !reading.seen)
+    {
+      continue;
+    }
+    if (!firstPlant) output += ',';
+    firstPlant = false;
+    output += F("{\"sensor\":");
+    output += sensorId;
+    output += F(",\"wake\":");
+    output += (unsigned long)reading.wake;
+    output += F(",\"moisture\":");
+    output += reading.moisture;
+    output += F(",\"measuredMoisture\":");
+    output += reading.measuredMoisture;
+    output += F(",\"moistureScale\":");
+    output += reading.wideRaw ? MSV3_MOISTURE_SCALE_VERSION : MSV2_MOISTURE_SCALE_VERSION;
+    if (reading.batteryPercent != BATTERY_UNKNOWN)
+    {
+      output += F(",\"batteryPercent\":");
+      output += reading.batteryPercent;
+    }
+    output += F(",\"rssi\":");
+    output += reading.rssi;
+    output += F(",\"ageMs\":");
+    output += (unsigned long)(serializedAtMs - reading.lastSeenMs);
+    if (reading.hasRaw)
+    {
+      if (reading.wideRaw)
+      {
+        output += F(",\"raw\":{\"fdcCounts\":");
+        output += (unsigned long)reading.rawFdcCounts;
+        if (reading.hasMsv3Diagnostics)
+        {
+          if (reading.boardTempValid)
+          {
+            output += F(",\"boardTempQuarterC\":");
+            output += reading.rawBoardTempQuarterC;
+          }
+          if (reading.bareTankValid)
+          {
+            output += F(",\"bareTankFdcCounts\":");
+            output += (unsigned long)reading.rawBareTankFdcCounts;
+          }
+          output += F(",\"tankPhase\":");
+          output += reading.tankPhase;
+        }
+      }
+      else
+      {
+        output += F(",\"raw\":{\"moistureKHz\":");
+        output += reading.rawMoistureKHz;
+      }
+      output += F(",\"batteryMv\":");
+      output += reading.rawBatteryMv;
+      output += F(",\"charging\":");
+      output += reading.rawCharging ? F("true") : F("false");
+      output += '}';
+    }
+    output += '}';
+  }
+
+  output += F("],\"historyBatch\":[");
+  return output;
+}
+
+void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pending,
+                                uint32_t serializedAtMs, bool prependComma)
+{
+  if (prependComma) output += ',';
+  char observationId[24];
+  snprintf(observationId, sizeof(observationId), "%08lX-%08lX",
+           (unsigned long)pending.bootId, (unsigned long)pending.sequence);
+  output += F("{\"observationId\":\"");
+  output += observationId;
+  output += F("\",\"queuedAgeMs\":");
+  output += pending.bootId == historyQueueBootId
+      ? (unsigned long)(serializedAtMs - pending.capturedMs)
+      : 0UL;
+  if (pending.observedAtMs != 0)
+  {
+    char observedAtText[24];
+    snprintf(observedAtText, sizeof(observedAtText), "%llu",
+             (unsigned long long)pending.observedAtMs);
+    output += F(",\"observedAtMs\":");
+    output += observedAtText;
+  }
+  output += F(",\"sensor\":");
+  output += pending.sensorId;
+  output += F(",\"wake\":");
+  output += (unsigned long)pending.wake;
+  output += F(",\"moisture\":");
+  output += pending.moisture;
+  output += F(",\"measuredMoisture\":");
+  output += pending.measuredMoisture;
+  output += F(",\"moistureScale\":");
+  output += pending.moistureScale;
+  if (pending.batteryPercent != BATTERY_UNKNOWN)
+  {
+    output += F(",\"batteryPercent\":");
+    output += pending.batteryPercent;
+  }
+  output += F(",\"rssi\":");
+  output += pending.rssi;
+  output += F(",\"ageMs\":0");
+  if (pending.hasRaw)
+  {
+    if (pending.wideRaw)
+    {
+      output += F(",\"raw\":{\"fdcCounts\":");
+      output += (unsigned long)pending.rawFdcCounts;
+      if (pending.hasMsv3Diagnostics)
+      {
+        if (pending.boardTempValid)
+        {
+          output += F(",\"boardTempQuarterC\":");
+          output += pending.rawBoardTempQuarterC;
+        }
+        if (pending.bareTankValid)
+        {
+          output += F(",\"bareTankFdcCounts\":");
+          output += (unsigned long)pending.rawBareTankFdcCounts;
+        }
+        output += F(",\"tankPhase\":");
+        output += pending.tankPhase;
+      }
+    }
+    else
+    {
+      output += F(",\"raw\":{\"moistureKHz\":");
+      output += pending.rawMoistureKHz;
+    }
+    output += F(",\"batteryMv\":");
+    output += pending.rawBatteryMv;
+    output += F(",\"charging\":");
+    output += pending.rawCharging ? F("true") : F("false");
+    output += '}';
+  }
+  output += '}';
+}
+
+// Pull-based JSON body used by HTTPClient::sendRequest(Stream*, size). The prefix is small
+// (receiver metadata plus at most 16 latest values); every history row reuses rowChunk_'s
+// single bounded allocation. This keeps the maximum contiguous payload allocation roughly
+// constant as the batch grows, while still providing Content-Length to the Edge Function.
+class HistoryOutboxStream : public Stream
+{
+public:
+  HistoryOutboxStream(const String& prefix, const PendingHistoryReading* historyBatch,
+                      size_t historyCount, uint32_t serializedAtMs)
+      : prefix_(prefix), historyBatch_(historyBatch), historyCount_(historyCount),
+        serializedAtMs_(serializedAtMs)
+  {
+    valid_ = prefix_.length() > 0 && historyBatch_ != nullptr && historyCount_ > 0 &&
+             rowChunk_.reserve(HISTORY_JSON_BYTES_PER_ROW + 32);
+    totalBytes_ = prefix_.length() + 2; // closing "]}"
+    for (size_t i = 0; valid_ && i < historyCount_; i++)
+    {
+      rowChunk_ = "";
+      appendHistoryOutboxRowJson(rowChunk_, historyBatch_[i], serializedAtMs_, i > 0);
+      valid_ = rowChunk_.endsWith("}");
+      totalBytes_ += rowChunk_.length();
+    }
+    resetReader();
+  }
+
+  bool valid() const { return valid_; }
+  size_t contentLength() const { return valid_ ? totalBytes_ : 0; }
+
+  int available() override
+  {
+    if (!valid_ || emittedBytes_ >= totalBytes_) return 0;
+    size_t remaining = totalBytes_ - emittedBytes_;
+    return remaining > (size_t)INT_MAX ? INT_MAX : (int)remaining;
+  }
+
+  int read() override
+  {
+    uint8_t byte = 0;
+    return readBytes(&byte, 1) == 1 ? byte : -1;
+  }
+
+  int peek() override
+  {
+    if (!ensureReadableSegment()) return -1;
+    if (section_ == PREFIX) return (uint8_t)prefix_[prefixOffset_];
+    if (section_ == ROWS) return (uint8_t)rowChunk_[rowOffset_];
+    return (uint8_t)closing_[closingOffset_];
+  }
+
+  size_t readBytes(uint8_t* buffer, size_t length) override
+  {
+    if (buffer == nullptr || length == 0 || !valid_) return 0;
+    size_t copied = 0;
+    while (copied < length && ensureReadableSegment())
+    {
+      const char* source = nullptr;
+      size_t availableBytes = 0;
+      if (section_ == PREFIX)
+      {
+        source = prefix_.c_str() + prefixOffset_;
+        availableBytes = prefix_.length() - prefixOffset_;
+      }
+      else if (section_ == ROWS)
+      {
+        source = rowChunk_.c_str() + rowOffset_;
+        availableBytes = rowChunk_.length() - rowOffset_;
+      }
+      else
+      {
+        source = closing_ + closingOffset_;
+        availableBytes = 2 - closingOffset_;
+      }
+      const size_t take = min(length - copied, availableBytes);
+      memcpy(buffer + copied, source, take);
+      copied += take;
+      emittedBytes_ += take;
+      if (section_ == PREFIX) prefixOffset_ += take;
+      else if (section_ == ROWS) rowOffset_ += take;
+      else closingOffset_ += take;
+    }
+    return copied;
+  }
+
+  size_t write(uint8_t) override { return 0; }
+
+private:
+  enum Section : uint8_t { PREFIX, ROWS, CLOSING, DONE };
+  const String& prefix_;
+  const PendingHistoryReading* historyBatch_ = nullptr;
+  size_t historyCount_ = 0;
+  uint32_t serializedAtMs_ = 0;
+  String rowChunk_;
+  size_t totalBytes_ = 0;
+  size_t emittedBytes_ = 0;
+  size_t prefixOffset_ = 0;
+  size_t historyIndex_ = 0;
+  size_t rowOffset_ = 0;
+  size_t closingOffset_ = 0;
+  Section section_ = PREFIX;
+  bool valid_ = false;
+  static constexpr char closing_[3] = "]}";
+
+  void resetReader()
+  {
+    emittedBytes_ = 0;
+    prefixOffset_ = 0;
+    historyIndex_ = 0;
+    rowOffset_ = 0;
+    closingOffset_ = 0;
+    rowChunk_ = "";
+    section_ = PREFIX;
+  }
+
+  bool ensureReadableSegment()
+  {
+    while (valid_ && section_ != DONE)
+    {
+      if (section_ == PREFIX)
+      {
+        if (prefixOffset_ < prefix_.length()) return true;
+        section_ = ROWS;
+      }
+      else if (section_ == ROWS)
+      {
+        if (rowOffset_ < rowChunk_.length()) return true;
+        if (historyIndex_ >= historyCount_)
+        {
+          section_ = CLOSING;
+          continue;
+        }
+        rowChunk_ = "";
+        appendHistoryOutboxRowJson(rowChunk_, historyBatch_[historyIndex_],
+                                   serializedAtMs_, historyIndex_ > 0);
+        historyIndex_++;
+        rowOffset_ = 0;
+        if (!rowChunk_.endsWith("}"))
+        {
+          valid_ = false;
+          return false;
+        }
+      }
+      else if (section_ == CLOSING)
+      {
+        if (closingOffset_ < 2) return true;
+        section_ = DONE;
+      }
+    }
+    return false;
+  }
+};
+
+constexpr char HistoryOutboxStream::closing_[3];
+
+String historyOutboxJson(const PendingHistoryReading* historyBatch, size_t historyCount)
+{
+  const uint32_t serializedAtMs = millis();
+  String output = historyOutboxPrefixJson(serializedAtMs);
+  if (output.length() == 0 ||
+      !output.reserve(output.length() + historyCount * HISTORY_JSON_BYTES_PER_ROW + 2))
+  {
+    return "";
+  }
+  for (size_t i = 0; historyBatch != nullptr && i < historyCount; i++)
+  {
+    appendHistoryOutboxRowJson(output, historyBatch[i], serializedAtMs, i > 0);
+  }
+  output += F("]}");
+  return output;
+}
+
 String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t historyCount)
 {
   // Keep the ArduinoJson document limited to the already-proven latest-state snapshot.
@@ -5331,7 +6578,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
   const uint32_t serializedAtMs = millis();
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
-  doc["build"] = MSV2_BUILD_TAG;
+  doc["build"] = TREEBEARD_BUILD_TAG;
   doc["sentAtMs"] = serializedAtMs;
 
   JsonObject config = doc.createNestedObject("config");
@@ -5339,7 +6586,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
   config["version"] = uiConfigVersion;
   config["updatedMs"] = uiUpdatedMs;
   config["updatedBy"] = uiUpdatedBy;
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   File uiFile = LittleFS.open(UI_PATH, "r");
   if (uiFile)
   {
@@ -5417,7 +6664,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
   display["touchCalibrated"] = touchCalibration.valid;
 
   JsonObject network = doc.createNestedObject("network");
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   network["mode"] = currentNetworkMode();
   network["ip"] = currentIpAddress().toString();
   network["rssi"] = wifiStationConnected ? WiFi.RSSI() : 0;
@@ -5498,7 +6745,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
 
   if (doc.overflowed())
   {
-    Serial.println("[MSV2 cloud] snapshot JSON capacity exceeded; retaining history queue");
+    Serial.println("[Treebeard cloud] snapshot JSON capacity exceeded; retaining history queue");
     return "";
   }
 
@@ -5508,9 +6755,9 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
   // lossless event ingestion. All appended string content is fixed JSON syntax, integers,
   // or our own hexadecimal observation ID, so no untrusted string escaping is bypassed.
   if (output.length() == 0 || output[output.length() - 1] != '}' ||
-      !output.reserve(output.length() + historyCount * 256 + 24))
+      !output.reserve(output.length() + historyCount * HISTORY_JSON_BYTES_PER_ROW + 24))
   {
-    Serial.println("[MSV2 cloud] could not reserve history batch payload");
+    Serial.println("[Treebeard cloud] could not reserve history batch payload");
     return "";
   }
   output.remove(output.length() - 1);
@@ -5521,11 +6768,21 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     if (i > 0) output += ',';
     char observationId[24];
     snprintf(observationId, sizeof(observationId), "%08lX-%08lX",
-             (unsigned long)historyQueueBootId, (unsigned long)pending.sequence);
+             (unsigned long)pending.bootId, (unsigned long)pending.sequence);
     output += F("{\"observationId\":\"");
     output += observationId;
     output += F("\",\"queuedAgeMs\":");
-    output += (unsigned long)(serializedAtMs - pending.capturedMs);
+    output += pending.bootId == historyQueueBootId
+        ? (unsigned long)(serializedAtMs - pending.capturedMs)
+        : 0UL;
+    if (pending.observedAtMs != 0)
+    {
+      char observedAtText[24];
+      snprintf(observedAtText, sizeof(observedAtText), "%llu",
+               (unsigned long long)pending.observedAtMs);
+      output += F(",\"observedAtMs\":");
+      output += observedAtText;
+    }
     output += F(",\"sensor\":");
     output += pending.sensorId;
     output += F(",\"wake\":");
@@ -5588,7 +6845,7 @@ String snapshotJson()
   return snapshotJsonWithHistory(nullptr, 0);
 }
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 void setCloudLastError(const char* error)
 {
   strlcpy(cloudLastError, error == nullptr ? "" : error, sizeof(cloudLastError));
@@ -5640,16 +6897,39 @@ bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
   return true;
 }
 
-// A failed HTTPClient::begin() (the `!began` branch in each of the five cloud functions
-// below) has been observed to leave real resources (heap, and possibly a TCP/TLS session)
-// unrecovered without an explicit stop() on both possible underlying clients - see the
-// 2026-08-23 receiver-reliability investigation. Stops the shared cloudSecureClient/
-// cloudPlainClient globals declared above (whichever one a given call actually used - the
-// other is already idle, and stop() on an unconnected client is a harmless no-op).
-void stopCloudClients()
+// A failed HTTPClient::begin() can leave resources live until destruction. Each paced
+// operation now owns fresh client objects (a reused secure-client context repeatedly failed
+// after its first successful live request); explicitly stop both paths before their scope
+// ends so TLS is released while the request payload still has a deterministic lifetime.
+void stopCloudClients(WiFiClientSecure& secureClient, WiFiClient& plainClient)
 {
-  cloudSecureClient.stop();
-  cloudPlainClient.stop();
+  secureClient.stop();
+  plainClient.stop();
+}
+
+void beginCloudRadioSlot()
+{
+#if TREEBEARD_ENABLE_BLE
+  cloudRadioExclusive = true;
+  lastRadioSlotAtMs = millis();
+  lastRadioSlotWasScanning = bleScan != nullptr && bleScan->isScanning();
+  uint32_t stopStartMs = millis();
+  if (bleScan != nullptr)
+  {
+    bleScan->stop();
+  }
+  lastRadioSlotStopCallMs = millis() - stopStartMs;
+  // Let the controller finish the scan-stop event before starting TCP/TLS on the same RF.
+  vTaskDelay(pdMS_TO_TICKS(75));
+  lastRadioSlotStillScanningAfterSettle = bleScan != nullptr && bleScan->isScanning();
+#endif
+}
+
+void endCloudRadioSlot()
+{
+#if TREEBEARD_ENABLE_BLE
+  cloudRadioExclusive = false;
+#endif
 }
 
 // 2026-08-30: total free heap alone does not guarantee the snapshot uploader's TLS connect
@@ -5683,7 +6963,7 @@ bool cloudHeapHasContiguousRoomForTls()
 
 void runCloudBootstrap(uint32_t now)
 {
-  if (strlen(MSV2_CLOUD_BOOTSTRAP_URL) == 0)
+  if (strlen(TREEBEARD_CLOUD_BOOTSTRAP_URL) == 0)
   {
     nextCloudBootstrapMs = 0;
     return;
@@ -5723,8 +7003,8 @@ void runCloudBootstrap(uint32_t now)
     return;
   }
 
-  const bool isHttps = strncmp(MSV2_CLOUD_BOOTSTRAP_URL, "https://", 8) == 0;
-  const bool isHttp = strncmp(MSV2_CLOUD_BOOTSTRAP_URL, "http://", 7) == 0;
+  const bool isHttps = strncmp(TREEBEARD_CLOUD_BOOTSTRAP_URL, "https://", 8) == 0;
+  const bool isHttp = strncmp(TREEBEARD_CLOUD_BOOTSTRAP_URL, "http://", 7) == 0;
   if (!isHttps && !isHttp)
   {
     cloudBootstrapLastAttemptMs = now;
@@ -5734,19 +7014,21 @@ void runCloudBootstrap(uint32_t now)
     return;
   }
 
-  Serial.print("[MSV2 cloud] bootstrapping receiver at ");
-  Serial.println(MSV2_CLOUD_BOOTSTRAP_URL);
+  Serial.print("[Treebeard cloud] bootstrapping receiver at ");
+  Serial.println(TREEBEARD_CLOUD_BOOTSTRAP_URL);
 
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   HTTPClient http;
   bool began = false;
   if (isHttps)
   {
-    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(cloudSecureClient, MSV2_CLOUD_BOOTSTRAP_URL);
+    secureClient.setCACert(TREEBEARD_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, TREEBEARD_CLOUD_BOOTSTRAP_URL);
   }
   else
   {
-    began = http.begin(cloudPlainClient, MSV2_CLOUD_BOOTSTRAP_URL);
+    began = http.begin(plainClient, TREEBEARD_CLOUD_BOOTSTRAP_URL);
   }
 
   cloudBootstrapLastAttemptMs = now;
@@ -5757,7 +7039,7 @@ void runCloudBootstrap(uint32_t now)
     // attempt has been observed to leave real resources (heap, and possibly a TCP/TLS
     // session) unrecovered without an explicit stop(), across every one of these five
     // cloud call sites, not just the snapshot uploader.
-    stopCloudClients();
+    stopCloudClients(secureClient, plainClient);
     setCloudBootstrapLastError("could not start HTTP client");
     nextCloudBootstrapMs = now + CLOUD_BOOTSTRAP_RETRY_MS;
     return;
@@ -5767,7 +7049,7 @@ void runCloudBootstrap(uint32_t now)
   requestDoc["receiverId"] = receiverId;
   requestDoc["receiverSecret"] = receiverSecret;
   requestDoc["claimCode"] = receiverClaimCode;
-  requestDoc["build"] = MSV2_BUILD_TAG;
+  requestDoc["build"] = TREEBEARD_BUILD_TAG;
   String payload;
   serializeJson(requestDoc, payload);
 
@@ -5807,7 +7089,8 @@ void runCloudBootstrap(uint32_t now)
         setCloudBootstrapLastError("");
         nextCloudBootstrapMs = 0;
         nextCloudSyncMs = millis() + 5000UL;
-        Serial.println("[MSV2 cloud] bootstrap ok; cloud sync enabled");
+        nextCloudFullSnapshotMs = millis() + CLOUD_FULL_SNAPSHOT_INTERVAL_MS;
+        Serial.println("[Treebeard cloud] bootstrap ok; cloud sync enabled");
       }
       else
       {
@@ -5838,7 +7121,7 @@ void runCloudBootstrap(uint32_t now)
     }
     setCloudBootstrapLastError(error.c_str());
     nextCloudBootstrapMs = now + CLOUD_BOOTSTRAP_RETRY_MS;
-    Serial.print("[MSV2 cloud] bootstrap failed: ");
+    Serial.print("[Treebeard cloud] bootstrap failed: ");
     Serial.println(error);
   }
   else
@@ -5846,12 +7129,12 @@ void runCloudBootstrap(uint32_t now)
     String error = http.errorToString(status);
     setCloudBootstrapLastError(error.c_str());
     nextCloudBootstrapMs = now + CLOUD_BOOTSTRAP_RETRY_MS;
-    Serial.print("[MSV2 cloud] bootstrap failed: ");
+    Serial.print("[Treebeard cloud] bootstrap failed: ");
     Serial.println(error);
   }
 
   http.end();
-  stopCloudClients();
+  stopCloudClients(secureClient, plainClient);
 }
 
 void runCloudConfigPull(uint32_t now)
@@ -5908,23 +7191,25 @@ void runCloudConfigPull(uint32_t now)
   configUrl += "&currentVersion=";
   configUrl += String(uiConfigVersion);
 
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   HTTPClient http;
   bool began = false;
   if (isHttps)
   {
-    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(cloudSecureClient, configUrl);
+    secureClient.setCACert(TREEBEARD_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, configUrl);
   }
   else
   {
-    began = http.begin(cloudPlainClient, configUrl);
+    began = http.begin(plainClient, configUrl);
   }
 
   cloudConfigLastAttemptMs = now;
   cloudConfigLastHttpStatus = 0;
   if (!began)
   {
-    stopCloudClients();
+    stopCloudClients(secureClient, plainClient);
     setCloudConfigLastError("could not start HTTP client");
     nextCloudConfigPullMs = now + CLOUD_CONFIG_PULL_INTERVAL_MS;
     return;
@@ -5962,7 +7247,7 @@ void runCloudConfigPull(uint32_t now)
     {
       setCloudConfigLastError("");
       cloudConfigLastSuccessMs = millis();
-      Serial.print("[MSV2 cloud] applied config v");
+      Serial.print("[Treebeard cloud] applied config v");
       Serial.println(remoteVersion);
     }
     else
@@ -5983,7 +7268,7 @@ void runCloudConfigPull(uint32_t now)
   }
 
   http.end();
-  stopCloudClients();
+  stopCloudClients(secureClient, plainClient);
   nextCloudConfigPullMs = millis() + CLOUD_CONFIG_PULL_INTERVAL_MS;
 }
 
@@ -6051,22 +7336,24 @@ void runCloudDisplaySettings(uint32_t now)
     return;
   }
 
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   HTTPClient http;
   bool began = false;
   if (isHttps)
   {
-    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(cloudSecureClient, url);
+    secureClient.setCACert(TREEBEARD_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, url);
   }
   else
   {
-    began = http.begin(cloudPlainClient, url);
+    began = http.begin(plainClient, url);
   }
   cloudDisplayLastAttemptMs = now;
   cloudDisplayLastHttpStatus = 0;
   if (!began)
   {
-    stopCloudClients();
+    stopCloudClients(secureClient, plainClient);
     setCloudDisplayLastError("could not start HTTP client");
     nextCloudDisplaySyncMs = now + CLOUD_DISPLAY_PULL_INTERVAL_MS;
     return;
@@ -6154,7 +7441,7 @@ void runCloudDisplaySettings(uint32_t now)
       setCloudDisplayLastError("");
       cloudDisplayLastSuccessMs = millis();
       displaySyncSucceeded = true;
-      Serial.print("[MSV2 cloud] display settings v");
+      Serial.print("[Treebeard cloud] display settings v");
       Serial.println(version);
     }
   }
@@ -6182,7 +7469,7 @@ void runCloudDisplaySettings(uint32_t now)
   }
 
   http.end();
-  stopCloudClients();
+  stopCloudClients(secureClient, plainClient);
   bool stillPending;
   portENTER_CRITICAL(&displaySettingsMux);
   stillPending = displaySettings.pendingCloudUpdate;
@@ -6236,8 +7523,9 @@ void runCloudAutoCalPull(uint32_t now)
 
   if (nextCloudAutoCalPullMs == 0)
   {
-    nextCloudAutoCalPullMs = now + 10000UL;
-    return;
+    // The scheduler already supplied a paced network slot. Do the boot-time restore now
+    // instead of consuming that slot merely to arm another ten-second timer.
+    nextCloudAutoCalPullMs = now;
   }
 
   if ((int32_t)(now - nextCloudAutoCalPullMs) < 0)
@@ -6273,22 +7561,24 @@ void runCloudAutoCalPull(uint32_t now)
   autoCalUrl += "autocal=1&receiverId=";
   autoCalUrl += receiverId;
 
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   HTTPClient http;
   bool began = false;
   if (isHttps)
   {
-    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(cloudSecureClient, autoCalUrl);
+    secureClient.setCACert(TREEBEARD_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, autoCalUrl);
   }
   else
   {
-    began = http.begin(cloudPlainClient, autoCalUrl);
+    began = http.begin(plainClient, autoCalUrl);
   }
 
   if (!began)
   {
-    stopCloudClients();
-    nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
+    stopCloudClients(secureClient, plainClient);
+    nextCloudAutoCalPullMs = now + CLOUD_AUTOCAL_RETRY_MS;
     return;
   }
 
@@ -6297,6 +7587,7 @@ void runCloudAutoCalPull(uint32_t now)
   auth += cloudApiToken;
   http.addHeader("Authorization", auth);
 
+  bool pullSucceeded = false;
   int status = http.GET();
   if (status >= 200 && status < 300)
   {
@@ -6305,6 +7596,9 @@ void runCloudAutoCalPull(uint32_t now)
     DeserializationError error = deserializeJson(responseDoc, response);
     if (!error && (responseDoc["ok"] | false))
     {
+      // Publish one complete response. Starting from defaults prevents a sensor removed from
+      // the cloud response from retaining a stale learned range forever.
+      AutoCalState refreshed[MAX_SENSOR_ID + 1];
       JsonArray sensorsArray = responseDoc["sensors"].as<JsonArray>();
       for (JsonObject sensorRow : sensorsArray)
       {
@@ -6320,17 +7614,103 @@ void runCloudAutoCalPull(uint32_t now)
         learned.daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
         learned.lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
         learned.dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
-        portENTER_CRITICAL(&autoCalMux);
-        autoCal[sensorId] = learned;
-        portEXIT_CRITICAL(&autoCalMux);
+        if (learned.ready &&
+            (learned.dryBound < 0 || learned.wetBound <= learned.dryBound || learned.wetBound > 65535))
+        {
+          learned.ready = false;
+        }
+        refreshed[sensorId] = learned;
       }
-      Serial.println("[MSV2 cloud] auto-calibration updated");
+      portENTER_CRITICAL(&autoCalMux);
+      for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+      {
+        autoCal[sensorId] = refreshed[sensorId];
+      }
+      portEXIT_CRITICAL(&autoCalMux);
+      saveAutoCalCache();
+      // Ensure cached PlantArtSlot bounds/text switch back to percent without waiting for
+      // the next probe packet to happen to dirty the display.
+      sensorDataDirty = true;
+      pullSucceeded = true;
+      Serial.println("[Treebeard cloud] auto-calibration updated");
     }
   }
 
   http.end();
-  stopCloudClients();
-  nextCloudAutoCalPullMs = millis() + CLOUD_AUTOCAL_PULL_INTERVAL_MS;
+  stopCloudClients(secureClient, plainClient);
+  nextCloudAutoCalPullMs = millis() +
+      (pullSucceeded ? CLOUD_AUTOCAL_PULL_INTERVAL_MS : CLOUD_AUTOCAL_RETRY_MS);
+}
+
+// Splits "https://host[:port]/path" into host and port for the pre-connect in
+// runCloudSnapshotUploader() below. Deliberately minimal: the cloud upload URL is a plain
+// Supabase hostname, so userinfo ("user@host") and IPv6 literals are rejected rather than
+// parsed wrongly - a false return simply skips the pre-connect and lets HTTPClient::POST()
+// do its own connect exactly as before.
+bool parseCloudUrlHostPort(const char* url, char* hostOut, size_t hostCap, uint16_t& portOut)
+{
+  if (url == nullptr || hostOut == nullptr || hostCap == 0)
+  {
+    return false;
+  }
+  const char* schemeEnd = strstr(url, "://");
+  if (schemeEnd == nullptr)
+  {
+    return false;
+  }
+  const bool isHttpsUrl = strncmp(url, "https://", 8) == 0;
+  const char* hostStart = schemeEnd + 3;
+  const char* pathStart = strchr(hostStart, '/');
+  const char* hostEnd = (pathStart != nullptr) ? pathStart : (hostStart + strlen(hostStart));
+  if (memchr(hostStart, '@', (size_t)(hostEnd - hostStart)) != nullptr || *hostStart == '[')
+  {
+    return false;
+  }
+  const char* colon = (const char*)memchr(hostStart, ':', (size_t)(hostEnd - hostStart));
+  const char* nameEnd = (colon != nullptr) ? colon : hostEnd;
+  const size_t nameLen = (size_t)(nameEnd - hostStart);
+  if (nameLen == 0 || nameLen >= hostCap)
+  {
+    return false;
+  }
+  memcpy(hostOut, hostStart, nameLen);
+  hostOut[nameLen] = '\0';
+  uint16_t port = isHttpsUrl ? 443 : 80;
+  if (colon != nullptr)
+  {
+    const long parsed = strtol(colon + 1, nullptr, 10);
+    if (parsed <= 0 || parsed > 65535)
+    {
+      return false;
+    }
+    port = (uint16_t)parsed;
+  }
+  portOut = port;
+  return true;
+}
+
+// Exponential backoff on consecutive failures (2026-08-23): the fixed 17s retry alone let a bad
+// patch retry fast enough to compound the same heap pressure that caused it in the first place
+// (observed 7+ failures in a row, 17s apart, before this was added). Doubles per additional
+// failure, capped at CLOUD_UPLOAD_BACKOFF_MAX_MS, resets to the base interval the moment an
+// upload succeeds again. Shared by the TLS pre-connect failure path and the post-POST failure
+// path so both escalate identically.
+uint32_t noteCloudUploadFailureAndGetBackoffMs()
+{
+  if (cloudConsecutiveUploadFailures < 0xFFFF)
+  {
+    cloudConsecutiveUploadFailures++;
+  }
+  uint32_t backoffMs = max(HISTORY_UPLOAD_RETRY_MS, CLOUD_MIN_UPLOAD_SPACING_MS);
+  for (uint16_t i = 1; i < cloudConsecutiveUploadFailures && backoffMs < CLOUD_UPLOAD_BACKOFF_MAX_MS; i++)
+  {
+    backoffMs *= 2;
+  }
+  if (backoffMs > CLOUD_UPLOAD_BACKOFF_MAX_MS)
+  {
+    backoffMs = CLOUD_UPLOAD_BACKOFF_MAX_MS;
+  }
+  return backoffMs;
 }
 
 void runCloudSnapshotUploader(uint32_t now)
@@ -6373,6 +7753,16 @@ void runCloudSnapshotUploader(uint32_t now)
     return;
   }
 
+  // This is the authoritative upload-attempt floor. Retry branches may choose an earlier
+  // diagnostic re-check, but none may build another payload or touch the TLS client until
+  // a full minute has elapsed since the previous attempt began.
+  if (cloudLastAttemptMs != 0 &&
+      (uint32_t)(now - cloudLastAttemptMs) < CLOUD_MIN_UPLOAD_SPACING_MS)
+  {
+    nextCloudSyncMs = cloudLastAttemptMs + CLOUD_MIN_UPLOAD_SPACING_MS;
+    return;
+  }
+
   wifiStationConnected = hasUsableStationConnection();
   if (!wifiStationConnected)
   {
@@ -6401,19 +7791,21 @@ void runCloudSnapshotUploader(uint32_t now)
     return;
   }
 
-  Serial.print("[MSV2 cloud] uploading snapshot to ");
+  Serial.print("[Treebeard cloud] uploading snapshot to ");
   Serial.println(cloudUploadUrl);
 
+  WiFiClientSecure secureClient;
+  WiFiClient plainClient;
   HTTPClient http;
   bool began = false;
   if (isHttps)
   {
-    cloudSecureClient.setCACert(MSV2_TRUSTED_ROOT_CA_PEM);
-    began = http.begin(cloudSecureClient, cloudUploadUrl);
+    secureClient.setCACert(TREEBEARD_TRUSTED_ROOT_CA_PEM);
+    began = http.begin(secureClient, cloudUploadUrl);
   }
   else
   {
-    began = http.begin(cloudPlainClient, cloudUploadUrl);
+    began = http.begin(plainClient, cloudUploadUrl);
   }
 
   cloudLastAttemptMs = now;
@@ -6425,7 +7817,7 @@ void runCloudSnapshotUploader(uint32_t now)
     // unrecovered (see CLOUD_UPLOAD_MIN_SAFE_HEAP_BYTES above) - explicit stop() rather
     // than relying solely on these stack objects' destructors, which is the standard
     // mitigation for this class of ESP32 WiFiClientSecure behavior.
-    stopCloudClients();
+    stopCloudClients(secureClient, plainClient);
     setCloudLastError("could not start HTTP client");
     nextCloudSyncMs = now + cloudSyncIntervalSeconds * 1000UL;
     return;
@@ -6450,38 +7842,117 @@ void runCloudSnapshotUploader(uint32_t now)
   setCloudCheckpoint("snapshot upload: building payload");
 
   PendingHistoryReading historyBatch[HISTORY_UPLOAD_BATCH_SIZE];
-  size_t historyCount = copyHistoryUploadBatch(historyBatch, HISTORY_UPLOAD_BATCH_SIZE);
-  String payload = snapshotJsonWithHistory(historyBatch, historyCount);
-  if (payload.length() == 0)
+  if (nextCloudFullSnapshotMs == 0)
   {
-    http.end();
-    stopCloudClients();
-    setCloudLastError("could not serialize snapshot/history batch");
-    nextCloudSyncMs = millis() + HISTORY_UPLOAD_RETRY_MS;
-    return;
+    nextCloudFullSnapshotMs = now + CLOUD_FULL_SNAPSHOT_INTERVAL_MS;
+  }
+  const bool periodicFullSnapshotDue = (int32_t)(now - nextCloudFullSnapshotMs) >= 0;
+  size_t historyCount = periodicFullSnapshotDue
+      ? 0
+      : copyHistoryUploadBatch(historyBatch, HISTORY_UPLOAD_BATCH_SIZE);
+  const bool sendingFullSnapshot = periodicFullSnapshotDue || historyCount == 0;
+  if (periodicFullSnapshotDue)
+  {
+    // A full-state refresh is useful but replaceable. Whether this attempt succeeds or not,
+    // do not let its larger JSON document preempt compact history recovery again next minute.
+    nextCloudFullSnapshotMs = now + CLOUD_FULL_SNAPSHOT_INTERVAL_MS;
   }
 
   // 2026-08-30: re-check the contiguous-block guard here, not just at the top of this
-  // function. This String payload (up to HISTORY_UPLOAD_BATCH_SIZE rows, now carrying the
-  // MSV3 board-temp/bare-tank/tank-phase fields on top of the prior per-row fields) is the
-  // largest, most fragmentation-prone allocation this function does before the TLS connect
-  // actually happens (HTTPClient::begin() above only stores the URL/client reference - the
-  // real connect() + mbedTLS session allocation happens inside the POST() call below). The
-  // guard at the top of this function ran before this String existed, so it cannot see
-  // fragmentation this payload itself just caused. copyHistoryUploadBatch() above only reads
-  // the queue (see its own definition) - it does not dequeue anything, so returning here
-  // before POST() leaves the queued history rows completely untouched for the next attempt.
+  // function. copyHistoryUploadBatch() above only reads the queue (see its own definition) -
+  // it does not dequeue anything, so returning here leaves the queued history rows completely
+  // untouched for the next attempt.
   if (!cloudHeapHasContiguousRoomForTls())
   {
     http.end();
-    stopCloudClients();
-    setCloudLastError("skipped: low heap after payload build");
+    stopCloudClients(secureClient, plainClient);
+    setCloudLastError("skipped: low heap before TLS connect");
     nextCloudSyncMs = now + CLOUD_LOW_HEAP_RETRY_MS;
     return;
   }
 
+  // 2026-08-31 ROOT-CAUSE FIX. The intermittent "connection refused" failures were never
+  // network failures: they were mbedtls_ssl_setup() returning MBEDTLS_ERR_SSL_ALLOC_FAILED
+  // (-0x7F00 = -32512), i.e. it could not obtain its large *contiguous* SSL record buffers.
+  // The old order built the ~10KB history-batch String FIRST and connected inside POST()
+  // afterwards, so the payload carved up the largest free block (measured ceiling on this
+  // board: ~32.7KB contiguous internal, with PSRAM disabled) right before mbedTLS needed it.
+  // Connecting first lets TLS take its buffers from the least-fragmented heap, and the
+  // payload is then serialized into whatever remains. HTTPClient::connect() returns early
+  // when the client is already connected, so POST() below reuses this exact connection.
+  // Full writeup: DisplayCenter/docs/RECEIVER_CLOUD_UPLOAD_CONNECTION_REFUSED_2026-08-31.md
+  setCloudCheckpoint("snapshot upload: connecting");
+  beginCloudRadioSlot();
+  if (isHttps)
+  {
+    char cloudHost[128];
+    uint16_t cloudPort = 443;
+    const bool parsedCloudEndpoint =
+        parseCloudUrlHostPort(cloudUploadUrl, cloudHost, sizeof(cloudHost), cloudPort);
+    if (!parsedCloudEndpoint || secureClient.connect(cloudHost, cloudPort, 8000) != 1)
+    {
+      // Report the real reason rather than POST()'s generic "connection refused". Rows stay
+      // queued (nothing was dequeued above), so this is a clean retry.
+      endCloudRadioSlot();
+      http.end();
+      stopCloudClients(secureClient, plainClient);
+      setCloudLastError("TLS connect failed (pre-connect)");
+      Serial.println("[Treebeard cloud] upload failed: TLS pre-connect");
+      nextCloudSyncMs = millis() + noteCloudUploadFailureAndGetBackoffMs();
+      return;
+    }
+  }
+
   setCloudCheckpoint("snapshot upload: posting");
-  int status = http.POST(payload);
+  size_t payloadBytes = 0;
+  int status = 0;
+  int postErrno = 0;
+  // 2026-08-31 diagnostic: NetworkClientSecure collapses socket()/connect()/select()/
+  // getsockopt() failures to a bare -1 before mbedTLS runs, which is why lastError() was
+  // already ruled useless here - but lwIP still sets the thread's errno on the call that
+  // actually failed. Cleared first so a stale value can't be misread, and captured before
+  // endCloudRadioSlot() or any other call can clobber it. This is the only thing that can
+  // separate a real ECONNREFUSED from resource exhaustion (ENOMEM/ENOBUFS/EADDRNOTAVAIL).
+  if (sendingFullSnapshot)
+  {
+    String payload = snapshotJsonWithHistory(nullptr, 0);
+    if (payload.length() == 0)
+    {
+      endCloudRadioSlot();
+      http.end();
+      stopCloudClients(secureClient, plainClient);
+      setCloudLastError("could not serialize full snapshot");
+      nextCloudSyncMs = millis() + HISTORY_UPLOAD_RETRY_MS;
+      return;
+    }
+    payloadBytes = payload.length();
+    errno = 0;
+    status = http.POST(payload);
+    postErrno = errno;
+  }
+  else
+  {
+    // TLS is already holding its contiguous record buffers. Build only the small latest-value
+    // prefix, then let HTTPClient pull one reusable history-row chunk at a time. Batch capacity
+    // can therefore exceed the arrival rate without recreating the pre-TLS allocation failure.
+    const uint32_t serializedAtMs = millis();
+    String prefix = historyOutboxPrefixJson(serializedAtMs);
+    HistoryOutboxStream payloadStream(prefix, historyBatch, historyCount, serializedAtMs);
+    if (!payloadStream.valid())
+    {
+      endCloudRadioSlot();
+      http.end();
+      stopCloudClients(secureClient, plainClient);
+      setCloudLastError("could not initialize streaming history payload");
+      nextCloudSyncMs = millis() + HISTORY_UPLOAD_RETRY_MS;
+      return;
+    }
+    payloadBytes = payloadStream.contentLength();
+    errno = 0;
+    status = http.sendRequest("POST", &payloadStream, payloadBytes);
+    postErrno = errno;
+  }
+  endCloudRadioSlot();
   uint32_t heapAfterUpload = ESP.getFreeHeap();
   if (heapAfterUpload < minFreeHeapEverBytes) minFreeHeapEverBytes = heapAfterUpload;
   lastCloudUploadFreeHeapBeforeBytes = heapBeforeUpload;
@@ -6490,24 +7961,39 @@ void runCloudSnapshotUploader(uint32_t now)
   cloudLastHttpStatus = status;
   bool uploadAccepted = status >= 200 && status < 300;
   size_t historyAccepted = historyCount == 0 ? 0 : SIZE_MAX;
-  if (uploadAccepted && historyCount > 0)
+  if (uploadAccepted)
   {
     String responseBody = http.getString();
     StaticJsonDocument<384> responseDoc;
     DeserializationError responseError = deserializeJson(responseDoc, responseBody);
-    int accepted = responseError ? -1 : (responseDoc["historyAccepted"] | -1);
-    if (accepted < 0 || (size_t)accepted != historyCount)
+    if (!responseError)
     {
-      uploadAccepted = false;
-      setCloudLastError("history batch was not fully acknowledged");
-      Serial.print("[MSV2 cloud] history acknowledgement mismatch: sent=");
-      Serial.print(historyCount);
-      Serial.print(" accepted=");
-      Serial.println(accepted);
+      uint64_t serverTimeMs = responseDoc["serverTimeMs"] | 0ULL;
+      if (serverTimeMs != 0)
+      {
+        portENTER_CRITICAL(&historyQueueMux);
+        cloudTimeAnchorEpochMs = serverTimeMs;
+        cloudTimeAnchorMillis = millis();
+        portEXIT_CRITICAL(&historyQueueMux);
+      }
     }
-    else
+
+    if (historyCount > 0)
     {
-      historyAccepted = (size_t)accepted;
+      int accepted = responseError ? -1 : (responseDoc["historyAccepted"] | -1);
+      if (accepted < 0 || (size_t)accepted != historyCount)
+      {
+        uploadAccepted = false;
+        setCloudLastError("history batch was not fully acknowledged");
+        Serial.print("[Treebeard cloud] history acknowledgement mismatch: sent=");
+        Serial.print(historyCount);
+        Serial.print(" accepted=");
+        Serial.println(accepted);
+      }
+      else
+      {
+        historyAccepted = (size_t)accepted;
+      }
     }
   }
 
@@ -6518,7 +8004,7 @@ void runCloudSnapshotUploader(uint32_t now)
     {
       uploadAccepted = false;
       setCloudLastError("history queue acknowledgement race");
-      Serial.print("[MSV2 cloud] queue acknowledgement mismatch: accepted=");
+      Serial.print("[Treebeard cloud] queue acknowledgement mismatch: accepted=");
       Serial.print(historyAccepted);
       Serial.print(" removed=");
       Serial.println(removed);
@@ -6530,8 +8016,9 @@ void runCloudSnapshotUploader(uint32_t now)
     cloudConsecutiveUploadFailures = 0;
     cloudLastSuccessMs = millis();
     setCloudLastError("");
-    Serial.print("[MSV2 cloud] upload ok: HTTP ");
+    Serial.print("[Treebeard cloud] upload ok: HTTP ");
     Serial.print(status);
+    Serial.print(sendingFullSnapshot ? " full" : " compact");
     Serial.print(" history=");
     Serial.print(historyAccepted);
     Serial.print(" queued=");
@@ -6546,7 +8033,7 @@ void runCloudSnapshotUploader(uint32_t now)
       String error = "HTTP ";
       error += status;
       setCloudLastError(error.c_str());
-      Serial.print("[MSV2 cloud] upload failed: HTTP ");
+      Serial.print("[Treebeard cloud] upload failed: HTTP ");
       Serial.println(status);
     }
   }
@@ -6554,38 +8041,62 @@ void runCloudSnapshotUploader(uint32_t now)
   {
     String error = http.errorToString(status);
     setCloudLastError(error.c_str());
-    Serial.print("[MSV2 cloud] upload failed: ");
+    Serial.print("[Treebeard cloud] upload failed: ");
     Serial.println(error);
   }
 
+#if TREEBEARD_ENABLE_BLE
+  // 2026-08-31 diagnostic - correlate this attempt's outcome (above) against whether BLE was
+  // actually mid-scan when beginCloudRadioSlot() ran for it - see lastRadioSlotWasScanning's
+  // own comment (declared alongside cloudRadioExclusive).
+  Serial.print("[Treebeard cloud] radio slot: wasScanning=");
+  Serial.print(lastRadioSlotWasScanning);
+  Serial.print(" stopCallMs=");
+  Serial.print(lastRadioSlotStopCallMs);
+  Serial.print(" stillScanningAfterSettle=");
+  Serial.println(lastRadioSlotStillScanningAfterSettle);
+#endif
+
+  // Latest outage-spill journal write. Healthy uploads acknowledge RTC staging directly, so
+  // this timestamp should not advance periodically while WiFi and the backend are available.
+  Serial.print("[Treebeard cloud] journal write: durationMs=");
+  Serial.print(lastJournalWriteDurationMs);
+  Serial.print(" records=");
+  Serial.print(lastJournalWriteRecords);
+  Serial.print(" compacted=");
+  Serial.print(lastJournalCompactedThisWrite);
+  Serial.print(" compactDurationMs=");
+  Serial.print(lastJournalCompactedThisWrite ? lastJournalCompactDurationMs : 0);
+  // RSSI is a read-only register read, not a network op - safe to log per-attempt without
+  // adding a competing DNS/TCP operation. Tests the separate, also-untested "RF margin"
+  // possibility from this doc's "genuinely left untested" list at the same time.
+  Serial.print(" staRssi=");
+  Serial.println(wifiStationConnected ? WiFi.RSSI() : 0);
+
+  // 2026-08-31 diagnostic - see postErrno's capture site above. payloadBytes is logged
+  // alongside it because the first capture hinted (2/2, small n) that the larger 32-row
+  // compact batches fail while smaller full snapshots do not.
+  Serial.print("[Treebeard cloud] transport: postErrno=");
+  Serial.print(postErrno);
+  Serial.print(" payloadBytes=");
+  Serial.print(payloadBytes);
+  Serial.print(" fullSnapshot=");
+  Serial.println(sendingFullSnapshot);
+
   http.end();
-  stopCloudClients();
+  stopCloudClients(secureClient, plainClient);
   size_t remainingHistory = queuedHistoryCount();
   if (!uploadAccepted)
   {
-    // Exponential backoff on consecutive failures (2026-08-23): the fixed 17s retry alone
-    // let a bad patch retry fast enough to compound the same heap pressure that caused it in
-    // the first place (observed 7+ failures in a row, 17s apart, before this was added).
-    // Doubles per additional failure, capped at CLOUD_UPLOAD_BACKOFF_MAX_MS, resets to the
-    // base interval the moment an upload succeeds again.
-    if (cloudConsecutiveUploadFailures < 0xFFFF)
-    {
-      cloudConsecutiveUploadFailures++;
-    }
-    uint32_t backoffMs = HISTORY_UPLOAD_RETRY_MS;
-    for (uint16_t i = 1; i < cloudConsecutiveUploadFailures && backoffMs < CLOUD_UPLOAD_BACKOFF_MAX_MS; i++)
-    {
-      backoffMs *= 2;
-    }
-    if (backoffMs > CLOUD_UPLOAD_BACKOFF_MAX_MS)
-    {
-      backoffMs = CLOUD_UPLOAD_BACKOFF_MAX_MS;
-    }
-    nextCloudSyncMs = millis() + backoffMs;
+    nextCloudSyncMs = millis() + noteCloudUploadFailureAndGetBackoffMs();
   }
   else if (remainingHistory > 0)
   {
-    nextCloudSyncMs = millis() + HISTORY_BACKLOG_DRAIN_MS;
+    // Never turn a backlog into a TLS burst. A streamed 96-row batch at the minimum
+    // 60-second cadence is four times the measured multi-sensor arrival rate while leaving
+    // BLE the radio and heap headroom it needs between uploads.
+    nextCloudSyncMs = millis() + max(cloudSyncIntervalSeconds * 1000UL,
+                                     CLOUD_MIN_UPLOAD_SPACING_MS);
   }
   else
   {
@@ -6612,8 +8123,8 @@ String configMetaJson()
 String deviceInfoJson()
 {
   StaticJsonDocument<2304> doc;
-  doc["name"] = "MSV2 Display";
-  doc["build"] = MSV2_BUILD_TAG;
+  doc["name"] = "Project Treebeard Display";
+  doc["build"] = TREEBEARD_BUILD_TAG;
   doc["receiverId"] = receiverId;
   doc["claimCode"] = receiverClaimCode;
   doc["maxSensorId"] = MAX_SENSOR_ID;
@@ -6630,6 +8141,15 @@ String deviceInfoJson()
   cloud["historyQueueCapacity"] = HISTORY_QUEUE_CAPACITY;
   cloud["historyQueueDropped"] = droppedHistoryCount();
   cloud["historyQueueHighWaterMark"] = historyQueueHighWaterMark();
+  portENTER_CRITICAL(&historyQueueMux);
+  cloud["historyStagingCount"] = pendingHistoryCount;
+  cloud["historyDurableCount"] = durableHistoryCount;
+  cloud["historyJournalHeadBytes"] = historyJournalHeadOffset;
+  cloud["historyJournalBytes"] = historyJournalValidBytes;
+  portEXIT_CRITICAL(&historyQueueMux);
+  cloud["historyJournalReady"] = historyJournalReady;
+  cloud["historyJournalStorageErrors"] = historyJournalStorageErrors;
+  cloud["networkMinGapMs"] = CLOUD_NETWORK_MIN_GAP_MS;
 
   // 2026-08-23 telemetry (diagnostic only): reset-reason/checkpoint/heap/stack visibility
   // that previously existed only as a Serial print at boot, per the reboot investigation.
@@ -6640,6 +8160,14 @@ String deviceInfoJson()
   health["lastCheckpointCloud"] = lastCheckpointCloud;
   health["freeHeapNowBytes"] = ESP.getFreeHeap();
   health["minFreeHeapEverBytes"] = minFreeHeapEverBytes;
+  // loopTask (WebServer + display render + touch + WiFi maintenance) was the ONLY task with
+  // no stack telemetry, and it is the one running sensorDataJson()'s StaticJsonDocument<4096>
+  // - 4KB of stack inside a web handler. Sampled from loop() itself and from the /data
+  // handler after that document exists; see minLoopTaskStackFreeEverBytes.
+  health["loopTaskStackHighWaterBytes"] = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);
+  health["loopTaskStackFreeMinEverBytes"] =
+      minLoopTaskStackFreeEverBytes == UINT32_MAX ? 0 : minLoopTaskStackFreeEverBytes;
+  health["loopTaskStackSizeBytes"] = TREEBEARD_LOOP_TASK_STACK_BYTES;
   health["largestFreeBlockBytes"] = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
   // 2026-08-30: added while calibrating the snapshot uploader's contiguous-heap guard above -
   // largestFreeBlockBytes alone (MALLOC_CAP_8BIT, unrestricted) can't tell whether this board
@@ -6656,15 +8184,46 @@ String deviceInfoJson()
   health["cloudUploadFreeHeapBeforeBytes"] = lastCloudUploadFreeHeapBeforeBytes;
   health["cloudUploadFreeHeapAfterBytes"] = lastCloudUploadFreeHeapAfterBytes;
   health["cloudConsecutiveUploadFailures"] = cloudConsecutiveUploadFailures;
-#if MSV2_ENABLE_WIFI
-  health["cloudTaskStackHighWaterBytes"] = cloudSyncTaskHandle != nullptr
-      ? (uint32_t)uxTaskGetStackHighWaterMark(cloudSyncTaskHandle) * sizeof(StackType_t)
-      : 0;
+#if TREEBEARD_ENABLE_BLE
+  // 2026-08-31 diagnostic - see lastRadioSlotWasScanning's own comment (declared alongside
+  // cloudRadioExclusive above).
+  JsonObject radioSlot = health.createNestedObject("cloudRadioSlotDiag");
+  radioSlot["atMs"] = lastRadioSlotAtMs;
+  radioSlot["wasScanning"] = lastRadioSlotWasScanning;
+  radioSlot["stillScanningAfterSettle"] = lastRadioSlotStillScanningAfterSettle;
+  radioSlot["stopCallMs"] = lastRadioSlotStopCallMs;
 #endif
-#if MSV2_ENABLE_BLE
-  health["bleTaskStackHighWaterBytes"] = bleScanTaskHandle != nullptr
-      ? (uint32_t)uxTaskGetStackHighWaterMark(bleScanTaskHandle) * sizeof(StackType_t)
+  // 2026-08-31 diagnostic - see lastJournalWriteAtMs's own comment (declared alongside
+  // historyJournalStorageErrors above). Times the LittleFS append that runs immediately
+  // before each upload attempt's own connect, to test the flash-contention hypothesis in
+  // DisplayCenter/docs/RECEIVER_CLOUD_UPLOAD_CONNECTION_REFUSED_2026-08-31.md.
+  JsonObject journalWriteDiag = health.createNestedObject("cloudJournalWriteDiag");
+  journalWriteDiag["atMs"] = lastJournalWriteAtMs;
+  journalWriteDiag["durationMs"] = lastJournalWriteDurationMs;
+  journalWriteDiag["records"] = lastJournalWriteRecords;
+  journalWriteDiag["compacted"] = lastJournalCompactedThisWrite;
+  journalWriteDiag["compactDurationMs"] = lastJournalCompactedThisWrite ? lastJournalCompactDurationMs : 0;
+#if TREEBEARD_ENABLE_WIFI
+  // 2026-09-02: dropped a `* sizeof(StackType_t)` that used to be here. It was a no-op, NOT
+  // a bug: ESP-IDF's uxTaskGetStackHighWaterMark() already returns BYTES (its task.h says
+  // "in bytes (as opposed to words in the standard FreeRTOS documentation)"), and this port
+  // defines portSTACK_TYPE as uint8_t (xtensa/portmacro.h), so sizeof(StackType_t) == 1.
+  // Removed only because it reads like a words->bytes conversion and invites exactly the
+  // misdiagnosis it caused on 2026-09-02, when it was briefly believed to be inflating every
+  // figure 4x. Reported values are unchanged. Measured margins from that session, and why
+  // stack exhaustion was ruled out as the panic cause, are in
+  // docs/RECEIVER_PANIC_STACK_RULED_OUT_2026-09-02.md - kept there rather than inlined here
+  // because those numbers are specific to one build and workload and will drift.
+  health["cloudTaskStackHighWaterBytes"] = cloudSyncTaskHandle != nullptr
+      ? (uint32_t)uxTaskGetStackHighWaterMark(cloudSyncTaskHandle)
       : 0;
+  health["cloudTaskStackSizeBytes"] = CLOUD_SYNC_TASK_STACK_BYTES;
+#endif
+#if TREEBEARD_ENABLE_BLE
+  health["bleTaskStackHighWaterBytes"] = bleScanTaskHandle != nullptr
+      ? (uint32_t)uxTaskGetStackHighWaterMark(bleScanTaskHandle)
+      : 0;
+  health["bleTaskStackSizeBytes"] = BLE_SCAN_TASK_STACK_BYTES;
 #endif
   // Previous boot's RTC state, persisted once at the top of setup() before this boot
   // overwrote it - survives a full power loss, unlike the live lastCheckpoint* fields above.
@@ -6687,7 +8246,7 @@ String deviceInfoJson()
     }
   }
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   IPAddress ip = wifiStationConnected ? WiFi.localIP() : WiFi.softAPIP();
   doc["networkMode"] = currentNetworkMode();
   doc["ip"] = ip.toString();
@@ -7016,7 +8575,7 @@ uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv)
   return (uint8_t)(smoothedBatteryPercent[sensorId] + 0.5f);
 }
 
-#if MSV2_ENABLE_BLE
+#if TREEBEARD_ENABLE_BLE
 class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
   void onResult(BLEAdvertisedDevice advertisedDevice)
@@ -7194,7 +8753,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // real receiver-observed sample rather than one row per repeated advertisement frame.
     if (!enqueueHistoryReading(sensorId, publishedReading))
     {
-      Serial.print("[MSV2 cloud] history queue full; dropped sensor ");
+      Serial.print("[Treebeard cloud] history queue full; dropped sensor ");
       Serial.print(sensorId);
       Serial.print(" wake ");
       Serial.println(wake);
@@ -7202,7 +8761,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
     // 2026-07-28: temporary debug print for live erratic-battery-reading investigation -
     // remove once resolved (see chat log / scindapsus_probe memory for context).
-    Serial.print("[MSV2 debug] sensor ");
+    Serial.print("[Treebeard debug] sensor ");
     Serial.print(sensorId);
     Serial.print(" wake ");
     Serial.print(wake);
@@ -7248,6 +8807,11 @@ void bleScanTask(void* parameter)
   (void)parameter;
   for (;;)
   {
+    if (cloudRadioExclusive)
+    {
+      vTaskDelay(pdMS_TO_TICKS(BLE_SCAN_IDLE_MS));
+      continue;
+    }
     if (bleScan != nullptr)
     {
       setBleCheckpoint("ble task: scan start");
@@ -7260,7 +8824,7 @@ void bleScanTask(void* parameter)
 }
 #endif
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
 // Runs the five cloud network calls (bootstrap, display settings, config pull,
 // auto-cal pull, snapshot
 // upload) on their own task instead of inline in loop(), mirroring bleScanTask above -
@@ -7289,25 +8853,61 @@ void cloudSyncTask(void* parameter)
   {
     uint32_t now = millis();
     setCloudCheckpoint("cloud task: iteration start");
-    if (wifiStationConnected)
+    // Spill RTC staging to the power-safe journal only when age/capacity thresholds say an
+    // outage is developing. Healthy uploads acknowledge RTC rows directly and never enter
+    // this flash-writing path.
+    serviceHistoryJournal();
+    if (wifiStationConnected && (int32_t)(now - nextCloudNetworkSlotMs) >= 0)
     {
-      // History is the only irreplaceable cloud work: config/display state can be fetched
-      // again, but a full queue eventually has to drop new readings. Give snapshot upload
-      // the first TLS connection whenever several periodic jobs become due together.
-      runCloudSnapshotUploader(now);
-      runCloudBootstrap(now);
-      // At 75% full, reserve the cloud task's TLS budget for lossless history recovery.
-      // Bootstrap still runs above because an unconfigured receiver cannot upload at all;
-      // display/config/auto-cal state is recoverable on a later poll. This also prevents a
-      // failing auxiliary endpoint from repeatedly fragmenting heap while history is in
-      // the only state where delay causes permanent data loss.
-      if (queuedHistoryCount() < (HISTORY_QUEUE_CAPACITY * 3U) / 4U)
+      const auto due = [now](uint32_t deadline) {
+        return deadline == 0 || (int32_t)(now - deadline) >= 0;
+      };
+      const bool bootstrapNeeded = strlen(TREEBEARD_CLOUD_BOOTSTRAP_URL) > 0 &&
+                                   (cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0');
+      const size_t historyQueued = queuedHistoryCount();
+      // A non-empty queue is normal on a receiver continuously hearing probes and must not
+      // starve state pulls. Reserve every network slot for recovery only when the durable
+      // outbox is genuinely endangered; below that threshold, paced uploads have far more
+      // drain capacity (96/min) than measured ingress (~24/min).
+      const bool historyEmergency =
+          historyQueued >= (HISTORY_QUEUE_CAPACITY * 3U) / 4U;
+      bool usedNetworkSlot = false;
+
+      // Exactly one potentially-blocking connection is selected per lane slot. Bootstrap is
+      // first when credentials are absent; otherwise history keeps its due-time priority.
+      // Auto-cal comes before cosmetic/config state so learned percentages return promptly
+      // after boot, without ever launching multiple TLS sessions in one task iteration.
+      if (bootstrapNeeded && due(nextCloudBootstrapMs))
+      {
+        runCloudBootstrap(now);
+        usedNetworkSlot = true;
+      }
+      else if (cloudEnabled && due(nextCloudSyncMs))
+      {
+        runCloudSnapshotUploader(now);
+        usedNetworkSlot = true;
+      }
+      else if (!historyEmergency && cloudEnabled && due(nextCloudAutoCalPullMs))
+      {
+        runCloudAutoCalPull(now);
+        usedNetworkSlot = true;
+      }
+      else if (!historyEmergency && cloudEnabled && due(nextCloudDisplaySyncMs))
       {
         runCloudDisplaySettings(now);
-        runCloudConfigPull(now);
-        runCloudAutoCalPull(now);
+        usedNetworkSlot = true;
       }
-      else
+      else if (!historyEmergency && cloudEnabled && due(nextCloudConfigPullMs))
+      {
+        runCloudConfigPull(now);
+        usedNetworkSlot = true;
+      }
+
+      if (usedNetworkSlot)
+      {
+        nextCloudNetworkSlotMs = millis() + CLOUD_NETWORK_MIN_GAP_MS;
+      }
+      else if (historyEmergency)
       {
         setCloudCheckpoint("cloud task: history recovery priority");
       }
@@ -7327,37 +8927,37 @@ void setupServer()
   };
 
   server.on("/", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /");
+    Serial.println("[Treebeard web] GET /");
     server.sendHeader("Cache-Control", "no-store");
-    server.send_P(200, "text/html", MSV2_MOBILE_APP_HTML);
+    server.send_P(200, "text/html", TREEBEARD_MOBILE_APP_HTML);
   });
 
   server.on("/app", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /app");
+    Serial.println("[Treebeard web] GET /app");
     server.sendHeader("Cache-Control", "no-store");
-    server.send_P(200, "text/html", MSV2_MOBILE_APP_HTML);
+    server.send_P(200, "text/html", TREEBEARD_MOBILE_APP_HTML);
   });
 
   server.on("/manifest.webmanifest", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /manifest.webmanifest");
+    Serial.println("[Treebeard web] GET /manifest.webmanifest");
     server.sendHeader("Cache-Control", "public, max-age=3600");
-    server.send_P(200, "application/manifest+json", MSV2_WEB_MANIFEST);
+    server.send_P(200, "application/manifest+json", TREEBEARD_WEB_MANIFEST);
   });
 
   server.on("/sw.js", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /sw.js");
+    Serial.println("[Treebeard web] GET /sw.js");
     server.sendHeader("Cache-Control", "no-store");
-    server.send_P(200, "application/javascript", MSV2_SERVICE_WORKER_JS);
+    server.send_P(200, "application/javascript", TREEBEARD_SERVICE_WORKER_JS);
   });
 
   server.on("/app-icon.svg", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /app-icon.svg");
+    Serial.println("[Treebeard web] GET /app-icon.svg");
     server.sendHeader("Cache-Control", "public, max-age=86400");
-    server.send_P(200, "image/svg+xml", MSV2_APP_ICON_SVG);
+    server.send_P(200, "image/svg+xml", TREEBEARD_APP_ICON_SVG);
   });
 
   server.on("/ping", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /ping");
+    Serial.println("[Treebeard web] GET /ping");
     server.send(200, "text/plain", "pong\n");
   });
 
@@ -7369,13 +8969,13 @@ void setupServer()
   server.on("/ncsi.txt", HTTP_GET, redirectToSetupApp);
 
   server.on("/ui", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /ui");
+    Serial.println("[Treebeard web] GET /ui");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", readUiJson());
   });
 
   server.on("/ui", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /ui");
+    Serial.println("[Treebeard web] POST /ui");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7388,19 +8988,22 @@ void setupServer()
   });
 
   server.on("/data", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /data");
+    Serial.println("[Treebeard web] GET /data");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", sensorDataJson());
+    // Sampled here, not just in loop(): this is the deepest loopTask call path in the build
+    // (handler frame + sensorDataJson()'s StaticJsonDocument<4096> + the returned String).
+    recordLoopTaskStackFree();
   });
 
   server.on("/display", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /display");
+    Serial.println("[Treebeard web] GET /display");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", displaySettingsJson());
   });
 
   server.on("/display", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /display");
+    Serial.println("[Treebeard web] POST /display");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7410,7 +9013,7 @@ void setupServer()
   });
 
   server.on("/sound", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /sound");
+    Serial.println("[Treebeard web] GET /sound");
     server.sendHeader("Cache-Control", "no-store");
     StaticJsonDocument<64> doc;
     doc["ok"] = true;
@@ -7421,7 +9024,7 @@ void setupServer()
   });
 
   server.on("/sound", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /sound");
+    Serial.println("[Treebeard web] POST /sound");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7439,37 +9042,37 @@ void setupServer()
   });
 
   server.on("/snapshot", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /snapshot");
+    Serial.println("[Treebeard web] GET /snapshot");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", snapshotJson());
   });
 
   server.on("/device", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /device");
+    Serial.println("[Treebeard web] GET /device");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", deviceInfoJson());
   });
 
   server.on("/config-meta", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /config-meta");
+    Serial.println("[Treebeard web] GET /config-meta");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", configMetaJson());
   });
 
   server.on("/claim", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /claim");
+    Serial.println("[Treebeard web] GET /claim");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", claimInfoJson());
   });
 
   server.on("/cloud", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /cloud");
+    Serial.println("[Treebeard web] GET /cloud");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", cloudConfigJson());
   });
 
   server.on("/cloud", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /cloud");
+    Serial.println("[Treebeard web] POST /cloud");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7479,7 +9082,7 @@ void setupServer()
   });
 
   server.on("/cloud", HTTP_DELETE, []() {
-    Serial.println("[MSV2 web] DELETE /cloud");
+    Serial.println("[Treebeard web] DELETE /cloud");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7497,7 +9100,7 @@ void setupServer()
   // sensor-specific targeting needed - the pull re-fetches every sensor's state in one
   // request regardless, so "refresh soon" is all this needs to communicate.
   server.on("/autocal-refresh", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /autocal-refresh");
+    Serial.println("[Treebeard web] POST /autocal-refresh");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7508,13 +9111,13 @@ void setupServer()
   });
 
   server.on("/wifi", HTTP_GET, []() {
-    Serial.println("[MSV2 web] GET /wifi");
+    Serial.println("[Treebeard web] GET /wifi");
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", wifiStatusJson());
   });
 
   server.on("/wifi", HTTP_POST, []() {
-    Serial.println("[MSV2 web] POST /wifi");
+    Serial.println("[Treebeard web] POST /wifi");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7524,7 +9127,7 @@ void setupServer()
   });
 
   server.on("/wifi", HTTP_DELETE, []() {
-    Serial.println("[MSV2 web] DELETE /wifi");
+    Serial.println("[Treebeard web] DELETE /wifi");
     if (!isAdminActionAllowed())
     {
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
@@ -7534,7 +9137,7 @@ void setupServer()
   });
 
   server.onNotFound([]() {
-    Serial.print("[MSV2 web] 404 ");
+    Serial.print("[Treebeard web] 404 ");
     Serial.println(server.uri());
     if (!wifiStationConnected)
     {
@@ -7551,7 +9154,7 @@ void setupServer()
 
 IPAddress currentIpAddress()
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   return wifiStationConnected ? WiFi.localIP() : WiFi.softAPIP();
 #else
   return IPAddress(0, 0, 0, 0);
@@ -7560,7 +9163,7 @@ IPAddress currentIpAddress()
 
 const char* currentNetworkMode()
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (wifiStationConnected)
   {
     return "station";
@@ -7581,7 +9184,7 @@ const char* currentNetworkMode()
 
 bool hasUsableStationConnection()
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (WiFi.status() != WL_CONNECTED)
   {
     return false;
@@ -7598,13 +9201,16 @@ void scheduleCloudCatchUpAfterWifiRecovery(uint32_t now)
   // Do not wait for the old periodic deadlines after an outage. Upload the latest
   // sensor snapshot immediately, then stagger the less urgent pulls so reconnecting
   // does not launch every TLS handshake in one burst.
-  if (strlen(MSV2_CLOUD_BOOTSTRAP_URL) > 0 && (cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0'))
+  if (strlen(TREEBEARD_CLOUD_BOOTSTRAP_URL) > 0 && (cloudUploadUrl[0] == '\0' || cloudApiToken[0] == '\0'))
   {
     nextCloudBootstrapMs = now;
   }
   if (cloudEnabled)
   {
-    nextCloudSyncMs = now;
+    const uint32_t earliestUploadMs = cloudLastAttemptMs == 0
+        ? now
+        : cloudLastAttemptMs + CLOUD_MIN_UPLOAD_SPACING_MS;
+    nextCloudSyncMs = (int32_t)(now - earliestUploadMs) >= 0 ? now : earliestUploadMs;
     nextCloudDisplaySyncMs = now + 1000UL;
     nextCloudConfigPullMs = now + 2000UL;
     nextCloudAutoCalPullMs = now + 3000UL;
@@ -7621,7 +9227,7 @@ uint32_t wifiReconnectDelayMs(uint32_t attempt)
 
 void maintainWifiConnection(uint32_t now)
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (!wifiStationDesired || wifiSetupPortalActive || wifiLocalOnly || activeWifiSsid[0] == '\0')
   {
     return;
@@ -7641,7 +9247,7 @@ void maintainWifiConnection(uint32_t now)
       wifiDisconnectedSinceMs = 0;
       wifiReconnectAttempts = 0;
       nextWifiReconnectMs = 0;
-      Serial.print("[MSV2 wifi] connection restored: ");
+      Serial.print("[Treebeard wifi] connection restored: ");
       Serial.println(WiFi.localIP());
       if (serverPtr != nullptr)
       {
@@ -7662,7 +9268,7 @@ void maintainWifiConnection(uint32_t now)
     wifiDisconnectedSinceMs = now;
     wifiDisconnectCount++;
     nextWifiReconnectMs = now;
-    Serial.print("[MSV2 wifi] connection lost; status=");
+    Serial.print("[Treebeard wifi] connection lost; status=");
     Serial.println((int)WiFi.status());
     displayDirty = true;
   }
@@ -7675,7 +9281,7 @@ void maintainWifiConnection(uint32_t now)
   wifiReconnectAttemptTotal++;
   wifiLastReconnectAttemptMs = now;
   const bool resetRadio = wifiReconnectAttempts % WIFI_RECONNECT_RADIO_RESET_EVERY == 0;
-  Serial.print("[MSV2 wifi] reconnect attempt ");
+  Serial.print("[Treebeard wifi] reconnect attempt ");
   Serial.print(wifiReconnectAttempts);
   Serial.println(resetRadio ? " (radio reset)" : "");
 
@@ -7710,7 +9316,7 @@ void maintainWifiConnection(uint32_t now)
 
 void setupWifi()
 {
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   wifiStationConnected = false;
   wifiStationDesired = false;
   wifiSetupPortalActive = false;
@@ -7718,23 +9324,23 @@ void setupWifi()
   activeWifiPassword[0] = '\0';
   loadStoredWifiConfig();
 
-  const bool forceSetupUnlocked = MSV2_FORCE_WIFI_SETUP != 0 && LittleFS.exists(FORCE_WIFI_SETUP_UNLOCK_PATH);
-  const bool forceSetupMode = MSV2_FORCE_WIFI_SETUP != 0 && !forceSetupUnlocked;
+  const bool forceSetupUnlocked = TREEBEARD_FORCE_WIFI_SETUP != 0 && LittleFS.exists(FORCE_WIFI_SETUP_UNLOCK_PATH);
+  const bool forceSetupMode = TREEBEARD_FORCE_WIFI_SETUP != 0 && !forceSetupUnlocked;
   const bool useLocalOnly = wifiLocalOnly && !forceSetupMode;
   const char* stationSsid = (forceSetupMode || useLocalOnly) ? "" : (storedWifiLoaded ? configuredWifiSsid : WIFI_SSID);
   const char* stationPassword = (forceSetupMode || useLocalOnly) ? "" : (storedWifiLoaded ? configuredWifiPassword : WIFI_PASSWORD);
 
   if (forceSetupMode)
   {
-    Serial.println("[MSV2 wifi] forced setup mode; no saved phone setup choice found");
+    Serial.println("[Treebeard wifi] forced setup mode; no saved phone setup choice found");
   }
   else if (useLocalOnly)
   {
-    Serial.println("[MSV2 wifi] local-only mode enabled; starting receiver access point");
+    Serial.println("[Treebeard wifi] local-only mode enabled; starting receiver access point");
   }
   else if (forceSetupUnlocked)
   {
-    Serial.println("[MSV2 wifi] forced setup completed; using saved phone setup choice");
+    Serial.println("[Treebeard wifi] forced setup completed; using saved phone setup choice");
   }
 
   if (strlen(stationSsid) > 0)
@@ -7743,9 +9349,9 @@ void setupWifi()
     strlcpy(activeWifiSsid, stationSsid, sizeof(activeWifiSsid));
     strlcpy(activeWifiPassword, stationPassword, sizeof(activeWifiPassword));
     bootLog("connecting WiFi STA");
-    Serial.print("[MSV2 wifi] SSID: ");
+    Serial.print("[Treebeard wifi] SSID: ");
     Serial.println(stationSsid);
-    Serial.print("[MSV2 wifi] credential source: ");
+    Serial.print("[Treebeard wifi] credential source: ");
     Serial.println(storedWifiLoaded ? "LittleFS" : "firmware");
     renderWifiConnectingScreen(stationSsid, storedWifiLoaded ? "saved from phone app" : "firmware default");
 
@@ -7769,12 +9375,12 @@ void setupWifi()
       wifiStationConnected = true;
       wifiLastConnectedMs = millis();
       clearWifiRetryState();
-      Serial.print("[MSV2 wifi] connected: ");
+      Serial.print("[Treebeard wifi] connected: ");
       Serial.println(WiFi.localIP());
       return;
     }
 
-    Serial.println("[MSV2 wifi] station connect failed; falling back to AP");
+    Serial.println("[Treebeard wifi] station connect failed; falling back to AP");
     if (storedWifiLoaded)
     {
       uint8_t retryCount = loadWifiRetryCount();
@@ -7782,7 +9388,7 @@ void setupWifi()
       {
         retryCount++;
         saveWifiRetryCount(retryCount);
-        Serial.print("[MSV2 wifi] saved credential retry reboot ");
+        Serial.print("[Treebeard wifi] saved credential retry reboot ");
         Serial.print(retryCount);
         Serial.print("/");
         Serial.println(WIFI_CONNECT_REBOOT_RETRIES);
@@ -7793,7 +9399,7 @@ void setupWifi()
         ESP.restart();
       }
       clearWifiRetryState();
-      Serial.println("[MSV2 wifi] saved credential retries exhausted; starting setup AP");
+      Serial.println("[Treebeard wifi] saved credential retries exhausted; starting setup AP");
     }
     wifiSetupPortalActive = true;
     wifiStationDesired = false;
@@ -7823,7 +9429,7 @@ void setupWifi()
   bool apStarted = AP_PASSWORD[0] == '\0' ? WiFi.softAP(AP_SSID) : WiFi.softAP(AP_SSID, AP_PASSWORD);
   if (!apStarted)
   {
-    Serial.println("[MSV2 wifi] AP start failed; retrying radio reset");
+    Serial.println("[Treebeard wifi] AP start failed; retrying radio reset");
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
     delay(250);
@@ -7838,9 +9444,9 @@ void setupWifi()
   }
   else
   {
-    Serial.print("[MSV2 wifi] AP SSID: ");
+    Serial.print("[Treebeard wifi] AP SSID: ");
     Serial.println(AP_SSID);
-    Serial.print("[MSV2 wifi] AP IP: ");
+    Serial.print("[Treebeard wifi] AP IP: ");
     Serial.println(WiFi.softAPIP());
     if (dnsServerPtr == nullptr)
     {
@@ -7849,7 +9455,7 @@ void setupWifi()
     if (dnsServerPtr != nullptr)
     {
       dnsServer.start(53, "*", WiFi.softAPIP());
-      Serial.println("[MSV2 wifi] captive DNS started");
+      Serial.println("[Treebeard wifi] captive DNS started");
     }
   }
 #endif
@@ -7861,10 +9467,10 @@ void setup()
   delay(2000);
   Serial.println();
   esp_reset_reason_t resetReason = esp_reset_reason();
-  Serial.println(MSV2_BUILD_TAG);
-  Serial.print("[MSV2 boot] previous checkpoint before reset: ");
+  Serial.println(TREEBEARD_BUILD_TAG);
+  Serial.print("[Treebeard boot] previous checkpoint before reset: ");
   Serial.println(lastCheckpoint);
-  Serial.print("[MSV2 boot] reset reason: ");
+  Serial.print("[Treebeard boot] reset reason: ");
   Serial.println(resetReasonName(resetReason));
 
   // 2026-08-23 telemetry: snapshot the prior boot's RTC-held state before this boot's own
@@ -7886,6 +9492,7 @@ void setup()
   {
     historyQueueBootId = 1;
   }
+  restoreHistoryStagingFromRtc();
   bootLog("serial ready");
 
   adminUnlockUntilMs = millis() + ADMIN_GRACE_WINDOW_MS;
@@ -7916,10 +9523,22 @@ void setup()
       bootRecordFile.close();
     }
   }
+  if (littleFsMounted)
+  {
+    bootLog("recovering durable history outbox");
+    if (!initializeHistoryJournal())
+    {
+      bootLog("history outbox recovery failed; using RAM ingress until retry");
+    }
+  }
   ensureDefaultUi();
   ensureUiMetadata();
   loadDeviceIdentity();
   loadCloudConfig();
+  if (littleFsMounted)
+  {
+    loadAutoCalCache();
+  }
   loadDisplaySettings();
   loadTouchCalibration();
   loadSoundSettings();
@@ -7936,7 +9555,7 @@ void setup()
     bootLog("buzzer PWM attach failed");
   }
 
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
   bootLog("initializing backlight PWM (GPIO11)");
   if (!ledcAttach(TFT_BACKLIGHT, BACKLIGHT_PWM_FREQUENCY_HZ, BACKLIGHT_PWM_RESOLUTION_BITS))
   {
@@ -7974,7 +9593,7 @@ void setup()
     return;
   }
   applyDisplayRotation(1, true);
-  Serial.print("[MSV2 display] rotation=");
+  Serial.print("[Treebeard display] rotation=");
   Serial.print(currentRotation);
   Serial.print(" size=");
   Serial.print(tft.width());
@@ -7987,7 +9606,7 @@ void setup()
   bootLog("initializing XPT2046 touch");
   touchReady = touchScreen.begin(displaySpi);
   touchScreen.setRotation(0); // Persisted affine calibration handles display rotation.
-  Serial.print("[MSV2 touch] mode=polling cs=GPIO");
+  Serial.print("[Treebeard touch] mode=polling cs=GPIO");
   Serial.print(TOUCH_CS);
   Serial.print(" irq=GPIO");
   Serial.print(TOUCH_IRQ);
@@ -8024,7 +9643,7 @@ void setup()
   bootLog("display disabled");
 #endif
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   setupWifi();
   serverPtr = new WebServer(80);
   if (serverPtr == nullptr)
@@ -8034,7 +9653,7 @@ void setup()
   }
   setupServer();
   bootLog("WiFi/server ready");
-  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", 16384, nullptr, CLOUD_SYNC_TASK_PRIORITY, &cloudSyncTaskHandle, 0) == pdPASS)
+  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", CLOUD_SYNC_TASK_STACK_BYTES, nullptr, CLOUD_SYNC_TASK_PRIORITY, &cloudSyncTaskHandle, 0) == pdPASS)
   {
     bootLog("cloud sync task running");
   }
@@ -8046,8 +9665,8 @@ void setup()
   bootLog("WiFi disabled");
 #endif
 
-#if MSV2_ENABLE_BLE
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_BLE
+#if TREEBEARD_ENABLE_WIFI
   if (wifiSetupPortalActive)
   {
     bootLog("BLE scanner deferred until WiFi setup is finished");
@@ -8062,7 +9681,7 @@ void setup()
     bleScan->setActiveScan(false);
     bleScan->setInterval(120);
     bleScan->setWindow(40);
-    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", 8192, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
+    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", BLE_SCAN_TASK_STACK_BYTES, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
     {
       bootLog("BLE scanner task running");
     }
@@ -8075,7 +9694,7 @@ void setup()
   bootLog("BLE disabled");
 #endif
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   Serial.print("MSV2 display runtime ready at http://");
   Serial.println(currentIpAddress());
 #else
@@ -8083,7 +9702,7 @@ void setup()
 #endif
   bootLog("initial render");
   displayDirty = false;
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (wifiStationConnected)
   {
     renderUi();
@@ -8116,9 +9735,10 @@ void loop()
   {
     minFreeHeapEverBytes = freeHeapNow;
   }
+  recordLoopTaskStackFree();
   serviceBuzzer(now);
 
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   maintainWifiConnection(now);
   if (dnsServerPtr != nullptr && !wifiStationConnected)
   {
@@ -8127,7 +9747,7 @@ void loop()
   server.handleClient();
   if (pendingRestartMs != 0 && (int32_t)(now - pendingRestartMs) >= 0)
   {
-    Serial.println("[MSV2 wifi] restarting after WiFi config change");
+    Serial.println("[Treebeard wifi] restarting after WiFi config change");
     Serial.flush();
     delay(50);
     intentionalRestartPending = true;
@@ -8139,7 +9759,7 @@ void loop()
   // render/WebServer loop every time they fired, most noticeably the ~30s config pull.
 #endif
 
-#if MSV2_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_DISPLAY
   handleTouchInput(now);
   if (brightnessOverlayOpen)
   {
@@ -8148,7 +9768,7 @@ void loop()
     delay(1);
     return;
   }
-#if MSV2_ENABLE_WIFI
+#if TREEBEARD_ENABLE_WIFI
   if (pendingRestartMs != 0)
   {
     displayDirty = false;
@@ -8224,3 +9844,25 @@ void loop()
 }
 
 #endif
+
+// --- 2026-09-02 loopTask stack instrumentation -------------------------------------------
+// Deliberately at the END of this file. Both definitions below (SET_LOOP_TASK_STACK_SIZE
+// expands to a function definition too) were first placed up beside the task constants,
+// which broke the build: the Arduino .ino preprocessor inserts every auto-generated
+// prototype immediately before the file's FIRST function definition, so putting one above
+// the struct declarations pushed prototypes referencing `BuzzerStep` above `BuzzerStep`
+// itself ("error: 'BuzzerStep' does not name a type"). Keep new file-scope function
+// definitions below the existing ones.
+
+SET_LOOP_TASK_STACK_SIZE(TREEBEARD_LOOP_TASK_STACK_BYTES);
+
+// Records the smallest free loopTask stack seen this boot. Call from any code that actually
+// runs ON loopTask - loop() itself, and the /data handler after its 4KB document exists.
+void recordLoopTaskStackFree()
+{
+  uint32_t freeBytes = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);
+  if (freeBytes < minLoopTaskStackFreeEverBytes)
+  {
+    minLoopTaskStackFreeEverBytes = freeBytes;
+  }
+}

@@ -73,7 +73,7 @@ gain for a smaller failure radius per glitch.
 Originally written 2026-08-12 as a handoff for a fresh set of eyes (Codex) after two rounds of
 firmware changes failed to fix it; Codex then reviewed and added its own findings (see "Codex
 static-review findings" below), which is what the implemented fix is based on. All code
-references are to `arduino/MSV2_ESP32_Display_Runtime/MSV2_ESP32_Display_Runtime.ino` (line
+references are to `arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` (line
 numbers below are from before this fix's edits and will have shifted - search by function name)
 and to the `GFX Library for Arduino` version installed at
 `C:\Users\samca\Documents\Arduino\libraries\GFX_Library_for_Arduino`.
