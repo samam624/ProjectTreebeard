@@ -1826,3 +1826,130 @@ reseating, retested clean (11.37% step, matching the other three boards).
   (flagged in `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open item 7); a future PCB revision could drop
   to a simpler/cheaper mux now that EC-check no longer demands the full 4-destination-per-electrode
   shape.
+
+## 2026-09-03: MSV3 24-hour water immersion + air recovery — clean, and the bare-tank reference
+## channel is validated against a forced step
+
+Full detail, numbers, and caveats: `MSV3/docs/MSV3_WATER_IMMERSION_RECOVERY_2026-09-03.md`.
+
+One MSV3 (sensor ID 4, `MSV3-MOISTURE-004` -- corrected 2026-09-03 from an initial misattribution to
+sensor 5; confirmed against `msv2_sensor_history`, where only sensor 4 shows the immersion step, and
+sensor 5 was never immersed. Production `MSV3_Moisture_BLE_Sleep` firmware, cloud
+history at the normal 1/minute cadence) sat fully immersed in a cup of tap water for ~24 hours,
+then was lifted out into open air.
+
+- **Signal magnitude:** normalized capacitance-above-bare went ~23-24% (air) -> ~118% (immersed)
+  -> 23.8% (air again). That is a **4.96x change in electrode-contributed capacitance**, ~94
+  percentage points of swing. Raw connected `DATA_CH0` ~20.35M dry, ~15.33M wet. Latest row checks
+  exactly against `msv3ReferenceExcessPercent()`: `(22632650/20341560)^2 - 1 = 23.795%`.
+- **No recovery tail.** The removal edge is as vertical as the entry edge — baseline within about
+  one sample. Expected for a water cup (no porous medium), but the *absence* of a slow multi-hour
+  decay is the real content: water wicked into the laminate or under soldermask would dry out over
+  hours as an exponential tail on the connected channel, and after 24 hours of immersion there was
+  none. Addresses the ingress worry in `MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md`
+  for the clean-water case only — it does **not** replace that document's scrap-FR-4 coupon soak,
+  which is about long-term wet *ionic soil*.
+- **No conflict with the ~360 pF dried-after-wet plateau** in the 2026-08-31 entry above. That was
+  measured in soil, which holds residual water against the blade; this test has no medium. Full
+  baseline return in water is not evidence the soil plateau was wrong.
+- **Bare-tank reference validated.** It held 22.62-22.64M across the whole three-day window with no
+  step at either edge, while the connected channel moved 4.6M counts — direct evidence the swing
+  was in the electrode path, not a board-wide parasitic/supply/thermal shift. This channel had only
+  ever been checked against ambient drift before; this is the first time it has been held still
+  against a large deliberately-forced step. The normalized trace also stays flat across a ~6 degC
+  diurnal swing in both wet and dry states, which is the thermal cancellation working as designed.
+- **Residual offset is below resolution** — post-soak 23.8% vs a pre-soak baseline reading ~23-24%
+  off the chart. Any residual is under ~1 point against a ~94-point signal.
+- **The jagged board-temperature sawtooth on the final day is room AC cycling** (maintainer
+  confirmed), not a fault. Bare-tank goes jagged in step with it, which is the expected signature,
+  and the band started before the probe came out of the water. Unrelated to the Alocasia GP AFE
+  rig's mains-coupling bands — different node, different mechanism.
+- **Open/unrecorded:** the coating state of this specific board at test time was not written down,
+  which limits how far the ingress result generalizes. Still open elsewhere: the dry-vs-pre-soaked
+  matched-blade A/B (`MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md`), ionic/salty media, and the
+  settle-vs-polarization timing window (`MOISTURE_SENSOR_FDC2212_FRONTEND.md` open item 7).
+
+## 2026-09-03/04 (overnight): MSV3 BLE OTA works end to end — jump, transfer, boot, on a deployed
+## probe on battery. Full detail: `MSV3/docs/MSV3_OTA_BOOTLOADER_HANDOFF_2026-09-03.md`.
+
+**The headline: a conformal-coated probe in soil can now be updated with no cable and no SWD.**
+Proven on probe 4 (sensor 4) sitting in its pot on battery: jump -> bootloader -> signed transfer
+-> application boot, 34 s, and **13 mV of battery** for a complete firmware update (3983 -> 3970 mV).
+
+### Two root causes, both found by device-side instrumentation after three wrong theories
+
+- **Firmware.** A write authorize reply carrying `BLE_GATT_STATUS_SUCCESS` must ALSO set
+  `update = 1` and hand `offset`/`len`/`p_data` back to the SoftDevice. Replying SUCCESS with
+  `update = 0` is rejected with `NRF_ERROR_INVALID_PARAM`, and a rejected reply is never
+  transmitted — so the client's write hung ~28 s until the application's own idle-peer disconnect,
+  and the board never reset. Error statuses need none of this, which is why every rejection path
+  worked and only the success path — the one that mattered — was silently dead. The probe's own
+  log said it in one line: `checkpoint=8 op=1 gattStatus=0x0 replyRc=7`.
+- **Client.** After a buttonless jump the bootloader keeps the APPLICATION's address (the
+  peer-data handoff carries it across the reset). `address + 1` applies only when the bootloader
+  starts with no valid application. The client was scanning an address nothing was on and
+  reporting "the jump did not take effect" for a jump that had worked. Both behaviours were then
+  observed on the same probe within an hour and both are handled.
+
+Also corrected and worth keeping: the reset no longer happens inside the BLE event callback
+(`NRF_SUCCESS` means the SoftDevice accepted the response, not that it was sent), every path out of
+the authorize handler replies exactly once, and the power gate is evaluated before the reply rather
+than after — previously it could never reject anything visibly.
+
+**Method note.** Prepared writes, Bleak version and the Windows GATT cache were each plausible,
+each cost a full test cycle, and each was wrong. One instrumented build answered it. On this board
+a flash is ~30 s: instrument early instead of reasoning further from source.
+
+### Speed measured to its ceiling
+
+`--profile` partitions a transfer's wall clock. Writes are negligible (~0.44 s); packet-receipt
+waits are essentially the whole cost. Per-packet cost is flat at 26-31 ms regardless of PRN, so the
+constraint is packet delivery, not receipt round-trips — PRN 16 is the measured optimum and PRN 32
+is worse. **Practical transfer-phase ceiling ~8-10 kB/s (~16 s for a 131 KB image).** Beating it
+needs shorter connection intervals compiled into the bootloader, which needs SWD; not worth it,
+since the transfer is already the smaller half of the wall clock. Throughput tracks signal, not
+settings: -55 dBm 28 s, -58 dBm 34 s, -65 dBm 32 s, -74 dBm 47 s.
+
+### Probe 4 migrated off the stock bootloader without SWD
+
+USB carried the bootloader, BLE carried the application. The serial DFU step "fails" at the
+application stage having already written SD+BL — expected, because the new bootloader's
+`DEFAULT_TO_OTA_DFU` removes USB CDC and the port disappears. That is the documented migration
+path for the rest of the fleet.
+
+### Tooling
+
+All three flashers moved to the repository root `scripts/` — `ble_ota_update.py` (primary),
+`ble_dfu_recover.py` (recovery), `swd_flash_hex.py` (SWD). MSV3-only release machinery stays under
+`MSV3/scripts/`. The move also repaired eight doc references that had pointed at
+`scripts/swd_flash_hex.py` since before the 2026-08-29 reorg filed it under `MSV3/`.
+`swd_flash_hex.py` gained `--wait-contact` (hold pogo pins without forcing a mass erase) and had
+its stale default hex path fixed.
+
+`ReceiptGuard` in `ble_ota_update.py` closes upstream dfu_lib's "PRN Timeout, continuing anyway",
+which had previously produced a corrupted image that failed Receive Firmware Image with status 6.
+It validates each receipt's reported byte count against what was actually sent, tolerates the
+clear()-after-receipt race, and is armed only between Receive Firmware Image and Validate so
+connection-phase cancellations cannot poison a retry — a false positive that cost one aborted
+attempt on the live probe before it was narrowed. `scripts/test_receipt_guard.py` covers the
+dropped / delayed / early / stale / duplicate / wrong-offset / cancellation cases; 12 tests pass.
+
+### Data integrity
+
+79 polluted rows removed from `msv2_sensor_history` for sensor 5 — the bench board briefly ran as
+sensor 5 and interleaved into the real probe's stream. Identified by value (20.42M vs the real
+probe's 19.42M, an 866k-count gap) inside a 92-minute window, and confirmed to be the only sensor-5
+rows ever above 20M. Pollution stopped by re-IDing the bench board to sensor 99, which is above the
+receiver's `MAX_SENSOR_ID = 16` and therefore dropped before it reaches the cloud.
+
+### Open
+
+- **Mutated-image negative tests not done.** Corrupt a byte with the original CRC; corrupt and
+  recompute CRC without re-signing. Both must fail validation and never boot. Until then the
+  integrity story is "host-side window narrowed", not "airtight" — the real boundary is the
+  bootloader's CRC and P-256 signature.
+- The bench board runs `MSV3-MOISTURE-099` built from a local edit; committed source stays on the
+  fleet identity. Never leave a bench identity or `ENABLE_SERIAL_LOGS = true` in committed source —
+  a release builds straight from those lines.
+- Probes 1, 2, 3 and 5 are still on the stock bootloader with pre-OTA firmware. Each needs the same
+  one-time USB migration before it can be updated over BLE.

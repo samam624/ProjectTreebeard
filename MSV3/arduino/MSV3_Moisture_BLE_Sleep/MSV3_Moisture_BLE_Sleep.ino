@@ -134,6 +134,10 @@
 #define PIN_CHG_PG   41  // P1.09 -- LOW=input power good
 
 // ======================================================= Configuration ====
+// 2026-09-03: keep this at the fleet identity. A release is built straight from this source, so
+// leaving a bench identity here makes a version number mean two different binaries. The bench
+// board currently runs 099, built by editing this line locally and NOT committed -- see
+// MSV3_OTA_BOOTLOADER_HANDOFF_2026-09-03.md.
 const char DEVICE_NAME[] = "MSV3-MOISTURE-005";
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
@@ -649,6 +653,13 @@ uint8_t currentTankPhase = 0;
 // that idle peer off when the deadline expires.
 const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
 
+// How long to let the DFU authorize response settle on air before arming GPREGRET and resetting.
+// sd_ble_gatts_rw_authorize_reply() returning NRF_SUCCESS only means the SoftDevice accepted the
+// response for transmission; resetting immediately can tear the radio down before it is actually
+// sent, which leaves the client waiting forever on a write it will never see answered. The reset
+// therefore happens here, out of the BLE event callback, one connection interval or two later.
+const uint32_t DFU_RESPONSE_SETTLE_MS = 150;
+
 // How long to keep advertising and actively watch for an incoming connection.
 //
 // 2026-09-03 bench evidence for why this exists: with only the historical 500ms of advertising and
@@ -1074,6 +1085,18 @@ void loop()
                (millis() - holdStart) < OTA_CONNECTED_HOLD_MS)
         {
           feedWatchdog();
+
+          // The authorize callback only records the request; the handoff itself happens here so
+          // the ATT response has time to reach the client first. completeDfuReset() does not
+          // return when it succeeds -- reaching the line after it means the handoff failed and
+          // the normal idle-peer path below should run.
+          if (bledfu.dfuResetPending())
+          {
+            delayFeedingWatchdog(DFU_RESPONSE_SETTLE_MS);
+            bledfu.completeDfuReset();
+            break;
+          }
+
           delay(50);
         }
 
@@ -1094,6 +1117,23 @@ void loop()
           Serial.print(F("[DIAG] OTA hold ended after "));
           Serial.print(millis() - holdStart);
           Serial.println(forcedDisconnect ? F("ms (idle peer disconnected)") : F("ms"));
+
+          // Recorded inside the authorize callback, printed here -- Serial work in a BLE event
+          // handler delays the ATT response and can change the timing being measured.
+          ResetSafeDfuDiag diag;
+          if (bledfu.takeDiag(diag))
+          {
+            Serial.print(F("[DIAG] dfu authorize: checkpoint="));
+            Serial.print(diag.checkpoint);
+            Serial.print(F(" op="));
+            Serial.print(diag.op);
+            Serial.print(F(" conn="));
+            Serial.print(diag.connHandle);
+            Serial.print(F(" gattStatus=0x"));
+            Serial.print(diag.gattStatus, HEX);
+            Serial.print(F(" replyRc="));
+            Serial.println(diag.replyRc);
+          }
           Serial.flush();
         }
       }

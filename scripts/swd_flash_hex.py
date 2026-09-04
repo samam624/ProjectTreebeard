@@ -35,9 +35,13 @@ from pathlib import Path
 
 import serial
 
+# The SWD flasher sketch lives under DisplayCenter/, not MSV3/ -- it is shared receiver-side
+# hardware, and the 2026-08-29 project-treebeard reorg moved every sketch from arduino/<Sketch>/
+# to <Subsystem>/arduino/<Sketch>/. This path was left pointing at the pre-reorg location, so
+# --bootloader failed on a missing file rather than flashing anything. Corrected 2026-09-03.
 DEFAULT_BOOTLOADER_HEX = (
-    Path(__file__).resolve().parent.parent
-    / "arduino" / "Treebeard_ESP32_SWD_Flasher" / "bootloaders"
+    Path(__file__).resolve().parents[1]
+    / "DisplayCenter" / "arduino" / "Treebeard_ESP32_SWD_Flasher" / "bootloaders"
     / "pca10056_bootloader-0.11.0_s140_6.1.1.hex"
 )
 
@@ -272,8 +276,13 @@ def main():
                      "always mass-erases (skipping erase before a bootloader write risks "
                      "leaving old app code that re-corrupts it), then flashes --hex or the "
                      "bundled pca10056 bootloader hex if --hex isn't given")
+    ap.add_argument("--wait-contact", action="store_true",
+                     help="Wait for solid SWD contact before flashing, WITHOUT mass-erasing. "
+                     "--bootloader implies this but also forces an erase; use this flag on its own "
+                     "to hand-hold pogo pins while writing an application into an existing "
+                     "SoftDevice+bootloader that must survive")
     ap.add_argument("--contact-timeout", type=float, default=30.0,
-                     help="Total seconds to wait for contact to go stable in --bootloader mode (default 30)")
+                     help="Total seconds to wait for contact to go stable (default 30)")
     ap.add_argument("--contact-stable", type=float, default=3.0,
                      help="Seconds of continuous, consistent-DPIDR contact required before "
                      "erase/flash starts in --bootloader mode (default 3)")
@@ -299,7 +308,7 @@ def main():
     ser.reset_input_buffer()
     reader = LineReader(ser)
 
-    if args.bootloader:
+    if args.bootloader or args.wait_contact:
         print()
         if not wait_for_contact(ser, reader, timeout_s=args.contact_timeout, stable_s=args.contact_stable):
             return 1
