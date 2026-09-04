@@ -1,0 +1,36 @@
+{
+    "release":  "1.0.1",
+    "application_version":  65537,
+    "device_type":  "0x3356",
+    "softdevice_requirement":  "0x00B6 (S140 6.1.1)",
+    "bootloader":  {
+                       "upstream":  "Adafruit_nRF52_Bootloader 0.11.0",
+                       "dual_bank":  false,
+                       "default_to_ble_recovery":  true,
+                       "signed_dfu_required":  true,
+                       "uf2_enabled":  false
+                   },
+    "public_verification_key":  "Verification key Qx: b062ce0539b9fcd771422ee91eb22f8eb7d04d5f3149fc97511f1208a253bb94\r\nVerification key Qy: 7264a85105292cc182c99ca7a0005ffc87dfe7460e2819014931c48a89f59530",
+    "files":  [
+                  {
+                      "name":  "msv3-e73-recovery-signed-s140-6.1.1.hex",
+                      "sha256":  "426bdb1f0c0a7a1f4e8c1e5d315c0416b67874e85e5cce8a0297dc776be2df4f",
+                      "bytes":  525925
+                  },
+                  {
+                      "name":  "msv3-1.0.1-signed-ota.zip",
+                      "sha256":  "cb268261e9c03ec019351c0dd1c0e1c69e3c12ca43981e52073c708d645f7f5b",
+                      "bytes":  132348
+                  },
+                  {
+                      "name":  "msv3-1.0.1-initial-install-from-stock.zip",
+                      "sha256":  "332953ff4d429f86e647e9b85aa02d9cc89dc507d78fc88f039a377587309cb6",
+                      "bytes":  322637
+                  },
+                  {
+                      "name":  "MSV3_Moisture_BLE_Sleep.ino.hex",
+                      "sha256":  "399018401fcf79bb70315c8e8999b429bb6e349009cb404629cb494270092cbb",
+                      "bytes":  368550
+                  }
+              ]
+}

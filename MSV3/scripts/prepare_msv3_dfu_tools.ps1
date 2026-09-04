@@ -19,6 +19,25 @@ if (!(Test-Path -LiteralPath (Join-Path $deps "intelhex\__init__.py"))) {
   if ($LASTEXITCODE -ne 0) { throw "Could not install pinned Intel HEX tooling" }
 }
 
+# The checked-in workflow can use Python's embeddable Windows distribution for BLE tooling.
+# Its pythonXY._pth intentionally ignores PYTHONPATH, so a pip --target install is otherwise
+# invisible both to Python and to pip's generated adafruit-nrfutil.exe launcher. Register only
+# this ignored dependency directory in that isolated runtime when one is in use.
+$pythonCommand = Get-Command $Python -ErrorAction Stop
+$pythonDir = Split-Path -Parent $pythonCommand.Source
+$isolatedPathFile = Get-ChildItem -LiteralPath $pythonDir -Filter "python*._pth" -File `
+  -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($isolatedPathFile) {
+  $pathLines = [Collections.Generic.List[string]]::new()
+  $pathLines.AddRange([string[]][IO.File]::ReadAllLines($isolatedPathFile.FullName))
+  if (!$pathLines.Contains($deps)) {
+    $siteIndex = $pathLines.IndexOf("import site")
+    if ($siteIndex -lt 0) { $siteIndex = $pathLines.Count }
+    $pathLines.Insert($siteIndex, $deps)
+    [IO.File]::WriteAllLines($isolatedPathFile.FullName, $pathLines, [Text.UTF8Encoding]::new($false))
+  }
+}
+
 # Adafruit 0.5.3.post16 is the format-compatible tool for this legacy bootloader, but its
 # signing.py still contains three Python-2 bytes/text operations. Patch only the exact known
 # expressions and fail closed if the installed source has an unfamiliar shape.

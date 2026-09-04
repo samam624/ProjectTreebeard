@@ -1,4 +1,7 @@
 **/WiFiCredentials.h
+# MSV3 DFU private signing material. Public verification keys and hashes belong in manifests;
+# private keys must be backed up outside Git and must never be pushed.
+MSV3/.secrets/
 # Sensitive, not project content -- added 2026-08-29 after git add -A nearly swept this into a
 # commit during the project-treebeard reorg. Belongs somewhere outside any git repo (a password
 # manager or secure notes), not here -- flagged to the user, not moved unilaterally.

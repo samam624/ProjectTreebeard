@@ -1,7 +1,9 @@
 param(
-  [string]$ReleaseVersion = "1.0.0",
-  [uint32]$ApplicationVersion = 65536,
+  [string]$ReleaseVersion = "1.0.1",
+  [uint32]$ApplicationVersion = 65537,
   [string]$SigningKey,
+  [string]$Python,
+  [switch]$GenerateSigningKey,
   [switch]$SkipApplicationCompile
 )
 
@@ -13,6 +15,14 @@ $cacheRoot = Join-Path $msv3Root ".arduino-build"
 $source = Join-Path $cacheRoot "Adafruit_nRF52_Bootloader"
 $boardSource = Join-Path $msv3Root "bootloader\msv3_e73"
 $boardDest = Join-Path $source "src\boards\msv3_e73"
+$portablePython = Join-Path $cacheRoot "python-portable\runtime\python.exe"
+$pythonExe = if (![string]::IsNullOrWhiteSpace($Python)) {
+  $Python
+} elseif (Test-Path -LiteralPath $portablePython) {
+  $portablePython
+} else {
+  "python"
+}
 $keyPath = if ([string]::IsNullOrWhiteSpace($SigningKey)) {
   Join-Path $msv3Root ".secrets\msv3-dfu-signing-private.pem"
 } elseif ([IO.Path]::IsPathRooted($SigningKey)) {
@@ -28,12 +38,15 @@ if ($ApplicationVersion -eq 0 -or $ApplicationVersion -eq [uint32]::MaxValue) {
   throw "ApplicationVersion must be explicit and cannot be 0 or 0xFFFFFFFF"
 }
 
-$nrfutil = (& (Join-Path $scriptDir "prepare_msv3_dfu_tools.ps1") | Select-Object -Last 1)
+$nrfutil = (& (Join-Path $scriptDir "prepare_msv3_dfu_tools.ps1") -Python $pythonExe | Select-Object -Last 1)
 $deps = Join-Path $cacheRoot "dfu-pydeps"
 $env:PYTHONPATH = $deps
 
 if (!(Test-Path -LiteralPath $keyPath)) {
-  & python (Join-Path $scriptDir "generate_msv3_dfu_key.py") $keyPath
+  if (!$GenerateSigningKey) {
+    throw "Signing key not found at $keyPath. Restore the existing key, or explicitly pass -GenerateSigningKey when establishing a new SWD-installed trust root."
+  }
+  & $pythonExe (Join-Path $scriptDir "generate_msv3_dfu_key.py") $keyPath
   if ($LASTEXITCODE -ne 0) { throw "MSV3 signing-key generation failed" }
 }
 
@@ -98,7 +111,10 @@ $makeArgs = @(
   "SIGNED_FW=1",
   "SIGNED_FW_QX=$qx",
   "SIGNED_FW_QY=$qy",
-  "DUALBANK_FW=1",
+  # The 1.0.0 dual-bank build accepted a complete BLE transfer but failed to leave a valid
+  # application in bank 0 on the real E73 board. Adafruit's default single-bank path has been
+  # proven on this hardware and DEFAULT_TO_OTA_DFU still guarantees recovery after an invalid app.
+  "DUALBANK_FW=0",
   "DEFAULT_TO_OTA_DFU=1",
   "all"
 )
@@ -152,10 +168,10 @@ if ($LASTEXITCODE -ne 0) { throw "Signed OTA package generation failed" }
   --application $appHex --bootloader $bootOnly --softdevice $requiredSource $initialInstall
 if ($LASTEXITCODE -ne 0) { throw "Initial stock-to-MSV3 package generation failed" }
 
-& python (Join-Path $scriptDir "verify_msv3_dfu_package.py") $signedOta `
+& $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $signedOta `
   --device-type 0x3356 --application-version $ApplicationVersion --key $keyPath
 if ($LASTEXITCODE -ne 0) { throw "Signed OTA package verification failed" }
-& python (Join-Path $scriptDir "verify_msv3_dfu_package.py") $initialInstall `
+& $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $initialInstall `
   --device-type 0x0052 --application-version $ApplicationVersion
 if ($LASTEXITCODE -ne 0) { throw "Initial migration package verification failed" }
 
@@ -179,7 +195,7 @@ $manifest = [ordered]@{
   softdevice_requirement = "0x00B6 (S140 6.1.1)"
   bootloader = [ordered]@{
     upstream = "Adafruit_nRF52_Bootloader 0.11.0"
-    dual_bank = $true
+    dual_bank = $false
     default_to_ble_recovery = $true
     signed_dfu_required = $true
     uf2_enabled = $false
