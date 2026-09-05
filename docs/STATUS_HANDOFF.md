@@ -1285,63 +1285,129 @@ next session, none chosen:
 
 ## Suggested Next Work
 
-Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
-not by completion):
+**Groomed 2026-09-05.** What stood here was four superseded layers dating back to 2026-07-25, kept
+by ranking rather than by decision, and largely overtaken by the OTA campaign. Every item has now
+been given a verdict instead of a position in a queue. The old text is archived at the bottom of
+this section so nothing is silently lost.
 
-1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
-   section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
-   `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
-   (now on `app.v13.js`), flash `Treebeard_ESP32_Display_Runtime` to the physical receiver, and
-   flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
-   the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
-   text switch once a sensor calibrates, and (once enough history exists to actually drift)
-   the dry-bound trend notice. None of this has been deployed or hardware-tested yet -
-   code-complete and compiling only.
+### Do next, in this order
 
-Superseded by ranking, top of the list as of 2026-08-14 (the 2026-08-09 list below is
-superseded by ranking, not by completion - its battery/hardware items are physical-world tasks
-that session's software review pass didn't touch and are presumably still open):
+1. ~~**Push the branch.**~~ Done 2026-09-05. `msv3-ble-ota` is on origin.
+2. ~~**Make the probe identity a build parameter.**~~ Done 2026-09-05.
+3. **Replay/downgrade test** on probe 99 — does the bootloader accept an older validly signed
+   image? Two packages differing only in build tag and package version. No SWD needed.
+4. **Longer probe-99 soak of the ERROR_CONFIG change**, acceptance defined before the clock starts,
+   then ship it to probe 4 over BLE. Current evidence is 58 healthy bench readings.
+5. **Migrate bench boards 1-3 off the stock bootloader** by USB, canary first. These boards keep
+   USB CDC, so this never needed SWD — it was mis-filed as blocked.
+6. **Thermal falsification tests** (D1 below): dry probe 4's pot and refit; water probe 5; shade
+   probe 4 for a day. Physical actions, then elapsed time and cloud analysis.
 
-1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
-   physical boards - explicitly deferred this session ("no lets do that later").
-   Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
-   fix, a real quantization-risk bug on live hardware. Lower priority:
-   `MSV2_BLE_Adv_Receiver.ino`, `Treebeard_ESP32_DeviceIdentity_Dump.ino`,
-   `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
-2. Decide whether the registration-race mitigation in migration 021 (claim-code-
-   required first registration + a global new-receiver rate limit) is sufficient,
-   or whether the residual risk (a determined, physically-proximate attacker can
-   still win the race - see that migration's own SQL comments for why a complete
-   fix needs a manufacturing-time secret) is worth a bigger design change. Not
-   urgent given the actual threat model for a small family/friends deployment.
-3. `claim-receiver` Edge Function still exists but is superseded by the no-login
-   `plant-dashboard` share-claim flow - decide whether to keep it or retire it
-   (open since the 2026-07-07 pass, still undecided).
+### Blocked, with the reason named
 
-Superseded by ranking, top of the list as of 2026-08-09 (item 6 below is now DONE -
-see the 2026-08-14 section above):
+- **Guard 2's watchdog-hang test** needs SWD attached *and recovery proven first*, because a hang
+  before advertising is the unrecoverable state itself and this bootloader has no USB CDC. The
+  "guard 1 does not cover a hard I2C hang" item is not separate work — it is this test's coverage
+  gap, and should be read as one item.
+- **Probe 5's migration** needs the probe physically retrieved, not SWD.
+- **Probe 5's cell identity** (resting 4280-4441 mV, above a single LiPo's ceiling) needs a DMM at
+  the probe. Treat as a safety check at the next visit: either the divider/calibration is wrong or
+  the cell is genuinely overvoltage.
+- **Blade coating validation** needs a repaired specimen and weeks of air -> soil -> watering ->
+  air cycling.
+- **Fault-reason-on-the-wire** can have its protocol, encoding and decoder written now; hardware
+  verification needs the receiver plugged in.
 
-1. Check the overnight battery test: has Alocasia's battery held within ~1-2% (fix working) or dropped ~8-12% (QSPI leak somehow still active)?
-2. Recharge/swap Scindapsus's battery - it's been at/near 0% since ~Aug 7 and is blocking clean data from that probe on every front (moisture *and* the battery-fix test).
-3. Bench-check Scindapsus's BQ25100 `~CHG` pin for noise (leading theory for its erratic battery% readings even before the QSPI fix - see the 2026-08-09 section above).
-4. Continue the FDC2212/MSV3 PCB migration open items (`docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`) - now with concrete field evidence (not just theory) that VDD-coupling is a real, currently-happening problem, both from low battery and from active charging.
-5. Consider a firmware-only mitigation in the meantime: discard/flag moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline.
-6. ~~Revisit the receiver's `DEFAULT_STALE_SECONDS`~~ - **done 2026-08-14**, dropped 3900 -> 180.
+### Dropped, with the reason
 
-Superseded, top of the list as of 2026-07-25:
+- **Dual-bank DFU forensics.** The remaining question is which of three known activation defects
+  fired historically, answerable by one SWD read of the settings page. Dropped as planned work:
+  SDK11 dual-bank is *staging, not rollback* — it protects the old image during download and then
+  destroys it at activation — so it cannot deliver the post-boot revert that motivated it. Take
+  the settings-page read only if SWD is attached for something else.
+- **Auto-calibration redesign deployment** (top of the 2026-08-17 list). Deferred behind the
+  thermal finding: a daily thermal excursion larger than a watering step means any calibration
+  learned now would be fitting temperature. Revisit after D1.
+- **`--prn 4` at weak RSSI.** Not research. Either a runbook line or, better, tooling that selects
+  it automatically below about -70 dBm.
 
-1. Check tonight's overnight results (via the now-fixed History tab, or `scripts/fetch_supabase_history.py`): are oscillator readings solid/stable in real soil (vs. last night's RC-timing sawtooth-to-saturation), and has auto mode's "ready" gate cleared for any sensor yet.
-2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
-3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
-4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
-5. ~~Update `web/plant-dashboard`'s hardcoded art catalog~~ - **done 2026-08-14**, all 7 `color_*` GIFs and catalog keys added, deployed to production.
-6. ~~Fix the receiver's missed-packet-counter wraparound-on-reboot bug~~ - **done 2026-08-14** for `MSV2_BLE_Adv_Receiver.ino`; the main receiver's own `onResult()` was found already correctly guarding this (undocumented until now).
+### Converted from "open question" to "known and decided"
 
-Older, still open from the 2026-07-07 pass:
+- **The charging flag is not trustworthy** (advertisement bit0). Probe 4 never asserts it while its
+  battery visibly climbs; probe 5 flips it 682 times in 1498 readings at its regulation threshold.
+  This is a measured finding, not an investigation. It *is* consumed: the receiver forwards
+  `rawCharging` into the uploaded payload and the local app, so the remaining work is to stop
+  presenting it as "charging" (or to relabel it raw BQ25170 STAT), not to study it further.
+- **`claim-receiver` Edge Function.** Checked 2026-09-05: no code consumer anywhere in the repo —
+  only `cloud/supabase/config.toml`, the setup doc, and this file reference it; the no-login
+  `plant-dashboard` share-claim flow superseded it. Decision: retire. Left deployed for now because
+  removing a live Edge Function is an outward-facing change that should be done deliberately.
 
-1. Recover the original 8 plant card names/art from the last cloud snapshot (query in the section above) and push them back with `push_display_ui.py` — the device is currently running the generic `ui/display_default.json` placeholder cards.
-2. Work through the Medium/Low findings from the 2026-07-07 review that were explicitly out of scope for the security pass (see that section for the list).
-3. `claim-receiver` Edge Function still exists but is superseded by the no-login `plant-dashboard` share-claim flow — decide whether to keep it or retire it.
+<details>
+<summary>Archived pre-2026-09-05 backlog (superseded; kept for provenance)</summary>
+
+> ## Suggested Next Work
+>
+> Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
+> not by completion):
+>
+> 1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
+>    section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
+>    `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
+>    (now on `app.v13.js`), flash `Treebeard_ESP32_Display_Runtime` to the physical receiver, and
+>    flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
+>    the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
+>    text switch once a sensor calibrates, and (once enough history exists to actually drift)
+>    the dry-bound trend notice. None of this has been deployed or hardware-tested yet -
+>    code-complete and compiling only.
+>
+> Superseded by ranking, top of the list as of 2026-08-14 (the 2026-08-09 list below is
+> superseded by ranking, not by completion - its battery/hardware items are physical-world tasks
+> that session's software review pass didn't touch and are presumably still open):
+>
+> 1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
+>    physical boards - explicitly deferred this session ("no lets do that later").
+>    Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
+>    fix, a real quantization-risk bug on live hardware. Lower priority:
+>    `MSV2_BLE_Adv_Receiver.ino`, `Treebeard_ESP32_DeviceIdentity_Dump.ino`,
+>    `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
+> 2. Decide whether the registration-race mitigation in migration 021 (claim-code-
+>    required first registration + a global new-receiver rate limit) is sufficient,
+>    or whether the residual risk (a determined, physically-proximate attacker can
+>    still win the race - see that migration's own SQL comments for why a complete
+>    fix needs a manufacturing-time secret) is worth a bigger design change. Not
+>    urgent given the actual threat model for a small family/friends deployment.
+> 3. `claim-receiver` Edge Function still exists but is superseded by the no-login
+>    `plant-dashboard` share-claim flow - decide whether to keep it or retire it
+>    (open since the 2026-07-07 pass, still undecided).
+>
+> Superseded by ranking, top of the list as of 2026-08-09 (item 6 below is now DONE -
+> see the 2026-08-14 section above):
+>
+> 1. Check the overnight battery test: has Alocasia's battery held within ~1-2% (fix working) or dropped ~8-12% (QSPI leak somehow still active)?
+> 2. Recharge/swap Scindapsus's battery - it's been at/near 0% since ~Aug 7 and is blocking clean data from that probe on every front (moisture *and* the battery-fix test).
+> 3. Bench-check Scindapsus's BQ25100 `~CHG` pin for noise (leading theory for its erratic battery% readings even before the QSPI fix - see the 2026-08-09 section above).
+> 4. Continue the FDC2212/MSV3 PCB migration open items (`docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`) - now with concrete field evidence (not just theory) that VDD-coupling is a real, currently-happening problem, both from low battery and from active charging.
+> 5. Consider a firmware-only mitigation in the meantime: discard/flag moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline.
+> 6. ~~Revisit the receiver's `DEFAULT_STALE_SECONDS`~~ - **done 2026-08-14**, dropped 3900 -> 180.
+>
+> Superseded, top of the list as of 2026-07-25:
+>
+> 1. Check tonight's overnight results (via the now-fixed History tab, or `scripts/fetch_supabase_history.py`): are oscillator readings solid/stable in real soil (vs. last night's RC-timing sawtooth-to-saturation), and has auto mode's "ready" gate cleared for any sensor yet.
+> 2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
+> 3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
+> 4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
+> 5. ~~Update `web/plant-dashboard`'s hardcoded art catalog~~ - **done 2026-08-14**, all 7 `color_*` GIFs and catalog keys added, deployed to production.
+> 6. ~~Fix the receiver's missed-packet-counter wraparound-on-reboot bug~~ - **done 2026-08-14** for `MSV2_BLE_Adv_Receiver.ino`; the main receiver's own `onResult()` was found already correctly guarding this (undocumented until now).
+>
+> Older, still open from the 2026-07-07 pass:
+>
+> 1. Recover the original 8 plant card names/art from the last cloud snapshot (query in the section above) and push them back with `push_display_ui.py` — the device is currently running the generic `ui/display_default.json` placeholder cards.
+> 2. Work through the Medium/Low findings from the 2026-07-07 review that were explicitly out of scope for the security pass (see that section for the list).
+> 3. `claim-receiver` Edge Function still exists but is superseded by the no-login `plant-dashboard` share-claim flow — decide whether to keep it or retire it.
+>
+
+</details>
 
 ## Quick Test Commands
 
