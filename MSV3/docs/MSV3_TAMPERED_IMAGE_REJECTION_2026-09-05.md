@@ -120,10 +120,30 @@ relying on a host-supplied hash.
 Outside the result: a validly signed malicious image, signing-key compromise, untested parser
 defects, and replay or downgrade of an older validly signed release.
 
-**Replay is untested.** `dfu_init.c`'s version-check hook is an unimplemented upstream template, so
-the *leading hypothesis* — not a measured fact — is that an older compatible signed release would
-be accepted. That would be a freshness limitation, not an integrity failure, and it is the obvious
-next test.
+**Replay is now tested, and it is accepted.** Measured the same day, on probe 99: two packages
+built from one source tree at `SENSOR_ID = 99`, differing only in build tag and package version.
+The board was installed with application version **65540**, confirmed by reading its build id back
+over BLE, then offered version **65539** — one lower, same identity, same signing key. It
+transferred in 35 s and booted it; the readback then reported `2026-09-05-ver65539`.
+
+This matches the source exactly. `dfu_init.c` carries an explicit empty template where the check
+would be:
+
+> `/** [DFU init application version] */`
+> `// To support application versioning, this check should be updated.`
+> `// This template allows for any application to be installed.`
+
+So it is a **freshness limitation, not an integrity failure** — a rollback image must still carry a
+valid signature from the trusted key, and everything the seven mutations established still holds.
+What it means in practice is that **any package ever signed for a probe can be reinstalled on it at
+will**, and that is not harmless here: rolling a probe back to a pre-guard-1 image would restore
+the defect where a sensor fault closes the radio and makes a coated probe unreachable. A rollback
+can re-introduce a fixed unrecoverability bug.
+
+Fixing it properly means persisting a monotonic version in the bootloader settings page and
+refusing anything lower — a bootloader change, which needs SWD to install safely. The test needed
+no SWD; the fix does. See the host-side mitigation recorded in `docs/KNOWN_ISSUES.md`, which
+catches the accidental case without pretending to be a device-side control.
 
 Note also that "never executed" is stronger than what was directly observed for the cases whose
 build id does not change (`init-tampered`, `sig-corrupt`) or whose corruption is in code
@@ -195,7 +215,8 @@ must exceed the application's 60-second advertising interval, or a healthy board
 
 ## Still open
 
-- **Replay / downgrade of an older validly signed release.** Untested; expected to be accepted.
+- ~~**Replay / downgrade of an older validly signed release.**~~ Tested 2026-09-05 and **accepted**
+  — see above. The remaining work is the fix, not the question, and the fix is bootloader-side.
 - **Append or prepend beyond the 32-byte length delta** tested here.
 - A validly signed image, key compromise, and bootloader parser defects generally — outside what a
   negative test of this shape can reach.

@@ -114,6 +114,12 @@ class Probe:
     deployed: bool = True
     bootloader_key_sha256: str = ""
     legacy_package_sha256: tuple = ()
+    # The application_version of the package last installed on this probe, as bookkeeping -- the
+    # bootloader cannot report it. Measured 2026-09-05: the device accepts a LOWER version without
+    # complaint, because dfu_init.c's version check is an explicit empty template. So this is the
+    # only place a rollback can be noticed at all, and it is host-side and therefore defeatable:
+    # it catches the accident, not an attacker. 0 means "not recorded", which disables the check.
+    installed_application_version: int = 0
     notes: str = ""
 
     @property
@@ -195,6 +201,7 @@ def load_fleet(path: Path | None = None) -> Fleet:
             bootloader_key_sha256=entry.get("bootloader_key_sha256", "").lower(),
             legacy_package_sha256=tuple(
                 h.lower() for h in entry.get("legacy_package_sha256", [])),
+            installed_application_version=int(entry.get("installed_application_version", 0)),
             notes=entry.get("notes", ""),
         ))
     return Fleet(probes, source)

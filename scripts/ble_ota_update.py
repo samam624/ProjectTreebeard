@@ -674,7 +674,7 @@ def resolve_target(args):
     return fleet, probe
 
 
-def preflight(args, probe):
+def preflight(args, probe, fleet_source_name="MSV3/fleet.json"):
     """Everything checkable before the radio is touched. Returns the parsed package.
 
     Ordering matters: integrity first, then identity. A package the bootloader would reject
@@ -751,6 +751,32 @@ def preflight(args, probe):
         else:
             print(f"  legacy       OVERRIDDEN -- pre-{IDENTITY_CONTRACT_MIN_APP_VERSION} package "
                   f"on a non-deployed board", flush=True)
+
+    # Rollback. Measured on 2026-09-05: the bootloader installs an older validly signed image
+    # without complaint -- dfu_init.c's version check is an explicit empty template that "allows
+    # for any application to be installed". That is a freshness limitation rather than an
+    # integrity failure, but it is not harmless: rolling a probe back past guard 1 restores the
+    # defect where a sensor fault closes the radio and makes a coated probe unreachable.
+    #
+    # This check is HOST-SIDE and says so. It cannot stop anyone who does not run it; a real
+    # control needs a monotonic version in the bootloader settings page, which needs SWD to
+    # install. What it does stop is the likely case: reaching for a stale package by mistake.
+    if (probe.installed_application_version
+            and package.application_version < probe.installed_application_version):
+        detail = (f"{package.path.name} is application version {package.application_version}, "
+                  f"below the {probe.installed_application_version} recorded as installed on "
+                  f"probe {probe.sensor_id} in {fleet_source_name}.")
+        if not args.allow_downgrade:
+            raise PreflightError(
+                f"{detail}\n"
+                f"  The bootloader will NOT refuse this -- its version check is an "
+                f"unimplemented upstream template, verified by measurement -- so this is "
+                f"the only place a rollback gets noticed.\n"
+                f"  Rolling back past guard 1 restores the fault that makes a coated probe "
+                f"unreachable.\n"
+                f"  Pass --allow-downgrade if the rollback is deliberate, and update "
+                f'"installed_application_version" for this probe afterwards.')
+        print(f"  rollback     OVERRIDDEN -- {detail}", flush=True)
 
     if package.sensor_id != probe.sensor_id:
         headline = (f"package identity mismatch: this image advertises as {package.name} "
@@ -912,7 +938,7 @@ async def run(args):
     # Every fail-closed check happens here, before the BLE stack is even initialised: a
     # refusal should cost nothing and disturb nothing.
     fleet, probe = resolve_target(args)
-    package_info = preflight(args, probe)
+    package_info = preflight(args, probe, fleet.source.name)
 
     if args.preflight_only:
         # The happy path needs to be provable without taking a sensor off the air. Everything
@@ -1120,6 +1146,9 @@ def main():
                         help=f"Accept a package older than application version "
                              f"{IDENTITY_CONTRACT_MIN_APP_VERSION}, whose advertised name is not "
                              f"guaranteed to equal the SENSOR_ID compiled into it")
+    parser.add_argument("--allow-downgrade", action="store_true",
+                        help="Install a package older than the version recorded as installed. The "
+                             "DEVICE does not enforce this; the registry is the only record.")
     parser.add_argument("--allow-identity-mismatch", action="store_true",
                         help="Send a package built for a different sensor ID. Intended for the "
                              "bench board, which runs an uncommitted identity. Relaxes ONLY the "

@@ -34,7 +34,8 @@
     "its absence as a problem. The bench board is deployed=false: it sits powered off most of the",
     "time and its silence says nothing.",
     "",
-    "'observed' fields record a real scan or transfer, 'inferred' fields have not been seen yet."
+    "'observed' fields record a real scan or transfer, 'inferred' fields have not been seen yet.",
+    "installed_application_version is bookkeeping: the bootloader cannot report what it is running. Measured 2026-09-05, it also does not ENFORCE it -- dfu_init.c's version check is an explicit empty template, so a probe accepts an older validly signed image without complaint. ble_ota_update.py refuses a package below this value unless --allow-downgrade. That is a host-side check and cannot stop anyone who does not run it; it stops the accident of reaching for a stale package. Update it after every successful transfer. 0 disables the check."
   ],
   "probes": [
     {
@@ -49,7 +50,8 @@
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults. PROVENANCE GAP, recorded 2026-09-05: the exact package installed on this probe was never archived -- it was built into the gitignored .arduino-build/ path, which later builds overwrote, and its source carried an uncommitted SENSOR_ID edit that no commit describes. The running image therefore cannot be reproduced byte-for-byte from this repository. Since 2026-09-05 identity is a build parameter (arduino_msv3_probe.ps1 -SensorId), so (commit, sensor id, build tag) reproduces an image exactly and this cannot recur. Rebuild an equivalent with -SensorId 4 before the next OTA to this probe, and archive the package."
+      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults. PROVENANCE GAP, recorded 2026-09-05: the exact package installed on this probe was never archived -- it was built into the gitignored .arduino-build/ path, which later builds overwrote, and its source carried an uncommitted SENSOR_ID edit that no commit describes. The running image therefore cannot be reproduced byte-for-byte from this repository. Since 2026-09-05 identity is a build parameter (arduino_msv3_probe.ps1 -SensorId), so (commit, sensor id, build tag) reproduces an image exactly and this cannot recur. Rebuild an equivalent with -SensorId 4 before the next OTA to this probe, and archive the package.",
+      "installed_application_version": 0
     },
     {
       "sensor_id": 5,
@@ -63,7 +65,8 @@
       "device_type": "0x0052",
       "legacy_package_sha256": [],
       "ota_capable": false,
-      "notes": "NOT migrated. Advertisement flags 0x0d on 2026-09-04 -- bit4 clear at 4419 mV, far above the 3800 mV gate, which is the signature of firmware with no OTA feature rather than a shut gate. Needs the USB SoftDevice+bootloader migration before it can be updated over BLE at all; ble_ota_update.py refuses it until this entry says otherwise."
+      "notes": "NOT migrated. Advertisement flags 0x0d on 2026-09-04 -- bit4 clear at 4419 mV, far above the 3800 mV gate, which is the signature of firmware with no OTA feature rather than a shut gate. Needs the USB SoftDevice+bootloader migration before it can be updated over BLE at all; ble_ota_update.py refuses it until this entry says otherwise.",
+      "installed_application_version": 0
     },
     {
       "sensor_id": 99,
@@ -77,7 +80,8 @@
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "USB-recoverable bench board, not a fleet unit. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; since 2026-09-05 the bench identity is a build parameter rather than an uncommitted edit, so a bench package is reproducible and --allow-identity-mismatch is no longer needed for the normal case."
+      "notes": "USB-recoverable bench board, not a fleet unit. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; since 2026-09-05 the bench identity is a build parameter rather than an uncommitted edit, so a bench package is reproducible and --allow-identity-mismatch is no longer needed for the normal case.",
+      "installed_application_version": 65541
     }
   ]
 }

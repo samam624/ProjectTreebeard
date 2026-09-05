@@ -123,12 +123,14 @@ REAL_KEY_SHA256 = "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976
 
 
 def probe_entry(sensor_id, address, bootloader="msv3-1.0.1", device_type="0x3356",
-                ota_capable=True, deployed=True, key_sha256=REAL_KEY_SHA256, legacy=()):
+                ota_capable=True, deployed=True, key_sha256=REAL_KEY_SHA256, legacy=(),
+                installed_version=0):
     return {"sensor_id": sensor_id, "name": f"MSV3-MOISTURE-{sensor_id:03d}",
             "application_address": address, "recovery_address": next_address(address),
             "bootloader": bootloader, "device_type": device_type, "ota_capable": ota_capable,
             "deployed": deployed, "bootloader_key_sha256": key_sha256,
-            "legacy_package_sha256": list(legacy), "notes": ""}
+            "legacy_package_sha256": list(legacy),
+            "installed_application_version": installed_version, "notes": ""}
 
 
 class Args(types.SimpleNamespace):
@@ -137,6 +139,7 @@ class Args(types.SimpleNamespace):
     def __init__(self, **overrides):
         defaults = dict(package=None, probe=None, app_address=None, bootloader_address=None,
                         fleet=None, allow_identity_mismatch=False, allow_legacy_package=False,
+                        allow_downgrade=False,
                         preflight_only=False, skip_jump=False, reflash_same_build=False, prn=16,
                         stale_session_retries=3,
                         delay=0.6, retry=3, app_timeout=1.0, bootloader_timeout=1.0,
@@ -956,6 +959,62 @@ def test_real_registry_matches_hardware():
           all(not p.legacy_package_sha256 for p in fleet))
 
 
+def test_rollback_is_refused_against_the_recorded_version():
+    """The device does NOT enforce version order, so the registry is the only place it is noticed.
+
+    Measured 2026-09-05: probe 99, running application version 65540, accepted 65539 and booted it.
+    dfu_init.c's version check is an explicit empty template. This check is host-side and cannot
+    stop anyone who does not run it -- it stops reaching for a stale package by mistake, which is
+    the likely failure, and rolling back past guard 1 restores the fault that makes a coated probe
+    unreachable.
+    """
+    print("\nrollback")
+    # Unsigned (CRC) packages: the rollback check reads application_version and is independent of
+    # how integrity is proven, so this keeps the test from also needing a registry whose pinned key
+    # fingerprint matches a synthetic signing key.
+    import ble_ota_update
+    image = make_image([7])
+    registry = make_registry(TMP / "rollback-fleet.json",
+                             [probe_entry(7, "F0:00:00:00:00:07", installed_version=65540)])
+
+    older = make_package(TMP / "older.zip", image, application_version=65539)
+    same = make_package(TMP / "same.zip", image, application_version=65540)
+    newer = make_package(TMP / "newer.zip", image, application_version=65541)
+
+    def run_preflight(package, **overrides):
+        args = Args(package=package, probe=7, fleet=registry, **overrides)
+        fleet, probe = ble_ota_update.resolve_target(args)
+        return ble_ota_update.preflight(args, probe, fleet.source.name)
+
+    raises("a package below the recorded installed version is refused",
+           ble_ota_update.PreflightError, lambda: run_preflight(older),
+           must_contain="below the 65540")
+
+    for name, package in (("the same version", same), ("a newer version", newer)):
+        try:
+            run_preflight(package)
+            check(f"{name} is accepted", True)
+        except ble_ota_update.PreflightError as error:
+            check(f"{name} is accepted", False, str(error))
+
+    try:
+        run_preflight(older, allow_downgrade=True)
+        check("--allow-downgrade permits a deliberate rollback", True)
+    except ble_ota_update.PreflightError as error:
+        check("--allow-downgrade permits a deliberate rollback", False, str(error))
+
+    # 0 means "not recorded" and must disable the check rather than refusing everything.
+    unrecorded = make_registry(TMP / "rollback-none.json",
+                               [probe_entry(7, "F0:00:00:00:00:07", installed_version=0)])
+    args = Args(package=older, probe=7, fleet=unrecorded)
+    fleet, probe = ble_ota_update.resolve_target(args)
+    try:
+        ble_ota_update.preflight(args, probe, fleet.source.name)
+        check("an unrecorded installed version disables the check", True)
+    except ble_ota_update.PreflightError as error:
+        check("an unrecorded installed version disables the check", False, str(error))
+
+
 def main():
     print("MSV3 OTA preflight")
     test_registry()
@@ -973,6 +1032,7 @@ def main():
     test_live_failures_trip_before_the_jump()
     test_happy_path_reaches_the_radio_boundary()
     test_stale_session_recovery()
+    test_rollback_is_refused_against_the_recorded_version()
     test_real_registry_matches_hardware()
 
     print()

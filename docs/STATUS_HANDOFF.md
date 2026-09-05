@@ -1294,8 +1294,10 @@ this section so nothing is silently lost.
 
 1. ~~**Push the branch.**~~ Done 2026-09-05. `msv3-ble-ota` is on origin.
 2. ~~**Make the probe identity a build parameter.**~~ Done 2026-09-05.
-3. **Replay/downgrade test** on probe 99 — does the bootloader accept an older validly signed
-   image? Two packages differing only in build tag and package version. No SWD needed.
+3. ~~**Replay/downgrade test.**~~ Done 2026-09-05: the bootloader **accepts** an older validly
+   signed image. `dfu_init.c`'s version check is an explicit empty template. Mitigated host-side
+   via `installed_application_version` in the registry; a real fix is bootloader-side and needs
+   SWD. See `docs/KNOWN_ISSUES.md`.
 4. **Longer probe-99 soak of the ERROR_CONFIG change**, acceptance defined before the clock starts,
    then ship it to probe 4 over BLE. Current evidence is 58 healthy bench readings.
 5. **Migrate bench boards 1-3 off the stock bootloader** by USB, canary first. These boards keep

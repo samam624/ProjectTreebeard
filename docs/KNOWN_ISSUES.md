@@ -88,6 +88,36 @@ The wrapper finds the active installed Adafruit nRF52 core, repairs/verifies `va
 
 Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades and another PC will not inherit it. See [the complete LFCLK/RTC1 investigation](../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md).
 
+## MSV3: the bootloader accepts an OLDER signed image -- rollback is not prevented on the device
+
+**Status:** Measured 2026-09-05. Not fixable without a bootloader change, which needs SWD. A
+host-side mitigation is in place and is honest about what it is.
+
+**Measured, not inferred.** Probe 99 was installed with application version 65540 and its build id
+read back over BLE. It was then offered version 65539 -- one lower, same identity, same signing
+key. It transferred in 35 s and booted it, and the readback reported the older build.
+
+**Why.** `dfu_init.c` carries an explicit empty template where the check would be: *"To support
+application versioning, this check should be updated. This template allows for any application to
+be installed."*
+
+**What it is and is not.** A freshness limitation, not an integrity failure: a rollback image must
+still carry a valid signature from the trusted key, and every mutated-image result still holds
+(`MSV3/docs/MSV3_TAMPERED_IMAGE_REJECTION_2026-09-05.md`). What it means in practice is that **any
+package ever signed for a probe can be reinstalled on it at will** -- and that is not harmless,
+because rolling back past guard 1 restores the defect where a sensor fault closes the radio and
+makes a coated probe unreachable. A rollback can re-introduce a fixed unrecoverability bug.
+
+**Mitigation, host-side only.** `MSV3/fleet.json` records `installed_application_version` per probe
+and `ble_ota_update.py` refuses anything below it without `--allow-downgrade`. Update that field
+after every successful transfer; `0` means "not recorded" and disables the check. This cannot stop
+anyone who does not run the tool -- it stops the likely failure, which is reaching for a stale
+package by mistake.
+
+**A real fix** persists a monotonic version in the bootloader settings page and refuses anything
+lower. That is a bootloader change, so installing it safely needs SWD attached. The *test* needed
+no SWD; the *fix* does.
+
 ## MSV3: the production sketch will not build without an explicit sensor identity
 
 **Status:** Enforced in the build as of 2026-09-05.
