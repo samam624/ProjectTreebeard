@@ -1944,12 +1944,75 @@ receiver's `MAX_SENSOR_ID = 16` and therefore dropped before it reaches the clou
 
 ### Open
 
-- **Mutated-image negative tests not done.** Corrupt a byte with the original CRC; corrupt and
-  recompute CRC without re-signing. Both must fail validation and never boot. Until then the
-  integrity story is "host-side window narrowed", not "airtight" — the real boundary is the
-  bootloader's CRC and P-256 signature.
+- ~~**Mutated-image negative tests not done.**~~ **Done 2026-09-05** — see
+  `MSV3/docs/MSV3_TAMPERED_IMAGE_REJECTION_2026-09-05.md`. Seven mutations were offered to probe
+  99; each one's rejection stage and status byte was predicted from the bootloader source first,
+  and all seven predictions held. Payload and length mutations are refused at Validate with status
+  5 (`CRC_ERROR`), signature mutations at Init Packet with status 6 (`OPER_FAILED`). The corrupted
+  build id was never observed running. The claim is now scoped rather than absolute: replay of an
+  older validly signed release is **untested and expected to be accepted** (the version-check hook
+  in `dfu_init.c` is an unimplemented upstream template), and a validly signed image, key
+  compromise and parser defects remain outside it.
+  - The load-bearing operational finding: **`dfu_start_pkt_handle()` erases the application before
+    the init packet is even received**, so no device-side rejection is free. Even a signature
+    failure, caught before a single image byte is sent, costs the running firmware. That is why the
+    host-side preflight is not redundant with the device's check — on a coated probe it is the only
+    thing protecting availability.
+  - Three harness bugs were found and fixed en route, all of the shape *"concluded rejected from
+    the absence of success"*: a failed BLE scan, a successful install, and a silent (timed-out)
+    device were each scored as a refusal. The second is the dangerous one — a device that
+    **accepted** a tampered image would have been reported as refusing it.
 - The bench board runs `MSV3-MOISTURE-099` built from a local edit; committed source stays on the
   fleet identity. Never leave a bench identity or `ENABLE_SERIAL_LOGS = true` in committed source —
   a release builds straight from those lines.
 - Probes 1, 2, 3 and 5 are still on the stock bootloader with pre-OTA firmware. Each needs the same
   one-time USB migration before it can be updated over BLE.
+
+## 2026-09-05: FDC2214 ERROR_CONFIG was gating the watchdog flag, and the status was being thrown
+## away. Full record: `MSV3/docs/MSV3_FDC_ERROR_CONFIG_2026-09-05.md`.
+
+Closes the `ERROR_CONFIG` item in `docs/KNOWN_ISSUES.md`, and corrects it in two places.
+
+- **`fdcInit()` now writes `ERROR_CONFIG = 0x0020` (`WD_ERR2INT` only)** in both sketches, before
+  the `CONFIG` write that starts conversions. The register resets to zero on every hardware
+  shutdown, which this firmware performs on every wake, so it has to be rewritten every time —
+  verified across six `probeSleep()`/`probeWake()` cycles.
+- **The gate is measured, not inferred.** Same induced fault throughout, register toggled
+  underneath it: after any previously latched status had been cleared, `ERR_WD` was reported on 6 of
+  6 settled reads with the bit set, **was not newly reported with it clear (0 of 6)**, and returned
+  on 6 of 6 when re-set. Healthy tank clean either way. Reproduced on two independent runs with
+  identical raw numbers. That is what turns "switched off, not clear" from a datasheet reading into
+  a result.
+- **Correction to the old wording:** only `ERR_WD` was ever gated. `ERROR_CONFIG` has no
+  `AH_WARN2INT`/`AL_WARN2INT` bit, so `STATUS.ERR_AHW`/`ERR_ALW` are not gated by it — a statement
+  about configuration semantics, not a demonstration, since neither amplitude warning was induced
+  on hardware. The `*2OUT` bits report into `DATA_CHx`, a different destination.
+- **Correction to my own first framing:** `ERR_WD` was never the detector for a permanently dead
+  sensor. A watchdog timeout produces no unread conversion, so `CH0_UNREADCONV` never sets and the
+  read fails on the readiness timeout — which always worked, and which `guard 1` already turns into
+  advertise-but-mark-invalid. Calling the `errWd` branch "dead code guarding the failure it exists
+  to catch" was too strong.
+- **The real defect, now fixed.** `fdcWaitForCh0UnreadConversion()` polled `STATUS` and discarded
+  it on timeout. `STATUS` is read-to-clear, so the polling loop consumes the flags it looks past,
+  and on a dead tank the loop always times out — one poll returned `0x800` (`ERR_WD`) and the code
+  threw it away. It now **OR-accumulates** every flag seen and returns it even on a timeout (OR,
+  not last-value, or an earlier poll's flag is still lost).
+- **That is a behaviour change, not just a diagnostic one, and the docs say so.** On the timeout
+  path nothing moves. But a successful read now returns the union of what was seen while polling,
+  so a watchdog event during the poll reaches the `errWd` branch and that one reading is discarded
+  — measured as `STATUS=0x808` with a valid count on the first conversion after a fault cleared.
+  Conservative, costs at most one sample per fault (read-to-clear), but it changes what gets
+  stored. That same sample is the only evidence in the run that the `errWd` branch is reachable at
+  all, since no `IDRIVE` code flags a completed conversion directly.
+- **A negative result worth keeping:** an `IDRIVE` sweep of codes 0–12 found no marginal setting on
+  this board. Code 0 stops conversions (1 of 6 complete); codes 1–12 complete 6 of 6 with no flag.
+  It is a cliff, not a ramp, so "conversion completes but is flagged" cannot be induced directly —
+  which is why the accumulation fix is what made the gating observable at all.
+- **Staged on probe 99, not probe 4.** No false `ERR_WD` in 58 healthy bench measurements (40 soak
+  + 18 post-wake, six cold wakes). That is a bench sample on one board, not a statement about
+  temperature, supply or long-run behaviour — and a false positive silently takes a *healthy* probe
+  off the air, which is worse than the fault it detects. Probe 4 after a longer probe-99 run.
+- Open follow-up, deliberately not folded in: the accumulated status is available where the probe
+  decides to advertise a fault, but the advertisement still says only "invalid". A reason code
+  would let the receiver separate a dead oscillator from a dead bus, and that changes the
+  probe/receiver contract.

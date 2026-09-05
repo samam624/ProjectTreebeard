@@ -189,6 +189,14 @@ bool fdcInit() {
   // (single-channel CH0 mode, correct for this board -- only CH0 is wired to
   // real hardware, CH1-3 are grounded per netlist), DEGLITCH=111 (33MHz, safely
   // above the ~1.3-4.1MHz design target).
+  // ERROR_CONFIG (0x19), added 2026-09-05 alongside the same fix in MSV3_Moisture_BLE_Sleep.ino,
+  // whose fdcInit() carries the full rationale and the Table 7-37 bit map. Short version: this
+  // register resets to zero on every hardware shutdown, and its WD_ERR2INT bit (bit 5) is what
+  // permits STATUS.ERR_WD to be updated at all. Without this write, `fdcstatus` and every
+  // amplitude/oscillation diagnostic in this sketch reports a watchdog-clean part no matter how
+  // dead the tank is -- the flag is switched off, not clear. DRDY_2INT (bit 0) stays 0 on
+  // purpose; see the CH0_UNREADCONV comment below.
+  ok &= fdcWriteReg(0x19, 0x0020);  // ERROR_CONFIG: WD_ERR2INT only
   ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: was 0x1C01 (SENSOR_ACTIVATE_SEL=1, Low Power) --
                                     // now b0, Full Current Activation Mode, TI's recommendation.
                                     // Every other bit already matched its required value.
@@ -200,9 +208,10 @@ bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 // CH0_UNREADCONV, Address 0x18 STATUS bit 3 (Table 7-36): an unread conversion is present for
 // channel 0, and DATA_CH0 should be read to retrieve it. Poll this per-channel flag rather than
 // DRDY: ERROR_CONFIG.DRDY_2INT resets to b0 after every hardware shutdown, and Table 7-37 says
-// that setting prevents STATUS.DRDY from being updated. fdcInit() never writes ERROR_CONFIG
-// (0x19), so STATUS.DRDY is never updated on this board and a DRDY poll times out forever --
-// every fdcread/fdcstream/idrive/muxsweep then prints the shared "I2C read failed" string
+// that setting prevents STATUS.DRDY from being updated. Since 2026-09-05 fdcInit() DOES write
+// ERROR_CONFIG (0x19), but deliberately leaves DRDY_2INT at 0 -- it enables WD_ERR2INT and
+// nothing else. So STATUS.DRDY is still never updated on this board and a DRDY poll still times
+// out forever -- every fdcread/fdcstream/idrive/muxsweep then prints the shared "I2C read failed"
 // despite a perfectly healthy bus. The tell is that `fdcid` still reads 0x7E/0x7F correctly
 // while every conversion read fails.
 // 2026-09-03: ported from MSV3_Moisture_BLE_Sleep.ino, which hit and fixed this exact bug on
@@ -663,6 +672,8 @@ void printHelp() {
   Serial.println(F("  addr <hex>               - set FDC2214 I2C address (default 0x2A)"));
   Serial.println(F("  fdcid                    - read MANUFACTURER_ID/DEVICE_ID (works even before fdcinit)"));
   Serial.println(F("  fdcinit                  - configure FDC2214 for CH0 free-running conversion"));
+  Serial.println(F("  errcfg [hex]             - read ERROR_CONFIG (0x19), or override it; 'errcfg 0' restores the"));
+  Serial.println(F("                             reset value that keeps STATUS.ERR_WD permanently dead"));
   Serial.println(F("  idrive <0-31>            - set DRIVE_CURRENT_CH0 (datasheet Table 7-41), reads back DATA_CH0+STATUS"));
   Serial.println(F("  fdcread                  - one-shot STATUS + DATA_CH0 read"));
   Serial.println(F("  fdcstream <n>            - stream n reads, ~150ms apart (touch electrodes live)"));
@@ -1380,6 +1391,36 @@ void handleCommand(String cmd) {
     doFdcId();
   } else if (cmd == "fdcinit") {
     Serial.println(fdcInit() ? F("  fdcinit OK, CH0 free-running") : F("  fdcinit FAILED (I2C write error)"));
+  } else if (cmd == "errcfg" || cmd.startsWith("errcfg ")) {
+    // Read or override ERROR_CONFIG (0x19) at runtime.
+    //
+    // This exists so the "is STATUS.ERR_WD actually alive?" question can be answered on one board
+    // without two flashes. fdcInit() now writes 0x0020 (WD_ERR2INT), and the control arm of that
+    // experiment -- proving the flag really was dead before, rather than that the tank simply
+    // never faults -- needs ERROR_CONFIG back at its reset value of 0x0000 with everything else
+    // identical. `errcfg 0` gives exactly that; `errcfg` alone reads back what is in the part.
+    //
+    // Note the value does NOT survive a shutdown: probeWake()/fdcinit rewrite it. That is the
+    // point of the register, and it is why an override here is a diagnostic and not a setting.
+    if (cmd == "errcfg") {
+      uint16_t value;
+      if (!fdcReadReg(0x19, value)) { Serial.println(F("  I2C read failed")); return; }
+      char buf[120];
+      snprintf(buf, sizeof(buf),
+               "  ERROR_CONFIG=0x%04X  WD_ERR2OUT=%d AH_WARN2OUT=%d AL_WARN2OUT=%d "
+               "WD_ERR2INT=%d DRDY_2INT=%d",
+               value, (value >> 13) & 1, (value >> 12) & 1, (value >> 11) & 1,
+               (value >> 5) & 1, value & 1);
+      printLineResilient(buf);
+      if (!((value >> 5) & 1)) {
+        Serial.println(F("  WD_ERR2INT is 0: STATUS.ERR_WD will NEVER update, so a clean"));
+        Serial.println(F("  ERR_WD proves nothing about oscillation (Table 7-37)."));
+      }
+    } else {
+      uint16_t value = (uint16_t)strtol(cmd.c_str() + 7, nullptr, 16);
+      Serial.println(fdcWriteReg(0x19, value) ? F("  ERROR_CONFIG written")
+                                             : F("  I2C write failed"));
+    }
   } else if (cmd.startsWith("idrive ")) {
     int code = cmd.substring(7).toInt();
     doIdrive(code);

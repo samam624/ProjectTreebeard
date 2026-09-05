@@ -110,11 +110,45 @@ it reports itself as an I2C failure.
 update. Do not "simplify" it back to `STATUS.DRDY` without also explicitly writing and verifying
 `ERROR_CONFIG.DRDY_2INT` after every hardware shutdown, since shutdown resets the register.
 
-**Also affected by the same register:** `WD_ERR2INT=0` means `STATUS.ERR_WD` never updates, and
-`AH_WARN2OUT`/`AL_WARN2OUT=0` mean amplitude warnings are not reported in `DATA_CHx`. **An absent
-`ERR_WD`/`ERR_AHW`/`ERR_ALW` proves nothing** — those flags are switched off, not clear. Any
-firmware that wants to trust them must write `ERROR_CONFIG` first. As of 2026-09-03 neither sketch
-does.
+**Also affected by the same register — corrected and resolved 2026-09-05.** Both sketches now write
+`ERROR_CONFIG = 0x0020` (`WD_ERR2INT` only) in `fdcInit()`, immediately before the `CONFIG` write
+that starts conversions. Full record:
+[`MSV3/docs/MSV3_FDC_ERROR_CONFIG_2026-09-05.md`](../MSV3/docs/MSV3_FDC_ERROR_CONFIG_2026-09-05.md).
+
+The earlier wording here grouped three flags together and was wrong about two of them:
+
+- **`STATUS.ERR_WD` (bit 11) was gated** by `WD_ERR2INT` and could not set. Measured on the bench:
+  under an induced fault, and after any previously latched status had been cleared, `ERR_WD` was
+  reported on 6 of 6 settled reads with the bit set, was not newly reported with it clear (0 of 6),
+  and returned on 6 of 6 when the bit was set again.
+- **`STATUS.ERR_AHW` (10) and `ERR_ALW` (9) are not gated by this register.** `ERROR_CONFIG` has no
+  `AH_WARN2INT`/`AL_WARN2INT` bit at all; `AH_WARN2OUT`/`AL_WARN2OUT` control reporting into
+  `DATA_CHx.CHx_ERR_AW`, a different destination. That is a statement about the configuration
+  semantics — neither amplitude warning was induced on hardware, so their end-to-end operation is
+  not demonstrated here.
+- The three `*2OUT` bits stay 0 deliberately: their destination is `DATA_CHx` bits 13/12, which
+  `fdcReadChannel0()` masks off with `& 0x0FFF`, and everything they would report is already in
+  `STATUS`.
+
+**`ERR_WD` was never the detector for a permanently dead sensor**, which the old wording implied. A
+watchdog timeout does not produce an unread conversion, so `CH0_UNREADCONV` never sets and the read
+fails on the readiness timeout — a path that always worked. What was lost was the *reason*, because
+`fdcWaitForCh0UnreadConversion()` discarded the `STATUS` it had already read. Since 2026-09-05 it
+OR-accumulates every flag it observes and returns it even on a timeout (OR, not last-value:
+`STATUS` is read-to-clear, so the polling loop consumes the flags it looks past).
+
+**That is a behaviour change, not only a diagnostic one.** On the timeout path nothing moves. But a
+successful read now returns the union of what was seen while polling, so a watchdog event during
+the poll reaches `probeAndAdvertise()`'s `errWd` branch and that one reading is discarded. Measured:
+the first completed conversion after a fault cleared came back as `STATUS=0x808` with a valid
+count. This is the conservative direction and it costs at most one sample per fault, because
+`STATUS` is read-to-clear — but it changes what gets stored.
+
+**Do not treat the healthy-path evidence as complete.** No false `ERR_WD` appeared in 58 healthy
+bench measurements including six cold sleep/wake cycles, which is a bench sample on one board —
+not a statement about temperature, supply or long-run behaviour. The change is staged on probe 99;
+probe 4 gets it after a longer run. A false positive here silently takes a *healthy* probe off the
+air, which is worse than the fault it detects.
 
 ## Adafruit Wire polling loops
 

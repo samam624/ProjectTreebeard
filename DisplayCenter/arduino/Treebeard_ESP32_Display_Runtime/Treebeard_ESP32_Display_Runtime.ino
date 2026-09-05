@@ -541,6 +541,9 @@ struct SensorReading
   bool bareTankValid = false;
   uint32_t rawBareTankFdcCounts = 0;
   uint8_t tankPhase = 0;
+  // Set when the probe advertised but reported its FDC read as failed (flag bit5), or when
+  // the count it sent is implausible. The probe is reachable; the number is not a measurement.
+  bool sensorFault = false;
 };
 
 // Immutable copy of one unique probe wake as received by BLE. The live sensors[] array
@@ -8629,6 +8632,10 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     bool rawCharging = false;
     uint32_t rawFdcCounts = 0;
     bool hasMsv3Diagnostics = false;
+    // Defaults to true so every pre-MSV3 packet and every older MSV3 firmware behaves exactly as
+    // before: only a probe that explicitly reports a fault, or reports an implausible count, is
+    // treated as faulted.
+    bool readingValid = true;
     bool boardTempValid = false;
     int16_t rawBoardTempQuarterC = 0;
     bool bareTankValid = false;
@@ -8662,6 +8669,23 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         rawBoardTempQuarterC = boardTempValid ? tempField : 0;
         bareTankValid = (flags & 0x08) != 0;
         rawBareTankFdcCounts = bareTankValid ? bareTankField : 0;
+
+        // 2026-09-04, MSV3 probe flag bit5: the probe advertised but its FDC read failed.
+        //
+        // The probe used to go silent on a sensor fault, which also closed the only channel for
+        // reaching or updating a coated probe over the radio. It now always advertises and marks
+        // the reading instead, so this bit is what stops a sensor fault from being ingested as a
+        // moisture value.
+        //
+        // Same belt-and-braces as the temperature field directly above: do not trust the probe's
+        // bit alone. A real MSV3 connected count sits around 15-23 million; the probe zeroes the
+        // field when it sets this bit, and anything outside a sane band is not a reading whatever
+        // the flags claim.
+        const uint32_t MSV3_PLAUSIBLE_COUNT_MIN = 5000000UL;
+        const uint32_t MSV3_PLAUSIBLE_COUNT_MAX = 40000000UL;
+        readingValid = (flags & 0x20) == 0 &&
+                       rawFdcCounts >= MSV3_PLAUSIBLE_COUNT_MIN &&
+                       rawFdcCounts <= MSV3_PLAUSIBLE_COUNT_MAX;
       }
     }
     else if (hasRaw)
@@ -8679,6 +8703,46 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
     const int packetRssi = advertisedDevice.getRSSI();
     const uint32_t receivedAtMs = millis();
+
+    if (!readingValid)
+    {
+      // A faulted probe is ALIVE and must look alive -- it is still reachable, still reporting its
+      // battery, and still updatable over BLE, which is the entire reason it now advertises at all.
+      // What it must not do is contribute a number to this plant's history.
+      //
+      // Deliberately placed before smoothMoistureForDisplay() and before the history enqueue: the
+      // display filter is stateful, so feeding it a fault would corrupt the smoothed value for
+      // several subsequent good readings, and a stored row would be indistinguishable from a real
+      // measurement once it reached the cloud.
+      portENTER_CRITICAL(&sensorsMux);
+      SensorReading& faulted = sensors[sensorId];
+      if (faulted.seen && wake == faulted.wake)
+      {
+        portEXIT_CRITICAL(&sensorsMux);
+        return;
+      }
+      faulted.seen = true;
+      faulted.wake = wake;
+      faulted.received++;
+      faulted.sensorFault = true;
+      faulted.rssi = packetRssi;
+      faulted.lastSeenMs = receivedAtMs;
+      if (hasRaw)
+      {
+        faulted.rawBatteryMv = rawBatteryMv;
+        faulted.rawCharging = rawCharging;
+        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
+      }
+      portEXIT_CRITICAL(&sensorsMux);
+      sensorDataDirty = true;
+
+      Serial.print("[Treebeard] sensor ");
+      Serial.print(sensorId);
+      Serial.print(" reported a FAILED measurement (wake ");
+      Serial.print(wake);
+      Serial.println("); still reachable, reading not stored");
+      return;
+    }
     // Snapshot calibration before entering sensorsMux so the packet path never nests
     // sensorsMux and autoCalMux. smoothMoistureForDisplay() only touches this sensor's
     // SensorReading and therefore runs under the single lock below.
@@ -8727,6 +8791,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.received++;
     reading.seen = true;
     reading.wake = wake;
+    reading.sensorFault = false;
     reading.moisture = displayMoisture;
     reading.measuredMoisture = moisture;
     reading.batteryPercent = batteryPercent;
