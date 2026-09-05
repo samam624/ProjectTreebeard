@@ -67,6 +67,8 @@ you. On this project that means device-side diagnostics (`ENABLE_SERIAL_LOGS`, c
 read back from the application loop) rather than more inference from source. One instrumented build
 beats five guesses, and on a 30-second flash cycle it is also faster.
 
-Keep diagnostics out of shipped builds, and never leave a bench identity (`SENSOR_ID`,
-`DEVICE_NAME`) or `ENABLE_SERIAL_LOGS = true` in committed source -- a release builds straight from
-those lines.
+Keep diagnostics out of shipped builds. On MSV3 this is no longer a rule you have to remember:
+identity, serial logging and the build tag are build parameters
+(`arduino_msv3_probe.ps1 -SensorId <n> [-SerialLogs] [-BuildTag <tag>]`), and the production sketch
+`#error`s without `MSV3_SENSOR_ID`. There is no line to edit and none to put back. If you find
+yourself editing a constant to identify a board, that is the bug -- pass the parameter instead.

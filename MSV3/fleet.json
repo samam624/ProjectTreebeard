@@ -49,7 +49,7 @@
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults."
+      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults. PROVENANCE GAP, recorded 2026-09-05: the exact package installed on this probe was never archived -- it was built into the gitignored .arduino-build/ path, which later builds overwrote, and its source carried an uncommitted SENSOR_ID edit that no commit describes. The running image therefore cannot be reproduced byte-for-byte from this repository. Since 2026-09-05 identity is a build parameter (arduino_msv3_probe.ps1 -SensorId), so (commit, sensor id, build tag) reproduces an image exactly and this cannot recur. Rebuild an equivalent with -SensorId 4 before the next OTA to this probe, and archive the package."
     },
     {
       "sensor_id": 5,
@@ -77,7 +77,7 @@
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "USB-recoverable bench board, not a fleet unit. Carries a bench identity built from a local edit that is deliberately never committed, so a package built from committed source will NOT match it -- pass --allow-identity-mismatch when deliberately loading fleet source onto the bench."
+      "notes": "USB-recoverable bench board, not a fleet unit. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; since 2026-09-05 the bench identity is a build parameter rather than an uncommitted edit, so a bench package is reproducible and --allow-identity-mismatch is no longer needed for the normal case."
     }
   ]
 }

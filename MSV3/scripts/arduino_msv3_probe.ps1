@@ -3,6 +3,15 @@ param(
   [string]$Action = "compile",
   [string]$Port,
   [string]$Sketch = "arduino/MSV3_Probe_Bringup_Test",
+  # REQUIRED for the production sketch. See Assert-ProductionBuildParameters below: an image whose
+  # identity came from an uncommitted edit is not reproducible, and probe 4's deployed firmware is
+  # already an example of exactly that.
+  [int]$SensorId = -1,
+  # Bench-only. Turns on USB CDC logging and the boot banner. Never used for a fleet image.
+  [switch]$SerialLogs,
+  # Alphanumeric tag appended to "MSV3-BUILD:" in the image. Passed as a token and stringified by
+  # the sketch, so no quoting has to survive PowerShell -> arduino-cli -> the compiler.
+  [string]$BuildTag,
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
   [string]$ArduinoDataDir = (Join-Path $env:LOCALAPPDATA "Arduino15")
 )
@@ -150,13 +159,60 @@ if (!(Test-Path -LiteralPath $sketchPath)) {
 }
 New-Item -ItemType Directory -Force -Path $buildPath | Out-Null
 
+# Identity, logging and build tag are BUILD PARAMETERS, not lines to edit in the sketch.
+#
+# The production sketch refuses to compile without MSV3_SENSOR_ID (#error). This function is why
+# that refusal is helpful rather than merely strict: it turns a missing -SensorId into a sentence
+# saying what to pass, instead of a preprocessor error partway down a build log.
+function Assert-ProductionBuildParameters {
+  $isProduction = (Split-Path -Leaf $sketchPath) -eq "MSV3_Moisture_BLE_Sleep"
+  if (!$isProduction) {
+    if ($SensorId -ge 0) {
+      throw "-SensorId applies only to arduino/MSV3_Moisture_BLE_Sleep; '$Sketch' has no SENSOR_ID."
+    }
+    return
+  }
+  if ($SensorId -lt 0) {
+    throw @"
+-SensorId is required when building MSV3_Moisture_BLE_Sleep.
+
+  -SensorId 99   the USB-recoverable bench board
+  -SensorId 4    the deployed field probe
+
+MSV3/fleet.json is the registry, and ble_ota_update.py refuses a package whose identity
+disagrees with the probe it is aimed at.
+
+This used to be a constant edited in place, which made every deployed image depend on an
+uncommitted working tree -- probe 4's running firmware cannot be rebuilt from this repository
+for exactly that reason. Passing it here makes (commit, sensor id) reproduce an image.
+"@
+  }
+  if ($SensorId -gt 255) { throw "-SensorId must be 0-255; it travels as one advertisement byte." }
+  if ($BuildTag -and $BuildTag -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "-BuildTag must be alphanumeric with . _ - only (the sketch stringifies it)."
+  }
+}
+
+Assert-ProductionBuildParameters
+
+$defines = @("-DCONFIG_NFCT_PINS_AS_GPIOS")
+if ($SensorId -ge 0) { $defines += "-DMSV3_SENSOR_ID=$SensorId" }
+if ($SerialLogs) { $defines += "-DMSV3_ENABLE_SERIAL_LOGS=1" }
+if ($BuildTag) { $defines += "-DMSV3_BUILD_TAG=$BuildTag" }
+$defineFlags = $defines -join " "
+if ($SensorId -ge 0) {
+  $tagNote = if ($BuildTag) { "build tag $BuildTag" } else { "default build tag" }
+  $logNote = if ($SerialLogs) { "SERIAL LOGS ON (bench build)" } else { "serial logs off (fleet build)" }
+  Write-Host "MSV3 build parameters: sensor $SensorId, $tagNote, $logNote"
+}
+
 $compileArgs = @(
   "compile",
   "--clean",
   "--fqbn", $Fqbn,
   "--build-path", $buildPath,
-  "--build-property", "compiler.c.extra_flags=-DCONFIG_NFCT_PINS_AS_GPIOS",
-  "--build-property", "compiler.cpp.extra_flags=-DCONFIG_NFCT_PINS_AS_GPIOS",
+  "--build-property", "compiler.c.extra_flags=$defineFlags",
+  "--build-property", "compiler.cpp.extra_flags=$defineFlags",
   $sketchPath
 )
 Invoke-ArduinoCli $compileArgs

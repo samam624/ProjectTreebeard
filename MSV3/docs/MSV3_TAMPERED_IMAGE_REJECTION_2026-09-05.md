@@ -178,10 +178,12 @@ board is genuinely on the bench, say so in `MSV3/fleet.json`.
 ## Re-running it
 
 ```powershell
-# 1. Build a bench image for probe 99 (SENSOR_ID = 99, ENABLE_SERIAL_LOGS = true, distinct build id)
-#    from a SCRATCH COPY of the sketch -- never by editing the tracked file.
+# 1. Build a bench image for probe 99. Identity, logging and build tag are BUILD PARAMETERS as of
+#    2026-09-05 -- no scratch copy, no edit to the tracked sketch, and the build FAILS if
+#    -SensorId is omitted.
 powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 `
-    -Action compile -Sketch <scratch>\MSV3_Moisture_BLE_Sleep
+    -Action compile -Sketch arduino/MSV3_Moisture_BLE_Sleep `
+    -SensorId 99 -SerialLogs -BuildTag 2026-09-05-negtest
 # 2. Sign it with the same key the bootloader trusts (see build_msv3_release.ps1 for the invocation)
 # 3. Run every case
 python scripts/ota_negative_test.py --probe 99 --good <bench.zip> --case all `

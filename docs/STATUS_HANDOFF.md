@@ -1962,9 +1962,11 @@ receiver's `MAX_SENSOR_ID = 16` and therefore dropped before it reaches the clou
     the absence of success"*: a failed BLE scan, a successful install, and a silent (timed-out)
     device were each scored as a refusal. The second is the dangerous one — a device that
     **accepted** a tampered image would have been reported as refusing it.
-- The bench board runs `MSV3-MOISTURE-099` built from a local edit; committed source stays on the
-  fleet identity. Never leave a bench identity or `ENABLE_SERIAL_LOGS = true` in committed source —
-  a release builds straight from those lines.
+- ~~The bench board runs `MSV3-MOISTURE-099` built from a local edit.~~ **Resolved 2026-09-05.**
+  Identity, serial logging and the build tag are build parameters
+  (`arduino_msv3_probe.ps1 -SensorId <n> [-SerialLogs] [-BuildTag <tag>]`), and the production
+  sketch `#error`s if `MSV3_SENSOR_ID` is missing. There is no longer a line to edit or to remember
+  to put back, and `(commit, sensor id, build tag)` reproduces an image exactly.
 - Probes 1, 2, 3 and 5 are still on the stock bootloader with pre-OTA firmware. Each needs the same
   one-time USB migration before it can be updated over BLE.
 

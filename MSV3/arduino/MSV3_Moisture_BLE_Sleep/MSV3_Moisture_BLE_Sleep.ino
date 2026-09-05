@@ -139,11 +139,12 @@
 // board currently runs 099, built by editing this line locally and NOT committed -- see
 // MSV3_OTA_BOOTLOADER_HANDOFF_2026-09-03.md.
 //
-// 2026-09-04: SENSOR_ID below is now the ONLY editable identity value; DEVICE_NAME is derived
-// from it (see makeDeviceName()). It used to be a second hand-edited constant, which meant a
-// half-finished re-identification could ship a probe advertising one sensor ID under another
-// probe's name -- silently mixing two plants' data in the receiver, with no build error and no
-// way to notice over the radio. That failure mode is now unrepresentable.
+// 2026-09-04: DEVICE_NAME is derived from SENSOR_ID (see makeDeviceName()) rather than being a
+// second hand-edited constant. A half-finished re-identification used to be able to ship a probe
+// advertising one sensor ID under another probe's name -- silently mixing two plants' data in the
+// receiver, with no build error and no way to notice over the radio. Unrepresentable now.
+// 2026-09-05: SENSOR_ID itself is no longer editable here either. It is a required build
+// parameter; see its definition below.
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
     // Treebeard_ESP32_Display_Runtime.ino's receiver only looks past this once it
@@ -154,15 +155,31 @@ const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
 // to service the same day, health-checked via the bring-up sketch's muxsweep/divnode
 // commands first (real ~20% mux step present, divnode reads LOW at rest - neither of the
 // two hardware fault signatures MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md documents).
-// This constant is edited in place per-board rather than kept as separate per-board sketch
-// files (unlike MSV2's per-plant .ino convention) - deliberate simplicity trade-off. It is now
-// the ONLY thing to edit: DEVICE_NAME is derived from it below, so reflashing the id=4 field
-// unit means changing this one line and nothing else.
+// 2026-09-05: this is no longer a constant edited in place. It is a REQUIRED build parameter,
+// supplied as -DMSV3_SENSOR_ID=<n> by MSV3/scripts/arduino_msv3_probe.ps1 -SensorId <n>, and the
+// build FAILS if it is missing.
 //
-// What stops the wrong image reaching the wrong probe is no longer care alone. MSV3/fleet.json
-// binds each sensor ID to its BLE addresses, and scripts/ble_ota_update.py refuses to jump a
-// board whose advertised identity disagrees with the identity compiled into the package.
-const uint8_t SENSOR_ID = 5;
+// Why it changed. As an in-place literal it was a trap with three separate bites, all of which
+// were taken:
+//   * committed source sat at id 5 -- a probe that cannot even accept an OTA -- so every build
+//     for the deployed id-4 probe began with an uncommitted edit;
+//   * that edit had to be reverted afterwards, and "never leave a bench identity in committed
+//     source" was a rule enforced by memory;
+//   * worst, it made a DEPLOYED IMAGE UNREPRODUCIBLE. Probe 4's running firmware was built from
+//     a working tree that no commit describes, and its package is gone. You could not rebuild
+//     what is flying from anything in this repository.
+// As a build parameter, (commit, sensor id) reproduces an image exactly, and forgetting it is a
+// compile error rather than a wrong probe.
+//
+// What stops the wrong image reaching the wrong probe is not care alone. MSV3/fleet.json binds
+// each sensor ID to its BLE addresses, and scripts/ble_ota_update.py refuses to jump a board
+// whose advertised identity disagrees with the identity compiled into the package.
+#ifndef MSV3_SENSOR_ID
+#error "MSV3_SENSOR_ID is required. Build through MSV3/scripts/arduino_msv3_probe.ps1 -SensorId <n> (99 = bench board). Do not hardcode it -- a deployed image must be reproducible from (commit, sensor id)."
+#endif
+static_assert(MSV3_SENSOR_ID >= 0 && MSV3_SENSOR_ID <= 255,
+              "MSV3_SENSOR_ID must fit the single advertisement byte at mfg[6]");
+const uint8_t SENSOR_ID = MSV3_SENSOR_ID;
 
 // A build identity, so you can tell WHICH image a board is running.
 //
@@ -178,7 +195,23 @@ const uint8_t SENSOR_ID = 5;
 //   * left as a literal in the image, so scripts/msv3_fleet.py reads it straight out of a package
 //     and a test can assert that what booted is what it sent.
 // Keep it a plain literal for that second reason -- do not build it at runtime.
-const char FIRMWARE_BUILD_ID[] = "MSV3-BUILD:2026-09-05-guard1";
+// Overridable as -DMSV3_BUILD_TAG=<tag> (arduino_msv3_probe.ps1 -BuildTag), so a bench image can
+// be told apart from the fleet image it was built beside without editing this file.
+//
+// A TOKEN, stringified here, rather than a quoted string passed on the command line: getting a
+// literal `"` through PowerShell, arduino-cli's --build-property and then the compiler intact is
+// fragile and fails quietly, and a build id that silently reverted to the default would defeat the
+// one thing it exists for. Stringifying keeps the value alphanumeric all the way down, and the
+// result is still a compile-time literal in the image -- which is the property msv3_fleet.py
+// depends on to read the build id straight out of a package.
+#define MSV3_STRINGIFY_(x) #x
+#define MSV3_STRINGIFY(x) MSV3_STRINGIFY_(x)
+#ifdef MSV3_BUILD_TAG
+#define MSV3_BUILD_ID "MSV3-BUILD:" MSV3_STRINGIFY(MSV3_BUILD_TAG)
+#else
+#define MSV3_BUILD_ID "MSV3-BUILD:2026-09-05-guard1"
+#endif
+const char FIRMWARE_BUILD_ID[] = MSV3_BUILD_ID;
 
 // KEEPING THE STRING IN THE IMAGE, which is not automatic and was got wrong once.
 //
@@ -262,10 +295,16 @@ const uint16_t OTA_MIN_BATTERY_MV = 3800;
 // the dry-electrode bench test didn't cover.
 const uint8_t WAKE_DISCARD_CONVERSIONS = 2;
 
-// Production defaults: no USB-host wait/log traffic and no artificial LED load. A bench
-// build may temporarily flip either flag, but those binaries must not be deployed as the
-// normal solar/battery firmware.
-const bool ENABLE_SERIAL_LOGS = false;
+// Production defaults: no USB-host wait/log traffic and no artificial LED load.
+//
+// 2026-09-05: serial logging is a BUILD FLAG (-DMSV3_ENABLE_SERIAL_LOGS=1, via
+// arduino_msv3_probe.ps1 -SerialLogs) rather than a line to edit and remember to put back. It
+// defaults off, so the committed source always describes a deployable image -- which is the same
+// reproducibility property SENSOR_ID above now has, and for the same reason.
+#ifndef MSV3_ENABLE_SERIAL_LOGS
+#define MSV3_ENABLE_SERIAL_LOGS 0
+#endif
+const bool ENABLE_SERIAL_LOGS = (MSV3_ENABLE_SERIAL_LOGS != 0);
 const bool OVERNIGHT_LED_BURN_TEST = false;
 const uint32_t BOOT_HOST_WAIT_MS = 3000;
 

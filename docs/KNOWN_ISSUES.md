@@ -88,6 +88,38 @@ The wrapper finds the active installed Adafruit nRF52 core, repairs/verifies `va
 
 Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades and another PC will not inherit it. See [the complete LFCLK/RTC1 investigation](../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md).
 
+## MSV3: the production sketch will not build without an explicit sensor identity
+
+**Status:** Enforced in the build as of 2026-09-05.
+
+**Affected:** `MSV3/arduino/MSV3_Moisture_BLE_Sleep` only. The bring-up and OTA-test sketches have
+no `SENSOR_ID` and are unaffected.
+
+**What a fresh clone must do:** pass the identity, never edit it.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 `
+    -Action compile -Sketch arduino/MSV3_Moisture_BLE_Sleep -SensorId 4
+# bench board, with USB logging and a distinguishable build id:
+    ... -SensorId 99 -SerialLogs -BuildTag 2026-09-05-bench
+```
+
+Omitting `-SensorId` is a hard error from the wrapper, and the sketch itself `#error`s without
+`MSV3_SENSOR_ID`, so a stale identity cannot reach a probe by omission.
+
+**Why it is enforced rather than documented.** `SENSOR_ID` used to be a constant edited in place.
+Committed source sat at id 5 — a probe that cannot even accept an OTA — so every build for the
+deployed id-4 probe began with an uncommitted edit that then had to be reverted from memory. The
+cost was not hypothetical: **probe 4's running firmware cannot be rebuilt from this repository**,
+because it was built from a working tree no commit describes and its package went to the gitignored
+`.arduino-build/` path that later builds overwrote. `(commit, sensor id, build tag)` now reproduces
+an image exactly.
+
+`ENABLE_SERIAL_LOGS` moved the same way (`-SerialLogs`, default off), so committed source always
+describes a deployable image. `-BuildTag` passes an alphanumeric token that the sketch stringifies —
+a quoted string cannot be relied on to survive PowerShell, `--build-property` and the compiler
+intact, and a build id that silently reverted to the default would defeat the one thing it is for.
+
 ## MSV3: never poll `STATUS.DRDY` on the FDC2214 — it never updates
 
 **Status:** Recurring. Fixed in the production sketch 2026-08-30 and in the bring-up sketch

@@ -8,7 +8,12 @@ param(
   [string]$SigningKey,
   [string]$Python,
   [switch]$GenerateSigningKey,
-  [switch]$SkipApplicationCompile
+  [switch]$SkipApplicationCompile,
+  # Which probe this release's APPLICATION package is for. Required unless the application build
+  # is skipped: since 2026-09-05 the sketch takes its identity as a build parameter, so a release
+  # is per-probe and the package name says which. The bootloader half is identity-free and shared.
+  [int]$SensorId = -1,
+  [string]$BuildTag
 )
 
 $ErrorActionPreference = "Stop"
@@ -142,11 +147,16 @@ if (!(Test-Path -LiteralPath $bootOnly) -or !(Test-Path -LiteralPath $bootMerged
 }
 
 if (!$SkipApplicationCompile) {
+  if ($SensorId -lt 0) {
+    throw "-SensorId is required to build a release application (the sketch takes its identity as a build parameter). Pass -SkipApplicationCompile to build only the bootloader."
+  }
   & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") `
     -Action doctor
   if ($LASTEXITCODE -ne 0) { throw "MSV3 doctor check failed" }
-  & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") `
-    -Action compile -Sketch "arduino/MSV3_Moisture_BLE_Sleep"
+  $probeArgs = @("-Action", "compile", "-Sketch", "arduino/MSV3_Moisture_BLE_Sleep",
+                 "-SensorId", $SensorId)
+  if ($BuildTag) { $probeArgs += @("-BuildTag", $BuildTag) }
+  & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") @probeArgs
   if ($LASTEXITCODE -ne 0) { throw "MSV3 production application build failed" }
 }
 
@@ -157,7 +167,12 @@ $releaseDir = Join-Path $msv3Root "bootloader\generated\$ReleaseVersion"
 $canonicalDir = Join-Path $msv3Root "bootloader\generated"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 $releaseBoot = Join-Path $releaseDir "msv3-e73-recovery-signed-s140-6.1.1.hex"
-$signedOta = Join-Path $releaseDir "msv3-$ReleaseVersion-signed-ota.zip"
+$otaName = if ($SensorId -ge 0) {
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-signed-ota.zip"
+} else {
+  "msv3-$ReleaseVersion-signed-ota.zip"
+}
+$signedOta = Join-Path $releaseDir $otaName
 $initialInstall = Join-Path $releaseDir "msv3-$ReleaseVersion-initial-install-from-stock.zip"
 Copy-Item -LiteralPath $bootMerged -Destination $releaseBoot -Force
 

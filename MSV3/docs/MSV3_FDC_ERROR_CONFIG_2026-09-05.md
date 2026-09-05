@@ -208,10 +208,12 @@ automatically as a spurious bit.
 ## Reproducing
 
 ```powershell
-# Bench build of the PRODUCTION sketch from a scratch copy (SENSOR_ID 99, serial logs on),
-# with the experiment block in setup() after bleInit(). Never edit the tracked sketch.
+# Bench build of the PRODUCTION sketch with the experiment block added in setup() after bleInit().
+# Identity and logging are build parameters as of 2026-09-05, so only the temporary experiment
+# block itself needs a scratch copy.
 powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 `
-    -Action compile -Sketch <scratch>\MSV3_Moisture_BLE_Sleep
+    -Action compile -Sketch <scratch>\MSV3_Moisture_BLE_Sleep `
+    -SensorId 99 -SerialLogs -BuildTag 2026-09-05-errcfg
 # Sign it, then flash and capture in one step -- the block prints ONCE during setup(), so the
 # reader has to be listening before the DFU reset:
 python scripts/fdc_error_config_test.py --port COM9 --flash <bench.zip> --probe 99 --json out.json
