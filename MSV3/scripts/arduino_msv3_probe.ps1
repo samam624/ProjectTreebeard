@@ -84,6 +84,41 @@ function Ensure-Msv3LfRcVariant {
   Write-Host "This repair is intentionally repeated by the repo script after Arduino core installs/upgrades."
 }
 
+function Assert-DuplicatedSketchSources {
+  # ResetSafeBLEDfu.{h,cpp} exists twice, once in MSV3_BLE_OTA_Test and once in
+  # MSV3_Moisture_BLE_Sleep, because the Arduino builder only compiles files that live inside the
+  # sketch folder. Until 2026-09-04 the only thing keeping the two copies in step was a comment
+  # asking people to remember. That code is the buttonless-jump write-authorize path -- the exact
+  # place a SUCCESS reply must set update=1, which took a full day of hardware debugging to find
+  # once. Silent drift there would resurrect it in whichever sketch was not edited, and the proof
+  # sketch is what any future investigation would be run against.
+  $duplicated = @("ResetSafeBLEDfu.h", "ResetSafeBLEDfu.cpp")
+  $folders = @(
+    (Join-Path $repoRoot "arduino\MSV3_Moisture_BLE_Sleep"),
+    (Join-Path $repoRoot "arduino\MSV3_BLE_OTA_Test")
+  )
+
+  foreach ($file in $duplicated) {
+    $paths = $folders | ForEach-Object { Join-Path $_ $file }
+    $present = @($paths | Where-Object { Test-Path -LiteralPath $_ })
+    if ($present.Count -eq 0) { continue }
+    if ($present.Count -ne $paths.Count) {
+      $missing = $paths | Where-Object { !(Test-Path -LiteralPath $_) }
+      throw "$file exists in one sketch but not the other; missing: $($missing -join ', '). These copies must stay identical."
+    }
+    $hashes = $present | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash }
+    if (($hashes | Select-Object -Unique).Count -ne 1) {
+      throw @"
+$file has drifted between the two sketch folders:
+  $($present -join "`n  ")
+They are deliberate duplicates -- the Arduino builder only compiles files inside the sketch folder
+-- and must stay byte-identical. Copy whichever is correct over the other, then rebuild.
+"@
+    }
+  }
+  Write-Host "MSV3 duplicated-source check: OK ($($duplicated -join ', ') identical across both sketches)"
+}
+
 if (!(Test-Path -LiteralPath $CliPath)) {
   throw "arduino-cli.exe not found at '$CliPath'. Pass -CliPath if Arduino IDE is installed elsewhere."
 }
@@ -103,6 +138,7 @@ if ($Action -eq "monitor") {
 
 $corePath = Get-AdafruitNrf52CorePath
 Ensure-Msv3LfRcVariant -CorePath $corePath
+Assert-DuplicatedSketchSources
 
 if ($Action -eq "doctor") {
   Write-Host "MSV3 toolchain check passed. Core: $corePath"

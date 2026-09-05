@@ -1,6 +1,10 @@
 param(
   [string]$ReleaseVersion = "1.0.1",
-  [uint32]$ApplicationVersion = 65537,
+  # 65538 is the first version built from source where DEVICE_NAME is derived from
+  # SENSOR_ID. scripts/msv3_fleet.py treats anything below it as a package whose advertised
+  # name cannot be trusted to equal its sensor ID, and ble_ota_update.py refuses those
+  # without --allow-legacy-package. Do not lower this default.
+  [uint32]$ApplicationVersion = 65538,
   [string]$SigningKey,
   [string]$Python,
   [switch]$GenerateSigningKey,

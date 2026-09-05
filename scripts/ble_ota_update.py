@@ -56,8 +56,13 @@ timeout identity -- task cancellation and disconnect cleanup raise it too:
 NOT claimed: that this makes activating a corrupted image impossible. It narrows the host-side
 window. The real integrity boundary is the bootloader's CRC and P-256 signature over the stored
 image, plus DEFAULT_TO_OTA_DFU so an invalid application falls back to BLE recovery rather than
-bricking. Deterministic injection tests (dropped / delayed / early / stale / duplicate /
-wrong-offset receipts, and mutated-image negative tests) are still outstanding.
+bricking.
+
+Deterministic injection tests DO now exist: `scripts/test_receipt_guard.py` covers dropped,
+delayed, early, stale, duplicate and wrong-offset receipts against the guard's state machine, and
+`scripts/test_ota_preflight.py` covers the mutated-image, wrong-key and corrupt-signature negative
+cases. What is still outstanding is the hardware half -- a transfer deliberately interrupted on a
+real board (adoption sequence item 6).
 
 WHERE THE TIME ACTUALLY GOES (--profile, 134,432 byte image = 551 image packets of 244 bytes plus
 the init packet and size payload = 553 writes to the packet characteristic, 2026-09-03):
@@ -87,11 +92,42 @@ Signal matters more than parameters. Bench board at -55 dBm: 28 s / 4.8 kB/s. Fl
 field at -74 dBm: 47 s / 2.75 kB/s for the same class of image, with one control write (activate)
 taking 9.8 s. Same code, same settings -- expect roughly half the throughput at the weaker end.
 
-Targeting is by ADDRESS, deliberately. Boards are re-identified in place (DEVICE_NAME /
-SENSOR_ID in MSV3_Moisture_BLE_Sleep.ino), so two probes can legitimately share a name -- a
-name-based scan can jump the wrong board into its bootloader and take a live sensor offline.
+TARGETING AND THE IDENTITY PREFLIGHT (2026-09-04). Targeting is by ADDRESS, deliberately: boards
+are re-identified in place by editing SENSOR_ID in MSV3_Moisture_BLE_Sleep.ino, so a name-based
+scan can jump the wrong board into its bootloader and take a live sensor offline.
+
+An address alone was not enough either. Nothing connected the address you typed to the identity
+compiled into the package, and on 2026-09-04 both stale packages sitting in the build directories
+contained MSV3-MOISTURE-004 while the committed source said 005 -- an ordinary leftover from a
+reverted local edit. Flashing one to probe 5 would have given two probes the same sensor ID and
+silently mixed two plants' history in the receiver, with no error anywhere and no way to see it
+over the radio.
+
+So `--probe N` now resolves through MSV3/fleet.json, and every run checks, BEFORE any jump or
+write:
+
+  * the package contains exactly one MSV3-MOISTURE-NNN identity, read out of the application
+    IMAGE (the firmware's own advertised name, derived from SENSOR_ID at compile time) rather than
+    out of the ZIP manifest, which is unsigned metadata;
+  * that identity is the probe being targeted;
+  * the address is one the registry lists for that probe;
+  * the package's device type matches the bootloader actually installed on it (probe 5 is still on
+    stock 0x0052; probe 4 and the bench board are on MSV3's 0x3356);
+  * the package's signature verifies against the public key compiled into that bootloader release,
+    the hash and length match, and the application version is not the unset 0xFFFFFFFF the raw
+    Arduino wrapper emits;
+  * and, when the application is actually observed on air, that its advertised sensor ID and name
+    agree with all of the above.
+
+A jump is the point of no return for availability -- it takes a live sensor off the air for the
+length of a transfer -- so every one of these fails before it, with nothing written.
+
+`--allow-identity-mismatch` is the deliberate escape hatch for the bench board, which runs an
+uncommitted identity. It relaxes ONLY the identity comparisons. Signature, device type, image
+integrity, and the registry's address list are still enforced under it.
 
 Usage:
+    python scripts/ble_ota_update.py <signed-app.zip> --probe 4
     python scripts/ble_ota_update.py <signed-app.zip> --app-address DB:AD:4D:9D:21:BA
 
 Add --profile to time where a transfer actually spends its wall clock: the per-write await sum and
@@ -109,6 +145,18 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from msv3_fleet import (  # noqa: E402
+    FleetError,
+    advertisement_from_bleak,
+    load_fleet,
+    load_release_public_key,
+    normalise_address,
+    package_predates_identity_contract,
+    read_package,
+    verify_package_integrity,
+)
+
 # Lives at the repository root, not under MSV3/, because it is the flashing tool for the whole
 # project rather than an MSV3 implementation detail. The DFU client and its pinned dependencies
 # still live under MSV3/.arduino-build/ (gitignored) -- see the handoff doc for how to recreate it.
@@ -123,6 +171,22 @@ OP_CODE_PACKET_RECEIPT_NOTIF = 0x11
 OP_CODE_ENTER_BOOTLOADER = 0x01
 UPLOAD_MODE_APPLICATION = 0x04
 DFU_SERVICE_UUID = "00001530-1212-efde-1523-785feabcd123"
+
+# Device Information Service firmware revision. Since 2026-09-04 the production application
+# publishes FIRMWARE_BUILD_ID here, which is the only way to ask a coated probe what it is running:
+# the advertisement has no spare bytes, serial logging is off in production, and the bootloader
+# never persists the DFU package's application version.
+DIS_FIRMWARE_REVISION_UUID = "00002a26-0000-1000-8000-00805f9b34fb"
+
+# Mirrors OTA_MIN_BATTERY_MV in MSV3_Moisture_BLE_Sleep.ino. Below this the probe's own
+# power gate refuses the DFU write, so there is no point jumping it.
+OTA_MIN_BATTERY_MV = 3800
+
+# Nordic legacy DFU control-point response codes.
+DFU_STATUS_SUCCESS = 1
+DFU_STATUS_INVALID_STATE = 2
+
+from msv3_fleet import IDENTITY_CONTRACT_MIN_APP_VERSION  # noqa: E402
 
 
 def progress(percent):
@@ -218,12 +282,14 @@ class ReceiptGuard:
     write raises instead of going out.
     """
 
-    def __init__(self):
+    def __init__(self, image_size=0):
         self.armed = False          # true only while the firmware image is streaming
         self.desynced = False
         self.reason = None
         self.timeouts = 0
         self.last_reported = None   # byte count from the most recent packet-receipt notification
+        self.image_size = image_size
+        self.final_window_waits = 0
 
     def begin_attempt(self):
         """Fresh DFU attempt. Clears per-attempt state."""
@@ -232,6 +298,7 @@ class ReceiptGuard:
         self.reason = None
         self.timeouts = 0
         self.last_reported = None
+        self.final_window_waits = 0
 
     def arm(self):
         """Called when Receive Firmware Image starts. Cancellations only count from here."""
@@ -272,6 +339,32 @@ class ReceiptGuard:
             return
         if self.last_reported == sent:
             return
+
+        # THE LAST WINDOW IS DIFFERENT, and treating it like any other cost three identical
+        # failures on the bench before it was understood.
+        #
+        # This guard exists to stop the client STREAMING after flow control is lost. Once every
+        # byte of the image is out there is nothing left to stream, so that rationale is spent --
+        # the only thing after this point is the Receive Firmware Image command, whose own status,
+        # CRC and P-256 signature are the real integrity boundary and are all still enforced.
+        #
+        # And a late receipt here is expected rather than anomalous: when the packet count happens
+        # to be an exact multiple of PRN, dfu_lib waits for one more receipt after the final
+        # packet, and that wait races the bootloader's end-of-image flush. A 136,616-byte image is
+        # 560 packets, an exact multiple of both PRN 4 and PRN 16, and failed 3/3 at exactly
+        # 136,616 bytes sent -- its own full size. The 561-packet build immediately before it,
+        # not a whole multiple, never did. PRN 32 (17.5 windows) flashed it first try.
+        #
+        # So: note it, let the transfer proceed to the completion command, and let the bootloader
+        # answer. Deliberately NOT a blanket relaxation -- it applies only when `sent` has reached
+        # the full image size, so every mid-transfer window keeps aborting exactly as before.
+        if self.image_size and sent >= self.image_size:
+            self.final_window_waits += 1
+            print(f"\n  final packet-receipt was late at {sent}/{self.image_size} bytes -- the "
+                  f"whole image is sent, so this is the bootloader's end-of-image flush, not a "
+                  f"desync. Letting Receive Firmware Image adjudicate.", flush=True)
+            return
+
         self.timeouts += 1
         self.fail(f"no packet receipt within timeout at {sent} bytes sent")
 
@@ -320,6 +413,47 @@ class TransferProfile:
         print(self._summary(self.receipt_waits, "receipt waits"), flush=True)
         print(f"  accounted={accounted:.2f}s of {total_s:.2f}s "
               f"({accounted / total_s * 100:.0f}%), other={total_s - accounted:.2f}s", flush=True)
+
+
+class ControlStatus:
+    """Remembers the last control-point (op, status) so a raised transfer can be explained.
+
+    dfu_lib logs the status and then raises a bare DfuException, so by the time the exception
+    reaches us the reason is gone. Recording it is what turns a traceback into a diagnosis.
+    """
+
+    def __init__(self):
+        self.last_op = None
+        self.last_status = None
+        self.history = []
+
+    def record(self, op, status):
+        self.last_op, self.last_status = op, status
+        self.history.append((op, status))
+
+    @property
+    def start_dfu_invalid_state(self):
+        """Deliberately narrow: ONLY a Start DFU answered INVALID_STATE.
+
+        INVALID_STATE from Validate or Activate means something quite different -- the image or
+        the device state is wrong, not that a dead session is in the way -- and restarting a
+        destructive transfer on that basis would be guessing. Every other opcode, and every other
+        status, falls through to the normal failure path.
+        """
+        return (self.last_op == OP_CODE_START_DFU
+                and self.last_status == DFU_STATUS_INVALID_STATE)
+
+
+def install_status_hook(updater, status):
+    """Capture every control-point response code on the way past."""
+    original = type(updater)._wait_for_response
+
+    async def recording(self, expected_op_code, timeout=30.0):
+        code = await original(self, expected_op_code, timeout)
+        status.record(expected_op_code, code)
+        return code
+
+    type(updater)._wait_for_response = recording
 
 
 def install_transfer_hooks(updater, guard, profile=None):
@@ -427,6 +561,25 @@ def bootloader_addresses_for(app_address):
     return [app_address.upper(), f"{prefix}{(last + 1) & 0xFF:02X}".upper()]
 
 
+def looks_like_bootloader(device, advertisement) -> bool:
+    """Is this advertisement the DFU bootloader rather than the application?
+
+    Address alone cannot answer it: after a buttonless jump the bootloader reuses the
+    application's address with an entirely different GATT table. The advertisement can, because the
+    production application registers the DFU service in GATT but deliberately does NOT put it in
+    its advertising payload -- startAdv()'s static_assert shows Flags(3) + TxPower(3) + mfg(2+23)
+    already fills the 31-byte legacy PDU exactly, leaving no room for a service UUID. So a DFU
+    service UUID on air means the bootloader, and the application's MSV3-MOISTURE-NNN name contains
+    no "dfu" to collide with the bootloader's "AdaDFU".
+
+    This matters most under --skip-jump, where mistaking a running application for an orphaned
+    bootloader would start a transfer against a GATT table that has no DFU packet characteristic.
+    """
+    uuids = [u.lower() for u in (advertisement.service_uuids or [])]
+    name = (advertisement.local_name or getattr(device, "name", None) or "").lower()
+    return DFU_SERVICE_UUID in uuids or "dfu" in name
+
+
 async def wait_for_advertisement(addresses, timeout_s, label, require_dfu_service=False):
     """Scan until any of `addresses` appears.
 
@@ -436,6 +589,10 @@ async def wait_for_advertisement(addresses, timeout_s, label, require_dfu_servic
     `require_dfu_service` disambiguates the bootloader from the application when both can appear on
     the same address: after a buttonless jump the bootloader reuses the application's address, so
     the address alone no longer says which one is running. The DFU service UUID does.
+
+    Returns `(device, advertisement)`, or `(None, None)` on timeout. The advertisement is returned
+    rather than just its RSSI because the application's manufacturer payload carries the sensor ID
+    the board is actually running -- the one piece of live identity evidence the preflight has.
     """
     from bleak import BleakScanner
 
@@ -448,26 +605,258 @@ async def wait_for_advertisement(addresses, timeout_s, label, require_dfu_servic
     def callback(device, advertisement):
         if device.address.upper() not in wanted or found.done():
             return
-        if require_dfu_service:
-            uuids = [u.lower() for u in (advertisement.service_uuids or [])]
-            name = (advertisement.local_name or device.name or "").lower()
-            if DFU_SERVICE_UUID not in uuids and "dfu" not in name:
-                return
-        found.set_result((device, advertisement.rssi))
+        if require_dfu_service and not looks_like_bootloader(device, advertisement):
+            return
+        found.set_result((device, advertisement))
 
     scanner = BleakScanner(callback)
     await scanner.start()
     try:
-        device, rssi = await asyncio.wait_for(found, timeout=timeout_s)
-        print(f"  found {label} at {device.address} (rssi {rssi})", flush=True)
-        return device
+        device, advertisement = await asyncio.wait_for(found, timeout=timeout_s)
+        print(f"  found {label} at {device.address} (rssi {advertisement.rssi})", flush=True)
+        return device, advertisement
     except asyncio.TimeoutError:
-        return None
+        return None, None
     finally:
         await scanner.stop()
 
 
-async def jump_to_bootloader(device, address_type):
+class PreflightError(Exception):
+    """A target/package check failed. Nothing has been written and nothing has been jumped."""
+
+
+def resolve_target(args):
+    """Turn --probe / --app-address into a registry entry, or refuse.
+
+    Requiring the address to be registered is the whole point: it is what makes the identity check
+    more than "the operator typed the same string twice". A board already sitting in its bootloader
+    advertises no manufacturer payload, so the registry is the only thing that can say which probe
+    that address belongs to. A board that is not in the registry is therefore not flashable here --
+    add it to MSV3/fleet.json first, which is a six-line edit and is how the registry stays true.
+    """
+    try:
+        fleet = load_fleet(args.fleet)
+    except FleetError as error:
+        raise PreflightError(str(error)) from None
+
+    if args.probe is not None:
+        try:
+            probe = fleet.by_sensor_id(args.probe)
+        except FleetError as error:
+            raise PreflightError(str(error)) from None
+        if args.app_address:
+            try:
+                given = normalise_address(args.app_address)
+            except FleetError as error:
+                raise PreflightError(str(error)) from None
+            if given != probe.application_address:
+                raise PreflightError(
+                    f"--probe {args.probe} is {probe.application_address} in {fleet.source}, but "
+                    f"--app-address says {given}. Fix whichever is wrong; do not override.")
+        return fleet, probe
+
+    if not args.app_address:
+        raise PreflightError("pass --probe N (preferred) or --app-address")
+
+    try:
+        given = normalise_address(args.app_address)
+        probe = fleet.by_address(given)
+    except FleetError as error:
+        raise PreflightError(str(error)) from None
+    if probe is None:
+        known = "\n".join(f"    {entry.application_address}  probe {entry.sensor_id} "
+                          f"({entry.name})"
+                          for entry in sorted(fleet, key=lambda x: x.sensor_id))
+        raise PreflightError(
+            f"{given} is not in {fleet.source}, so nothing here knows which probe it is or which "
+            f"bootloader it runs.\n  Registered probes:\n{known}\n"
+            f"  Add an entry for this board before flashing it.")
+    return fleet, probe
+
+
+def preflight(args, probe):
+    """Everything checkable before the radio is touched. Returns the parsed package.
+
+    Ordering matters: integrity first, then identity. A package the bootloader would reject
+    outright should never cost a jump, because a jump takes a live sensor off the air for the
+    length of a transfer.
+    """
+    try:
+        package = read_package(args.package.resolve())
+    except FleetError as error:
+        raise PreflightError(str(error)) from None
+    print(f"Package: {package.describe()}", flush=True)
+    print(f"Target:  {probe.describe()}", flush=True)
+
+    # Target suitability first. Probe 5 is on the stock bootloader, and saying so
+    # plainly beats letting the signature step fail later with the downstream
+    # "no release manifest for adafruit-stock-0.11.0".
+    if not probe.ota_capable:
+        raise PreflightError(
+            f"probe {probe.sensor_id} is registered ota_capable=false ({probe.bootloader}).\n"
+            f"  {probe.notes}\n"
+            f"  A board on the stock bootloader has to be migrated over USB first; there is "
+            f"nothing on it for a BLE jump to talk to.")
+
+    public_key = None
+    if package.signed:
+        release = probe.bootloader.replace("msv3-", "")
+        try:
+            public_key = load_release_public_key(release, probe.bootloader_key_sha256)
+        except FleetError as error:
+            raise PreflightError(
+                f"cannot check this signed package against {probe.bootloader}: {error}") from None
+    try:
+        verify_package_integrity(package.path, probe.device_type, public_key)
+    except FleetError as error:
+        raise PreflightError(str(error)) from None
+    how = (f"signature verifies against the key compiled into {probe.bootloader}"
+           if package.signed else "unsigned, CRC16 OK")
+    print(f"  integrity    OK -- {how}, device_type {package.device_type:#06x}", flush=True)
+
+    # The identity check below reads the name the firmware advertises. That only equals SENSOR_ID
+    # for images built after the compile-time derivation landed; before it, the two were separate
+    # hand-edited constants and could legitimately disagree. So an older package's name proves
+    # nothing, and saying "identity OK" about it would be a false assurance.
+    if package_predates_identity_contract(package):
+        allowlisted = package.sha256 in probe.legacy_package_sha256
+        detail = (f"{package.path.name} is application version {package.application_version}, "
+                  f"which predates the compile-time guarantee that the advertised name equals "
+                  f"SENSOR_ID (introduced at {IDENTITY_CONTRACT_MIN_APP_VERSION}).\n"
+                  f"  Its name says {package.name}, but nothing here can prove the sensor ID "
+                  f"compiled into it agrees.")
+        if allowlisted:
+            print(f"  legacy       ALLOWLISTED -- sha256 {package.sha256[:16]}... is recorded for "
+                  f"probe {probe.sensor_id}", flush=True)
+        elif probe.deployed:
+            # --allow-legacy-package on a deployed probe would restore the exact defect this
+            # whole preflight exists to prevent: an old image whose name says 004 while its
+            # compiled SENSOR_ID is 5 would pass the name check, and the live check describes the
+            # application currently RUNNING, not the one about to be sent. So on a deployed board
+            # the flag is not enough -- the specific image has to be hashed into the registry,
+            # which is a reviewable edit rather than a keystroke.
+            raise PreflightError(
+                f"{detail}\n"
+                f"  probe {probe.sensor_id} is deployed=true, so --allow-legacy-package is not "
+                f"sufficient on its own.\n"
+                f"  Rebuild from current source (preferred), or -- only if deployment records "
+                f"establish this exact image -- add its sha256 to that probe's "
+                f'"legacy_package_sha256" in MSV3/fleet.json:\n'
+                f"    {package.sha256}")
+        elif not args.allow_legacy_package:
+            raise PreflightError(
+                f"{detail}\n"
+                f"  Rebuild from current source, or pass --allow-legacy-package if you know what "
+                f"is in this image.")
+        else:
+            print(f"  legacy       OVERRIDDEN -- pre-{IDENTITY_CONTRACT_MIN_APP_VERSION} package "
+                  f"on a non-deployed board", flush=True)
+
+    if package.sensor_id != probe.sensor_id:
+        headline = (f"package identity mismatch: this image advertises as {package.name} "
+                    f"(sensor {package.sensor_id}), but the target is probe {probe.sensor_id} "
+                    f"({probe.name}).")
+        if not args.allow_identity_mismatch:
+            raise PreflightError(
+                f"{headline}\n"
+                f"  Sending it would give two probes the same sensor ID and mix their history in "
+                f"the receiver.\n"
+                f"  Set SENSOR_ID = {probe.sensor_id} in MSV3_Moisture_BLE_Sleep.ino and rebuild, "
+                f"or pass --allow-identity-mismatch if this is deliberate.")
+        # The override exists for the bench board's uncommitted identity. Allowing it against a
+        # deployed probe would leave the fleet's main safety property defeatable by one flag, and
+        # the legitimate fix for a deployed board is to correct the registry -- which leaves an
+        # auditable change behind, where a command-line flag does not.
+        if probe.deployed:
+            raise PreflightError(
+                f"{headline}\n"
+                f"  --allow-identity-mismatch is refused for probe {probe.sensor_id} because it is "
+                f"deployed=true in the registry. If the registry is wrong about this board, fix "
+                f"MSV3/fleet.json; if the package is wrong, rebuild it.")
+        print(f"  identity     OVERRIDDEN -- {headline}", flush=True)
+    else:
+        print(f"  identity     OK -- {package.name} matches probe {probe.sensor_id}", flush=True)
+
+    return package
+
+
+def check_live_identity(args, probe, advertisement):
+    """Compare the running application's own advertisement against the registry, before the jump.
+
+    This is the only check backed by the board itself rather than by a file, so it is also what
+    keeps the registry honest -- a wrong entry surfaces here as a mismatch instead of quietly
+    authorising the wrong transfer.
+
+    --allow-identity-mismatch relaxes only the identity comparisons. A shut power gate or pre-OTA
+    firmware still blocks under it: those are not disagreements about which probe this is, they
+    are the board telling you it will refuse the jump.
+    """
+    advert = advertisement_from_bleak(advertisement)
+    name = advertisement.local_name or ""
+    identity_problems = []
+    blocking_problems = []
+
+    if advert is None:
+        blocking_problems.append(
+            "the application advertised no MSV manufacturer payload, so its sensor ID could not "
+            "be read")
+    else:
+        if advert.sensor_id != probe.sensor_id:
+            identity_problems.append(
+                f"the board at {probe.application_address} advertises sensor {advert.sensor_id}, "
+                f"not {probe.sensor_id} -- MSV3/fleet.json is wrong about this address")
+        if advert.wide and advert.ota_gate_open is False:
+            if advert.battery_mv and advert.battery_mv >= OTA_MIN_BATTERY_MV:
+                blocking_problems.append(
+                    f"it will refuse a DFU jump: flag bit4 is clear at {advert.battery_mv} mV, "
+                    f"above the {OTA_MIN_BATTERY_MV} mV gate, which means pre-OTA firmware rather "
+                    f"than a shut gate")
+            else:
+                blocking_problems.append(
+                    f"it will refuse a DFU jump: the OTA power gate is shut at "
+                    f"{advert.battery_mv} mV, below {OTA_MIN_BATTERY_MV} mV")
+
+    if name and name != probe.name:
+        identity_problems.append(f"it advertises the name {name!r}, not {probe.name!r}")
+
+    if identity_problems and args.allow_identity_mismatch and not probe.deployed:
+        for problem in identity_problems:
+            print(f"  live check   OVERRIDDEN -- {problem}", flush=True)
+        identity_problems = []
+    elif identity_problems and args.allow_identity_mismatch:
+        identity_problems.append(
+            f"--allow-identity-mismatch does not apply: probe {probe.sensor_id} is deployed=true")
+
+    problems = blocking_problems + identity_problems
+    if problems:
+        detail = "\n".join(f"  - {problem}" for problem in problems)
+        raise PreflightError(
+            f"the board on air does not match the target:\n{detail}\n"
+            f"  Nothing was written and the board was not jumped.")
+
+    extra = (f", sensor {advert.sensor_id}, {advert.battery_mv} mV, OTA gate open"
+             if advert is not None and advert.wide else "")
+    print(f"  live check   OK -- {name or 'unnamed'}{extra}", flush=True)
+
+
+async def read_firmware_revision(client):
+    """The build the probe is actually running, or None if it does not publish one.
+
+    None is not a failure: every image built before 2026-09-04 predates the DIS and cannot answer.
+    Treat it as "unknown", never as "wrong" -- refusing an update because a probe is too old to
+    describe itself would strand exactly the boards most in need of one.
+    """
+    try:
+        value = await client.read_gatt_char(DIS_FIRMWARE_REVISION_UUID)
+    except Exception:  # noqa: BLE001
+        return None
+    text = bytes(value).split(b"\x00")[0].decode("utf-8", "replace").strip()
+    if text.startswith("MSV3-BUILD:"):
+        text = text[len("MSV3-BUILD:"):]
+    return text or None
+
+
+async def jump_to_bootloader(device, address_type, on_running_build=None):
     """Enable notifications, then write the enter-bootloader opcode. Returns a status string.
 
     ResetSafeBLEDfu requires notifications enabled before it will authorize the write, and
@@ -486,11 +875,31 @@ async def jump_to_bootloader(device, address_type):
     try:
         async with BleakClient(device, **kwargs) as client:
             print(f"  connected in {time.time() - started:.2f}s", flush=True)
+
+            running = await read_firmware_revision(client)
+            if running is None:
+                print("  running build   not reported (pre-2026-09-04 firmware has no DIS)",
+                      flush=True)
+            else:
+                print(f"  running build   {running}", flush=True)
+            if on_running_build is not None:
+                # Raising here aborts BEFORE the jump opcode is written, so a refusal still costs
+                # the probe nothing.
+                on_running_build(running)
+
             await client.start_notify(DFU_CONTROL_POINT_UUID, lambda _handle, _data: None)
             payload = bytearray([OP_CODE_ENTER_BOOTLOADER, UPLOAD_MODE_APPLICATION])
             write_started = time.time()
             await client.write_gatt_char(DFU_CONTROL_POINT_UUID, payload, response=True)
             return f"write acknowledged in {time.time() - write_started:.2f}s"
+    except PreflightError:
+        raise
+    except (NameError, AttributeError, TypeError, KeyError, ImportError):
+        # A bug in this file is not "the board reset". Letting these through the broad handler
+        # below printed `NameError: name 'package_info' is not defined` as "link dropped during
+        # write -- normal if the board reset", which is exactly the kind of masking this tool
+        # exists to avoid. Fail loudly instead.
+        raise
     except Exception as error:
         text = str(error).upper()
         if "NOT_PERMITTED" in text:
@@ -500,6 +909,18 @@ async def jump_to_bootloader(device, address_type):
 
 
 async def run(args):
+    # Every fail-closed check happens here, before the BLE stack is even initialised: a
+    # refusal should cost nothing and disturb nothing.
+    fleet, probe = resolve_target(args)
+    package_info = preflight(args, probe)
+
+    if args.preflight_only:
+        # The happy path needs to be provable without taking a sensor off the air. Everything
+        # above is every check that does not require the board; reaching here means the only thing
+        # left is the transfer itself.
+        print("\nPreflight passed. Stopping before the radio (--preflight-only).", flush=True)
+        return 0
+
     sys.path.insert(0, str(DFU_CLIENT))
     try:
         import dfu_lib
@@ -542,36 +963,69 @@ async def run(args):
 
     # The guard is always installed -- it is a correctness property, not a diagnostic. Profiling
     # is opt-in.
-    guard = ReceiptGuard()
+    # parse_zip() has already run, so bin_data is the real image the transfer will send.
+    guard = ReceiptGuard(image_size=len(getattr(updater, "bin_data", b"") or b""))
     profile = TransferProfile() if args.profile else None
     install_transfer_hooks(updater, guard, profile)
+    control_status = ControlStatus()
+    install_status_hook(updater, control_status)
 
-    boot_addresses = ([args.bootloader_address] if args.bootloader_address
-                      else bootloader_addresses_for(args.app_address))
+    # Registry-derived, so a bootloader found on either address is provably still this probe.
+    if args.bootloader_address:
+        override = normalise_address(args.bootloader_address)
+        if override not in probe.bootloader_addresses:
+            raise PreflightError(
+                f"--bootloader-address {override} is not one of probe {probe.sensor_id}'s "
+                f"addresses ({', '.join(probe.bootloader_addresses)}).")
+        boot_addresses = [override]
+    else:
+        boot_addresses = probe.bootloader_addresses
 
     # Already sitting in the bootloader (a previous attempt left it there)? Go straight to
     # the transfer rather than waiting out an application window that will never come. The DFU
     # service check matters here: after a buttonless jump the bootloader shares the application's
     # address, so the address alone cannot tell them apart.
     probe_timeout = args.bootloader_timeout if args.skip_jump else 6.0
-    device = await wait_for_advertisement(boot_addresses, probe_timeout, "bootloader",
-                                          require_dfu_service=True)
+    device, _ = await wait_for_advertisement(boot_addresses, probe_timeout, "bootloader",
+                                             require_dfu_service=True)
 
-    if device is None:
+    if device is not None:
+        # Already in the bootloader, so there is no application advertisement left to check
+        # against. The registry is what ties this address to a probe, and preflight() has already
+        # matched the package to it.
+        print(f"  already in the bootloader -- identity rests on {fleet.source.name}, which "
+              f"lists {device.address.upper()} as probe {probe.sensor_id}", flush=True)
+    else:
         if args.skip_jump:
             print("Bootloader never advertised.", flush=True)
             return 1
 
-        app = await wait_for_advertisement(args.app_address, args.app_timeout, "application")
+        app, advertisement = await wait_for_advertisement(
+            probe.application_address, args.app_timeout, "application")
         if app is None:
             print(f"Application never advertised within {args.app_timeout:.0f}s.", flush=True)
             return 1
 
-        print("Jumping to bootloader...", flush=True)
-        print(f"  {await jump_to_bootloader(app, args.address_type)}", flush=True)
+        # The last check before the point of no return for availability.
+        check_live_identity(args, probe, advertisement)
 
-        device = await wait_for_advertisement(boot_addresses, args.bootloader_timeout, "bootloader",
-                                              require_dfu_service=True)
+        def check_running_build(running):
+            """Refuse to take a live sensor off the air to install what it already runs."""
+            if running is None or not package_info.build_id:
+                return
+            if running == package_info.build_id and not args.reflash_same_build:
+                raise PreflightError(
+                    f"probe {probe.sensor_id} is already running build {running}, which is "
+                    f"exactly what {package_info.path.name} contains.\n"
+                    f"  Jumping it would take a live sensor off the air for a transfer that "
+                    f"changes nothing. Pass --reflash-same-build if that is deliberate.")
+
+        print("Jumping to bootloader...", flush=True)
+        print(f"  {await jump_to_bootloader(app, args.address_type, check_running_build)}",
+              flush=True)
+
+        device, _ = await wait_for_advertisement(boot_addresses, args.bootloader_timeout,
+                                                 "bootloader", require_dfu_service=True)
         if device is None:
             print("\nBootloader did not appear -- the jump did not take effect.", flush=True)
             print("The board is still running its application; nothing was written.", flush=True)
@@ -581,7 +1035,62 @@ async def run(args):
     chunking = "20-byte" if args.no_high_mtu else "negotiated-MTU"
     print(f"Transferring {package.name} ({chunking} chunks)...", flush=True)
     started = time.time()
-    await updater.perform_update(device, max_retries=args.retry)
+
+    # RESUMING AFTER AN INTERRUPTED TRANSFER, measured on the bench 2026-09-04.
+    #
+    # Kill a transfer partway and the bootloader keeps the half-finished session's state. The next
+    # Start DFU is answered INVALID_STATE (status 2), and upstream dfu_lib responds by sending
+    # OP_CODE_RESET and raising -- so the board IS recovering, it just needs a moment to reboot
+    # and re-advertise. The old code spent its remaining retries during that reboot, failed all of
+    # them against a board that was not there, and exited with a raw WinRT traceback.
+    #
+    # Two interrupted runs both looked like that, and both worked on a plain manual retry
+    # afterwards. On a coated probe in the field that traceback is the difference between "wait
+    # twenty seconds and run it again" and "the probe is bricked".
+    # 0 opts out entirely; anything else is that many total attempts.
+    attempts_left = max(1, args.stale_session_retries) if args.stale_session_retries else 1
+    while True:
+        try:
+            await updater.perform_update(device, max_retries=args.retry)
+            break
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # An operator stopping this is never a condition to retry through.
+            raise
+        except Exception as error:  # noqa: BLE001
+            if not control_status.start_dfu_invalid_state or attempts_left <= 1:
+                raise
+            attempts_left -= 1
+            print(f"\nThe bootloader refused Start DFU with INVALID_STATE: it is still holding "
+                  f"the state of an earlier interrupted transfer.", flush=True)
+            # dfu_lib writes OP_CODE_RESET before raising on a Start DFU failure (dfu_lib.py,
+            # the `if status != 1` branch). That upstream side effect is what actually clears the
+            # stale session; this branch only waits it out. If that behaviour ever changes, this
+            # loop will simply time out waiting rather than doing anything unsafe.
+            print(f"  dfu_lib has already sent it a reset, so it is rebooting. Waiting for it to "
+                  f"come back, then restarting the transfer from the beginning "
+                  f"({attempts_left} attempt(s) left).", flush=True)
+            print(f"  ({type(error).__name__}: {error})", flush=True)
+            # It can return on EITHER address: the peer-data handoff keeps the application's
+            # address across a buttonless jump, but a bootloader that restarts with no valid
+            # application uses +1. Both were observed on this board within minutes.
+            #
+            # Only ever the two addresses the registry pins for THIS probe. Widening to "any
+            # nearby AdaDFU" would be a wrong-target flash waiting to happen: device type 0x3356
+            # is shared by every MSV3 board and identifies nothing.
+            device, _ = await wait_for_advertisement(
+                probe.bootloader_addresses, args.bootloader_timeout, "bootloader after its reset",
+                require_dfu_service=True)
+            if device is None:
+                print("The bootloader did not come back within "
+                      f"{args.bootloader_timeout:.0f}s. Nothing further was written; the board "
+                      "should still be in BLE recovery, so rerun this command.", flush=True)
+                return 1
+            if normalise_address(device.address) not in probe.bootloader_addresses:
+                raise PreflightError(
+                    f"the bootloader reappeared at {device.address}, which is not one of probe "
+                    f"{probe.sensor_id}'s addresses. Refusing to transfer to it.")
+            await asyncio.sleep(args.connect_delay)
+
     elapsed = time.time() - started
     payload = len(getattr(updater, "bin_data", b"") or b"")
     rate = f", {payload / elapsed / 1024:.2f} kB/s" if payload and elapsed > 0 else ""
@@ -597,11 +1106,33 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("package", type=Path, help="Signed application-only DFU ZIP")
-    parser.add_argument("--app-address", required=True,
-                        help="BLE address of the RUNNING application, e.g. DB:AD:4D:9D:21:BA. "
-                             "Address, not name -- boards can share a name after an in-place re-ID.")
+    parser.add_argument("--probe", type=int,
+                        help="Sensor ID from MSV3/fleet.json. Preferred over --app-address: it "
+                             "resolves the address, the allowed bootloader addresses, and the "
+                             "device type the target's bootloader accepts, all from one number")
+    parser.add_argument("--fleet", type=Path,
+                        help="Registry path (default MSV3/fleet.json)")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="Run every package/target check and exit without scanning, jumping "
+                             "or transferring. Use it to prove a release is deliverable before "
+                             "taking a sensor off the air")
+    parser.add_argument("--allow-legacy-package", action="store_true",
+                        help=f"Accept a package older than application version "
+                             f"{IDENTITY_CONTRACT_MIN_APP_VERSION}, whose advertised name is not "
+                             f"guaranteed to equal the SENSOR_ID compiled into it")
+    parser.add_argument("--allow-identity-mismatch", action="store_true",
+                        help="Send a package built for a different sensor ID. Intended for the "
+                             "bench board, which runs an uncommitted identity. Relaxes ONLY the "
+                             "identity comparisons -- signature, device type, image integrity and "
+                             "the registry's address list are still enforced")
+    parser.add_argument("--app-address",
+                        help="Target the probe registered at this BLE address. Must be in "
+                             "MSV3/fleet.json -- an unregistered board is refused, because "
+                             "nothing would then know which probe it is or which bootloader it "
+                             "runs. Add it to the registry first")
     parser.add_argument("--bootloader-address",
-                        help="Override the bootloader address (default: application address + 1)")
+                        help="Pin the bootloader to one address instead of accepting either of "
+                             "the probe's two. Must still be one the registry lists for it")
     parser.add_argument("--skip-jump", action="store_true",
                         help="Board is already sitting in its bootloader; do not try to jump it")
     parser.add_argument("--prn", type=int, default=16,
@@ -609,6 +1140,17 @@ def main():
                              "module docstring for the PRN 4/16/32 sweep)")
     parser.add_argument("--delay", type=float, default=0.6, help="Start/size delay seconds (default 0.6)")
     parser.add_argument("--retry", type=int, default=3, help="DFU connection attempts (default 3)")
+    parser.add_argument("--reflash-same-build", action="store_true",
+                        help="Send the image even when the probe already reports running that "
+                             "exact build. Off by default so a redundant update cannot take a "
+                             "live sensor off the air for nothing")
+    parser.add_argument("--stale-session-retries", type=int, default=3,
+                        help="How many times to clear a bootloader still holding an earlier "
+                             "interrupted transfer's state and start the transfer again "
+                             "(default 3; 0 to opt out). NOT a protocol-level resume -- nothing "
+                             "continues from an offset, the whole image is re-sent. Each attempt "
+                             "rescans, because the bootloader may return on either of the probe's "
+                             "two addresses")
     parser.add_argument("--app-timeout", type=float, default=180.0,
                         help="Seconds to wait for the application's OTA advertising window (default 180)")
     parser.add_argument("--bootloader-timeout", type=float, default=60.0,
@@ -628,7 +1170,13 @@ def main():
     if not args.package.is_file():
         parser.error(f"package not found: {args.package}")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    return asyncio.run(run(args))
+    try:
+        return asyncio.run(run(args))
+    except (PreflightError, FleetError) as error:
+        # A refused run is an ordinary outcome, not a crash: it means a check did its job and the
+        # target was left alone. Exit 2 so a script can tell it from a transfer that failed.
+        print(f"\nREFUSED: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

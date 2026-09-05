@@ -126,8 +126,19 @@ A freshly generated random P-256 key cannot collide with one already burned into
 on disk is the original. **1.0.1 keeps the same trust root** -- flashing it over SWD does not
 establish a new one, and no key hunt or backup restore is required. The warning at the top of this
 document is about the key being gitignored and therefore absent from a fresh clone, which remains
-true and correct; it is not a statement that the key was lost. Back it up offline regardless:
-`-GenerateSigningKey` would overwrite it, and after that the loss would be real.
+true and correct; it is not a statement that the key was lost.
+
+> **2026-09-04 correction.** This paragraph used to end "Back it up offline regardless:
+> `-GenerateSigningKey` would overwrite it, and after that the loss would be real." **That is
+> false**, and it was checked rather than assumed. Two independent layers refuse:
+> `build_msv3_release.ps1:45` only reaches the generator inside `if (!(Test-Path $keyPath))`, and
+> `generate_msv3_dfu_key.py` opens the destination with mode `"xb"` and calls
+> `parser.error("refusing to replace existing key")` on `FileExistsError`. The flag cannot destroy
+> an existing trust root.
+>
+> Back the key up offline anyway -- a disk failure or a careless `rm` still ends the fleet's
+> ability to take any update except over SWD -- but do not avoid the build script out of a fear
+> the code does not justify.
 
 ## 2026-09-03 night: probe 4 migrated off the stock bootloader, USB -> BLE, on battery and solar
 
@@ -379,12 +390,13 @@ The bootloader source clone (`MSV3/.arduino-build/Adafruit_nRF52_Bootloader`, up
 
 ## Documentation corrections still outstanding
 
-- `MSV3/bootloader/README.md` describes device type `0x3356` as "MSV3-only ... rather than the
-  generic Adafruit `0x0052`". The diff shows `0x3356` merely replaces Adafruit's upstream constant.
-  It is a two-byte tag that stops stock-packaged images from installing; it is not model-specific
-  and not a security property. Reword before it is mistaken for one.
+- ~~`MSV3/bootloader/README.md` describes device type `0x3356` as "MSV3-only ..."~~ **Done.** As of
+  2026-09-04 that line reads "DFU compatibility tag `0x3356`, so generic Adafruit `0x0052` packages
+  are rejected", which is accurate: it is a two-byte tag that stops stock-packaged images
+  installing, not a model-specific or security property.
 - Nothing in this work has been validated against an interrupted transfer, which remains the real
-  acceptance test (adoption sequence item 6 in `MSV3_BLE_OTA_PROOF_2026-09-02.md`).
+  acceptance test (adoption sequence item 6 in `MSV3_BLE_OTA_PROOF_2026-09-02.md`). **Still
+  outstanding, and still the blocker on conformal coating.**
 
 ## Do not conformal-coat yet
 

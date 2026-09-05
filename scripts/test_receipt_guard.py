@@ -105,6 +105,60 @@ first = g.reason
 g.note_cancel(11712)
 check("first failure reason is retained", g.reason == first, f"reason={g.reason}")
 
+# --- the final window: a late receipt after the whole image is out is not a desync -------------
+#
+# Reproduces the bench failure exactly. A 136,616-byte image is 560 packets of 244; 560 is an exact
+# multiple of PRN 4 and PRN 16, so dfu_lib waits for one more receipt after the last packet and
+# that wait races the bootloader's end-of-image flush. It failed 3/3 at exactly 136,616 bytes sent
+# before this was handled.
+IMAGE = 136616
+
+def armed_sized(size=IMAGE):
+    g = ReceiptGuard(image_size=size)
+    g.begin_attempt()
+    g.arm()
+    return g
+
+g = armed_sized()
+g.note_cancel(IMAGE)
+check("a late receipt with the WHOLE image sent is not a desync", not g.desynced, f"{g.reason}")
+check("...and it is counted so the run can report it", g.final_window_waits == 1)
+g.check()
+check("...so the completion command is still allowed out", True)
+
+# The relaxation must be exactly that narrow.
+g = armed_sized()
+g.note_cancel(IMAGE - 244)
+check("one packet short of the end still aborts", g.desynced, "mid-transfer must not be relaxed")
+
+g = armed_sized()
+g.note_cancel(IMAGE // 2)
+check("halfway through still aborts", g.desynced)
+
+# Overshoot is still the end of the image, not a licence.
+g = armed_sized()
+g.note_cancel(IMAGE + 40)
+check("a count past the image end is still treated as the final window", not g.desynced)
+
+# A wrong-offset receipt at the end is a different failure and must still be caught: the relaxation
+# is about a MISSING receipt, never about one that reports the wrong thing.
+g = armed_sized()
+g.note_receipt(IMAGE - 1000, IMAGE)
+check("a wrong-offset receipt at the end still aborts", g.desynced, f"{g.reason}")
+
+# Without a known image size the guard must keep its old, stricter behaviour rather than
+# accidentally relaxing everything.
+g = ReceiptGuard()          # image_size defaults to 0
+g.begin_attempt(); g.arm()
+g.note_cancel(IMAGE)
+check("with no image size known, nothing is relaxed", g.desynced)
+
+# And the relaxation is per-attempt like everything else.
+g = armed_sized()
+g.note_cancel(IMAGE)
+g.begin_attempt()
+check("begin_attempt resets the final-window counter", g.final_window_waits == 0)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")
