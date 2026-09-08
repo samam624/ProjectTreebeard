@@ -1117,6 +1117,22 @@ static bool g_bootGuardDeferred = false;
 static float g_bootGuardBatteryMv = 0.0f;
 static uint32_t g_resetReason = 0;
 
+// Prints RESETREAS by name. The guard-2 watchdog-hang test has to SEE "WATCHDOG" on each of the
+// successive resets, not infer it from a hex value -- that reading IS the evidence the test
+// produces, and it was unavailable while the cause always read 0x0. Mirrors the decoder the
+// bring-up sketch has always had.
+static void printResetReasonName(uint32_t r)
+{
+  Serial.print(F(" ("));
+  if (r == 0) Serial.print(F("POWER-ON/BROWNOUT -- no reset bits set"));
+  if (r & POWER_RESETREAS_RESETPIN_Msk) Serial.print(F("RESETPIN "));
+  if (r & POWER_RESETREAS_DOG_Msk)      Serial.print(F("WATCHDOG "));
+  if (r & POWER_RESETREAS_SREQ_Msk)     Serial.print(F("SOFTWARE(NVIC_SystemReset) "));
+  if (r & POWER_RESETREAS_LOCKUP_Msk)   Serial.print(F("CPU-LOCKUP "));
+  if (r & POWER_RESETREAS_OFF_Msk)      Serial.print(F("WAKE-FROM-OFF "));
+  Serial.print(F(")"));
+}
+
 // Cleared once the probe has proven it can actually run: BOOT_GUARD_PROBATION_ADVERTS complete
 // advertising cycles, not merely "advertising was started once". A build that advertises and then
 // dies later in its first duty cycle must NOT be able to clear the guard.
@@ -1159,11 +1175,41 @@ void bootGuardNoteHealthyAdvert()
 // the sd_power_gpregret_* SVCs for the same registers precisely because it runs with it up.)
 static void bootGuardCheck()
 {
-  // Read and clear RESETREAS even when the guard is staged off, so the boot banner still reports
-  // it and a future build inherits a clean register rather than a stale cause.
-  g_resetReason = NRF_POWER->RESETREAS;
-  NRF_POWER->RESETREAS = g_resetReason;   // write-1-to-clear
+  // Take the reset cause from the CORE, not from the hardware register.
+  //
+  // 2026-09-06, correcting a wrong diagnosis that has been on record since 2026-09-04. This used
+  // to read NRF_POWER->RESETREAS directly and always got 0x0, and that was written up as "the
+  // bootloader runs first and appears to consume it". The bootloader does no such thing --
+  // bootloader src/main.c says so explicitly: "RESETREAS is not clear by bootloader, it should be
+  // cleared by application upon init()".
+  //
+  // The Arduino core consumes it, before setup() ever runs. cores/nRF5/wiring.c init():
+  //     _reset_reason = NRF_POWER->RESETREAS;
+  //     NRF_POWER->RESETREAS |= NRF_POWER->RESETREAS;   // write-1-to-clear
+  // and it saves the value for exactly this purpose, behind readResetReason() (wiring.h, reached
+  // via Arduino.h). So the old direct read was guaranteed to return 0 on every boot, on any board,
+  // with any bootloader. The bring-up sketch already used the core accessor and has always
+  // reported real causes -- RESETPIN on the four-board bring-up, and 0x2 WATCHDOG mid-cycle.
+  //
+  // Same class of bug as the one that made the FIRST version of this guard reset every ~76 s:
+  // reaching for a register directly where the framework has already mediated it. Third instance
+  // in this file's history. Do not "simplify" this back to NRF_POWER->RESETREAS.
+  g_resetReason = readResetReason();
   if (!ENABLE_BOOT_FAILURE_GUARD) return;
+
+  // WHY THE COUNTER STILL COUNTS EVERY BOOT, now that the cause is actually available.
+  //
+  // The obvious next step is to count only DOG/LOCKUP so the return boot after a commanded DFU
+  // jump stops consuming an attempt. Deliberately NOT done, because SREQ is ambiguous in the one
+  // direction that matters: a commanded DFU jump is an SREQ, but so is a crash routed through the
+  // SoftDevice/app_error handler, which resets via NVIC_SystemReset(). Filtering SREQ out would
+  // silently stop counting a whole class of real crash loops -- exactly what this guard exists to
+  // catch -- to save one attempt out of five in a case that is already self-correcting, since
+  // probation clears the counter within ~140 s of healthy running.
+  //
+  // Over-counting is the safe direction here and under-counting is not, so the cause is used for
+  // reporting only. Revisit ONLY with evidence about what this application's fault handlers
+  // actually do on a hard fault; that is a bench question with SWD attached, not an assumption.
 
   const uint8_t retained = (uint8_t)(NRF_POWER->GPREGRET2 & 0xFF);
   g_bootAttempt = ((retained & BOOT_GUARD_MASK) == BOOT_GUARD_MAGIC)
@@ -1215,7 +1261,9 @@ void setup()
     Serial.print(F(" of "));
     Serial.print(BOOT_GUARD_LIMIT);
     Serial.print(F(" before forced DFU; RESETREAS=0x"));
-    Serial.println(g_resetReason, HEX);
+    Serial.print(g_resetReason, HEX);
+    printResetReasonName(g_resetReason);
+    Serial.println();
     if (g_bootGuardDeferred)
     {
       Serial.print(F("[WARN] boot guard reached its limit but DEFERRED the DFU escape: "));

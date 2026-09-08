@@ -119,11 +119,62 @@ therefore how long a probe survives unattended in it, has not been measured. Rev
 
 ### Reset-cause filtering is not possible today
 
+> **WRONG, corrected 2026-09-06. The paragraph below is kept because it was acted on for two days,
+> and its conclusion was carried into the pre-coating plan as a reason to rebuild the bootloader.
+> It is not a bootloader problem at all — see the section immediately after it.**
+
 `RESETREAS` reads `0x0` on every boot — after a watchdog reset and after `NVIC_SystemReset` alike.
 The bootloader runs first and appears to consume it. So the counter counts *every* boot, including
 the return boot after a commanded DFU jump. That is more conservative than ideal; probation clears
 it within ~140 s of healthy running, which makes it tolerable. If the bootloader is ever rebuilt,
 preserving `RESETREAS` for the application would let this be tightened.
+
+### The reset cause was always available — 2026-09-06
+
+The bootloader never consumed it. **The Adafruit core does, before `setup()` runs, and it already
+saves the value for the application.**
+
+```c
+// bootloader src/main.c:307
+//   "Note: RESETREAS is not clear by bootloader, it should be cleared by application upon init()"
+
+// core cores/nRF5/wiring.c:35
+void init( void ) {
+  _reset_reason = NRF_POWER->RESETREAS;
+  NRF_POWER->RESETREAS |= NRF_POWER->RESETREAS;   // write-1-to-clear
+  ...
+// core cores/nRF5/wiring.c:72
+uint32_t readResetReason(void) { return _reset_reason; }
+```
+
+`bootGuardCheck()` was reading the hardware register directly, after `init()` had already cleared
+it, so it was guaranteed to read `0x0` on any board, with any bootloader. The corroborating
+evidence was in this repository the whole time: the bring-up sketch calls the core accessor and has
+always reported real causes — `RESETPIN` on the 2026-08-28 four-board bring-up, and `0x2 WATCHDOG`
+mid-cycle confirmed via `wdtstatus`.
+
+**Fixed in the application**, deployable over BLE, no bootloader change and no SWD:
+`g_resetReason = readResetReason();`. `MSV3/scripts/arduino_msv3_probe.ps1` now fails the build on
+any direct `NRF_POWER->RESETREAS` access under `MSV3/arduino/`, and the boot banner decodes the
+cause by name so the guard-2 watchdog-hang test can *read* `WATCHDOG` on each successive reset
+instead of inferring it.
+
+**This is the third time this project has reached past a framework-mediated register**, and the
+other two are in this same file's history: the first guard-2 build wrote `NRF_POWER->GPREGRET2`
+from `loop()` with the SoftDevice up and reset every ~76 s, and the FDC `ERROR_CONFIG`/`DRDY`
+family is the same shape. This instance was the quietest of the three — nothing crashed, a value
+was simply always zero — which is why it survived two days as a documented hardware fact and came
+close to justifying a bootloader rebuild it never needed.
+
+**The counter still counts every boot, deliberately.** The obvious follow-on is to count only
+`DOG`/`LOCKUP` so a commanded DFU jump stops consuming an attempt. Considered and rejected: `SREQ`
+is ambiguous in the direction that matters, because a commanded jump is an `SREQ` but so is a crash
+routed through the SoftDevice/`app_error` handler, which resets via `NVIC_SystemReset()`. Filtering
+`SREQ` out would silently stop counting a whole class of real crash loops — the thing this guard
+exists to catch — to save one attempt in five in a case that already self-corrects within ~140 s of
+healthy running. Over-counting is the safe direction here; under-counting is not. Revisit only with
+bench evidence, SWD attached, about what this application's fault handlers actually do on a hard
+fault.
 
 ## The bench test caught the guard creating the crash loop it exists to prevent
 

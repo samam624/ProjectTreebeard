@@ -1,0 +1,325 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+index da193bd..bc7adfd 100644
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+@@ -16,6 +16,7 @@
+ #include "bootloader_util.h"
+ #include "bootloader_settings.h"
+ #include "dfu.h"
++#include "dfu_init.h"
+ #include "dfu_transport.h"
+ #include "nrf.h"
+ #include "app_error.h"
+@@ -277,6 +278,15 @@ void bootloader_dfu_update_process(dfu_update_status_t update_status)
+ 
+   bootloader_util_settings_get(&p_bootloader_settings);
+ 
++  /* MSV3 1.0.2: carry the existing anti-rollback floor forward into EVERY branch before any of
++   * them runs. `settings` is static and each branch below sets only the fields it cares about, so
++   * without this a SoftDevice/bootloader/swap update would write zeros over the floor and silently
++   * disarm rollback protection. Copying the flash contents first makes preservation the default
++   * and advancing the floor an explicit act, which is the safe way round. */
++  settings.msv3_version_magic     = p_bootloader_settings->msv3_version_magic;
++  settings.msv3_version_floor     = p_bootloader_settings->msv3_version_floor;
++  settings.msv3_version_floor_cpl = p_bootloader_settings->msv3_version_floor_cpl;
++
+   if (update_status.status_code == DFU_UPDATE_APP_COMPLETE)
+   {
+     settings.bank_0_crc  = update_status.app_crc;
+@@ -284,6 +294,41 @@ void bootloader_dfu_update_process(dfu_update_status_t update_status)
+     settings.bank_0      = BANK_VALID_APP;
+     settings.bank_1      = BANK_INVALID_APP;
+ 
++    /* MSV3 1.0.2: THE COMMIT POINT, and the only one.
++     *
++     * Reaching DFU_UPDATE_APP_COMPLETE means dfu_image_validate() already ran
++     * dfu_init_postvalidate() over the received image -- full length, SHA-256 and P-256 signature
++     * -- and only then called m_functions.activate(). So the floor advances if and only if a
++     * completely transferred, authenticated image is being activated. Every earlier exit (refused
++     * init, dropped link, receipt desync, short image, bad hash) leaves flash untouched, so an
++     * interrupted higher-version transfer cannot raise the floor above an image that still works.
++     *
++     * The write itself is folded into the existing bootloader_settings_save() call below -- one
++     * pstorage_store, one arming of BOOTLOADER_SETTINGS_SAVING. Do not add a second save here.
++     *
++     * Monotonic by construction: max(stored, candidate). A candidate of 0 means no authenticated
++     * application version was pending, so the stored floor is kept rather than cleared. */
++    {
++      uint32_t candidate = msv3_pending_app_version_get();
++      uint32_t current   = 0;
++
++      if ((p_bootloader_settings->msv3_version_magic == MSV3_VERSION_FLOOR_MAGIC) &&
++          ((p_bootloader_settings->msv3_version_floor ^
++            p_bootloader_settings->msv3_version_floor_cpl) == 0xFFFFFFFFUL))
++      {
++        current = p_bootloader_settings->msv3_version_floor;
++      }
++
++      if (candidate > current)
++      {
++        current = candidate;
++      }
++
++      settings.msv3_version_magic     = MSV3_VERSION_FLOOR_MAGIC;
++      settings.msv3_version_floor     = current;
++      settings.msv3_version_floor_cpl = ~current;
++    }
++
+     m_update_status      = BOOTLOADER_SETTINGS_SAVING;
+     bootloader_settings_save(&settings);
+   }
+@@ -545,4 +590,14 @@ void bootloader_settings_get(bootloader_settings_t * const p_settings)
+   p_settings->bl_image_size  = p_bootloader_settings->bl_image_size;
+   p_settings->app_image_size = p_bootloader_settings->app_image_size;
+   p_settings->sd_image_start = p_bootloader_settings->sd_image_start;
++
++  /* MSV3 1.0.2: this getter copies field by field rather than struct-assigning, so appending
++   * fields to bootloader_settings_t silently leaves them UNINITIALISED in the caller's stack copy.
++   * No current caller reads them -- all four uses in dfu_single_bank.c only look at sd_image_size,
++   * bl_image_size and sd_image_start, and none writes its copy back to flash -- but a future one
++   * that read the floor from here would get stack garbage and could compare a version against it.
++   * Copied here so the getter cannot become that trap. */
++  p_settings->msv3_version_magic     = p_bootloader_settings->msv3_version_magic;
++  p_settings->msv3_version_floor     = p_bootloader_settings->msv3_version_floor;
++  p_settings->msv3_version_floor_cpl = p_bootloader_settings->msv3_version_floor_cpl;
+ }
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+index 8de3cf7..7ee6560 100644
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -52,8 +52,58 @@ typedef struct
+     uint32_t bl_image_size;   /**< Size of Bootloader image in bank0 if bank_0 code is BANK_VALID_SD. */
+     uint32_t app_image_size;  /**< Size of Application image in bank0 if bank_0 code is BANK_VALID_SD. */
+     uint32_t sd_image_start;  /**< Location in flash where SoftDevice image is stored for SoftDevice update. */
++
++    /* ---- MSV3 1.0.2 anti-rollback. Appended; nothing above this line moved. ---------------
++     *
++     * WHY APPENDED, NOT INSERTED: a settings page written by 1.0.0/1.0.1, or a freshly erased
++     * one, reads 0xFFFFFFFF here. That is not the magic, so it means "no floor recorded", which
++     * resolves to floor 0 and accepts anything. A probe migrated from an older bootloader, or
++     * mass-erased, therefore starts permissive and adopts its floor from the first successful
++     * install -- it never starts by refusing the only image that could rescue it.
++     *
++     * WHY A SEPARATE INTEGRITY FIELD: SDK11 has no checksum over the settings record itself.
++     * bank_0_crc covers the application image, not this page. The floor is therefore stored with
++     * its own magic AND its one's complement, so a torn write is detectable without pulling CRC
++     * code into the bootloader. Valid iff magic matches AND floor ^ floor_complement is all ones.
++     * Any other state is read as "not recorded" -- fail open, toward BLE recovery that still
++     * accepts a signed rescue image, never toward refusing every package.
++     *
++     * WHY IT RIDES THIS STRUCT: bootloader_settings_save() performs one pstorage_clear plus one
++     * pstorage_store of exactly sizeof(bootloader_settings_t), and the completion gate in
++     * pstorage_callback_handler() ends the whole update on ANY store completion arriving while
++     * m_update_status == BOOTLOADER_SETTINGS_SAVING -- it checks neither the handle nor which
++     * write finished. Single-bank works only because one settings store is ever in flight. Storing
++     * the floor anywhere else in the page would mean a second store and a second arming of that
++     * gate, which is the known dual-bank defect. Keep this inside the one existing write.
++     */
++    uint32_t msv3_version_magic;      /**< MSV3_VERSION_FLOOR_MAGIC when the two fields below are meaningful. */
++    uint32_t msv3_version_floor;      /**< Highest application version successfully installed and activated. */
++    uint32_t msv3_version_floor_cpl;  /**< One's complement of msv3_version_floor; torn-write detector. */
+ } bootloader_settings_t;
+ 
++/** Arbitrary but distinctive; must not be 0x00000000 or 0xFFFFFFFF, the two values a cleared or
++ *  erased page can present. "MSV3" is 0x4D535633. */
++#define MSV3_VERSION_FLOOR_MAGIC        0x4D535633UL
++
++/* MSV3 1.0.2 layout guards. These are not decoration: bootloader_settings_save() writes the struct
++ * with pstorage_store(..., sizeof(bootloader_settings_t), 0) on the OTA path and with
++ * nrfx_nvmc_words_write(..., sizeof(bootloader_settings_t) / 4) on the other, so a size that stops
++ * being a whole number of words would silently truncate the last field -- and the field it would
++ * truncate is the one proving the record is intact. The offset assertions pin the appended fields
++ * to the tail, which is what makes a legacy 28-byte record read as 0xFF here and therefore as "no
++ * floor recorded" rather than as a valid floor. */
++_Static_assert(sizeof(bootloader_settings_t) % 4 == 0,
++               "bootloader_settings_t must stay a whole number of words: it is written with "
++               "nrfx_nvmc_words_write(..., sizeof/4)");
++_Static_assert(sizeof(bootloader_settings_t) == 40,
++               "bootloader_settings_t changed size -- re-check every flash writer and the "
++               "erased-tail migration argument before updating this number");
++_Static_assert(__builtin_offsetof(bootloader_settings_t, msv3_version_magic) == 28,
++               "the MSV3 fields must stay appended AFTER the stock 28-byte record, so a settings "
++               "page written by 1.0.0/1.0.1 presents 0xFFFFFFFF here and reads as 'not recorded'");
++_Static_assert(__builtin_offsetof(bootloader_settings_t, msv3_version_floor) == 32, "layout");
++_Static_assert(__builtin_offsetof(bootloader_settings_t, msv3_version_floor_cpl) == 36, "layout");
++
+ #endif // BOOTLOADER_TYPES_H__ 
+ 
+ /**@} */
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_init.h b/lib/sdk11/components/libraries/bootloader_dfu/dfu_init.h
+index 8b4807a..42528b9 100644
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_init.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_init.h
+@@ -56,6 +56,20 @@ typedef struct
+     uint16_t softdevice[1];                                                                 /**< Variable length array of SoftDevices compatible with this application. The length of the array is specified in the length field. SoftDevice firmware id 0xFFFE indicates any SoftDevice. */
+ } dfu_init_packet_t;
+ 
++/**@brief MSV3 1.0.2: the application version carried by the most recently ACCEPTED init packet.
++ *
++ * Set by dfu_init_prevalidate() only after the P-256 signature over the init packet has verified
++ * and the anti-rollback comparison has passed, and cleared at the top of every prevalidate call.
++ * Returns 0 when no authenticated application version is pending, which bootloader.c treats as
++ * "do not touch the stored floor".
++ *
++ * The value is deliberately NOT committed here. It reaches flash only if the transfer goes on to
++ * pass dfu_init_postvalidate() (image length + SHA-256 + signature) and reaches
++ * DFU_UPDATE_APP_COMPLETE, so an interrupted, corrupted or abandoned higher-version transfer can
++ * never raise the floor and strand the probe above its own rescue image.
++ */
++uint32_t msv3_pending_app_version_get(void);
++
+ /**@brief Structure holding basic device information settings.
+  */
+ typedef struct
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+index be6b672..2cbc330 100644
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -193,6 +193,16 @@ static ble_dfu_resp_val_t nrf_err_code_translate(uint32_t                  err_c
+         case NRF_ERROR_DATA_SIZE:
+             return BLE_DFU_RESP_VAL_DATA_SIZE;
+ 
++        /* MSV3 1.0.2: anti-rollback refusal, raised only by dfu_init_prevalidate() and only after
++         * the init packet's P-256 signature has verified. Mapped to NOT_SUPPORTED because that
++         * value is otherwise unreachable at the Init Packet stage -- its only other source is
++         * dfu_start_pkt_handle(), which runs at Start DFU. A NOT_SUPPORTED response to Init Packet
++         * therefore means "this version is older than the installed floor" and cannot mean
++         * anything else, so the acceptance test reads a specific rejection rather than inferring
++         * one from a generic OPER_FAILED that a bad signature or a corrupt package also produces. */
++        case NRF_ERROR_INVALID_PARAM:
++            return BLE_DFU_RESP_VAL_NOT_SUPPORTED;
++
+         case NRF_ERROR_INVALID_DATA:
+             if (current_dfu_proc == BLE_DFU_VALIDATE_PROCEDURE)
+             {
+diff --git a/src/dfu_init.c b/src/dfu_init.c
+index 612fed9..eaf03b7 100644
+--- a/src/dfu_init.c
++++ b/src/dfu_init.c
+@@ -72,6 +72,64 @@
+ #include <string.h>
+ #include <dfu_types.h>
+ #include "nrf_error.h"
++#include "bootloader_types.h"
++#include "bootloader_settings.h"
++
++/* ==== MSV3 1.0.2 anti-rollback =============================================================
++ *
++ * Measured on probe 99, 2026-09-05: stock 0.11.0 installs an OLDER validly signed image without
++ * complaint. The template below this comment block says why in Nordic's own words -- "This
++ * template allows for any application to be installed." That is not merely untidy: rolling a
++ * probe back past guard 1 restores the defect where a sensor fault closes the radio, so a
++ * rollback can re-introduce a fixed unrecoverability bug on a board whose SWD pads are under
++ * conformal coating.
++ *
++ * ORDERING IS THE WHOLE DESIGN. The comparison happens AFTER the P-256 signature over the init
++ * packet verifies, so an unauthenticated peer cannot use the response to probe the stored floor,
++ * and a rollback attempt is refused on its merits rather than by accident of some earlier check.
++ * It is also the last thing prevalidate does, so device type, unlock code and SoftDevice
++ * requirement still fail first and keep their existing error codes.
++ *
++ * NOTE WHAT THIS DOES NOT FIX. The application is still erased at Start DFU, before any of this
++ * runs (dfu_start_pkt_handle -> dfu_prepare_func_app_erase). A refused rollback therefore still
++ * costs the running application. That is unchanged from 1.0.1 and is a deliberate scope decision:
++ * deferring the erase would require Start to complete before erasing, Init completion to wait on
++ * an asynchronous erase, and the flash-completion handler to distinguish which command it is
++ * completing -- the same state-machine restructuring implicated in the completion-gate defect
++ * this file's sibling comment describes. Recovery from that erase is proven; a bricked bootloader
++ * is not recoverable at all.
++ */
++static uint32_t m_msv3_pending_app_version;
++
++uint32_t msv3_pending_app_version_get(void)
++{
++	return m_msv3_pending_app_version;
++}
++
++/**@brief Reads the stored anti-rollback floor, or 0 if none is validly recorded.
++ *
++ * FAILS OPEN BY DESIGN. Absent magic (erased page, or a page written by 1.0.0/1.0.1) and a torn
++ * write (complement mismatch) both return 0, which accepts any version. The alternative -- fail
++ * closed on an unreadable floor -- would let a single interrupted settings write turn a probe
++ * into one that refuses every package including its own rescue image, on hardware where SWD is
++ * gone. Between "an interrupted write costs the rollback guarantee until the next successful
++ * install" and "an interrupted write bricks the probe", only the first is acceptable here.
++ */
++static uint32_t msv3_version_floor_get(void)
++{
++	const bootloader_settings_t * p_settings;
++	bootloader_util_settings_get(&p_settings);
++
++	if (p_settings->msv3_version_magic != MSV3_VERSION_FLOOR_MAGIC)
++	{
++		return 0;
++	}
++	if ((p_settings->msv3_version_floor ^ p_settings->msv3_version_floor_cpl) != 0xFFFFFFFFUL)
++	{
++		return 0;
++	}
++	return p_settings->msv3_version_floor;
++}
+ 
+ #ifndef SIGNED_FW
+ #include "crc16.h"
+@@ -89,7 +147,7 @@
+  *   - nrf52832 dev-rev is 0xADAF
+  *   - nrf52840 dev-rev is  52840
+  */
+-#define ADAFRUIT_DEVICE_TYPE         0x0052
++#define ADAFRUIT_DEVICE_TYPE         0x3356
+ 
+ #if defined(NRF52840_XXAA)
+   #define ADAFRUIT_DEV_REV           52840
+@@ -161,7 +219,12 @@ static uint8_t m_extended_packet_length;                            //< Length o
+ uint32_t dfu_init_prevalidate(uint8_t * p_init_data, uint32_t init_data_len, uint8_t image_type)
+ {
+ 	uint32_t i = 0;
+-	
++
++	/* MSV3: no authenticated candidate until this call proves one. Clearing on entry means a
++	 * stale value from an earlier, later-abandoned init packet can never be committed by a
++	 * subsequent transfer -- every DFU sequence must send its own init packet before any data. */
++	m_msv3_pending_app_version = 0;
++
+ 	// In order to support signing or encryption then any init packet decryption function / library
+ 	// should be called from here or implemented at this location.
+ 
+@@ -274,7 +337,37 @@ uint32_t dfu_init_prevalidate(uint8_t * p_init_data, uint32_t init_data_len, uin
+ #  error Incorrect layout: r and s must be contiguous!
+ # endif
+ 	
+-	return uECC_verify(pk, digest, sizeof(digest), sig, curve) == 1 ? NRF_SUCCESS : NRF_ERROR_INVALID_DATA;
++	if (uECC_verify(pk, digest, sizeof(digest), sig, curve) != 1)
++	{
++		return NRF_ERROR_INVALID_DATA;
++	}
++
++	/* ---- MSV3 1.0.2 anti-rollback. Everything above has authenticated the init packet. ----
++	 *
++	 * Applies to application images only. A SoftDevice or bootloader package carries its own
++	 * version semantics and is refused over BLE by host policy long before it reaches here.
++	 *
++	 * EQUALITY MUST PASS. Reinstalling the current known-good version is the recovery path used
++	 * after a refused rollback erases the application, so `<` and not `<=` is load-bearing.
++	 *
++	 * NRF_ERROR_INVALID_PARAM is returned rather than NRF_ERROR_FORBIDDEN or
++	 * NRF_ERROR_INVALID_DATA because both of those are already reachable here -- device type and
++	 * unlock code return FORBIDDEN, and every signature/format failure returns INVALID_DATA. The
++	 * transport maps INVALID_PARAM to BLE_DFU_RESP_VAL_NOT_SUPPORTED, a value nothing else can
++	 * produce at the Init Packet stage (its only other source is dfu_start_pkt_handle, i.e. Start
++	 * DFU). So "NOT_SUPPORTED at Init Packet" means rollback-refused and nothing else, which is
++	 * what makes the acceptance test conclusive instead of inferential.
++	 */
++	if (image_type & DFU_UPDATE_APP)
++	{
++		if (p_init_packet->app_version < msv3_version_floor_get())
++		{
++			return NRF_ERROR_INVALID_PARAM;
++		}
++		m_msv3_pending_app_version = p_init_packet->app_version;
++	}
++
++	return NRF_SUCCESS;
+ #endif
+ }
+ 

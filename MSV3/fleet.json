@@ -75,13 +75,13 @@
       "application_address": "DB:AD:4D:9D:21:BA",
       "recovery_address": "DB:AD:4D:9D:21:BB",
       "recovery_address_source": "observed repeatedly through the 2026-09-02/03 bootloader work",
-      "bootloader": "msv3-1.0.1",
+      "bootloader": "msv3-1.0.2",
       "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "USB-recoverable bench board, not a fleet unit. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; since 2026-09-05 the bench identity is a build parameter rather than an uncommitted edit, so a bench package is reproducible and --allow-identity-mismatch is no longer needed for the normal case.",
-      "installed_application_version": 65541
+      "notes": "USB-recoverable bench board, not a fleet unit. FIRST BOARD ON BOOTLOADER 1.0.2, installed over SWD 2026-09-07 after a mass erase that was blank-check VERIFIED rather than merely reported -- see docs/KNOWN_ISSUES.md, the previous erase silently faulted and left the old application running. Anti-rollback is confirmed live on this board: the settings page at 0x000FF000 reads magic 0x4D535633, floor 65551, complement 0xFFFEFFF0, written by the BLE install of msv3-1.0.2-sensor099-v65551 (that is the only code path that writes it -- an SWD-flashed application would leave the floor at 0). Trust root unchanged, same key as 1.0.1. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; note that build_msv3_release.ps1 does NOT forward -SerialLogs and silently ignores it, so the currently installed image has serial logging OFF and the guard-2 hang test needs a rebuilt image first.",
+      "installed_application_version": 65551
     }
   ]
 }

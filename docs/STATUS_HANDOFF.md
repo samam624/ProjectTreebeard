@@ -1305,6 +1305,52 @@ this section so nothing is silently lost.
 6. **Thermal falsification tests** (D1 below): dry probe 4's pot and refit; water probe 5; shade
    probe 4 for a day. Physical actions, then elapsed time and cloud analysis.
 
+### Superseded 2026-09-06 by the conformal-coating campaign
+
+Probes 4 and 5 are being conformally coated, which permanently covers their SWD pads and USB
+connectors. That reorders everything above: the only question that now matters for those two boards
+is whether a task becomes *impossible* afterwards. Items 4 and 6 above are unaffected and simply
+wait; item 5 concerns boards that are not being coated.
+
+**Decided:** coat probes 4 and 5 only. Probe 99 is never coated and remains the permanently
+USB/SWD-recoverable board that every image is bench-proven on. **Build and SWD-install bootloader
+1.0.2** — justified because both probes must be retrieved for coating anyway and probe 5 must be
+re-flashed regardless, so the mass-erase cost the "freeze 1.0.1" recommendation was priced against
+is already sunk.
+
+**1.0.2 is anti-rollback only.** Erase-after-authenticate was dropped: it needs Start/Init
+reordering and an async-erase wait in the completion handler, which is the state-machine
+restructuring implicated in the completion-gate defect. RESETREAS was dropped from the bootloader
+scope entirely — it was an application bug, see `docs/KNOWN_ISSUES.md`.
+
+**Done 2026-09-06, no hardware required:**
+
+- `readResetReason()` fix, boot banner decodes the cause by name, and a build check that fails on
+  any direct `NRF_POWER->RESETREAS` access. Negative control confirmed it fires.
+- Bootloader 1.0.2 built from `MSV3/bootloader/patches/msv3-1.0.2-anti-rollback.patch`, applied and
+  sentinel-verified by `build_msv3_release.ps1`. `msv3_pending_app_version_get` and the
+  `0x4d535633` magic are confirmed present in the linked binary at both the check site
+  (`dfu_init_prevalidate`) and the commit site (`bootloader_dfu_update_process`).
+- Seven signed test packages under `MSV3/bootloader/generated/1.0.2/`, N=65550: probe 99 gets
+  N−1/N/N+1, probes 4 and 5 get N−1/N. Every package's embedded identity and version verified
+  against its filename, zero mismatches. Package and migration-package names now carry both.
+- The two pre-guard-1 signed packages moved to `MSV3/bootloader/quarantine/` with hashes and a
+  README; `test_ota_preflight.py` repointed so its assertion still runs.
+- `MSV3/scripts/verify_msv3_signing_key.py` — the key restore drill. Confirms a candidate PEM
+  matches the fingerprint the registry pins AND can still produce a verifying signature. Negative
+  control with a different valid P-256 key (also 227 bytes) is correctly refused.
+
+**Blocked on the single GP/SWD session**, in order: install 1.0.2 on probe 99; instrument settings
+saves and *callback identity*; power-cut matrix; N−1/N/N+1 matrix; the true-hang guard-2 test. Then
+probes 4 and 5: DMM probe 5's cell first, pre-erase readback, hardware qualification, SWD-install
+1.0.2, seed the floor by installing N **over BLE** so the tested transaction writes it, re-qualify
+under final firmware, then the destructive N−1 rejection and battery-only cold boot before GP comes
+down.
+
+**Not yet done and deliberately so:** `installed_application_version` for probes 4 and 5 stays `0`
+until N is actually installed and booted. Writing it at build time would make the registry
+knowingly false.
+
 ### Blocked, with the reason named
 
 - **Guard 2's watchdog-hang test** needs SWD attached *and recovery proven first*, because a hang

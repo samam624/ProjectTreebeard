@@ -90,8 +90,87 @@ Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades an
 
 ## MSV3: the bootloader accepts an OLDER signed image -- rollback is not prevented on the device
 
-**Status:** Measured 2026-09-05. Not fixable without a bootloader change, which needs SWD. A
-host-side mitigation is in place and is honest about what it is.
+**Status:** Measured 2026-09-05 on bootloader 1.0.1, which remains installed on probes 4, 5 and 99.
+**Fixed in bootloader 1.0.2, built 2026-09-06 but NOT YET INSTALLED** -- installing it needs SWD,
+and it is scheduled into the single SWD session that precedes conformal coating. Until that session
+runs, everything below still describes the live fleet, and the host-side mitigation is the only
+thing acting.
+
+**The 1.0.2 fix.** `MSV3/bootloader/patches/msv3-1.0.2-anti-rollback.patch`, applied and sentinel-
+verified by `build_msv3_release.ps1`. It stores a monotonic version floor in the bootloader settings
+page and refuses any application below it. Three design points are load-bearing:
+
+- **The check runs AFTER the init packet's P-256 signature verifies**, so an unauthenticated peer
+  cannot use the response to probe the stored floor.
+- **Equality passes.** Reinstalling the current version is the recovery path after a refused
+  rollback erases the application, so it is `<` and not `<=`.
+- **The floor advances only at `DFU_UPDATE_APP_COMPLETE`**, which is reached only after
+  `dfu_init_postvalidate()` has checked the full image length, SHA-256 and signature. An
+  interrupted or corrupted higher-version transfer therefore cannot raise the floor above an image
+  that still works. It is folded into the ONE existing settings save, because
+  `pstorage_callback_handler()` ends the whole update on any store completion arriving while
+  `m_update_status == BOOTLOADER_SETTINGS_SAVING` -- a second save would arm that gate twice, which
+  is the known dual-bank defect.
+- **An absent or torn floor fails OPEN** (accepts anything) rather than closed. A settings page
+  written by 1.0.0/1.0.1, or a freshly erased one, reads as "not recorded". Failing closed on an
+  unreadable floor would let one interrupted write turn a coated probe into one that refuses every
+  package including its own rescue image.
+
+A rollback refusal is reported as `BLE_DFU_RESP_VAL_NOT_SUPPORTED` at the **Init Packet** stage.
+That value is otherwise unreachable there -- its only other source is `dfu_start_pkt_handle()`, i.e.
+Start DFU -- so it means "below the floor" and cannot mean anything else. That is deliberate: it
+makes the acceptance test read a specific rejection instead of inferring one from the generic
+`OPER_FAILED` that a bad signature or a corrupt package also produces.
+
+### 1.0.2's accepted limitations — read before relying on it
+
+**It is not power-fail monotonic, and the failure is quiet.** `bootloader_settings_save()` erases
+the single settings page before storing the replacement. Flash writes proceed low address to high,
+and the version tuple is appended at offsets 28–39, *after* `bank_0`. So a brownout part-way through
+the 40-byte store can leave **a valid `bank_0` and an incomplete floor tuple**: the probe boots its
+application normally while the reader sees no valid magic and returns floor 0, silently reverting to
+1.0.1 acceptance behaviour until the next successful update rewrites the record.
+
+The first version of this note claimed the same erase always destroys `bank_0` too, so the probe
+would land in obvious BLE recovery. **That is wrong** — it is one of two possible outcomes, and the
+quiet one is the other. The power-cut acceptance matrix must check for both.
+
+Accepted rather than engineered around, deliberately. Redundancy means a second settings page and a
+second store, and any store completion arriving while `m_update_status == BOOTLOADER_SETTINGS_SAVING`
+ends the update without checking handle or which write finished — the completion-gate defect that
+made dual-bank fail on this exact hardware. Trading a ~100 ms window during an attended update for a
+second arming of a known-defective gate, in the one component that can never be re-flashed, is the
+worse risk. **The mitigation is that the host-side floor is not optional:** keep
+`installed_application_version` accurate in `MSV3/fleet.json` for every probe, because after a torn
+write it is the only thing still refusing an old package.
+
+**The floor must be seeded deliberately; a fresh install does not seed it.** After a mass-erase and
+SWD install of SoftDevice + bootloader, the settings page is erased and the floor reads 0. Nothing
+advances it except a completed `DFU_UPDATE_APP_COMPLETE`, which only a **BLE DFU** install produces.
+Flashing the application over SWD leaves a probe that accepts every older signed package. So
+provisioning must finish with a signed OTA install, and the settings page must be read back over SWD
+to confirm magic, floor and complement before the pads are covered.
+
+Seed to the **highest version in the shared trust domain**, currently 65551. The bootloader does not
+enforce sensor identity — that is a host-side check — so a package built for another probe would be
+cryptographically acceptable and could push a floor above that probe's own rescue image. Every probe
+therefore holds a rescue package at 65551, and equality is accepted, so the rescue is always
+installable.
+
+**The UF2 path is unreachable in this build, and that is a security condition, not a UI detail.**
+`src/usb/msc_uf2.c` is compiled in for the nRF52840 and can reach `DFU_UPDATE_APP_COMPLETE` with no
+signature and no version check. It is unreachable only because `DEFAULT_TO_OTA_DFU` is set:
+`main.c` runs `if (!valid_app || dfu_start) { _ota_dfu = 1; }` immediately before the DFU branch
+guarded by exactly `if (dfu_start || !valid_app)`, so every entry into DFU takes the BLE path and
+`usb_init()` is never called. **Do not build without `DEFAULT_TO_OTA_DFU=1`.** (For probes 4 and 5
+the coating also physically covers the USB connector, but that is a second line, not the first.)
+
+**1.0.2 does NOT fix erase-before-authenticate.** The application is still erased at Start DFU,
+before any init packet is seen, so even a refused rollback costs the running firmware. Deferring the
+erase would require Start to complete before erasing, Init completion to wait on an asynchronous
+erase, and the flash-completion handler to distinguish which command it is completing -- the same
+state-machine restructuring implicated in the completion-gate defect above. Recovery from the erase
+is proven; a bricked bootloader is not recoverable at all. Deliberately out of scope.
 
 **Measured, not inferred.** Probe 99 was installed with application version 65540 and its build id
 read back over BLE. It was then offered version 65539 -- one lower, same identity, same signing
@@ -149,6 +228,40 @@ an image exactly.
 describes a deployable image. `-BuildTag` passes an alphanumeric token that the sketch stringifies —
 a quoted string cannot be relied on to survive PowerShell, `--build-property` and the compiler
 intact, and a build id that silently reverted to the default would defeat the one thing it is for.
+
+## MSV3: never read `NRF_POWER->RESETREAS` directly — the Arduino core already consumed it
+
+**Status:** Fixed in the application and enforced in the build, 2026-09-06. This is the **third**
+instance of the same class in this subsystem.
+
+**Affected:** any `MSV3/arduino/*` code wanting the reset cause.
+
+**Symptom:** the reset cause reads `0x0` on every boot, after a watchdog reset and after
+`NVIC_SystemReset` alike. Nothing crashes; a value is simply always zero, which is why this one
+survived two days as a documented *hardware* fact and was nearly used to justify rebuilding the
+bootloader.
+
+**Cause:** the Adafruit core's `init()` runs before `setup()`, reads the register, write-1-to-clears
+it, and saves the value for the application (`cores/nRF5/wiring.c:35-40`, exposed as
+`readResetReason()` at line 72). The bootloader does **not** consume it — `src/main.c:307` says so
+explicitly. The earlier write-up in
+[`MSV3/docs/MSV3_UNREACHABLE_PROBE_GUARDS_2026-09-04.md`](../MSV3/docs/MSV3_UNREACHABLE_PROBE_GUARDS_2026-09-04.md)
+blamed the bootloader and is corrected in place.
+
+**Fix:** `uint32_t reason = readResetReason();` — declared in `wiring.h`, reached via `Arduino.h`.
+
+**Portable enforcement:** `MSV3/scripts/arduino_msv3_probe.ps1` fails the build (including
+`-Action doctor`) on any direct `NRF_POWER->RESETREAS` access under `MSV3/arduino/`, comments
+excluded. The check is deliberately narrow: `bootGuardCheck()` still touches `GPREGRET`/`GPREGRET2`
+directly and legitimately, because it runs before `Bluefruit.begin()`.
+
+**The pattern worth remembering** — reaching for a register the framework has already mediated:
+
+| instance | symptom | mediator that was bypassed |
+|---|---|---|
+| guard 2, first build | reset every ~76 s | `sd_power_gpregret_*` SVCs, with the SoftDevice up |
+| FDC `ERROR_CONFIG`/`DRDY` | every conversion read "fails" | per-channel `CH0_UNREADCONV`, not global `DRDY` |
+| `RESETREAS` | cause always `0x0` | core's `readResetReason()` |
 
 ## MSV3: never poll `STATUS.DRDY` on the FDC2214 — it never updates
 

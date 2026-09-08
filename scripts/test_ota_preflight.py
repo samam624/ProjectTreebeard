@@ -581,8 +581,12 @@ def test_legacy_package_gate():
     check("a package at the threshold needs no override", package.sensor_id == 4)
 
     # The real 1.0.1 signed release predates the invariant, so it must be refused by default.
-    release = (Path(__file__).resolve().parents[1] / "MSV3" / "bootloader" / "generated" /
-               "1.0.1" / "msv3-1.0.1-signed-ota.zip")
+    # Moved to bootloader/quarantine/ on 2026-09-06: it is a pre-guard-1 image at identity 005,
+    # and installing it on a coated probe would restore the defect where a sensor fault closes the
+    # radio. It is kept, not deleted, precisely so this assertion still has something to run
+    # against -- see that directory's README.
+    release = (Path(__file__).resolve().parents[1] / "MSV3" / "bootloader" / "quarantine" /
+               "msv3-1.0.1-signed-ota.zip")
     if release.exists():
         five = load_fleet(make_registry(TMP / "f5.json",
                                         [probe_entry(5, "F9:18:9B:CA:10:B2")])).by_sensor_id(5)

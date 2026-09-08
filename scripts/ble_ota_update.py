@@ -761,17 +761,45 @@ def preflight(args, probe, fleet_source_name="MSV3/fleet.json"):
     # This check is HOST-SIDE and says so. It cannot stop anyone who does not run it; a real
     # control needs a monotonic version in the bootloader settings page, which needs SWD to
     # install. What it does stop is the likely case: reaching for a stale package by mistake.
+    def _bootloader_enforces_rollback(name: str) -> bool:
+        """True when the probe's bootloader itself refuses a below-floor image.
+
+        Anti-rollback landed in MSV3 bootloader 1.0.2. Parsed rather than string-matched so
+        1.0.3 and later inherit it without another edit here.
+        """
+        prefix = "msv3-"
+        if not name or not name.startswith(prefix):
+            return False
+        try:
+            parts = tuple(int(p) for p in name[len(prefix):].split("."))
+        except ValueError:
+            return False
+        return parts >= (1, 0, 2)
+
     if (probe.installed_application_version
             and package.application_version < probe.installed_application_version):
         detail = (f"{package.path.name} is application version {package.application_version}, "
                   f"below the {probe.installed_application_version} recorded as installed on "
                   f"probe {probe.sensor_id} in {fleet_source_name}.")
         if not args.allow_downgrade:
+            # What the DEVICE will do depends on which bootloader this probe carries, and saying
+            # the wrong thing here is worse than saying nothing. Before 1.0.2 the check was an
+            # unimplemented upstream template and the host was genuinely the only gate. From 1.0.2
+            # the bootloader keeps a monotonic floor in its settings page and refuses below it --
+            # confirmed on probe 99, 2026-09-07, floor 65551 read back at 0x000FF01C.
+            on_device = _bootloader_enforces_rollback(probe.bootloader)
+            device_note = (
+                "  The bootloader on this probe ALSO refuses this: 1.0.2 keeps a monotonic floor "
+                "in its settings page.\n"
+                "  Overriding here still costs the running application -- the image is erased at "
+                "Start DFU, before the version is ever checked.\n"
+                if on_device else
+                "  The bootloader will NOT refuse this -- on this probe the version check is an "
+                "unimplemented upstream template, verified by measurement -- so this is the only "
+                "place a rollback gets noticed.\n")
             raise PreflightError(
                 f"{detail}\n"
-                f"  The bootloader will NOT refuse this -- its version check is an "
-                f"unimplemented upstream template, verified by measurement -- so this is "
-                f"the only place a rollback gets noticed.\n"
+                f"{device_note}"
                 f"  Rolling back past guard 1 restores the fault that makes a coated probe "
                 f"unreachable.\n"
                 f"  Pass --allow-downgrade if the rollback is deliberate, and update "
@@ -975,6 +1003,45 @@ async def run(args):
             winrt_options["address_type"] = args.address_type
         dfu_lib.BleakClient = functools.partial(dfu_lib.BleakClient, winrt=winrt_options)
 
+    # RAISE THE PACKET-RECEIPT DEADLINE. dfu_lib computes it as
+    #     prn_timeout = max(0.8, self.prn * 0.08)
+    # which is derived from PRN alone and allows nothing for the HOST stack's notification
+    # latency -- the thing that actually varies. It has the perverse consequence that lowering
+    # PRN TIGHTENS the deadline: --prn 16 gets 1.28 s, --prn 4 gets 0.8 s. So the standard advice
+    # for a marginal link ("drop to --prn 4") simultaneously makes the client less patient, and
+    # a transfer that was progressing fine gets aborted by its own guard. Measured on probe 99,
+    # 2026-09-07: --prn 16 aborted at 74,176 bytes, --prn 4 got to 126,880 of 132,448 (96%) and
+    # aborted there too.
+    #
+    # Patched here rather than in dfu_lib.py because that file lives under the gitignored
+    # .arduino-build/ and an edit there is not part of this repository. Scoped two ways so it
+    # cannot affect anything else: the proxy replaces asyncio ONLY on the dfu_lib module object,
+    # and it only substitutes SHORT timeouts. dfu_lib's other waits are 20 s, 30 s and 60 s, so
+    # the sub-2 s ceiling picks out the packet-receipt wait and nothing else.
+    #
+    # This does not weaken the desync guard. A genuinely lost receipt still aborts the transfer --
+    # it just has to actually be lost, rather than merely slower than 0.8 s.
+    class _DfuAsyncioProxy:
+        def __init__(self, real, floor):
+            self._real = real
+            self._floor = floor
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        async def wait_for(self, aw, timeout=None):
+            if timeout is not None and timeout <= 2.0 and timeout < self._floor:
+                timeout = self._floor
+            return await self._real.wait_for(aw, timeout)
+
+    # getattr, not args.prn_timeout: the test suite constructs Args objects by hand, so reaching
+    # for a new attribute directly turns every one of them into an AttributeError.
+    prn_timeout = getattr(args, "prn_timeout", 0.0) or 0.0
+    if prn_timeout > 0:
+        dfu_lib.asyncio = _DfuAsyncioProxy(asyncio, prn_timeout)
+        print(f"  packet-receipt deadline raised to {prn_timeout:.1f}s "
+              f"(dfu_lib would use {max(0.8, args.prn * 0.08):.2f}s)", flush=True)
+
     package = args.package.resolve()
     updater = dfu_lib.NordicLegacyDFU(
         str(package),
@@ -1146,6 +1213,11 @@ def main():
                         help=f"Accept a package older than application version "
                              f"{IDENTITY_CONTRACT_MIN_APP_VERSION}, whose advertised name is not "
                              f"guaranteed to equal the SENSOR_ID compiled into it")
+    parser.add_argument("--prn-timeout", type=float, default=6.0,
+                        help="Seconds to wait for a packet receipt before declaring the transfer "
+                             "desynced. dfu_lib's own value is max(0.8, prn*0.08), which ignores "
+                             "host-stack latency and gets SHORTER as PRN drops. 0 disables this "
+                             "override and restores dfu_lib's behaviour.")
     parser.add_argument("--allow-downgrade", action="store_true",
                         help="Install a package older than the version recorded as installed. The "
                              "DEVICE does not enforce this; the registry is the only record.")

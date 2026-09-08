@@ -77,9 +77,14 @@ ADDRESS_RE = re.compile(r"^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$")
 # WHAT THIS IS AND IS NOT. It is an authenticated *release-policy* boundary, not cryptographic
 # proof that a binary was compiled from invariant-bearing source. It stops a historical package
 # being reused by accident, which is the failure that actually happened. It does not stop a
-# deliberate relabel: `build_msv3_release.ps1 -SkipApplicationCompile` packages whatever hex is
-# already sitting in .arduino-build/msv3-probe/ and stamps it with whatever --ApplicationVersion
-# it is given. Treat that switch as the unsafe path it is.
+# deliberate relabel by someone holding the signing key, who can build and sign anything.
+#
+# CORRECTED 2026-09-06. This used to name `-SkipApplicationCompile` as the concrete unsafe
+# path, because it packaged whatever hex was sitting in .arduino-build/msv3-probe/ and stamped
+# it with whatever --ApplicationVersion it was given. That is no longer true: the switch now
+# builds the bootloader ONLY and emits no application or migration package at all, precisely
+# because a same-sensor stale image would pass both the identity and the version check while
+# being the wrong code. The relabel risk is now human, not a switch you can reach by accident.
 IDENTITY_CONTRACT_MIN_APP_VERSION = 65538
 
 

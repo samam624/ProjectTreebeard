@@ -28,12 +28,17 @@ what corrupts a freshly-written bootloader (see docs/SWD_FLASHER.md).
 """
 
 import argparse
+import hashlib
+import json
 import re
 import sys
 import time
 from pathlib import Path
 
 import serial
+
+MSV3_RELEASES = Path(__file__).resolve().parents[1] / "MSV3" / "bootloader" / "generated"
+MSV3_BOOT_HEX = "msv3-e73-recovery-signed-s140-6.1.1.hex"
 
 # The SWD flasher sketch lives under DisplayCenter/, not MSV3/ -- it is shared receiver-side
 # hardware, and the 2026-08-29 project-treebeard reorg moved every sketch from arduino/<Sketch>/
@@ -44,6 +49,46 @@ DEFAULT_BOOTLOADER_HEX = (
     / "DisplayCenter" / "arduino" / "Treebeard_ESP32_SWD_Flasher" / "bootloaders"
     / "pca10056_bootloader-0.11.0_s140_6.1.1.hex"
 )
+
+def resolve_msv3_release(version):
+    """Path to an MSV3 release bootloader hex, verified against its own release manifest.
+
+    Why the hash check is here and not left to the operator: this is the last moment before an
+    image becomes the permanent, unflashable half of a conformally coated probe. Verifying that
+    the bytes about to go over SWD are the exact reviewed release -- not a local rebuild that
+    happens to be equivalent, not a half-copied file -- is cheap here and impossible afterwards.
+    """
+    release_dir = MSV3_RELEASES / version
+    manifest_path = release_dir / "release-manifest.json"
+    hex_path = release_dir / MSV3_BOOT_HEX
+    if not manifest_path.exists():
+        raise SystemExit(f"no MSV3 release manifest at {manifest_path}")
+    if not hex_path.exists():
+        raise SystemExit(f"no bootloader hex at {hex_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = None
+    for entry in manifest.get("files", []):
+        if entry.get("name") == MSV3_BOOT_HEX:
+            expected = (entry.get("sha256") or "").lower()
+            break
+    if not expected:
+        raise SystemExit(f"{manifest_path} does not record a sha256 for {MSV3_BOOT_HEX}")
+
+    actual = hashlib.sha256(hex_path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise SystemExit(
+            f"REFUSING TO FLASH. {hex_path.name} hashes to\n"
+            f"  {actual}\n"
+            f"but {manifest_path.name} records\n"
+            f"  {expected}\n"
+            f"The file is not the released image. Rebuild the release, or restore the artifact, "
+            f"before putting it on a board you are about to coat.")
+
+    print(f"MSV3 release {version}: {MSV3_BOOT_HEX}")
+    print(f"  sha256 {actual} -- matches release-manifest.json")
+    return str(hex_path)
+
 
 PROGRESS_RE = re.compile(r"^progress: (.+?) (\d+)/(\d+)\b")
 
@@ -271,16 +316,31 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--mass-erase", action="store_true",
                      help="Send 'erase CONFIRM' before writing the first segment")
+    ap.add_argument("--msv3", metavar="VERSION",
+                     help="Install an MSV3 release bootloader, e.g. --msv3 1.0.2. Resolves the hex "
+                          "from MSV3/bootloader/generated/<VERSION>/, VERIFIES its sha256 against "
+                          "that release's manifest, then waits for solid contact and mass-erases "
+                          "exactly as --bootloader does. This is the correct flag for a fleet probe.")
+    ap.add_argument("--no-reset", action="store_true",
+                     help="Leave the target halted after a successful flash instead of pulsing "
+                          "nRESET. Only useful when you intend to attach a debugger to the "
+                          "halted core; a halted board does not enumerate or advertise.")
+    ap.add_argument("--stock-bootloader", action="store_true",
+                     help="Confirm that bare --bootloader really should install the generic "
+                          "unsigned Adafruit image rather than an MSV3 release.")
     ap.add_argument("--bootloader", action="store_true",
                      help="One-shot new-bootloader install: waits for solid SWD contact, "
                      "always mass-erases (skipping erase before a bootloader write risks "
                      "leaving old app code that re-corrupts it), then flashes --hex or the "
                      "bundled pca10056 bootloader hex if --hex isn't given")
     ap.add_argument("--wait-contact", action="store_true",
-                     help="Wait for solid SWD contact before flashing, WITHOUT mass-erasing. "
-                     "--bootloader implies this but also forces an erase; use this flag on its own "
-                     "to hand-hold pogo pins while writing an application into an existing "
-                     "SoftDevice+bootloader that must survive")
+                     help="No longer needed: the contact gate is now the default for every target "
+                          "operation. Accepted so existing runbooks and docs keep working.")
+    ap.add_argument("--no-wait-contact", action="store_true",
+                     help="Skip the contact gate. Only for a target on a fixed jig where contact "
+                          "cannot drift. Hand-held pogo pins must always use the gate -- a "
+                          "flickering contact once passed a single check, the mass erase started, "
+                          "and contact was lost mid-write.")
     ap.add_argument("--contact-timeout", type=float, default=30.0,
                      help="Total seconds to wait for contact to go stable (default 30)")
     ap.add_argument("--contact-stable", type=float, default=3.0,
@@ -288,10 +348,37 @@ def main():
                      "erase/flash starts in --bootloader mode (default 3)")
     args = ap.parse_args()
 
-    hex_path = args.hex or (str(DEFAULT_BOOTLOADER_HEX) if args.bootloader else None)
-    if not hex_path:
-        ap.error("--hex is required unless --bootloader is given")
-    mass_erase = args.mass_erase or args.bootloader
+    if args.msv3 and args.hex:
+        ap.error("--msv3 and --hex both name an image; pass one")
+
+    if args.msv3:
+        hex_path = resolve_msv3_release(args.msv3)
+    elif args.hex:
+        hex_path = args.hex
+    elif args.bootloader:
+        # Bare --bootloader installs the STOCK Adafruit loader. That is the right thing for a
+        # fresh board being brought up, and the wrong thing for an MSV3 fleet probe: it accepts
+        # generic 0x0052 packages, requires no signature, and would silently replace an MSV3
+        # bootloader (and its anti-rollback floor) with one that has neither. Since 1.0.2 exists
+        # and is what fleet probes are meant to carry, make the choice explicit rather than
+        # letting the default decide it.
+        print("About to install the STOCK Adafruit bootloader "
+              f"({DEFAULT_BOOTLOADER_HEX.name}).")
+        print("  It is UNSIGNED and accepts generic device-type 0x0052 packages.")
+        print("  For an MSV3 fleet probe you almost certainly want:  --msv3 1.0.2")
+        if not args.stock_bootloader:
+            ap.error("bare --bootloader is ambiguous now that MSV3 releases exist. "
+                     "Pass --msv3 <version> for an MSV3 probe, or add --stock-bootloader to "
+                     "confirm you really mean the generic Adafruit image.")
+        hex_path = str(DEFAULT_BOOTLOADER_HEX)
+    else:
+        ap.error("pass --msv3 <version>, --hex <file>, or --bootloader")
+
+    # --msv3 is a bootloader install: it needs the same contact guard and mass erase, because a
+    # partial old application left behind by a non-erased write is exactly what corrupts a freshly
+    # written bootloader.
+    bootloader_mode = args.bootloader or bool(args.msv3)
+    mass_erase = args.mass_erase or bootloader_mode
 
     segments = parse_intel_hex(hex_path)
     if not segments:
@@ -308,7 +395,15 @@ def main():
     ser.reset_input_buffer()
     reader = LineReader(ser)
 
-    if args.bootloader or args.wait_contact:
+    # CONTACT GATE IS THE DEFAULT FOR EVERY TARGET OPERATION, not just bootloader installs.
+    #
+    # It used to be `if bootloader_mode or args.wait_contact`, which meant a plain
+    # `--hex foo.hex --mass-erase` would erase and program with no contact check at all. That is
+    # the same shape of hole as the one that let `erase: OK` be printed without verifying: the
+    # safe behaviour was available but opt-in, so it was absent exactly when nobody remembered to
+    # ask for it. Anything that writes to, erases, or reads a hand-held target waits first, and
+    # skipping it takes an explicit, self-describing flag.
+    if not args.no_wait_contact:
         print()
         if not wait_for_contact(ser, reader, timeout_s=args.contact_timeout, stable_s=args.contact_stable):
             return 1
@@ -316,12 +411,21 @@ def main():
     if mass_erase:
         print("\nMass erasing target...")
         ser.write(b"erase CONFIRM\n")
-        deadline = time.time() + 30
+        # Wait on PROGRESS, not on a wall clock. The erase now blank-checks every word of the
+        # regions that could hold a bootable remnant before it will claim success, which takes
+        # a couple of minutes -- far longer than the fixed 30 s budget this used to have, so the
+        # host gave up mid-check and reported a failure that had not happened. Any line from the
+        # adapter resets the idle timer; only genuine silence, or an overall cap, aborts.
+        IDLE_TIMEOUT = 45
+        HARD_CAP = 900
+        started = time.time()
+        idle_deadline = time.time() + IDLE_TIMEOUT
         result = None
-        while time.time() < deadline:
+        while time.time() < idle_deadline and (time.time() - started) < HARD_CAP:
             line = reader.read_line(timeout_s=5)
             if line is None:
                 continue
+            idle_deadline = time.time() + IDLE_TIMEOUT
             print(f"  {line}")
             if "erase: OK" in line or "erase: FAILED" in line:
                 result = line
@@ -338,6 +442,39 @@ def main():
             return 1
 
     print("\nAll segments written and verified.")
+
+    # Release the target. The adapter's `flash` command halts the core to program it and does
+    # NOT resume it, so without this the board sits halted after a completely successful flash:
+    # no USB enumeration, no BLE advertising, nothing. Measured on probe 99, 2026-09-07 -- every
+    # segment verified, and then the follow-on BLE seed failed with "Bootloader never advertised"
+    # because the bootloader had never been given the chance to start.
+    #
+    # `reset` (pulse nRESET) rather than `run` (resume from the halt point): after a mass erase
+    # and a fresh bootloader write, the halted PC is not a state worth resuming from. A reset
+    # boots from the reset vector, which is what the freshly written image expects.
+    #
+    # This needs the nRESET wire still attached, which it is at this point in the flow -- the
+    # operator has been holding contact throughout. A power cycle achieves the same thing if the
+    # reset is skipped or fails, and that is what the message below tells them.
+    if args.no_reset:
+        print("--no-reset given: target left halted. Power-cycle it or send `reset` to start it.")
+        return 0
+
+    print("Resetting target so the newly written image starts...")
+    ser.write(b"reset\n")
+    deadline = time.time() + 5
+    saw_reset = False
+    while time.time() < deadline:
+        line = reader.read_line(timeout_s=2)
+        if line is None:
+            continue
+        print(f"  {line}")
+        if "reset" in line.lower():
+            saw_reset = True
+            break
+    if not saw_reset:
+        print("  no reset confirmation from the adapter -- if the board does not come up,")
+        print("  power-cycle it. The image is written and verified either way.")
     return 0
 
 

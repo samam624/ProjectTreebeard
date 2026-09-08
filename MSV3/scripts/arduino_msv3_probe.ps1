@@ -128,6 +128,95 @@ They are deliberate duplicates -- the Arduino builder only compiles files inside
   Write-Host "MSV3 duplicated-source check: OK ($($duplicated -join ', ') identical across both sketches)"
 }
 
+function Remove-CCommentsAndStrings {
+  # Blanks out comments AND string/char literals in one left-to-right pass.
+  #
+  # Ordering matters and a regex pipeline gets it wrong. Measured 2026-09-06 against the naive
+  # "strip /*...*/ then strip //...$" version this replaces:
+  #
+  #   const char *u = "http://example"; uint32_t r = NRF_POWER->RESETREAS;
+  #
+  # The // inside the string literal ate the rest of the line, so a REAL violation on that line
+  # became invisible -- a false negative in a check whose whole job is to have no false negatives.
+  # A single pass that knows it is inside a string cannot be fooled that way.
+  #
+  # Replaces content with spaces rather than deleting it so byte offsets stay usable if this ever
+  # needs to report a line number.
+  param([string]$Text)
+
+  $out = [System.Text.StringBuilder]::new($Text.Length)
+  $i = 0
+  $n = $Text.Length
+  while ($i -lt $n) {
+    $c = $Text[$i]
+    $next = if ($i + 1 -lt $n) { $Text[$i + 1] } else { [char]0 }
+
+    if ($c -eq '/' -and $next -eq '/') {
+      while ($i -lt $n -and $Text[$i] -ne "`n") { [void]$out.Append(' '); $i++ }
+    }
+    elseif ($c -eq '/' -and $next -eq '*') {
+      [void]$out.Append('  '); $i += 2
+      while ($i -lt $n -and -not ($Text[$i] -eq '*' -and ($i + 1 -lt $n) -and $Text[$i + 1] -eq '/')) {
+        [void]$out.Append($(if ($Text[$i] -eq "`n") { "`n" } else { ' ' })); $i++
+      }
+      if ($i -lt $n) { [void]$out.Append('  '); $i += 2 }
+    }
+    elseif ($c -eq '"' -or $c -eq "'") {
+      $quote = $c
+      [void]$out.Append(' '); $i++
+      while ($i -lt $n -and $Text[$i] -ne $quote) {
+        if ($Text[$i] -eq '\' -and $i + 1 -lt $n) { [void]$out.Append('  '); $i += 2; continue }
+        [void]$out.Append($(if ($Text[$i] -eq "`n") { "`n" } else { ' ' })); $i++
+      }
+      if ($i -lt $n) { [void]$out.Append(' '); $i++ }
+    }
+    else {
+      [void]$out.Append($c); $i++
+    }
+  }
+  return $out.ToString()
+}
+
+function Assert-NoRawResetReasRead {
+  # Reading NRF_POWER->RESETREAS directly always yields 0. The Adafruit core's init() runs before
+  # setup(), reads the register, write-1-to-clears it, and saves the value behind
+  # readResetReason() (cores/nRF5/wiring.c). The bootloader does NOT consume it -- its own
+  # src/main.c says so -- but that wrong conclusion was on record from 2026-09-04 to 2026-09-06
+  # precisely because the direct read looked like hardware behaviour rather than a framework
+  # interaction.
+  #
+  # This is the third time this project has reached past a framework-mediated register: the first
+  # guard-2 build wrote NRF_POWER->GPREGRET2 from loop() with the SoftDevice up and reset every
+  # ~76 s, and the DRDY/ERROR_CONFIG family is the same shape. A wrong reset cause is quieter than
+  # either -- nothing crashes, the value is simply always 0 -- so it needs a build-time check
+  # rather than a comment.
+  #
+  # Deliberately narrow: this bans the RESETREAS *read*, not NRF_POWER as a whole. bootGuardCheck()
+  # legitimately touches GPREGRET/GPREGRET2 directly, because it runs before Bluefruit.begin().
+  $sketchFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot "arduino") -Recurse -File -Include *.ino, *.cpp, *.h -ErrorAction SilentlyContinue
+  $offenders = @()
+  foreach ($f in $sketchFiles) {
+    $text = Get-Content -LiteralPath $f.FullName -Raw
+    $stripped = Remove-CCommentsAndStrings -Text $text
+    foreach ($m in [regex]::Matches($stripped, 'NRF_POWER\s*->\s*RESETREAS')) {
+      $offenders += "$($f.FullName)"
+      break
+    }
+  }
+  if ($offenders.Count -gt 0) {
+    throw @"
+Direct NRF_POWER->RESETREAS access found in:
+  $($offenders -join "`n  ")
+That register is already read and cleared by the Adafruit core's init() before setup() runs, so a
+direct read returns 0 on every boot and a direct write clears nothing that is still set. Use the
+core accessor instead:
+    uint32_t reason = readResetReason();   // wiring.h, via Arduino.h
+See docs/KNOWN_ISSUES.md and MSV3/docs/MSV3_UNREACHABLE_PROBE_GUARDS_2026-09-04.md.
+"@
+  }
+  Write-Host "MSV3 reset-cause check: OK (no direct NRF_POWER->RESETREAS access)"
+}
+
 if (!(Test-Path -LiteralPath $CliPath)) {
   throw "arduino-cli.exe not found at '$CliPath'. Pass -CliPath if Arduino IDE is installed elsewhere."
 }
@@ -148,6 +237,7 @@ if ($Action -eq "monitor") {
 $corePath = Get-AdafruitNrf52CorePath
 Ensure-Msv3LfRcVariant -CorePath $corePath
 Assert-DuplicatedSketchSources
+Assert-NoRawResetReasRead
 
 if ($Action -eq "doctor") {
   Write-Host "MSV3 toolchain check passed. Core: $corePath"

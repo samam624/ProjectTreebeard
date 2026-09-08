@@ -340,7 +340,7 @@ Four further holes were found in review and closed:
   separate constants, so a pre-2026-09-04 signed image could legitimately carry the name 004 while
   putting sensor ID 5 on the wire — precisely the mismatch the check exists to catch, and invisible
   to it. `IDENTITY_CONTRACT_MIN_APP_VERSION = 65538` separates the two eras, and anything below it
-  needs `--allow-legacy-package`. **The shipped `msv3-1.0.1-signed-ota.zip` is version 65537 and is
+  needs `--allow-legacy-package`. **The shipped `msv3-1.0.1-signed-ota.zip` (moved to `MSV3/bootloader/quarantine/` on 2026-09-06 — pre-guard-1, identity 005) is version 65537 and is
   therefore now treated as legacy** — correctly, since it predates the invariant.
   `build_msv3_release.ps1`'s default application version is bumped to 65538 so the next release
   carries the contract without anyone remembering to.
@@ -354,9 +354,14 @@ Four further holes were found in review and closed:
   boundary, not cryptographic evidence that a binary was compiled from invariant-bearing source.
   It stops a historical package being reused by accident, which is the failure that actually
   happened. It does not stop a deliberate relabel:
-  `build_msv3_release.ps1 -SkipApplicationCompile` packages whatever hex is already sitting in
-  `.arduino-build/msv3-probe/` and stamps it with whatever version it is given. That switch is the
-  unsafe path and is commented as such.
+  anyone holding the signing key can build and sign anything.
+
+  > **Corrected 2026-09-06.** This paragraph used to name `-SkipApplicationCompile` as that
+  > unsafe path, because it packaged whatever hex was already sitting in
+  > `.arduino-build/msv3-probe/` and stamped it with whatever version it was given. The switch
+  > now builds the bootloader only and emits no application package at all — a same-sensor
+  > stale image would have passed both the identity and the version check while being the
+  > wrong code, so the workflow was removed rather than guarded.
 
   **On a deployed probe the flag alone is not enough.** `--allow-legacy-package` would otherwise
   restore the exact defect: an old image whose name says 004 while its compiled `SENSOR_ID` is 5

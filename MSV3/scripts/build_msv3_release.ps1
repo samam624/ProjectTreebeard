@@ -79,6 +79,73 @@ if (!(Test-Path -LiteralPath $requiredSource)) {
   throw "Pinned bootloader checkout is incomplete; missing $requiredSource"
 }
 
+# Return the pinned checkout to its stock state before applying anything. Every source change
+# below is reapplied from tracked files on each run, so a rebuild is deterministic no matter what
+# a previous run (or a hand edit) left behind. The whole clone lives under the gitignored
+# .arduino-build/, so nothing in it is part of this repository and nothing in it may be the only
+# copy of a change -- see the repository CLAUDE.md rule about edits outside the tree.
+if (Test-Path -LiteralPath $boardDest) { Remove-Item -LiteralPath $boardDest -Recurse -Force }
+
+& git -C $source checkout -- lib src
+if ($LASTEXITCODE -ne 0) { throw "Could not reset the pinned bootloader checkout to its stock state" }
+
+# Submodules need their own reset. `git checkout -- lib` restores the superproject's gitlinks but
+# does NOT clean a submodule's working tree, so a modified file inside lib/tinyusb, lib/nrfx,
+# lib/uf2 or lib/tinycrypt survives it. Measured 2026-09-06 by deliberately dirtying
+# lib/tinyusb/src/tusb.c: the superproject files were restored and the submodule stayed modified.
+# TinyUSB is compiled into the bootloader, so that would silently change the one binary that can
+# never be re-flashed, and the sentinel grep below would not notice.
+& git -C $source submodule foreach --quiet --recursive 'git checkout -- .'
+if ($LASTEXITCODE -ne 0) { throw "Could not reset the pinned bootloader checkout's submodules" }
+
+# Then refuse to build from anything still dirty, rather than trusting the two resets above to
+# have been exhaustive. Fail closed: an unexplained modification here ends up inside an immutable
+# bootloader, and no downstream check would attribute it.
+$residual = @(& git -C $source status --porcelain -- lib src |
+              Where-Object { $_ -and ($_ -notmatch 'src/boards/msv3_e73') })
+if ($residual.Count -gt 0) {
+  throw @"
+The pinned bootloader checkout is still modified after resetting it:
+  $($residual -join "`n  ")
+Refusing to build. Every MSV3 source change is reapplied from tracked files on each run, so
+anything left here is unexplained and would end up inside a bootloader that cannot be re-flashed
+once a probe is coated. Investigate, or delete $source and let this script re-clone it.
+"@
+}
+
+# MSV3 source patches, applied in release order. 1.0.0 and 1.0.1 take none: both are installed on
+# real hardware right now and must stay byte-reproducible from this script.
+#
+# 1.0.2 adds on-device anti-rollback. Measured on probe 99 2026-09-05, stock 0.11.0 installs an
+# OLDER validly signed image without complaint, because dfu_init.c ships an explicit empty template
+# where the version check belongs. That matters for a coated probe: rolling back past guard 1
+# restores the defect where a sensor fault closes the radio.
+$patches = @()
+if ([version]$ReleaseVersion -ge [version]"1.0.2") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.2-anti-rollback.patch"
+    # Grepped for after the patch applies. A patch that silently fails to apply would produce a
+    # bootloader that looks right, installs, and quietly accepts rollbacks forever on hardware
+    # whose SWD pads are under coating. Absence must fail the build, not the field.
+    Sentinel = "MSV3_VERSION_FLOOR_MAGIC"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\bootloader_types.h"
+  }
+}
+
+foreach ($p in $patches) {
+  if (!(Test-Path -LiteralPath $p.File)) {
+    throw "Required bootloader patch is missing: $($p.File)"
+  }
+  & git -C $source apply --whitespace=nowarn $p.File
+  if ($LASTEXITCODE -ne 0) { throw "Failed to apply bootloader patch $($p.File)" }
+
+  $sentinelPath = Join-Path $source $p.SentinelIn
+  if (!(Select-String -LiteralPath $sentinelPath -SimpleMatch -Pattern $p.Sentinel -Quiet)) {
+    throw "Patch $([IO.Path]::GetFileName($p.File)) reported success but its sentinel '$($p.Sentinel)' is absent from $sentinelPath. Refusing to build a bootloader whose provenance cannot be confirmed."
+  }
+  Write-Host "MSV3 bootloader patch applied and verified: $([IO.Path]::GetFileName($p.File))"
+}
+
 if (Test-Path -LiteralPath $boardDest) { Remove-Item -LiteralPath $boardDest -Recurse -Force }
 Copy-Item -LiteralPath $boardSource -Destination $boardDest -Recurse
 
@@ -160,6 +227,39 @@ if (!$SkipApplicationCompile) {
   if ($LASTEXITCODE -ne 0) { throw "MSV3 production application build failed" }
 }
 
+# -SkipApplicationCompile NEVER PRODUCES AN APPLICATION PACKAGE. It builds the bootloader only.
+#
+# It used to package whatever hex was sitting in the shared build cache. Demonstrated 2026-09-06:
+# `-ReleaseVersion 1.0.1 -ApplicationVersion 65537 -SkipApplicationCompile` emitted a correctly
+# signed package NAMED and VERSIONED 1.0.1/65537 whose image was actually MSV3-MOISTURE-004 build
+# 2026-09-06-s4v50. Nothing downstream would have questioned it: valid signature, right device
+# type, only the identity disagreed with the filename.
+#
+# An identity check against -SensorId was the first fix, and it is still in place below -- but it
+# is not sufficient on its own, because it cannot see SAME-SENSOR staleness. A cached sensor-004
+# image built from older source, repackaged at a new version, presents a correct identity AND a
+# correct signed version while being the wrong code. That is precisely how probe 4's running
+# firmware became unreproducible in the first place, so the workflow that allows it is removed
+# rather than guarded.
+#
+# If reusing a prebuilt application is ever wanted, add an explicit -ApplicationHex parameter with
+# a required expected hash. Do not restore implicit consumption of shared cache state.
+if ($SkipApplicationCompile) {
+  Write-Host ""
+  Write-Host "-SkipApplicationCompile: bootloader only. No application or migration package will be"
+  Write-Host "produced, because the only image available would be unattributable build-cache state."
+  $releaseDirBootOnly = Join-Path $msv3Root "bootloader\generated\$ReleaseVersion"
+  New-Item -ItemType Directory -Force -Path $releaseDirBootOnly | Out-Null
+  $releaseBootOnly = Join-Path $releaseDirBootOnly "msv3-e73-recovery-signed-s140-6.1.1.hex"
+  Copy-Item -LiteralPath $bootMerged -Destination $releaseBootOnly -Force
+  $bootOnlyHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $releaseBootOnly).Hash.ToLowerInvariant()
+  Write-Host ""
+  Write-Host "MSV3 bootloader built: $releaseBootOnly"
+  Write-Host "  sha256 $bootOnlyHash"
+  Write-Host "Release manifest NOT rewritten -- it describes a full release and this was not one."
+  exit 0
+}
+
 $appHex = Join-Path $cacheRoot "msv3-probe\MSV3_Moisture_BLE_Sleep.ino.hex"
 if (!(Test-Path -LiteralPath $appHex)) { throw "Missing production application: $appHex" }
 
@@ -167,13 +267,30 @@ $releaseDir = Join-Path $msv3Root "bootloader\generated\$ReleaseVersion"
 $canonicalDir = Join-Path $msv3Root "bootloader\generated"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 $releaseBoot = Join-Path $releaseDir "msv3-e73-recovery-signed-s140-6.1.1.hex"
-$otaName = if ($SensorId -ge 0) {
-  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-signed-ota.zip"
-} else {
+# From 1.0.2 the APPLICATION VERSION is part of the package name. Anti-rollback testing needs
+# N-1, N and N+1 for the same probe to exist side by side, and before this they differed only by
+# a field inside the signed init packet -- so each build silently overwrote the last, and the file
+# you reached for could not be identified from its name. Names below 1.0.2 are left exactly as
+# they were: those packages are archived artifacts and their names appear in the field records.
+$otaName = if ($SensorId -lt 0) {
   "msv3-$ReleaseVersion-signed-ota.zip"
+} elseif ([version]$ReleaseVersion -ge [version]"1.0.2") {
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-v$ApplicationVersion-signed-ota.zip"
+} else {
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-signed-ota.zip"
 }
 $signedOta = Join-Path $releaseDir $otaName
-$initialInstall = Join-Path $releaseDir "msv3-$ReleaseVersion-initial-install-from-stock.zip"
+# The migration package carries SoftDevice + bootloader + APPLICATION, so it embeds a sensor
+# identity exactly like the OTA package does, and from 1.0.2 its name says which. Before this it
+# did not: every build overwrote one file whose identity you could only discover by unzipping it.
+# Flashing the wrong one gives two probes the same sensor id and silently mixes two plants' data
+# in the receiver -- which has already happened once on this project, with identity 005.
+$initialInstallName = if ($SensorId -ge 0 -and [version]$ReleaseVersion -ge [version]"1.0.2") {
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-initial-install-from-stock.zip"
+} else {
+  "msv3-$ReleaseVersion-initial-install-from-stock.zip"
+}
+$initialInstall = Join-Path $releaseDir $initialInstallName
 Copy-Item -LiteralPath $bootMerged -Destination $releaseBoot -Force
 
 & $nrfutil dfu genpkg --dev-type 0x3356 --dev-revision 52840 `
@@ -190,6 +307,46 @@ if ($LASTEXITCODE -ne 0) { throw "Initial stock-to-MSV3 package generation faile
 & $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $signedOta `
   --device-type 0x3356 --application-version $ApplicationVersion --key $keyPath
 if ($LASTEXITCODE -ne 0) { throw "Signed OTA package verification failed" }
+
+# Confirm the package that was just SIGNED actually carries the identity this run asked for.
+#
+# -SkipApplicationCompile packages whatever is sitting in the shared build cache. Demonstrated
+# 2026-09-06 while regression-testing this script: a `-ReleaseVersion 1.0.1 -ApplicationVersion
+# 65537 -SkipApplicationCompile` run produced a package NAMED and VERSIONED 1.0.1/65537 whose image
+# was really MSV3-MOISTURE-004 build 2026-09-06-s4v50. It was correctly signed, so nothing
+# downstream would have questioned it -- and a mislabelled signed package is exactly what the fleet
+# registry exists to prevent. Once a probe is coated the only remedy for a wrong install is another
+# OTA, so this is checked at the point of signing, not at the point of flashing.
+if ($SensorId -ge 0) {
+  & $pythonExe -c @"
+import sys
+from pathlib import Path
+sys.path.insert(0, r'$repoRoot\scripts')
+import msv3_fleet
+pkg = msv3_fleet.read_package(Path(sys.argv[1]))
+want = int(sys.argv[2])
+if pkg.sensor_id != want:
+    sys.exit('IDENTITY MISMATCH: package carries MSV3-MOISTURE-%03d but -SensorId %d was requested.\n'
+             'The build cache is from a different build. Drop -SkipApplicationCompile, or pass the\n'
+             '-SensorId matching the image you intend to ship.' % (pkg.sensor_id, want))
+print('MSV3 package identity check: OK (MSV3-MOISTURE-%03d, version %d)'
+      % (pkg.sensor_id, pkg.application_version))
+"@ $signedOta $SensorId
+  if ($LASTEXITCODE -ne 0) {
+    # Delete the offending artifacts before throwing. Detecting a mislabelled signed package and
+    # then leaving it on disk is barely better than not detecting it: it is correctly signed, its
+    # filename asserts an identity it does not have, and the next person to reach into this
+    # directory has no reason to distrust it. Found the hard way -- the first version of this
+    # check reported the mismatch and left the package sitting there.
+    foreach ($stale in @($signedOta, $initialInstall)) {
+      if (Test-Path -LiteralPath $stale) {
+        Remove-Item -LiteralPath $stale -Force
+        Write-Host "Removed mislabelled package: $([IO.Path]::GetFileName($stale))"
+      }
+    }
+    throw "Signed package identity does not match -SensorId $SensorId (mislabelled artifacts deleted)"
+  }
+}
 & $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $initialInstall `
   --device-type 0x0052 --application-version $ApplicationVersion
 if ($LASTEXITCODE -ne 0) { throw "Initial migration package verification failed" }
