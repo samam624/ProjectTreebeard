@@ -1,4 +1,11 @@
-# MSV3 probe 4 soil drift: measured as temperature, not soaking — 2026-09-04
+# MSV3 probe 4 real-pot signal: valid moisture trend plus thermal loading -- 2026-09-04
+
+> **Terminology correction, 2026-09-07:** The measurements below apportion the large daily
+> excursion; they do not make the connected probe history invalid or reduce it to a thermometer.
+> Probe 4 is measuring a real drying trajectory with a temperature-dependent component superimposed.
+> A first causal compensation result now removes about 77% of the held-out daily harmonic versus
+> raw while retaining the dry-down. See
+> [MSV3_REAL_POT_THERMAL_COMPENSATION_2026-09-07.md](MSV3_REAL_POT_THERMAL_COMPENSATION_2026-09-07.md).
 
 **Complaint.** Probe 4 has been sitting in a pot overnight and its reading moves over the day. It
 looked like the probe soaking in. The same shape appeared again after the windows were opened.

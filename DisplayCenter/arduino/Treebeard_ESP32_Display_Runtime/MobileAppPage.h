@@ -365,9 +365,12 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       text-overflow: ellipsis;
     }
     .chart-card { margin-bottom: 12px; }
-    .chart-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+    .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
     .chart-title { font-size: 13px; font-weight: 800; }
     .chart-latest { font-size: 12px; color: var(--muted); }
+    .chart-head-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .chart-unit-toggle { display: inline-flex; gap: 4px; }
+    .chart-unit-toggle button { min-height: 28px; padding: 3px 9px; border-radius: 6px; }
     .chart-wrap { position: relative; }
     svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
     .chart-grid { stroke: var(--line); stroke-width: 1; }
@@ -400,6 +403,8 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     .smoothing-grid input { min-height: 34px; padding: 6px 8px; }
     .smoothing-actions { display: flex; gap: 8px; margin-top: 10px; }
     .smoothing-actions button { flex: 1; }
+    .chart-visibility-row { display: flex; gap: 8px; margin: 10px 0 4px; }
+    .chart-visibility-row button { flex: 1; }
     .hidden { display: none; }
     @media (min-width: 700px) {
       main { max-width: 960px; }
@@ -616,6 +621,14 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
             <button type="button" class="ghost" id="smoothingResetButton">Reset to firmware defaults</button>
           </div>
         </details>
+
+        <!-- Applies to every chart below that draws a raw/smoothed pair (Moisture, and the
+             experimental temperature-compensated FDC chart) - single-line charts are unaffected.
+             At least one of the two always stays on; see toggleChartSeries(). -->
+        <div class="chart-visibility-row">
+          <button type="button" class="ghost" id="toggleSmoothedButton">Hide smoothed</button>
+          <button type="button" class="ghost" id="toggleRawButton">Hide raw</button>
+        </div>
       </section>
 
       <section class="network-card chart-card">
@@ -632,7 +645,13 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <section class="network-card chart-card">
         <div class="chart-head">
           <div class="chart-title">Battery</div>
-          <div class="chart-latest" id="historyBatteryLatest"></div>
+          <div class="chart-head-actions">
+            <div class="chart-latest" id="historyBatteryLatest"></div>
+            <div class="chart-unit-toggle" role="group" aria-label="Battery chart units">
+              <button type="button" class="ghost active" id="historyBatteryPercentButton" aria-pressed="true">%</button>
+              <button type="button" class="ghost" id="historyBatteryMvButton" aria-pressed="false">mV</button>
+            </div>
+          </div>
         </div>
         <div class="chart-wrap">
           <svg class="chart" id="historyBatteryChart"></svg>
@@ -708,6 +727,21 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           <div class="chart-tooltip" id="historyFdcReferenceTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
         </div>
       </section>
+
+      <!-- Receiver-side model output stored independently from every raw input. The database
+           value is ln(Cconnected/Cbare) in parts per million; rendering converts it back to the
+           same "% capacitance above bare" units as the raw reference-normalized chart so the
+           amount of daily-cycle rejection can be compared directly. -->
+      <section class="network-card chart-card hidden" id="historyTemperatureCompensatedSection">
+        <div class="chart-head">
+          <div class="chart-title">Temperature-compensated FDC + 12 h EWMA moisture trend (experimental)</div>
+          <div class="chart-latest" id="historyTemperatureCompensatedLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyTemperatureCompensatedChart"></svg>
+          <div class="chart-tooltip" id="historyTemperatureCompensatedTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -771,6 +805,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       fern: { label: "Fern", dry: 135, wet: 190 },
       dryHouseplant: { label: "Dry houseplant", dry: 115, wet: 170 }
     };
+    const temperatureCompensationOptions = [
+      ["learning", "Learning (shadow only)"],
+      ["active", "Active after 2 daily fits"],
+      ["off", "Off"]
+    ];
     let config = null;
     let readings = {};
     let wifiInfo = null;
@@ -1107,6 +1146,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         const reading = readings[card.sensor] || {};
         const autoCal = reading.autoCal || null;
         const autoEnabled = Boolean(card.moisture?.auto);
+        const temperatureCompensation = ["off", "learning", "active"].includes(
+          card.moisture?.temperatureCompensation)
+          ? card.moisture.temperatureCompensation
+          : "learning";
         const battPct = reading.batteryPercent == null ? null : Number(reading.batteryPercent);
 
         // Not enough history yet (see msv2_read_sensor_auto_calibration's ready gate)?
@@ -1128,6 +1171,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct, false, true);
         const wateredNote = autoReady ? wateredAgoText(autoCal.lastWateredAtMs) : null;
         const trendNote = autoReady && autoCal.dryBoundTrendingLower;
+        const tempCompState = reading.temperatureCompensation || null;
+        const tempCompNote = tempCompState && temperatureCompensation !== "off"
+          ? `Temperature correction: ${tempCompState.effectiveMode || "learning"} / ${Number(tempCompState.confidencePercent || 0)}% confidence / k=${Number(tempCompState.gainPerC || 0).toFixed(5)} / epoch ${Number(tempCompState.epoch || 0)}`
+          : null;
 
         return `
           <article class="card">
@@ -1139,6 +1186,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
               <div class="art">${artPreview(card.art || "sprout_pot")}<span>${escapeHtml(labelFor(artOptions, card.art || "sprout_pot"))}</span></div>
             </div>
             ${moistureMetric}
+            ${tempCompNote ? `<div class="notice">${escapeHtml(tempCompNote)}</div>` : ""}
             ${trendNote ? '<div class="notice warn">Dry range has been trending lower - may be worth a manual check.</div>' : ""}
             ${metric("Battery", battPct == null ? "--%" : battPct + "%", battPct)}
           </article>
@@ -1302,6 +1350,88 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     function saveSmoothingParams(params) {
       try { localStorage.setItem(SMOOTHING_STORAGE_KEY, JSON.stringify(params)); } catch (err) { /* private-browsing etc - fine to skip persisting */ }
+    }
+
+    // Independent show/hide for the two series a raw-carrying chart draws (Moisture; the
+    // experimental temperature-compensated FDC chart). Charts with only one series (Battery,
+    // Board temperature, Raw FDC, Bare tank) ignore these - see the drawSmoothed/drawRaw use
+    // in renderHistoryChart(), which only gates anything when the chart actually has a `.raw`.
+    const CHART_VISIBILITY_STORAGE_KEY = "msv2.historyChartVisibility.v1";
+    let showSmoothedSeries = true;
+    let showRawSeries = true;
+    try {
+      const storedVisibility = JSON.parse(localStorage.getItem(CHART_VISIBILITY_STORAGE_KEY) || "{}");
+      if (storedVisibility.showSmoothedSeries === false) showSmoothedSeries = false;
+      if (storedVisibility.showRawSeries === false) showRawSeries = false;
+    } catch (err) { /* private-browsing etc - fine to fall back to both visible */ }
+
+    function saveChartVisibility() {
+      try {
+        localStorage.setItem(CHART_VISIBILITY_STORAGE_KEY, JSON.stringify({ showSmoothedSeries, showRawSeries }));
+      } catch (err) { /* private-browsing etc - fine to skip persisting */ }
+    }
+
+    // Battery History defaults to the familiar derived percentage, but MSV3 rows retain the
+    // probe's direct ADC millivolts too. Keep this independent from the raw/smoothed visibility
+    // controls above: the mV view is one deliberately unsmoothed diagnostic line, not another
+    // percentage overlay. Remember the choice so repeated charger checks open in the same unit.
+    const BATTERY_HISTORY_UNIT_STORAGE_KEY = "msv2.historyBatteryUnit.v1";
+    let batteryHistoryUnit = "percent";
+    try {
+      if (localStorage.getItem(BATTERY_HISTORY_UNIT_STORAGE_KEY) === "mv") batteryHistoryUnit = "mv";
+    } catch (err) { /* private-browsing etc - fine to keep the percent default */ }
+
+    function setBatteryHistoryUnit(unit) {
+      if (unit !== "percent" && unit !== "mv") return;
+      batteryHistoryUnit = unit;
+      try { localStorage.setItem(BATTERY_HISTORY_UNIT_STORAGE_KEY, unit); } catch (err) { /* persistence is optional */ }
+      renderHistoryFromCache();
+    }
+
+    function hasRawBatteryMillivolts() {
+      return lastHistoryRows.some((row) => {
+        const mv = Number(row.raw_battery_mv);
+        return row.raw_battery_mv != null && Number.isInteger(mv) && mv >= 0 && mv <= 0xffff;
+      });
+    }
+
+    function writeBatteryHistoryUnitButtons(rawMvAvailable = hasRawBatteryMillivolts()) {
+      // Older MSV2 history has percentage only. Preserve an mV preference while temporarily
+      // viewing one of those probes, but render percentage and disable the unavailable choice.
+      const effectiveUnit = batteryHistoryUnit === "mv" && rawMvAvailable ? "mv" : "percent";
+      const percentButton = $("historyBatteryPercentButton");
+      const mvButton = $("historyBatteryMvButton");
+      percentButton.classList.toggle("active", effectiveUnit === "percent");
+      percentButton.setAttribute("aria-pressed", String(effectiveUnit === "percent"));
+      mvButton.classList.toggle("active", effectiveUnit === "mv");
+      mvButton.setAttribute("aria-pressed", String(effectiveUnit === "mv"));
+      mvButton.disabled = !rawMvAvailable;
+      mvButton.title = rawMvAvailable ? "Show direct probe ADC millivolts" : "Raw millivolts are unavailable for this history";
+      return effectiveUnit;
+    }
+
+    // Never let both go false - a hasRaw chart with neither series enabled has nothing to
+    // plot. Toggling one back on when the other is already off is the reset path.
+    function toggleChartSeries(which) {
+      if (which === "smoothed") {
+        showSmoothedSeries = !showSmoothedSeries;
+        if (!showSmoothedSeries && !showRawSeries) showRawSeries = true;
+      } else {
+        showRawSeries = !showRawSeries;
+        if (!showRawSeries && !showSmoothedSeries) showSmoothedSeries = true;
+      }
+      saveChartVisibility();
+      writeChartVisibilityButtons();
+      renderHistoryFromCache();
+    }
+
+    function writeChartVisibilityButtons() {
+      const smoothedButton = $("toggleSmoothedButton");
+      smoothedButton.textContent = showSmoothedSeries ? "Hide smoothed" : "Show smoothed";
+      smoothedButton.classList.toggle("active", !showSmoothedSeries);
+      const rawButton = $("toggleRawButton");
+      rawButton.textContent = showRawSeries ? "Hide raw" : "Show raw";
+      rawButton.classList.toggle("active", !showRawSeries);
     }
 
     function writeSmoothingFormValues(params) {
@@ -1479,6 +1609,17 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return out;
     }
 
+    // Exact stored ADC values for charger/harvester diagnostics. Deliberately no EMA and no
+    // voltage-to-percent conversion: each point must remain the millivolts the probe reported.
+    function rawBatteryMillivoltSeries(rows) {
+      return rows.flatMap((row) => {
+        const mv = Number(row.rawBatteryMv);
+        return row.rawBatteryMv != null && Number.isInteger(mv) && mv >= 0 && mv <= 0xffff
+          ? [{ t: row.t, v: mv }]
+          : [];
+      });
+    }
+
     // Rows from the most recent loadHistory() fetch, cached so a Smoothing-panel parameter
     // change can recompute both charts instantly with no refetch.
     let lastHistoryRows = [];
@@ -1499,6 +1640,121 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       const ratio = bare / connected;
       const excessPercent = (ratio * ratio - 1) * 100;
       return Number.isFinite(excessPercent) ? excessPercent : null;
+    }
+
+    function msv3TemperatureCompensatedExcessPercent(row) {
+      if (!row || row.temperature_compensated_log_ratio_ppm == null) return null;
+      const ppm = Number(row.temperature_compensated_log_ratio_ppm);
+      if (!Number.isInteger(ppm) || ppm < 0 || ppm > 655340) return null;
+      const excessPercent = Math.expm1(ppm / 1000000) * 100;
+      return Number.isFinite(excessPercent) ? excessPercent : null;
+    }
+
+    const TEMPERATURE_COMPENSATION_TREND_TIME_CONSTANT_MS = 12 * 60 * 60 * 1000;
+    const TEMPERATURE_COMPENSATION_MAX_CONNECTED_STEP_FRACTION = 0.03;
+    const TEMPERATURE_COMPENSATION_MAX_BARE_STEP_FRACTION = 0.0035;
+
+    // The probe's wake counter is 3 bytes on the wire (see the sketch's advertising layout), so
+    // it wraps at 2^24. At the ~70 s advertise cadence that is roughly 37 years away, but the
+    // wrap still has to be distinguished from a restart or the chart would split once, wrongly,
+    // at a moment nobody would ever debug.
+    const WAKE_COUNTER_MODULUS = 16777216;
+
+    // Are these two history rows CONSECUTIVE probe wakes?
+    //
+    // This question is the whole fix. The receiver detects an epoch boundary by comparing each
+    // observation against the one immediately before it, using per-sample thresholds (3% of the
+    // connected count, 0.35% of the bare reference). The client used to apply those same
+    // per-sample thresholds to whatever rows it happened to be holding -- and for any range long
+    // enough to engage server-side sampling, those rows are K observations apart.
+    //
+    // Measured with an oracle running both algorithms over the same 600-wake trace, with an
+    // ordinary gradual watering at 0.8% per wake (below this repo's own measured per-watering
+    // step, and far below the 3% threshold, so the receiver correctly saw ONE epoch):
+    //     sampleEvery=1  -> client agreed, 600 of 600 points plotted
+    //     sampleEvery=5  -> false split, 1 of 120 points plotted
+    //     sampleEvery=10 -> false split, 1 of 60 points plotted
+    // Because the loop below keeps only the LAST boundary and slices from it, a single spurious
+    // step anywhere near the end of the window collapses the entire chart to a handful of points.
+    // That is a real, intermittent, range-dependent disappearance of the compensated chart.
+    //
+    // Gating on sampleEvery === 1 would not be enough: an unsampled window can still be missing
+    // rows (an upload gap, a dropped advertisement, a row whose compensated value was invalid).
+    // Adjacency has to be PROVEN, and `wake` proves it -- the same counter the receiver itself
+    // uses. Modular arithmetic so a wrap reads as adjacent rather than as a 16-million-wake gap.
+    function consecutiveWakes(previous, current) {
+      const a = Number(previous?.wake);
+      const b = Number(current?.wake);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+      return ((b - a) % WAKE_COUNTER_MODULUS + WAKE_COUNTER_MODULUS) % WAKE_COUNTER_MODULUS === 1;
+    }
+
+    // The receiver resets its compensation epoch on `wake < previous.wake` -- a probe restart,
+    // which re-seeds gainPerC, referenceTempC and the slow moisture baseline from defaults. That
+    // happens on every OTA, every watchdog reset, and every boot-guard DFU escape, and the client
+    // never used to notice: the counts either side of a restart are nearly identical (same soil,
+    // same electrode), so both step tests pass and two different models were charted as one epoch.
+    // Mirrors the receiver EXACTLY -- `wake < previous.wake`, with no special case for the 2^24
+    // counter wrap. The receiver has no wrap exclusion either, so at a wrap it does reset the
+    // compensation epoch; excluding the wrap here to be "more correct" would make the chart
+    // disagree with the model that actually produced the numbers. Equivalence with the receiver
+    // is the property worth having, and a spurious epoch reset ~37 years in is harmless anyway.
+    function probeRestarted(previous, current) {
+      const a = Number(previous?.wake);
+      const b = Number(current?.wake);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+      return b < a;
+    }
+
+    function latestTemperatureCompensationEpochRows(rows) {
+      const candidates = rows.filter((row) =>
+        msv3TemperatureCompensatedExcessPercent(row) != null);
+      let epochStart = 0;
+      for (let index = 1; index < candidates.length; index++) {
+        const previous = candidates[index - 1];
+        const current = candidates[index];
+        const versionChanged = Number(previous.temperature_compensation_model_version) !==
+          Number(current.temperature_compensation_model_version);
+
+        // Only meaningful between consecutive wakes; see consecutiveWakes() above.
+        let steppedApart = false;
+        if (consecutiveWakes(previous, current)) {
+          const connectedStep = Number(previous.raw_fdc_counts) > 0 && Number(current.raw_fdc_counts) > 0
+            ? Math.abs(Number(current.raw_fdc_counts) / Number(previous.raw_fdc_counts) - 1)
+            : 0;
+          const bareStep = Number(previous.bare_tank_fdc_counts) > 0 && Number(current.bare_tank_fdc_counts) > 0
+            ? Math.abs(Number(current.bare_tank_fdc_counts) / Number(previous.bare_tank_fdc_counts) - 1)
+            : 0;
+          steppedApart =
+            connectedStep > TEMPERATURE_COMPENSATION_MAX_CONNECTED_STEP_FRACTION ||
+            bareStep > TEMPERATURE_COMPENSATION_MAX_BARE_STEP_FRACTION;
+        }
+
+        if (versionChanged || steppedApart || probeRestarted(previous, current)) {
+          epochStart = index;
+        }
+      }
+      return candidates.slice(epochStart);
+    }
+
+    // A time-aware exponential moving average has no hard window boundary, so an old thermal
+    // cluster can never fall out all at once and make the displayed trend jump. Using elapsed
+    // time rather than a fixed per-packet alpha also keeps the response identical when history
+    // is sampled down or an occasional advertisement is missing.
+    function addExponentialMovingAverageTrend(points, timeConstantMs) {
+      let previousTime = null;
+      let trend = null;
+      return points.map((point) => {
+        if (trend == null || previousTime == null) {
+          trend = point.v;
+        } else {
+          const elapsedMs = Math.max(0, point.t - previousTime);
+          const alpha = timeConstantMs > 0 ? 1 - Math.exp(-elapsedMs / timeConstantMs) : 1;
+          trend += alpha * (point.v - trend);
+        }
+        previousTime = point.t;
+        return { ...point, trend };
+      });
     }
 
     function renderHistoryFromCache() {
@@ -1529,10 +1785,20 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         rawCharging: r.raw_charging,
         batteryPercent: r.battery_percent,
       }));
-      const batteryPoints = smoothBatterySeries(batteryRows, params);
+      const batteryPercentPoints = smoothBatterySeries(batteryRows, params);
+      const batteryMillivoltPoints = rawBatteryMillivoltSeries(batteryRows);
+      const effectiveBatteryUnit = writeBatteryHistoryUnitButtons(batteryMillivoltPoints.length > 0);
+      const batteryPoints = effectiveBatteryUnit === "mv" ? batteryMillivoltPoints : batteryPercentPoints;
 
       renderHistoryChart("historyMoistureChart", "historyMoistureTooltip", "historyMoistureLatest", moisturePoints, "#3987e5", "");
-      renderHistoryChart("historyBatteryChart", "historyBatteryTooltip", "historyBatteryLatest", batteryPoints, "#199e70", "%");
+      renderHistoryChart(
+        "historyBatteryChart",
+        "historyBatteryTooltip",
+        "historyBatteryLatest",
+        batteryPoints,
+        "#199e70",
+        effectiveBatteryUnit === "mv" ? "mV" : "%",
+      );
 
       // board_temp_quarter_c is nullable (MSV3-only, quarter-degree C) - only show the card
       // once the selected probe actually has at least one reading, so every MSV2 probe and
@@ -1580,9 +1846,42 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           "% capacitance above bare",
         );
       }
+
+      // Never draw one trend through an immersion/reinsertion, receiver model upgrade, or
+      // other physical/configuration step. The solid 12-hour EWMA is the slow moisture trend;
+      // corrected samples and raw bare-normalized samples share its axis so the actual
+      // reduction can be judged without independent chart auto-scaling.
+      const temperatureCompensatedRows = latestTemperatureCompensationEpochRows(lastHistoryRows);
+      const temperatureCompensatedPoints = addExponentialMovingAverageTrend(temperatureCompensatedRows
+        .map((r) => ({
+          t: new Date(r.received_at).getTime(),
+          v: msv3TemperatureCompensatedExcessPercent(r),
+          raw: msv3ReferenceExcessPercent(r),
+        }))
+        .filter((point) => point.v != null), TEMPERATURE_COMPENSATION_TREND_TIME_CONSTANT_MS);
+      $("historyTemperatureCompensatedSection").classList.toggle(
+        "hidden", temperatureCompensatedPoints.length === 0);
+      if (temperatureCompensatedPoints.length) {
+        const versions = new Set(temperatureCompensatedRows
+          .map((r) => Number(r.temperature_compensation_model_version))
+          .filter(Number.isInteger));
+        renderHistoryChart(
+          "historyTemperatureCompensatedChart",
+          "historyTemperatureCompensatedTooltip",
+          "historyTemperatureCompensatedLatest",
+          temperatureCompensatedPoints,
+          "#20c997",
+          `% capacitance above bare${versions.size === 1 ? ` (model v${[...versions][0]})` : ""}`,
+          {
+            primaryLabel: "corrected sample",
+            rawLabel: "bare-normalized",
+            trendLabel: "12 h EWMA moisture trend",
+          },
+        );
+      }
     }
 
-    function renderHistoryChart(svgId, tooltipId, latestId, points, color, unit) {
+    function renderHistoryChart(svgId, tooltipId, latestId, points, color, unit, chartOptions = {}) {
       const svg = $(svgId);
       const tooltip = $(tooltipId);
       const latestEl = $(latestId);
@@ -1609,7 +1908,15 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       // rows, so it always lines up point-for-point with the primary series with no separate
       // lookup needed. Undefined/null on every point (e.g. the battery chart) is a no-op.
       const hasRaw = points.some((p) => p.raw != null);
-      const allValues = hasRaw ? points.flatMap((p) => [p.v, p.raw]).filter((v) => v != null) : points.map((p) => p.v);
+      const hasTrend = points.some((p) => p.trend != null);
+      // The "Hide smoothed"/"Hide raw" buttons only mean something where a chart actually
+      // draws both series - a single-line chart (Battery, Board temperature, ...) always
+      // shows its one line regardless of either toggle.
+      const drawSmoothed = !hasRaw || showSmoothedSeries;
+      const drawRaw = hasRaw && showRawSeries;
+      const allValues = points
+        .flatMap((p) => [drawSmoothed ? p.v : null, drawRaw ? p.raw : null, hasTrend ? p.trend : null])
+        .filter((v) => v != null);
       let vMin = Math.min(...allValues);
       let vMax = Math.max(...allValues);
       if (vMin === vMax) { vMin -= 1; vMax += 1; }
@@ -1658,7 +1965,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
 
       const RAW_COLOR = "#f5a742";
-      if (hasRaw) {
+      if (drawRaw) {
         // Drawn before the primary path so the (usually noisier) raw line sits visually
         // behind the smoothed one where they overlap, rather than obscuring it.
         const rawPoints = points.filter((p) => p.raw != null);
@@ -1672,36 +1979,72 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         rawPath.setAttribute("stroke-linecap", "round");
         rawPath.setAttribute("opacity", "0.85");
         svg.appendChild(rawPath);
+      }
 
+      if (hasRaw) {
+        // Legend reflects whichever series the toggle buttons currently leave on screen -
+        // trend, when present, is not gated by either button so it's always listed.
+        const legendParts = [];
+        if (drawSmoothed) legendParts.push(hasTrend ? (chartOptions.primaryLabel || "corrected") : `solid ${chartOptions.primaryLabel || "displayed"}`);
+        if (drawRaw) legendParts.push(hasTrend ? (chartOptions.rawLabel || "raw") : `dashed ${chartOptions.rawLabel || "raw (unsmoothed)"}`);
+        if (hasTrend) legendParts.push(chartOptions.trendLabel || "trend");
         const legend = document.createElementNS(ns, "text");
         legend.setAttribute("x", width - padR);
         legend.setAttribute("y", padT + 10);
         legend.setAttribute("text-anchor", "end");
         legend.setAttribute("class", "chart-axis");
-        legend.textContent = "— displayed   ┄ raw (unsmoothed)";
+        legend.textContent = legendParts.join(" | ");
         svg.appendChild(legend);
       }
 
-      const path = document.createElementNS(ns, "path");
-      path.setAttribute("d", points.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" "));
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", color);
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("stroke-linecap", "round");
-      svg.appendChild(path);
+      if (drawSmoothed) {
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", points.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" "));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", hasTrend ? "1.25" : "2");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("stroke-linecap", "round");
+        if (hasTrend) path.setAttribute("opacity", "0.65");
+        svg.appendChild(path);
+      }
+
+      if (hasTrend) {
+        const trendPoints = points.filter((p) => p.trend != null);
+        const trendPath = document.createElementNS(ns, "path");
+        trendPath.setAttribute("d", trendPoints.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.t).toFixed(1)},${y(p.trend).toFixed(1)}`).join(" "));
+        trendPath.setAttribute("fill", "none");
+        trendPath.setAttribute("stroke", chartOptions.trendColor || "#63d59b");
+        trendPath.setAttribute("stroke-width", "3");
+        trendPath.setAttribute("stroke-linejoin", "round");
+        trendPath.setAttribute("stroke-linecap", "round");
+        svg.appendChild(trendPath);
+      }
 
       const last = points[points.length - 1];
-      const endDot = document.createElementNS(ns, "circle");
-      endDot.setAttribute("cx", x(last.t));
-      endDot.setAttribute("cy", y(last.v));
-      endDot.setAttribute("r", 5);
-      endDot.setAttribute("fill", color);
-      endDot.setAttribute("stroke", "#17212b");
-      endDot.setAttribute("stroke-width", 2);
-      svg.appendChild(endDot);
+      if (drawSmoothed) {
+        const endDot = document.createElementNS(ns, "circle");
+        endDot.setAttribute("cx", x(last.t));
+        endDot.setAttribute("cy", y(last.v));
+        endDot.setAttribute("r", 5);
+        endDot.setAttribute("fill", color);
+        endDot.setAttribute("stroke", "#17212b");
+        endDot.setAttribute("stroke-width", 2);
+        svg.appendChild(endDot);
+      }
 
-      if (hasRaw && last.raw != null) {
+      if (hasTrend && last.trend != null) {
+        const trendEndDot = document.createElementNS(ns, "circle");
+        trendEndDot.setAttribute("cx", x(last.t));
+        trendEndDot.setAttribute("cy", y(last.trend));
+        trendEndDot.setAttribute("r", 5);
+        trendEndDot.setAttribute("fill", chartOptions.trendColor || "#63d59b");
+        trendEndDot.setAttribute("stroke", "#17212b");
+        trendEndDot.setAttribute("stroke-width", 2);
+        svg.appendChild(trendEndDot);
+      }
+
+      if (drawRaw && last.raw != null) {
         const rawEndDot = document.createElementNS(ns, "circle");
         rawEndDot.setAttribute("cx", x(last.t));
         rawEndDot.setAttribute("cy", y(last.raw));
@@ -1718,9 +2061,13 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       crosshair.setAttribute("class", "chart-crosshair");
       svg.appendChild(crosshair);
 
+      // Follows whichever series the toggle buttons actually leave drawn, so it never floats
+      // over a hidden line with nothing on screen for it to be pointing at.
+      const hoverValue = (p) => (drawSmoothed || p.raw == null ? p.v : p.raw);
+      const hoverColor = drawSmoothed ? color : RAW_COLOR;
       const hoverDot = document.createElementNS(ns, "circle");
       hoverDot.setAttribute("r", 4);
-      hoverDot.setAttribute("fill", color);
+      hoverDot.setAttribute("fill", hoverColor);
       hoverDot.setAttribute("stroke", "#17212b");
       hoverDot.setAttribute("stroke-width", 2);
       hoverDot.setAttribute("opacity", 0);
@@ -1753,15 +2100,17 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         crosshair.setAttribute("x2", x(p.t));
         crosshair.setAttribute("opacity", 1);
         hoverDot.setAttribute("cx", x(p.t));
-        hoverDot.setAttribute("cy", y(p.v));
+        hoverDot.setAttribute("cy", y(hoverValue(p)));
         hoverDot.setAttribute("opacity", 1);
         const wrapRect = svg.parentElement.getBoundingClientRect();
         tooltip.style.left = (evt.clientX - wrapRect.left) + "px";
         tooltip.style.top = (evt.clientY - wrapRect.top) + "px";
         tooltip.style.opacity = 1;
-        tooltip.querySelector(".tt-value").textContent = hasRaw && p.raw != null
-          ? `${formatHistoryValue(p.v, unit)} (raw ${formatHistoryValue(p.raw, unit)})`
-          : formatHistoryValue(p.v, unit);
+        tooltip.querySelector(".tt-value").textContent = hasTrend && p.trend != null
+          ? `${chartOptions.trendLabel || "trend"} ${formatHistoryValue(p.trend, unit)}; ${chartOptions.primaryLabel || "corrected"} ${formatHistoryValue(p.v, unit)}; ${chartOptions.rawLabel || "raw"} ${formatHistoryValue(p.raw, unit)}`
+          : hasRaw && p.raw != null
+            ? `${formatHistoryValue(p.v, unit)} (raw ${formatHistoryValue(p.raw, unit)})`
+            : formatHistoryValue(p.v, unit);
         tooltip.querySelector(".tt-time").textContent = new Date(p.t).toLocaleString();
       });
       hitRect.addEventListener("pointerleave", () => {
@@ -1770,9 +2119,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         tooltip.style.opacity = 0;
       });
 
-      const latestValueText = hasRaw && last.raw != null
-        ? `${formatHistoryValue(last.v, unit)} (raw ${formatHistoryValue(last.raw, unit)})`
-        : formatHistoryValue(last.v, unit);
+      const latestValueText = hasTrend && last.trend != null
+        ? `${chartOptions.trendLabel || "trend"} ${formatHistoryValue(last.trend, unit)}; corrected ${formatHistoryValue(last.v, unit)}`
+        : hasRaw && last.raw != null
+          ? `${formatHistoryValue(last.v, unit)} (raw ${formatHistoryValue(last.raw, unit)})`
+          : formatHistoryValue(last.v, unit);
       latestEl.textContent = `latest ${latestValueText} · ${new Date(last.t).toLocaleString()}`;
     }
 
@@ -1958,6 +2309,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             $("historyRawFdcSection").classList.add("hidden");
             $("historyBareTankSection").classList.add("hidden");
             $("historyFdcReferenceSection").classList.add("hidden");
+            $("historyTemperatureCompensatedSection").classList.add("hidden");
             return;
           }
 
@@ -2099,6 +2451,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         const wet = Number(card.moisture?.wet ?? card.wet ?? 175);
         const presetName = presetFor(dry, wet);
         const autoEnabled = Boolean(card.moisture?.auto);
+        const temperatureCompensation = ["off", "learning", "active"].includes(
+          card.moisture?.temperatureCompensation)
+          ? card.moisture.temperatureCompensation
+          : "learning";
         const item = document.createElement("section");
         item.className = "editor-card";
         item.innerHTML = `
@@ -2111,6 +2467,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             <label>Probe ID<input type="number" min="1" max="16" data-field="sensor" data-index="${index}" value="${card.sensor || index + 1}"></label>
             <label>Art${artPreview(card.art || "sprout_pot", "editor-art-preview")}<select data-field="art" data-index="${index}">${options(artOptions, card.art || "sprout_pot")}</select></label>
             <label class="wide">Auto-calibrate (learn moisture range from history)<input type="checkbox" data-field="auto" data-index="${index}" ${autoEnabled ? "checked" : ""}></label>
+            <label class="wide">MSV3 temperature elimination mode<select data-field="temperatureCompensation" data-index="${index}">${options(temperatureCompensationOptions, temperatureCompensation)}</select></label>
             <label>Preset<select data-field="preset" data-index="${index}" ${autoEnabled ? "disabled" : ""}>${presetOptions(presetName)}</select></label>
             <label>Dry<input type="number" min="0" max="4095" data-field="dry" data-index="${index}" value="${dry}" ${autoEnabled ? "disabled" : ""}></label>
             <label>Wet<input type="number" min="0" max="4095" data-field="wet" data-index="${index}" value="${wet}" ${autoEnabled ? "disabled" : ""}></label>
@@ -2154,6 +2511,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         if (field === "sensor") card.sensor = Number(input.value || index + 1);
         if (field === "art") card.art = input.value;
         if (field === "auto") card.moisture.auto = input.checked;
+        if (field === "temperatureCompensation") card.moisture.temperatureCompensation = input.value;
         if (field === "dry") card.moisture.dry = Number(input.value || 0);
         if (field === "wet") card.moisture.wet = Number(input.value || 0);
       });
@@ -2207,7 +2565,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         sensor,
         plant: "Plant " + sensor,
         art: "sprout_pot",
-        moisture: { dry: 120, wet: 175 }
+        moisture: { dry: 120, wet: 175, temperatureCompensation: "learning" }
       });
       syncLayoutWithCards(config);
       renderEditors();
@@ -2290,6 +2648,12 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       writeSmoothingFormValues(SMOOTHING_DEFAULTS);
       renderHistoryFromCache();
     });
+    writeChartVisibilityButtons();
+    $("toggleSmoothedButton").addEventListener("click", () => toggleChartSeries("smoothed"));
+    $("toggleRawButton").addEventListener("click", () => toggleChartSeries("raw"));
+    writeBatteryHistoryUnitButtons(false);
+    $("historyBatteryPercentButton").addEventListener("click", () => setBatteryHistoryUnit("percent"));
+    $("historyBatteryMvButton").addEventListener("click", () => setBatteryHistoryUnit("mv"));
     $("wifiRefreshButton").addEventListener("click", loadWifi);
     $("wifiSaveButton").addEventListener("click", saveWifi);
     $("wifiForgetButton").addEventListener("click", forgetWifi);

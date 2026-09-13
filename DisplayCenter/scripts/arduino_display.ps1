@@ -69,7 +69,8 @@ function Invoke-ReceiverRegressionChecks {
     "verify_moisture_alert_thresholds.mjs",
     "verify_receiver_moisture_filter.mjs",
     "verify_battery_curve_sync.mjs",
-    "verify_msv3_reference_compensation.mjs"
+    "verify_msv3_reference_compensation.mjs",
+    "verify_msv3_temperature_compensation.mjs"
   )
 
   foreach ($RegressionName in $RegressionScripts) {

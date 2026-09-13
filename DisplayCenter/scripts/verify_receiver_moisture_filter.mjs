@@ -43,12 +43,12 @@ assert.doesNotMatch(
 );
 assert.match(
   firmware,
-  /const uint16_t presentationSpan = moisturePresentationSpan\(sensorId, moisture\);[\s\S]*?portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?smoothMoistureForDisplay\(sensorId, moisture, presentationSpan\)/,
+  /const uint16_t presentationSpan = moisturePresentationSpan\(sensorId, moisture\);[\s\S]*?portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?smoothMoistureForDisplay\([\s\S]*?sensorId, presentationInput, presentationSpan\)/,
   "Calibration must be snapshotted before sensorsMux so the packet path does not nest state locks.",
 );
 assert.match(
   firmware,
-  /portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?if \(reading\.seen && wake == reading\.wake\)[\s\S]*?calibrateRawBattery\(sensorId, \(float\)rawBatteryMv\)[\s\S]*?smoothMoistureForDisplay\(sensorId, moisture, presentationSpan\)[\s\S]*?publishedReading = reading;[\s\S]*?portEXIT_CRITICAL\(&sensorsMux\);/,
+  /portENTER_CRITICAL\(&sensorsMux\);[\s\S]*?if \(reading\.seen && wake == reading\.wake\)[\s\S]*?calibrateRawBattery\(sensorId, \(float\)rawBatteryMv\)[\s\S]*?smoothMoistureForDisplay\([\s\S]*?sensorId, presentationInput, presentationSpan\)[\s\S]*?publishedReading = reading;[\s\S]*?portEXIT_CRITICAL\(&sensorsMux\);/,
   "Duplicate detection, stateful filters, record publication, and queue snapshot must share one sensors lock.",
 );
 assert.doesNotMatch(

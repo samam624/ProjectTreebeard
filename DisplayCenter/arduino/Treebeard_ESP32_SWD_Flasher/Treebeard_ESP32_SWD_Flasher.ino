@@ -805,7 +805,12 @@ static void cmdRun() {
     Serial.println(F("run: not connected, nothing to release"));
     return;
   }
-  systemResetRequest();
+  if (!systemResetRequest()) {
+    Serial.println(F("run: SYSRESETREQ write failed; core state unchanged"));
+    return;
+  }
+  // A successful AIRCR write is the one reset request. resumeCore() is only a best-effort release
+  // of a debugger-held core after that same reset; it must never be replaced by a second reset.
   resumeCore();
   g_connected = false;
   Serial.println(F("run: core reset and resumed"));
@@ -813,7 +818,10 @@ static void cmdRun() {
 
 static void cmdReset() {
   pulseHardwareReset();
-  Serial.println(F("reset: nRESET pulsed"));
+  // This confirms only what the adapter drove. GPIO7 has no way to sense whether a wire actually
+  // reaches the target nRESET pad; the 2026-09-07 guard-2 session lost time because this used to
+  // print an unqualified success while that wire was absent.
+  Serial.println(F("reset: nRESET pulse emitted (target connection not verified)"));
 }
 
 // Bulk read: `rdblk <hexaddr> <declen>` -> "rdblk: <n> bytes" then n bytes of raw binary.
