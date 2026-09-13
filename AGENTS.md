@@ -35,6 +35,27 @@ The MSV3 E73-2G4M08S1C PCB has no 32.768 kHz crystal. Its `P0.00`/`P0.01` pins a
 
 An edit under `%LOCALAPPDATA%\Arduino15\packages` is not part of this Git repository. Never describe such an edit as durably resolved unless a tracked script reapplies/verifies it and tracked source fails safely when it is absent.
 
+## MSV3 BLE OTA sessions
+
+- Use the repository-root `scripts/ble_ota_update.py` with the portable Python under
+  `MSV3/.arduino-build/python-portable/runtime/python.exe`. Target a fleet probe with `--probe N`;
+  never replace the registry-derived address with a guessed name or generic `AdaDFU` scan.
+- Run `--preflight-only` first. It is safe inside a workspace sandbox and must pass package
+  integrity, signature, identity, device-type, rollback, and boot-guard pairing checks before any
+  live attempt.
+- On Codex or another sandboxed Windows host, run the LIVE updater outside the workspace sandbox
+  (Codex `exec_command` with `sandbox_permissions=require_escalated`). Measured on 2026-09-11:
+  passive WinRT advertisement scans worked inside the sandbox, but every active GATT device open
+  failed with `E_ABORT`/`E_FAIL`; the same checked command connected and completed DFU immediately
+  outside it. This permission changes only host BLE access and does not bypass the updater's
+  firmware or fleet safety checks.
+- After `DFU Complete`, prove the exact DIS build ID and observe at least two advancing wake
+  counters with `scripts/msv3_fleet_scan.py --probe N --require-progress`. Only then update that
+  probe's `installed_application_version` in `MSV3/fleet.json`.
+- Do not use `--allow-identity-mismatch`, `--allow-downgrade`, `--skip-jump`, or
+  `--reflash-same-build` merely to make an ordinary field update proceed. Each is a deliberate
+  exceptional path whose precondition must already be established.
+
 ## SWD sessions: never issue a bare serial command to the flasher
 
 The maintainer holds pogo pins against castellated pads BY HAND for the whole of every SWD

@@ -43,6 +43,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <bluefruit.h>
+#include <nrf_nvic.h>
 
 // This is a compile-time safety property, not merely documentation. Both
 // wiring.c (FreeRTOS/RTC1 boot) and Bluefruit.begin() consume these variant
@@ -407,8 +408,8 @@ void delayFeedingWatchdog(uint32_t ms) {
 // connections; a scanner (scripts/ble_periodic_reader.py or a receiver)
 // just reads manufacturer-specific data out of the advertisement.
 //
-// Deliberately uses a DIFFERENT magic ("MSV3" not "MSV2") and device name
-// from the real product line. Treebeard_ESP32_Display_Runtime.ino's receiver
+// Deliberately uses a DIFFERENT magic ("MSV3" not "MSV2") from the real
+// product line. Treebeard_ESP32_Display_Runtime.ino's receiver
 // only recognizes packets starting with its own MSV2_MAGIC[]={'M','S','V','2'}
 // before it ever looks at sensorId -- this bring-up firmware physically
 // cannot be mistaken for real plant data even if a production receiver
@@ -419,10 +420,59 @@ void delayFeedingWatchdog(uint32_t ms) {
 // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md) -- bluefruit.cpp's own begin()
 // is `#if defined(USE_LFXO) ... #elif defined(USE_LFRC)`, so it picks up
 // NRF_CLOCK_LF_SRC_RC automatically, no separate clock config needed here.
-const char BLE_DEVICE_NAME[] = "MSV3-PROBE-BRINGUP";
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '3'};
+
+// A fleet diagnostic image needs the same immutable identity contract as the production image:
+// ble_ota_update.py reads the NUL-terminated name directly from the signed application before it
+// will touch a probe. The ordinary untargeted bench build keeps its historical bring-up name and
+// id 99. arduino_msv3_probe.ps1 is the only supported way to provide MSV3_SENSOR_ID/BUILD_TAG.
+#define MSV3_STRINGIFY_(x) #x
+#define MSV3_STRINGIFY(x) MSV3_STRINGIFY_(x)
+
+#ifdef MSV3_SENSOR_ID
+static_assert(MSV3_SENSOR_ID >= 0 && MSV3_SENSOR_ID <= 255,
+              "MSV3_SENSOR_ID must fit in the diagnostic advertisement byte");
+const uint8_t BLE_TEST_SENSOR_ID = MSV3_SENSOR_ID;
+// Keep this as an array initializer rather than a constexpr helper function. Arduino's sketch
+// preprocessor emits function prototypes before local type declarations, which makes a helper
+// returning a sketch-defined struct fail before the real C++ compiler can see the declaration.
+constexpr char BLE_DEVICE_NAME[] = {
+  'M', 'S', 'V', '3', '-', 'M', 'O', 'I', 'S', 'T', 'U', 'R', 'E', '-',
+  static_cast<char>('0' + (BLE_TEST_SENSOR_ID / 100) % 10),
+  static_cast<char>('0' + (BLE_TEST_SENSOR_ID / 10) % 10),
+  static_cast<char>('0' + BLE_TEST_SENSOR_ID % 10), '\0'
+};
+#ifdef MSV3_BUILD_TAG
+#define MSV3_BRINGUP_BUILD_ID "MSV3-BUILD:" MSV3_STRINGIFY(MSV3_BUILD_TAG)
+#else
+#define MSV3_BRINGUP_BUILD_ID "MSV3-BUILD:bringup-diagnostic"
+#endif
+const char FIRMWARE_BUILD_ID[] = MSV3_BRINGUP_BUILD_ID;
+// This image intentionally does not carry production Guard 2. Its recovery invariant is the
+// always-available USB `dfu` command below plus the resident bootloader; state that fact explicitly
+// so package preflight never has to guess from an old/unmarked image.
+const char FIRMWARE_GUARD2_MARKER[] = "MSV3-GUARD2:0";
+volatile const char* g_firmwareBuildIdAnchor = nullptr;
+volatile const char* g_guard2MarkerAnchor = nullptr;
+#else
+const char BLE_DEVICE_NAME[] = "MSV3-PROBE-BRINGUP";
 const uint8_t BLE_TEST_SENSOR_ID = 99;  // clearly outside MSV2's real 1-16 sensor range
+#endif
+
+// arduino_msv3_probe.ps1 deliberately links every MSV3 sketch with the same RAM contract as
+// bootloader 1.0.3. This diagnostic does not count failed boots, but it must still occupy the
+// eight-byte NOLOAD section so the linker can prove the stack never descends through that shared
+// bootloader/application address. Do not initialize or repurpose this reserved record.
+struct BootGuardRetainedReservation {
+  uint32_t encoded;
+  uint32_t inverse;
+};
+static_assert(sizeof(BootGuardRetainedReservation) == 8,
+              "boot-guard retained reservation must remain exactly eight bytes");
+static volatile BootGuardRetainedReservation g_bootGuardRetainedReservation
+    __attribute__((section(".msv3_boot_guard_retained"), used, aligned(4)));
+
 // Same cadence as MSV2's production wake/advertise/sleep cycle -- this is
 // specifically testing that workflow, not a different one.
 const uint32_t BLE_WAKE_PERIOD_MS = 10000;
@@ -550,6 +600,12 @@ void doBleCycle(int n) {
 
 // --------------------------------------------------------------- setup ----
 void setup() {
+#ifdef MSV3_SENSOR_ID
+  // These anchors are load-bearing package metadata. Without a volatile reference, section-GC
+  // can remove a build/guard string that the OTA preflight must inspect before touching Probe 6.
+  g_firmwareBuildIdAnchor = FIRMWARE_BUILD_ID;
+  g_guard2MarkerAnchor = FIRMWARE_GUARD2_MARKER;
+#endif
   initWatchdogSafety();
   g_lastSuccessfulOutputMs = millis();  // baseline the output deadman timer at boot, not epoch-0
 
@@ -594,6 +650,12 @@ void setup() {
 
   Serial.println();
   Serial.println(F("=== MSV3 Probe Bring-up Console ==="));
+#ifdef MSV3_SENSOR_ID
+  Serial.print(F("target: "));
+  Serial.print(BLE_DEVICE_NAME);
+  Serial.print(F("  build: "));
+  Serial.println(FIRMWARE_BUILD_ID);
+#endif
   printResetReason();
   printWatchdogStatus();
   Serial.println(F("type 'help' for commands"));
@@ -690,6 +752,9 @@ void printHelp() {
   Serial.println(F("  divnode                  - analogRead DIV_NODE (EC-check midpoint), P0.03/AIN1 bodge"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
+#ifdef MSV3_SENSOR_ID
+  Serial.println(F("  dfu                      - USB-gated reset into resident BLE recovery bootloader"));
+#endif
   Serial.println(F("  blestart                 - init BLE, advertise continuously (one-shot reading) until blestop"));
   Serial.println(F("  blestop                  - stop advertising"));
   Serial.println(F("  blecycle <n>             - run n MSV2-style wake/measure/advertise/sleep cycles (~10s each)"));
@@ -1538,6 +1603,61 @@ void handleCommand(String cmd) {
              (unsigned long)g_i2cStep, (unsigned long)g_i2cStepMs,
              (unsigned long)g_i2cCallCount, (unsigned long)millis());
     printLineResilient(buf);
+#ifdef MSV3_SENSOR_ID
+  } else if (cmd == "dfu") {
+    // This is the deliberate return path from a coated board's temporary diagnostic image. The
+    // custom bootloader has no usable unsigned UF2/Arduino-upload route; arming GPREGRET 0xA8 and
+    // resetting enters its continuous signed BLE recovery service. Require USB power-good (or a
+    // comfortably charged battery) before entering a flash mode that remains awake continuously.
+    bool statHigh = true;
+    bool pgHigh = true;
+    readChargerPins(statHigh, pgHigh);
+    const float batteryMv = readVbatMv(nullptr);
+    const bool usbPowerGood = (pgHigh == LOW);
+    const bool batteryPowerGood = batteryMv >= 3800.0f && batteryMv <= 5000.0f;
+    if (!usbPowerGood && !batteryPowerGood) {
+      Serial.print(F("  DFU REFUSED -- USB power-good is absent and VBAT is "));
+      Serial.print(batteryMv, 0);
+      Serial.println(F("mV (need at least 3800mV)"));
+      Serial.flush();
+    } else {
+      Serial.print(F("  entering resident BLE recovery bootloader; power="));
+      Serial.print(usbPowerGood ? F("USB") : F("battery"));
+      Serial.print(F(" VBAT="));
+      Serial.print(batteryMv, 0);
+      Serial.println(F("mV"));
+      Serial.flush();
+      delay(150);
+
+      if (g_bleInited) {
+        // Once Bluefruit has enabled the SoftDevice, POWER and reset operations must go through
+        // its SVC APIs. A raw POWER write in that state can fault instead of entering recovery.
+        if (sd_power_gpregret_clr(0, 0xFF) != NRF_SUCCESS ||
+            sd_power_gpregret_set(0, 0xA8) != NRF_SUCCESS) {
+          Serial.println(F("  DFU REFUSED -- SoftDevice could not arm GPREGRET"));
+          Serial.flush();
+          return;
+        }
+        uint32_t gpregret = 0;
+        if (sd_power_gpregret_get(0, &gpregret) != NRF_SUCCESS ||
+            (gpregret & 0xFF) != 0xA8) {
+          sd_power_gpregret_clr(0, 0xFF);
+          Serial.println(F("  DFU REFUSED -- GPREGRET readback did not verify"));
+          Serial.flush();
+          return;
+        }
+        sd_nvic_SystemReset();
+        sd_power_gpregret_clr(0, 0xFF);  // only reached if reset unexpectedly failed
+      } else {
+        NRF_POWER->GPREGRET = 0xA8;
+        __DSB();
+        if ((NRF_POWER->GPREGRET & 0xFF) == 0xA8) NVIC_SystemReset();
+        NRF_POWER->GPREGRET = 0;  // only reached if reset unexpectedly failed
+      }
+      Serial.println(F("  DFU reset failed; bootloader request cleared"));
+      Serial.flush();
+    }
+#endif
   } else if (cmd == "blestart") {
     // Defensive state repair: this used to call fdcReadChannel0() while the
     // FDC could still be in Shutdown and Wire could still be ended after

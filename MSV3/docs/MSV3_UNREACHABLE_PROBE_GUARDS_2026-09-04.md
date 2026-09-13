@@ -1,5 +1,12 @@
 # MSV3: two guards against a probe that can never be reached again — 2026-09-04
 
+> **Superseded guard-2 implementation note (2026-09-08):** this document preserves the reasoning
+> and early tests, but its GPREGRET2 design is not the shipping result. A real watchdog-hang test
+> proved GPREGRET2 unusable as the counter in this stack. The linker-reserved `.noinit` replacement
+> with bootloader 1.0.3 passed automatic DFU escape and BLE recovery on probe 99. Use
+> `MSV3_FINAL_OTA_PRECOATING_HANDOFF_2026-09-08.md` and
+> `MSV3_BOOT_GUARD_WATCHDOG_RETENTION_2026-09-08.md` for current status.
+
 **Question behind this work:** can a probe be updated purely over Bluetooth without a small chance
 that a bad image crashes in a way that never lets it connect back?
 

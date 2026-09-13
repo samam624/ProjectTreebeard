@@ -97,6 +97,10 @@
 #error "MSV3 requires USE_LFRC and no USE_LFXO. Build with scripts/arduino_msv3_probe.ps1; see docs/KNOWN_ISSUES.md."
 #endif
 
+#if !defined(MSV3_BOOT_GUARD_RETAINED_LINKER) || MSV3_BOOT_GUARD_RETAINED_LINKER != 1
+#error "MSV3 requires the tracked boot-guard linker reservation. Build with MSV3/scripts/arduino_msv3_probe.ps1."
+#endif
+
 // ============================================================ Pin map ====
 // Derived from the real schematic netlist, verified on real hardware during
 // the 2026-08-20/21 bring-up sessions -- see
@@ -293,7 +297,12 @@ const uint16_t OTA_MIN_BATTERY_MV = 3800;
 // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md / msv3_ble_sleep_port notes. Kept
 // as cheap (~4ms) insurance for wet-soil/temperature/low-battery conditions
 // the dry-electrode bench test didn't cover.
-const uint8_t WAKE_DISCARD_CONVERSIONS = 2;
+#ifndef MSV3_WAKE_DISCARD_CONVERSIONS
+#define MSV3_WAKE_DISCARD_CONVERSIONS 2
+#endif
+static_assert(MSV3_WAKE_DISCARD_CONVERSIONS >= 0 && MSV3_WAKE_DISCARD_CONVERSIONS <= 255,
+              "MSV3_WAKE_DISCARD_CONVERSIONS must fit in uint8_t");
+const uint8_t WAKE_DISCARD_CONVERSIONS = MSV3_WAKE_DISCARD_CONVERSIONS;
 
 // Production defaults: no USB-host wait/log traffic and no artificial LED load.
 //
@@ -445,15 +454,54 @@ bool fdcReadReg(uint8_t reg, uint16_t &val)
 // deliberately (see fdcReadChannel0()). Setting them would be configuration nothing consumes.
 #define FDC_ERROR_CONFIG_VALUE 0x0020
 
+// Diagnostic build parameters. Production defaults preserve the committed configuration, while
+// the guarded build wrapper can make one-at-a-time FDC settling experiments reproducible without
+// editing this file between releases. The build tag records the selected stage in the image/DIS.
+#ifndef MSV3_FDC_SETTLECOUNT_CH0
+#define MSV3_FDC_SETTLECOUNT_CH0 0x0064
+#endif
+#ifndef MSV3_FDC_MUX_CONFIG
+#define MSV3_FDC_MUX_CONFIG 0x020D
+#endif
+static_assert(MSV3_FDC_SETTLECOUNT_CH0 >= 1 && MSV3_FDC_SETTLECOUNT_CH0 <= 0xFFFF,
+              "MSV3_FDC_SETTLECOUNT_CH0 must be 1..65535");
+static_assert(MSV3_FDC_MUX_CONFIG == 0x020D || MSV3_FDC_MUX_CONFIG == 0x020F,
+              "MSV3_FDC_MUX_CONFIG must select the reviewed 10MHz or 33MHz CH0 configuration");
+
 bool fdcInit()
 {
   bool ok = true;
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0 -- see 2026-08-30 comment above
-  ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0
+  ok &= fdcWriteReg(0x10, MSV3_FDC_SETTLECOUNT_CH0);  // SETTLECOUNT_CH0
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01, FREF_DIVIDER=1
   ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=25 (0.644mA), bench-tuned 2026-09-03
-  // MUX_CONFIG (0x1B) left at power-on-reset default -- single-channel CH0,
-  // correct for this board (CH1-3 grounded per netlist).
+  // MUX_CONFIG (0x1B): AUTOSCAN_EN=0 / RR_SEQUENCE=00 keeps single-channel CH0, which is
+  // correct for this board (CH1-3 grounded per netlist) and is also the POR default. What is
+  // NOT the POR default is DEGLITCH: its reset value is b111 (33MHz), the widest filter.
+  //
+  // 2026-09-09: measured this board's real tank frequency from its own telemetry rather than
+  // the design range. fSENSOR = (DATA / 2^28) * fREF, with CLOCK_DIVIDERS_CH0=0x1001
+  // (CH0_FIN_SEL=1, FREF_DIVIDER=1) and fREF = the ~43.3MHz internal oscillator. Probe 4's
+  // field data gives 19.69M counts connected -> 3.18MHz, and 22.48M counts on the bare-tank
+  // reference -> 3.63MHz. So the tank spans roughly 3.2-3.6MHz depending on electrode loading.
+  //
+  // The datasheet says to select the lowest deglitch setting that EXCEEDS the sensor
+  // oscillation frequency. That is b101 (10MHz) here, not b100 (3.3MHz): 3.3MHz sits BELOW the
+  // 3.63MHz bare-tank reading, so b100 would filter the reference channel's own signal. b101
+  // keeps margin over the whole 3.2-3.6MHz span while admitting 3.3x less EMI/ringing
+  // bandwidth than the 33MHz default.
+  //
+  // Bits [12:3] are reserved and the datasheet requires them to be written as 00 0100 0001,
+  // so the full word is 0x208 | DEGLITCH -> 0x020D. Do not write a bare 0x0005 here.
+  //
+  // This is a noise-bandwidth change only. It is NOT expected to affect the daily thermal
+  // drift on soil-connected probes -- that separates connected (1.245% 24h p-p) from the
+  // bare-tank reference (0.096%) on the same chip, so it enters through the electrode/soil
+  // path, not through anything this register controls.
+  //
+  // Datasheet trap: Table 7-11 lists 33MHz as b011 while the Address 0x1B field description
+  // lists b111. The field description carries the reset value and is what this follows.
+  ok &= fdcWriteReg(0x1B, MSV3_FDC_MUX_CONFIG);  // MUX_CONFIG: CH0 only, reviewed deglitch setting
   ok &= fdcWriteReg(0x19, FDC_ERROR_CONFIG_VALUE);  // see FDC_ERROR_CONFIG_VALUE above -- MUST be
                                                     // written before CONFIG starts conversions
   ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: CH0, exit sleep, internal osc, full-current
@@ -1054,14 +1102,21 @@ long lastAdvertisedRaw = -1;
 // already the first statement in setup(), so a HANG becomes a watchdog reset and feeds this
 // counter too -- crashes and hangs are both covered.
 //
-// WHY GPREGRET2. It survives a soft reset but is cleared by power-on/brownout reset, which is
-// exactly the wanted behaviour: watchdog/fault reset loops accumulate, while a user power-cycling
-// a probe or a solar node browning out overnight gets a clean slate and is never pushed into DFU
-// for it. GPREGRET (register 0) is the bootloader's DFU magic and must not be reused. GPREGRET2 is
-// touched by neither the Adafruit core nor the bootloader -- checked, not assumed.
+// RETENTION FIX, 2026-09-08. The original counter used GPREGRET2. A self-reset test appeared to
+// prove it, but the only test that mattered -- a real watchdog expiry while the application was
+// hung before advertising -- showed boot attempt 1 forever. SWD saw 0xB1 while each app instance
+// was hung, proving the write happened, while the next app instance still read no prior count.
+// That localizes the loss to the reset/startup path before bootGuardCheck(), NOT to the nRF52840
+// hardware itself: the product specification calls GPREGRET2 retained, the visible Adafruit
+// bootloader source never writes it, and the MBR/SoftDevice path is binary. Do not turn the
+// observation into a claim about which unseen layer clears or overwrites it.
 //
-// The magic nibble matters: without it, whatever happened to be in GPREGRET2 would be read as a
-// boot count.
+// The replacement is an eight-byte .noinit record at 0x2003FFF8. It is a LINKER ABI, not merely a
+// section attribute: the application linker excludes that address from its heap/stack, and MSV3
+// bootloader 1.0.3 excludes the same address from its stack. Two inverse 32-bit words reject a
+// torn or random record. Only watchdog, software-reset and lockup causes carry a valid count;
+// power-on/brownout (RESETREAS=0), pin reset and System OFF wake all begin at zero, preserving the
+// original false-positive protection for a solar node.
 //
 // WHAT ENTERING DFU COSTS, because it is not free and this is the guard's real risk. The
 // bootloader advertises CONTINUOUSLY, where the application advertises ~5 s per 70 s, and it does
@@ -1096,10 +1151,68 @@ long lastAdvertisedRaw = -1;
 //
 // So the first field image carries guard 1 only, and this stays false until that test has been
 // run with SWD standing by. Set it true for bench builds and for the field once it has.
-constexpr bool ENABLE_BOOT_FAILURE_GUARD = false;
+// 2026-09-07: now a BUILD FLAG rather than an edited constant, same as SENSOR_ID and
+// ENABLE_SERIAL_LOGS before it, and for the same reason -- committed source must always describe
+// a deployable image, and "flip this line, build, remember to flip it back" is exactly how probe
+// 4's firmware became unreproducible. Pass -BootGuard to arduino_msv3_probe.ps1 to enable it.
+#ifndef MSV3_ENABLE_BOOT_FAILURE_GUARD
+#define MSV3_ENABLE_BOOT_FAILURE_GUARD 0
+#endif
+constexpr bool ENABLE_BOOT_FAILURE_GUARD = (MSV3_ENABLE_BOOT_FAILURE_GUARD != 0);
 
-constexpr uint8_t BOOT_GUARD_MAGIC = 0xB0;   // high nibble; low nibble is the count
-constexpr uint8_t BOOT_GUARD_MASK = 0xF0;
+// THE GUARD-2 / BOOTLOADER RAM PAIRING, STATED IN THE IMAGE SO A HOST CAN CHECK IT.
+//
+// Guard 2's boot counter lives at 0x2003FFF8 and only survives a reset if the BOOTLOADER also
+// excludes those eight bytes from its stack. Measured from vector[0] of each release hex:
+// bootloader 1.0.1 and 1.0.2 both boot with MSP = 0x20040000, so the record is the FIRST thing
+// their stacks descend into; 1.0.3 boots with MSP = 0x2003FFF8 and leaves it alone.
+//
+// So a guard-enabled application on a pre-1.0.3 bootloader gives you a guard that looks armed,
+// never accumulates a count, and never escapes into DFU -- which is precisely the GPREGRET2
+// symptom this whole retained-RAM scheme was built to replace. MSV3/bootloader/README.md already
+// says "Guard 2 must not be enabled with bootloader 1.0.2 or older"; until now nothing enforced
+// it, and probe 4 is deployed, soil-immersed, solar, has no SWD, and runs 1.0.1.
+//
+// Stamping it into the image is what makes the rule enforceable at the only point that matters:
+// ble_ota_update.py reads this marker out of a package and refuses to send a `:1` image to a
+// probe whose fleet.json bootloader predates 1.0.3. `:0` is emitted deliberately rather than
+// nothing, so "guard off" and "image too old to say" stay distinguishable -- every package built
+// before 2026-09-09 has no marker at all, and those are the archived rescue images for probes
+// about to be coated, so absence must not become a refusal.
+#if MSV3_ENABLE_BOOT_FAILURE_GUARD
+#define MSV3_GUARD2_MARKER "MSV3-GUARD2:1"
+#else
+#define MSV3_GUARD2_MARKER "MSV3-GUARD2:0"
+#endif
+const char FIRMWARE_GUARD2_MARKER[] = MSV3_GUARD2_MARKER;
+// Same load-bearing anchor as g_firmwareBuildIdAnchor above, for the same reason: nothing else
+// reads this string, so without a volatile write section GC would discard it and the host check
+// would silently see an unmarked image. Assigned beside the build-id anchor in setup().
+volatile const char* g_guard2MarkerAnchor = nullptr;
+
+// DELIBERATE HANG FOR THE GUARD-2 ACCEPTANCE TEST. -DMSV3_HANG_BEFORE_ADVERTISE=1.
+//
+// This is the state guard 2 exists to rescue: an image that boots, is correctly signed, passes
+// every integrity check, and then never opens a radio window. Every previous guard-2 test used a
+// deliberate SELF-RESET instead, because with no SWD attached and no reset button on this PCB, a
+// board that hangs before advertising is unrecoverable -- so the test that mattered was the one
+// that could not safely be run. It is runnable now only because SWD is attached.
+//
+// The hang is placed after initWatchdogSafety() and bootGuardCheck() so the watchdog is armed and
+// the counter has already been incremented for this boot. It must NOT be fed: the whole point is
+// that the 5 s watchdog fires, resets the MCU, and the boot counter accumulates until
+// BOOT_GUARD_LIMIT sends the board into BLE DFU.
+//
+// NEVER SHIP THIS. The build check in arduino_msv3_probe.ps1 refuses to build it together with a
+// fleet sensor id.
+#ifndef MSV3_HANG_BEFORE_ADVERTISE
+#define MSV3_HANG_BEFORE_ADVERTISE 0
+#endif
+constexpr bool HANG_BEFORE_ADVERTISE = (MSV3_HANG_BEFORE_ADVERTISE != 0);
+
+constexpr uint32_t BOOT_GUARD_RETAINED_ADDRESS = 0x2003FFF8UL;
+constexpr uint32_t BOOT_GUARD_STATE_MAGIC = 0xB0075200UL;
+constexpr uint32_t BOOT_GUARD_STATE_MAGIC_MASK = 0xFFFFFF00UL;
 constexpr uint8_t BOOT_GUARD_COUNT_MASK = 0x0F;
 constexpr uint8_t BOOT_GUARD_LIMIT = 5;
 constexpr uint8_t BOOT_GUARD_PROBATION_ADVERTS = 2;
@@ -1108,7 +1221,19 @@ constexpr uint8_t BOOT_GUARD_PROBATION_ADVERTS = 2;
 // measured. Revisit once it has.
 constexpr uint16_t BOOT_GUARD_MIN_ESCAPE_MV = OTA_MIN_BATTERY_MV;
 constexpr uint8_t DFU_MAGIC_OTA_RESET = 0xA8;   // must match the bootloader's own constant
-constexpr uint32_t BOOT_GUARD_GPREGRET_ID = 1;  // 0 = GPREGRET (bootloader's), 1 = GPREGRET2
+
+struct BootGuardRetainedState
+{
+  uint32_t encoded;
+  uint32_t inverse;
+};
+static_assert(sizeof(BootGuardRetainedState) == 8,
+              "boot-guard retained state must match the eight-byte linker reservation");
+
+// No initializer: startup must not emit a .data copy or a .bss clear for this object. The custom
+// linker script maps this exact input section to a fixed NOLOAD region and asserts its size.
+static volatile BootGuardRetainedState g_bootGuardRetained
+    __attribute__((section(".msv3_boot_guard_retained"), used, aligned(4)));
 
 static uint8_t g_bootAttempt = 0;
 static uint8_t g_probationAdverts = 0;
@@ -1116,6 +1241,56 @@ static bool g_bootGuardCleared = false;
 static bool g_bootGuardDeferred = false;
 static float g_bootGuardBatteryMv = 0.0f;
 static uint32_t g_resetReason = 0;
+
+static bool bootGuardReadRetained(uint8_t& count)
+{
+  const uint32_t encoded = g_bootGuardRetained.encoded;
+  const uint32_t inverse = g_bootGuardRetained.inverse;
+  if (inverse != ~encoded ||
+      (encoded & BOOT_GUARD_STATE_MAGIC_MASK) != BOOT_GUARD_STATE_MAGIC)
+  {
+    count = 0;
+    return false;
+  }
+
+  const uint8_t decoded = (uint8_t)(encoded & 0xFF);
+  if (decoded > BOOT_GUARD_COUNT_MASK)
+  {
+    count = 0;
+    return false;
+  }
+  count = decoded;
+  return true;
+}
+
+static void bootGuardWriteRetained(uint8_t count)
+{
+  const uint8_t bounded = count > BOOT_GUARD_COUNT_MASK
+                              ? BOOT_GUARD_COUNT_MASK
+                              : count;
+  const uint32_t encoded = BOOT_GUARD_STATE_MAGIC | bounded;
+
+  // Invalidate first. A reset between either following word write fails open as an invalid record
+  // on the next boot rather than manufacturing a high boot count and falsely entering DFU.
+  g_bootGuardRetained.inverse = 0;
+  __DMB();
+  g_bootGuardRetained.encoded = encoded;
+  __DMB();
+  g_bootGuardRetained.inverse = ~encoded;
+  __DSB();
+}
+
+static bool bootGuardResetCarriesState(uint32_t reason)
+{
+  // RESETREAS has no bit for power-on/brownout, so zero deliberately means a clean slate. Carry
+  // only causes that can represent an application failure loop. SREQ remains included because
+  // both a commanded reset and an app_error/SoftDevice reset can produce it; under-counting the
+  // latter would reopen the exact failure class this guard exists to close.
+  const uint32_t carryMask = POWER_RESETREAS_DOG_Msk |
+                             POWER_RESETREAS_SREQ_Msk |
+                             POWER_RESETREAS_LOCKUP_Msk;
+  return reason != 0 && (reason & carryMask) != 0;
+}
 
 // Prints RESETREAS by name. The guard-2 watchdog-hang test has to SEE "WATCHDOG" on each of the
 // successive resets, not infer it from a hex value -- that reading IS the evidence the test
@@ -1136,30 +1311,17 @@ static void printResetReasonName(uint32_t r)
 // Cleared once the probe has proven it can actually run: BOOT_GUARD_PROBATION_ADVERTS complete
 // advertising cycles, not merely "advertising was started once". A build that advertises and then
 // dies later in its first duty cycle must NOT be able to clear the guard.
-// 2026-09-04, found on the bench and worth stating loudly: this runs from loop(), where the
-// SoftDevice IS enabled, so it must NOT touch NRF_POWER directly. The first version did, and the
-// probe hard-faulted and reset roughly 76 s into every boot -- right after the second
-// advertisement, which is when this function first fires. GPREGRET/GPREGRET2 are SoftDevice-
-// protected registers; with the stack up, the sd_power_gpregret_* SVCs are the only legal path.
-// bootGuardCheck() may use the raw registers only because it runs before Bluefruit.begin().
-//
-// The irony is instructive: a guard meant to rescue a probe from a crash loop was itself creating
-// one. Any future edit here must keep the SVC path.
+// The original GPREGRET2 implementation needed SoftDevice SVCs here and its first raw-register
+// version hard-faulted after the second advertisement. The retained-RAM implementation has no
+// POWER-peripheral access at all, so it is legal after Bluefruit.begin(). Do not move the counter
+// back to a protected peripheral just to reuse that old SVC plumbing.
 void bootGuardNoteHealthyAdvert()
 {
   if (!ENABLE_BOOT_FAILURE_GUARD) return;
   if (g_bootGuardCleared) return;
   if (++g_probationAdverts < BOOT_GUARD_PROBATION_ADVERTS) return;
 
-  if (sd_power_gpregret_clr(BOOT_GUARD_GPREGRET_ID, 0xFF) != NRF_SUCCESS ||
-      sd_power_gpregret_set(BOOT_GUARD_GPREGRET_ID, BOOT_GUARD_MAGIC) != NRF_SUCCESS)
-  {
-    // Leaving the count as it is simply means this boot does not clear probation; the next
-    // healthy cycle retries. Never fall back to a raw register write here.
-    if (ENABLE_SERIAL_LOGS) Serial.println(F("[WARN] boot guard clear rejected by SoftDevice"));
-    g_probationAdverts--;
-    return;
-  }
+  bootGuardWriteRetained(0);
   g_bootGuardCleared = true;
   if (ENABLE_SERIAL_LOGS)
   {
@@ -1170,9 +1332,8 @@ void bootGuardNoteHealthyAdvert()
   }
 }
 
-// Runs before anything that can fail. Never call this after the SoftDevice is enabled: it touches
-// NRF_POWER directly, which is only correct while the SoftDevice is down. (ResetSafeBLEDfu uses
-// the sd_power_gpregret_* SVCs for the same registers precisely because it runs with it up.)
+// Runs before anything that can fail. The only raw POWER-register access left is GPREGRET at the
+// actual DFU escape, before Bluefruit.begin(); the boot counter itself is ordinary retained RAM.
 static void bootGuardCheck()
 {
   // Take the reset cause from the CORE, not from the hardware register.
@@ -1195,7 +1356,13 @@ static void bootGuardCheck()
   // reaching for a register directly where the framework has already mediated it. Third instance
   // in this file's history. Do not "simplify" this back to NRF_POWER->RESETREAS.
   g_resetReason = readResetReason();
-  if (!ENABLE_BOOT_FAILURE_GUARD) return;
+  if (!ENABLE_BOOT_FAILURE_GUARD)
+  {
+    // Guard-off builds are the field default. Keep the shared word at a known zero so enabling the
+    // guard in a later OTA cannot inherit stale probation from an earlier bench image.
+    bootGuardWriteRetained(0);
+    return;
+  }
 
   // WHY THE COUNTER STILL COUNTS EVERY BOOT, now that the cause is actually available.
   //
@@ -1211,15 +1378,16 @@ static void bootGuardCheck()
   // reporting only. Revisit ONLY with evidence about what this application's fault handlers
   // actually do on a hard fault; that is a bench question with SWD attached, not an assumption.
 
-  const uint8_t retained = (uint8_t)(NRF_POWER->GPREGRET2 & 0xFF);
-  g_bootAttempt = ((retained & BOOT_GUARD_MASK) == BOOT_GUARD_MAGIC)
-                      ? (uint8_t)(retained & BOOT_GUARD_COUNT_MASK)
+  uint8_t retainedCount = 0;
+  const bool retainedValid = bootGuardReadRetained(retainedCount);
+  g_bootAttempt = retainedValid && bootGuardResetCarriesState(g_resetReason)
+                      ? retainedCount
                       : 0;
 
   if (g_bootAttempt >= BOOT_GUARD_LIMIT)
   {
     // Saturate first, so a deferred decision survives to the next boot instead of being lost.
-    NRF_POWER->GPREGRET2 = (uint8_t)(BOOT_GUARD_MAGIC | BOOT_GUARD_COUNT_MASK);
+    bootGuardWriteRetained(BOOT_GUARD_COUNT_MASK);
 
     g_bootGuardBatteryMv = readVbatMv();
     const bool readingUsable =
@@ -1229,8 +1397,9 @@ static void bootGuardCheck()
       // Reset the counter BEFORE arming DFU. Otherwise a good image flashed afterwards would
       // boot, read a saturated count, and bounce straight back into DFU -- turning the rescue
       // into a trap. (Verified on the bench: the rescued build boots once and stays up.)
-      NRF_POWER->GPREGRET2 = BOOT_GUARD_MAGIC;
+      bootGuardWriteRetained(0);
       NRF_POWER->GPREGRET = DFU_MAGIC_OTA_RESET;
+      __DSB();
       NVIC_SystemReset();
       // does not return
     }
@@ -1238,14 +1407,54 @@ static void bootGuardCheck()
   }
 
   const uint8_t next = (uint8_t)(g_bootAttempt + 1);
-  NRF_POWER->GPREGRET2 =
-      (uint8_t)(BOOT_GUARD_MAGIC | (next > BOOT_GUARD_COUNT_MASK ? BOOT_GUARD_COUNT_MASK : next));
+  bootGuardWriteRetained(next);
 }
 
 void setup()
 {
+  // Anchor before every deliberately failing test path. A hang build never reaches the normal
+  // boot banner below, but its signed package still has to remain uniquely identifiable.
+  g_firmwareBuildIdAnchor = FIRMWARE_BUILD_ID;
+  g_guard2MarkerAnchor = FIRMWARE_GUARD2_MARKER;
+
   initWatchdogSafety();
   bootGuardCheck();
+
+  if (HANG_BEFORE_ADVERTISE)
+  {
+    // Announce first so the capture shows WHICH boot is hanging and what reset caused it -- the
+    // reset cause is only readable at all since readResetReason() replaced the direct
+    // NRF_POWER->RESETREAS read, which always returned 0. Serial.flush() because the watchdog
+    // fires in 5 s and an unflushed USB CDC buffer would be lost with it.
+    if (ENABLE_SERIAL_LOGS)
+    {
+      Serial.begin(115200);
+      uint32_t w = millis();
+      while (!Serial && millis() - w < BOOT_HOST_WAIT_MS) delay(10);
+      Serial.print(F("[HANGTEST] boot attempt "));
+      Serial.print(g_bootAttempt + 1);
+      Serial.print(F(" of "));
+      Serial.print(BOOT_GUARD_LIMIT);
+      Serial.print(F("; RESETREAS=0x"));
+      Serial.print(g_resetReason, HEX);
+      printResetReasonName(g_resetReason);
+      Serial.print(F(" -- "));
+      Serial.print(DEVICE_NAME);
+      Serial.print(F(" "));
+      Serial.print(FIRMWARE_BUILD_ID);
+      Serial.println(F(" hanging now, NOT feeding the watchdog"));
+      Serial.flush();
+    }
+    // Keep DEVICE_NAME referenced even when serial logging is off. Without this the linker
+    // dead-strips the whole advertising path -- the hang makes it unreachable -- and the
+    // "MSV3-MOISTURE-NNN" literal goes with it. That is not cosmetic: msv3_fleet.py extracts that
+    // string to bind a package to a probe, so a stripped image cannot be identified, the release
+    // build refuses to sign it, and ble_ota_update.py would refuse to send it. Found the hard way
+    // -- the first hang build came out 93 KB instead of 136 KB and its own release script deleted
+    // it. asm volatile with a memory clobber so the reference cannot be optimised away.
+    { const char* keep = DEVICE_NAME; asm volatile("" :: "r"(keep) : "memory"); }
+    for (;;) { /* no feedWatchdog() -- the WDT must fire */ }
+  }
 
   if (ENABLE_SERIAL_LOGS)
   {
@@ -1278,11 +1487,6 @@ void setup()
     Serial.println(g_lfclkRcOk ? F("yes") : F("NO -- hang protection disabled this boot"));
     Serial.flush();
   }
-
-  // Anchors FIRMWARE_BUILD_ID into the image -- see the comment beside it. Deliberately outside
-  // any ENABLE_SERIAL_LOGS guard, because production builds are exactly the ones that need to
-  // remain identifiable.
-  g_firmwareBuildIdAnchor = FIRMWARE_BUILD_ID;
 
   // LED
   NRF_P1->DIRSET = LED_BIT;

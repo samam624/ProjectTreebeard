@@ -67,6 +67,32 @@ conductive edge plating. JLCPCB does not currently list epoxy edge encapsulation
 service; use a confirmed custom process or a secondary coating contractor. See
 [the complete field finding, repair process, safety notes, and V4 drawing note](../MSV3/docs/MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md).
 
+## MSV3 Probe 7: TMUX1109 path failure
+
+**Status:** Confirmed from live two-phase telemetry on 2026-09-08. Probe 7 is not
+deployment-ready. Its MCU, bootloader, signed application, BLE/OTA path, and rollback record are
+healthy; “bricked” here means the moisture-sensing path is unusable, not that the board cannot boot
+or be updated.
+
+**Evidence:** Phase 0 connected/bare counts were 19,502,047/19,502,915 and phase 1 counts were
+20,784,705/20,784,074. The supposed bare reading follows the connected reading within 0.005% in
+both phases, proving that MUX1/A1 has no observable selection effect. The connected phases differ
+by 1,282,658 counts (about 6.37%), repeatedly triggering swing advertisements and producing the
+32k/45k dashboard alternation.
+
+**Disposition:** No replacement TMUX1109 will be ordered. To salvage Probe 7, first remove the
+TMUX1109, then bridge `TANK_HOT` to `MS_NODE_A` and `TANK_REF` to `MS_NODE_B`. Never add those
+bridges around a populated mux; an internal selected route can oppose the hard wiring and short the
+FDC tank. The bypass build must hold one phase and advertise the bare reference as invalid. Retest
+the direct count before coating. If Probe 7 is coated first as a process test, treat it as
+sacrificial: it cannot validate moisture sensing and the cured coating will obstruct the planned
+repair.
+
+Probe 6 and Probe 7 are the first conformal-coating process trials. Probe 6 is the functional
+post-cure validation unit; Probe 7 is process-only unless repaired first. Battery-powered Probe 4
+is the actual production unit and remains uncoated until those trials establish the application and
+cure process.
+
 ## MSV3: missing 32.768 kHz crystal versus stock PCA10056 variant
 
 **Status:** Resolved and repo-enforced.
@@ -90,11 +116,12 @@ Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades an
 
 ## MSV3: the bootloader accepts an OLDER signed image -- rollback is not prevented on the device
 
-**Status:** Measured 2026-09-05 on bootloader 1.0.1, which remains installed on probes 4, 5 and 99.
-**Fixed in bootloader 1.0.2, built 2026-09-06 but NOT YET INSTALLED** -- installing it needs SWD,
-and it is scheduled into the single SWD session that precedes conformal coating. Until that session
-runs, everything below still describes the live fleet, and the host-side mitigation is the only
-thing acting.
+**Status:** Measured 2026-09-05 on bootloader 1.0.1. Fixed in bootloader 1.0.2 and retained in
+1.0.3. Probes 5-8 now run 1.0.3. Probe 5 installed signed v65555 over BLE, with its final settings
+readback still pending. Probes 6 and 7 installed signed v65556 and passed settings-page readback at
+floor 65556. Former Probe 99 now runs as Probe 8 on signed v65557, with its settings readback still
+pending. Probe 4 still runs 1.0.1 and needs final 1.0.3 SWD provisioning; until then, its host-side
+version bookkeeping is its only rollback guard.
 
 **The 1.0.2 fix.** `MSV3/bootloader/patches/msv3-1.0.2-anti-rollback.patch`, applied and sentinel-
 verified by `build_msv3_release.ps1`. It stores a monotonic version floor in the bootloader settings
@@ -151,11 +178,11 @@ Flashing the application over SWD leaves a probe that accepts every older signed
 provisioning must finish with a signed OTA install, and the settings page must be read back over SWD
 to confirm magic, floor and complement before the pads are covered.
 
-Seed to the **highest version in the shared trust domain**, currently 65551. The bootloader does not
-enforce sensor identity — that is a host-side check — so a package built for another probe would be
-cryptographically acceptable and could push a floor above that probe's own rescue image. Every probe
-therefore holds a rescue package at 65551, and equality is accepted, so the rescue is always
-installable.
+Seed each production probe to an explicit version above that target's recorded on-device floor.
+The bootloader does not enforce sensor identity — that is a host-side
+check — so a package built for another probe would be cryptographically acceptable and could push a
+floor above that probe's own rescue image. Archive a correctly identified equality-version rescue
+package for each probe before coating; equality is accepted so that package remains installable.
 
 **The UF2 path is unreachable in this build, and that is a security condition, not a UI detail.**
 `src/usb/msc_uf2.c` is compiled in for the nRF52840 and can reach `DFU_UPDATE_APP_COMPLETE` with no
@@ -252,8 +279,9 @@ blamed the bootloader and is corrected in place.
 
 **Portable enforcement:** `MSV3/scripts/arduino_msv3_probe.ps1` fails the build (including
 `-Action doctor`) on any direct `NRF_POWER->RESETREAS` access under `MSV3/arduino/`, comments
-excluded. The check is deliberately narrow: `bootGuardCheck()` still touches `GPREGRET`/`GPREGRET2`
-directly and legitimately, because it runs before `Bluefruit.begin()`.
+excluded. The check is deliberately narrow: `bootGuardCheck()` still writes `GPREGRET` directly to
+request DFU before `Bluefruit.begin()`. The failure counter no longer uses GPREGRET2; bootloader
+1.0.3 and the application reserve a shared `.noinit` RAM record instead.
 
 **The pattern worth remembering** — reaching for a register the framework has already mediated:
 

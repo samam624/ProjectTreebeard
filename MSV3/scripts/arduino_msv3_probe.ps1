@@ -9,9 +9,26 @@ param(
   [int]$SensorId = -1,
   # Bench-only. Turns on USB CDC logging and the boot banner. Never used for a fleet image.
   [switch]$SerialLogs,
+  # Guard 2, the boot-attempt counter that escapes into BLE DFU after BOOT_GUARD_LIMIT boots that
+  # never reach healthy operation. A build flag rather than an edited constant, for the same reason
+  # SENSOR_ID is: committed source must always describe a deployable image.
+  [switch]$BootGuard,
+  # Builds an image that DELIBERATELY HANGS before advertising -- the unrecoverable state guard 2
+  # exists to rescue. Bench board only, SWD attached only. See the checks below.
+  [switch]$HangTest,
   # Alphanumeric tag appended to "MSV3-BUILD:" in the image. Passed as a token and stringified by
   # the sketch, so no quoting has to survive PowerShell -> arduino-cli -> the compiler.
   [string]$BuildTag,
+  # Reproducible FDC settling-test parameters. Defaults are the committed production values.
+  [ValidateRange(1, 65535)]
+  [int]$FdcSettleCount = 100,
+  [ValidateRange(0, 255)]
+  [int]$WakeDiscardConversions = 2,
+  [ValidateSet(10, 33)]
+  [int]$FdcDeglitchMhz = 10,
+  # Only consulted for -BootGuard/-HangTest, which must ask MSV3/fleet.json whether the target
+  # can survive the image being built. An ordinary build never needs an interpreter.
+  [string]$Python,
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
   [string]$ArduinoDataDir = (Join-Path $env:LOCALAPPDATA "Arduino15")
 )
@@ -20,9 +37,15 @@ $ErrorActionPreference = "Stop"
 
 $Fqbn = "adafruit:nrf52:pca10056"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# NOTE: $repoRoot is historically the MSV3 SUBSYSTEM root (MSV3/), not the repository root -- every
+# path below resolves relative to it. scripts/msv3_fleet.py lives one level further up, so the
+# dangerous-mode gate needs the real repository root as well.
 $repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+$actualRepoRoot = (Resolve-Path (Join-Path $repoRoot "..")).Path
 $sketchPath = if ([IO.Path]::IsPathRooted($Sketch)) { $Sketch } else { Join-Path $repoRoot $Sketch }
 $buildPath = Join-Path $repoRoot ".arduino-build\msv3-probe"
+$msv3LinkerName = "msv3_nrf52840_s140_v6.ld"
+$trackedMsv3Linker = Join-Path $repoRoot "linker\$msv3LinkerName"
 
 function Invoke-ArduinoCli {
   param([string[]]$Arguments)
@@ -91,6 +114,44 @@ function Ensure-Msv3LfRcVariant {
   [IO.File]::WriteAllText($variantPath, $updated, [Text.UTF8Encoding]::new($false))
   Write-Host "MSV3 LFCLK guard: repaired installed core to USE_LFRC: $variantPath"
   Write-Host "This repair is intentionally repeated by the repo script after Arduino core installs/upgrades."
+}
+
+function Ensure-Msv3BootGuardLinker {
+  param([string]$CorePath)
+
+  if (!(Test-Path -LiteralPath $trackedMsv3Linker)) {
+    throw "Tracked MSV3 linker script is missing: $trackedMsv3Linker"
+  }
+
+  $tracked = [IO.File]::ReadAllText($trackedMsv3Linker)
+  $required = @(
+    "MSV3_BOOT_GUARD_RETAINED",
+    "ORIGIN = 0x2003FFF8, LENGTH = 0x08",
+    ".msv3_boot_guard_retained (NOLOAD)",
+    "SIZEOF(.msv3_boot_guard_retained) == LENGTH(MSV3_BOOT_GUARD_RETAINED)"
+  )
+  foreach ($sentinel in $required) {
+    if (!$tracked.Contains($sentinel)) {
+      throw "Tracked MSV3 linker script is missing required sentinel '$sentinel': $trackedMsv3Linker"
+    }
+  }
+
+  $installed = Join-Path $CorePath "cores\nRF5\linker\$msv3LinkerName"
+  $installedText = if (Test-Path -LiteralPath $installed) {
+    [IO.File]::ReadAllText($installed)
+  } else {
+    ""
+  }
+  if ($installedText -ne $tracked) {
+    [IO.File]::WriteAllText($installed, $tracked, [Text.UTF8Encoding]::new($false))
+    Write-Host "MSV3 boot-guard linker: installed tracked script at $installed"
+  }
+
+  $verified = [IO.File]::ReadAllText($installed)
+  if ($verified -ne $tracked) {
+    throw "Installed MSV3 linker script does not byte-match the tracked source: $installed"
+  }
+  Write-Host "MSV3 boot-guard linker: OK (8-byte NOLOAD state reserved at 0x2003FFF8)"
 }
 
 function Assert-DuplicatedSketchSources {
@@ -192,7 +253,7 @@ function Assert-NoRawResetReasRead {
   # rather than a comment.
   #
   # Deliberately narrow: this bans the RESETREAS *read*, not NRF_POWER as a whole. bootGuardCheck()
-  # legitimately touches GPREGRET/GPREGRET2 directly, because it runs before Bluefruit.begin().
+  # legitimately writes GPREGRET directly to request DFU because it runs before Bluefruit.begin().
   $sketchFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot "arduino") -Recurse -File -Include *.ino, *.cpp, *.h -ErrorAction SilentlyContinue
   $offenders = @()
   foreach ($f in $sketchFiles) {
@@ -236,6 +297,7 @@ if ($Action -eq "monitor") {
 
 $corePath = Get-AdafruitNrf52CorePath
 Ensure-Msv3LfRcVariant -CorePath $corePath
+Ensure-Msv3BootGuardLinker -CorePath $corePath
 Assert-DuplicatedSketchSources
 Assert-NoRawResetReasRead
 
@@ -256,12 +318,16 @@ New-Item -ItemType Directory -Force -Path $buildPath | Out-Null
 # saying what to pass, instead of a preprocessor error partway down a build log.
 function Assert-ProductionBuildParameters {
   $isProduction = (Split-Path -Leaf $sketchPath) -eq "MSV3_Moisture_BLE_Sleep"
-  if (!$isProduction) {
+  $isBringup = (Split-Path -Leaf $sketchPath) -eq "MSV3_Probe_Bringup_Test"
+  if (!$isProduction -and !$isBringup) {
     if ($SensorId -ge 0) {
-      throw "-SensorId applies only to arduino/MSV3_Moisture_BLE_Sleep; '$Sketch' has no SENSOR_ID."
+      throw "-SensorId applies only to MSV3_Moisture_BLE_Sleep or MSV3_Probe_Bringup_Test; '$Sketch' has no SENSOR_ID."
     }
     return
   }
+  # Untargeted bring-up builds retain their historical id-99/test-name behaviour. Supplying an
+  # identity opts into the signed fleet-diagnostic contract used for a coated probe.
+  if ($isBringup -and $SensorId -lt 0) { return }
   if ($SensorId -lt 0) {
     throw @"
 -SensorId is required when building MSV3_Moisture_BLE_Sleep.
@@ -285,15 +351,94 @@ for exactly that reason. Passing it here makes (commit, sensor id) reproduce an 
 
 Assert-ProductionBuildParameters
 
-$defines = @("-DCONFIG_NFCT_PINS_AS_GPIOS")
+$defines = @(
+  "-DCONFIG_NFCT_PINS_AS_GPIOS",
+  # The production sketch fails closed without this define. It is paired with the custom
+  # build.ldscript below; defining one without the other still fails the linker's address/size
+  # assertions, while bypassing this wrapper fails at preprocessing.
+  "-DMSV3_BOOT_GUARD_RETAINED_LINKER=1"
+)
 if ($SensorId -ge 0) { $defines += "-DMSV3_SENSOR_ID=$SensorId" }
 if ($SerialLogs) { $defines += "-DMSV3_ENABLE_SERIAL_LOGS=1" }
+if ($BootGuard) { $defines += "-DMSV3_ENABLE_BOOT_FAILURE_GUARD=1" }
+if ($HangTest) { $defines += "-DMSV3_HANG_BEFORE_ADVERTISE=1" }
 if ($BuildTag) { $defines += "-DMSV3_BUILD_TAG=$BuildTag" }
+if ($SensorId -ge 0) {
+  $fdcMuxConfig = if ($FdcDeglitchMhz -eq 10) { "0x020D" } else { "0x020F" }
+  $defines += "-DMSV3_FDC_SETTLECOUNT_CH0=$FdcSettleCount"
+  $defines += "-DMSV3_WAKE_DISCARD_CONVERSIONS=$WakeDiscardConversions"
+  $defines += "-DMSV3_FDC_MUX_CONFIG=$fdcMuxConfig"
+}
 $defineFlags = $defines -join " "
+
+# A hang-before-advertise image is the exact unrecoverable state guard 2 exists to rescue: signed,
+# valid, boots, and never opens a radio window. It is only safe on a board with SWD attached, and
+# it must never be built for a probe that is about to be sealed under conformal coating.
+if ($HangTest) {
+  if (-not $BootGuard) {
+    throw "-HangTest without -BootGuard hangs the board with no escape armed. On any probe without SWD attached that is a brick. Pass both, or neither."
+  }
+  if (-not $SerialLogs) {
+    throw "-HangTest without -SerialLogs produces a board that hangs silently and tells you nothing. The reset-cause banner IS the evidence this test exists to collect."
+  }
+}
+
+# THE DANGEROUS-MODE GATE.
+#
+# This used to be `if ($SensorId -ne 99) { throw }`. The bench board WAS 99; on 2026-09-08 it was
+# reassigned as production identity 8 and sensor 99 left MSV3/fleet.json entirely. The constant
+# was not updated, so -HangTest became buildable for exactly one id that the registry rejects --
+# and unbuildable for every board that exists. A hardcoded identity is what rotted; asking the
+# registry is the fix.
+#
+# Deliberately scoped to the two dangerous modes. An ordinary build must not acquire a Python
+# dependency, and does not: nothing below runs unless -BootGuard or -HangTest was passed.
+if ($BootGuard -or $HangTest) {
+  # No identity means no gate, and "no gate" must not be reachable by simply omitting a
+  # parameter. -BootGuard/-HangTest describe an image destined for a specific board, and which
+  # board it is decides whether the image is safe at all -- so the identity is required here even
+  # though an ordinary bring-up build may go without one.
+  if ($SensorId -lt 0) {
+    throw @"
+-BootGuard/-HangTest require -SensorId. Both flags are only safe for particular probes -- Guard 2
+needs a bootloader that reserves 0x2003FFF8, and a hang image needs pads that are still reachable
+-- and neither question can be answered without knowing which board this image is for.
+"@
+  }
+
+  . (Join-Path $scriptDir "msv3_python.ps1")
+  $gatePython = Resolve-Msv3Python -Explicit $Python -Msv3Root $repoRoot
+
+  # Fail CLOSED. "The checker would not run" must never read as "the check passed" -- on Windows
+  # a bare `python` is often the Store alias stub, which exits without running anything.
+  if (-not (Test-Msv3Python -PythonExe $gatePython)) {
+    throw @"
+-BootGuard/-HangTest need Python to ask MSV3/fleet.json whether this is safe for sensor $SensorId,
+and '$gatePython' would not run. Refusing to build a dangerous image on an unchecked assumption.
+Pass -Python <path-to-python.exe>.
+"@
+  }
+
+  $gateArgs = @((Join-Path $actualRepoRoot "scripts\msv3_fleet.py"), "gate", "--sensor-id", $SensorId)
+  if ($BootGuard) { $gateArgs += "--boot-guard" }
+  if ($HangTest) { $gateArgs += "--hang-test" }
+  & $gatePython @gateArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "MSV3/fleet.json refuses this build for sensor $SensorId (see the REFUSED line above)."
+  }
+}
+
+if ($HangTest) {
+  Write-Host "MSV3 HANG TEST BUILD -- this image deliberately hangs before advertising."
+  Write-Host "  Only run it with SWD attached. Guard 2 should escape into BLE DFU after 5 failed boots."
+}
+
 if ($SensorId -ge 0) {
   $tagNote = if ($BuildTag) { "build tag $BuildTag" } else { "default build tag" }
   $logNote = if ($SerialLogs) { "SERIAL LOGS ON (bench build)" } else { "serial logs off (fleet build)" }
-  Write-Host "MSV3 build parameters: sensor $SensorId, $tagNote, $logNote"
+  $guardNote = if ($BootGuard) { "boot guard ON" } else { "boot guard off" }
+  Write-Host "MSV3 build parameters: sensor $SensorId, $tagNote, $logNote, $guardNote"
+  Write-Host "  FDC: SETTLECOUNT=$FdcSettleCount, discarded conversions=$WakeDiscardConversions, deglitch=${FdcDeglitchMhz}MHz"
 }
 
 $compileArgs = @(
@@ -301,11 +446,31 @@ $compileArgs = @(
   "--clean",
   "--fqbn", $Fqbn,
   "--build-path", $buildPath,
+  "--build-property", "build.ldscript=$msv3LinkerName",
   "--build-property", "compiler.c.extra_flags=$defineFlags",
   "--build-property", "compiler.cpp.extra_flags=$defineFlags",
   $sketchPath
 )
 Invoke-ArduinoCli $compileArgs
+
+# This is the final proof that Arduino actually selected the tracked linker script. Merely copying
+# it into the installed core is not enough: a renamed boards.txt property or CLI behaviour change
+# could silently select the stock script and put the retained word back under the bootloader stack.
+if ((Split-Path -Leaf $sketchPath) -eq "MSV3_Moisture_BLE_Sleep") {
+  $mapPath = Join-Path $buildPath "MSV3_Moisture_BLE_Sleep.ino.map"
+  if (!(Test-Path -LiteralPath $mapPath)) {
+    throw "Production build succeeded but its linker map is missing: $mapPath"
+  }
+  $mapText = [IO.File]::ReadAllText($mapPath)
+  if ($mapText -notmatch '(?m)^\.msv3_boot_guard_retained\s+0x2003fff8\s+0x8\b') {
+    throw @"
+MSV3 boot-guard retained state is not exactly 8 bytes at 0x2003FFF8 in:
+  $mapPath
+Refusing this image. The bootloader/application retention ABI was not linked.
+"@
+  }
+  Write-Host "MSV3 boot-guard map check: OK (.msv3_boot_guard_retained = 0x2003FFF8, 8 bytes)"
+}
 
 if ($Action -eq "upload") {
   if ([string]::IsNullOrWhiteSpace($Port)) {
