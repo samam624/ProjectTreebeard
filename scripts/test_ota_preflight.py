@@ -67,12 +67,22 @@ def raises(name, exception_type, call, must_contain=None):
 
 # ------------------------------------------------------------------ fixtures ----
 
-def make_image(sensor_ids, size=4096):
-    """A fake application image carrying the NUL-terminated names the firmware would store."""
+def make_image(sensor_ids, size=4096, guard=None):
+    """A fake application image carrying the NUL-terminated names the firmware would store.
+
+    `guard` mirrors the MSV3-GUARD2 marker the real sketch anchors into the image: True/False
+    for a marked build, None for the unmarked images every package built before 2026-09-09 is.
+    Pass a list to simulate a contradictory image carrying more than one marker.
+    """
     body = bytearray(b"\x00" * size)
     offset = 64
     for sensor_id in sensor_ids:
         blob = f"MSV3-MOISTURE-{sensor_id:03d}".encode() + b"\x00"
+        body[offset:offset + len(blob)] = blob
+        offset += 256
+    markers = guard if isinstance(guard, list) else ([] if guard is None else [guard])
+    for marker in markers:
+        blob = b"MSV3-GUARD2:" + (b"1" if marker else b"0") + b"\x00"
         body[offset:offset + len(blob)] = blob
         offset += 256
     return bytes(body)
@@ -122,15 +132,19 @@ def make_registry(path, entries):
 REAL_KEY_SHA256 = "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa"
 
 
-def probe_entry(sensor_id, address, bootloader="msv3-1.0.1", device_type="0x3356",
+# Default bootloader is 1.0.3, matching four of the five real probes. It also keeps tests that are
+# about something else (identity, rollback, target resolution) clear of the boot-guard gate, which
+# only has an opinion about pre-1.0.3 targets. Tests that care about an old bootloader pass one.
+def probe_entry(sensor_id, address, bootloader="msv3-1.0.3", device_type="0x3356",
                 ota_capable=True, deployed=True, key_sha256=REAL_KEY_SHA256, legacy=(),
-                installed_version=0):
+                installed_version=0, swd_accessible=False, guard2_validated=False):
     return {"sensor_id": sensor_id, "name": f"MSV3-MOISTURE-{sensor_id:03d}",
             "application_address": address, "recovery_address": next_address(address),
             "bootloader": bootloader, "device_type": device_type, "ota_capable": ota_capable,
             "deployed": deployed, "bootloader_key_sha256": key_sha256,
             "legacy_package_sha256": list(legacy),
-            "installed_application_version": installed_version, "notes": ""}
+            "installed_application_version": installed_version,
+            "swd_accessible": swd_accessible, "guard2_validated": guard2_validated, "notes": ""}
 
 
 class Args(types.SimpleNamespace):
@@ -491,6 +505,75 @@ def test_refusal_happens_before_any_radio_call():
     finally:
         (ble_ota_update.wait_for_advertisement, ble_ota_update.jump_to_bootloader,
          ble_ota_update.install_windows_ble_workarounds) = originals
+
+
+def test_application_connection_retry_rescans():
+    """A WinRT open failure must consume a fresh advertisement, not reuse a dead handle."""
+    print("\napplication connection retry")
+    import ble_ota_update
+    from ble_ota_update import JumpError, jump_to_bootloader
+
+    connections = []
+    rescans = []
+
+    class FakeClient:
+        def __init__(self, device, **_kwargs):
+            self.device = device
+
+        async def __aenter__(self):
+            connections.append(self.device)
+            if self.device == "expired-window":
+                raise OSError(22, "Operation aborted", None, -2147467260)
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def read_gatt_char(self, _uuid):
+            return b"MSV3-BUILD:old-build\x00"
+
+        async def start_notify(self, _uuid, _callback):
+            return None
+
+        async def write_gatt_char(self, _uuid, _payload, response=False):
+            assert response
+
+    async def rescan():
+        rescans.append(True)
+        return "fresh-window"
+
+    fake_bleak = types.ModuleType("bleak")
+    fake_bleak.BleakClient = FakeClient
+    fake_dfu = types.ModuleType("dfu_lib")
+    fake_dfu.DFU_CONTROL_POINT_UUID = "control-point"
+    old_bleak = sys.modules.get("bleak")
+    old_dfu = sys.modules.get("dfu_lib")
+    sys.modules["bleak"] = fake_bleak
+    sys.modules["dfu_lib"] = fake_dfu
+    try:
+        result = asyncio.run(jump_to_bootloader(
+            "expired-window", "random", retries=2, reconnect=rescan,
+            retry_scan_delay=0.0))
+        check("a failed open rescans before retrying",
+              connections == ["expired-window", "fresh-window"] and len(rescans) == 1,
+              f"connections={connections}, rescans={len(rescans)}")
+        check("the fresh handle can reach the DFU write", result.startswith("write acknowledged"))
+
+        try:
+            asyncio.run(jump_to_bootloader("expired-window", "random", retries=1))
+            check("WinRT sandbox failure names the remedy", False, "did not raise")
+        except JumpError as error:
+            check("WinRT sandbox failure names the remedy",
+                  "outside the sandbox" in str(error), str(error))
+    finally:
+        if old_bleak is None:
+            sys.modules.pop("bleak", None)
+        else:
+            sys.modules["bleak"] = old_bleak
+        if old_dfu is None:
+            sys.modules.pop("dfu_lib", None)
+        else:
+            sys.modules["dfu_lib"] = old_dfu
 
 
 def test_bootloader_vs_application_advertisement():
@@ -941,7 +1024,7 @@ def test_happy_path_reaches_the_radio_boundary():
 
 def test_real_registry_matches_hardware():
     """Guard the facts this session actually measured, so a careless edit to fleet.json shows up."""
-    print("\nregistry against 2026-09-04 observations")
+    print("\nregistry against measured fleet state")
     fleet = load_fleet()
     four = fleet.by_sensor_id(4)
     check("probe 4 address", four.application_address == "F2:16:32:1B:2B:47")
@@ -949,14 +1032,32 @@ def test_real_registry_matches_hardware():
           four.device_type == 0x3356 and four.ota_capable)
     five = fleet.by_sensor_id(5)
     check("probe 5 address", five.application_address == "F9:18:9B:CA:10:B2")
-    check("probe 5 is recorded as still on the stock bootloader",
-          five.device_type == 0x0052 and not five.ota_capable)
+    check("probe 5 is on bootloader 1.0.3 with v65555 recorded",
+          five.bootloader == "msv3-1.0.3" and five.device_type == 0x3356
+          and five.ota_capable and five.installed_application_version == 65555)
     check("every recovery address is application address + 1",
           all(p.recovery_address == next_address(p.application_address) for p in fleet))
     check("every OTA-capable probe pins its bootloader's public key",
           all(p.bootloader_key_sha256 == REAL_KEY_SHA256 for p in fleet if p.ota_capable))
-    check("the bench board is the only non-deployed entry",
-          [p.sensor_id for p in fleet if not p.deployed] == [99])
+    check("only newly commissioned probes are non-deployed",
+          [p.sensor_id for p in fleet if not p.deployed] == [6, 7, 8])
+
+    # Guard 2 on a pre-1.0.3 bootloader is a guard that can never fire. Probe 4 is the one probe
+    # still on 1.0.1 AND the one that is deployed, in soil, on solar, with no SWD -- so it is both
+    # the likeliest target of a careless -BootGuard OTA and the one that could not be rescued.
+    four = fleet.by_sensor_id(4)
+    check("probe 4's bootloader does NOT reserve the boot-guard record",
+          not four.reserves_boot_guard_ram and four.bootloader == "msv3-1.0.1")
+    check("every 1.0.3 probe does reserve it",
+          all(p.reserves_boot_guard_ram for p in fleet if p.bootloader == "msv3-1.0.3"))
+
+    # swd_accessible is mutable physical state and it is what -HangTest is gated on. A deployed
+    # probe must never be marked reachable; this fails the moment 6/7/8 are coated without the
+    # registry being updated, which is exactly the reminder that should exist.
+    check("no deployed probe claims reachable SWD pads",
+          all(not p.swd_accessible for p in fleet if p.deployed))
+    check("the ex-bench board is the one with validated guard-2 recovery",
+          [p.sensor_id for p in fleet if p.guard2_validated] == [8])
     # An allowlisted legacy image bypasses the identity guarantee for that probe, so an entry here
     # should be a deliberate, recorded decision -- never a leftover.
     check("no probe allowlists a legacy image without a recorded reason",
@@ -1019,6 +1120,153 @@ def test_rollback_is_refused_against_the_recorded_version():
         check("an unrecorded installed version disables the check", False, str(error))
 
 
+def test_boot_guard_bootloader_pairing():
+    """Guard 2's counter at 0x2003FFF8 only survives a reset on bootloader 1.0.3 or later.
+
+    Measured 2026-09-09 from vector[0] of each shipped release hex: 1.0.1 and 1.0.2 boot with
+    MSP = 0x20040000, so the retained record is the first memory their stacks descend into;
+    1.0.3 boots with MSP = 0x2003FFF8. A guard-enabled image on an older bootloader gives a
+    counter that always reads back as zero -- a guard that looks armed and can never fire.
+    """
+    print("\nboot-guard / bootloader RAM pairing")
+
+    from msv3_fleet import Probe, check_boot_guard_pairing
+
+    def probe_on(bootloader, **kw):
+        return Probe(sensor_id=4, name="MSV3-MOISTURE-004",
+                     application_address="F0:00:00:00:00:04",
+                     recovery_address="F0:00:00:00:00:05", bootloader=bootloader,
+                     device_type=0x3356, ota_capable=True, **kw)
+
+    check("guard-enabled image is refused on bootloader 1.0.1",
+          check_boot_guard_pairing(probe_on("msv3-1.0.1"), True) is not None)
+    check("guard-enabled image is refused on bootloader 1.0.2",
+          check_boot_guard_pairing(probe_on("msv3-1.0.2"), True) is not None)
+    check("guard-enabled image is allowed on bootloader 1.0.3",
+          check_boot_guard_pairing(probe_on("msv3-1.0.3"), True) is None)
+
+    # Lexical comparison would put "msv3-1.0.10" BEFORE "msv3-1.0.3" and refuse a bootloader that
+    # is actually newer. Safety gates must not have a wrong answer waiting at a version bump.
+    check("bootloader versions compare structurally, not lexically",
+          check_boot_guard_pairing(probe_on("msv3-1.0.10"), True) is None)
+
+    # A stock Adafruit loader gives no MSV3 guarantee at all, so it must never read as new enough.
+    check("a non-MSV3 bootloader is never treated as reserving the record",
+          check_boot_guard_pairing(probe_on("adafruit-stock-0.11.0"), True) is not None)
+
+    check("a guard-OFF image is allowed on an old bootloader",
+          check_boot_guard_pairing(probe_on("msv3-1.0.1"), False) is None)
+
+    # THE UNMARKED CASE. A signature proves the bytes are authorised, not that Guard 2 was
+    # compiled out -- and Guard 2 existed for two days before the marker did, so unmarked
+    # guard-enabled images genuinely exist. On a bootloader that already reserves the record the
+    # distinction cannot hurt; on an older one it can, so it needs a hash-pinned registry entry
+    # rather than a flag.
+    check("an unmarked image is allowed on a bootloader that reserves the record",
+          check_boot_guard_pairing(probe_on("msv3-1.0.3"), None) is None)
+    check("an unmarked image is REFUSED on an old bootloader",
+          check_boot_guard_pairing(probe_on("msv3-1.0.1"), None, "ab" * 32) is not None)
+    check("...unless that exact image is hash-pinned in the registry",
+          check_boot_guard_pairing(
+              probe_on("msv3-1.0.1", legacy_package_sha256=("ab" * 32,)), None, "ab" * 32) is None)
+    check("a different image is not covered by another image's pin",
+          check_boot_guard_pairing(
+              probe_on("msv3-1.0.1", legacy_package_sha256=("ab" * 32,)), None, "cd" * 32)
+          is not None)
+
+    # THE COATING-CRITICAL CHECK. The tightened unmarked rule must not have broken the recovery
+    # path it exists to protect. Every package actually installed on probes 5/6/7/8 is unmarked,
+    # and every one of those probes runs 1.0.3 -- so all four must still pass.
+    real = load_fleet()
+    for sensor_id in (5, 6, 7, 8):
+        probe = real.by_sensor_id(sensor_id)
+        check(f"probe {sensor_id}'s unmarked rescue package is still accepted",
+              check_boot_guard_pairing(probe, None) is None)
+
+    # ...and the marker must actually be read out of a package, not just modelled here.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        on = root / "guard-on.zip"
+        make_package(on, make_image([4], guard=True))
+        off = root / "guard-off.zip"
+        make_package(off, make_image([4], guard=False))
+        plain = root / "unmarked.zip"
+        make_package(plain, make_image([4]))
+        check("read_package reports guard ON", read_package(on).boot_guard is True)
+        check("read_package reports guard OFF", read_package(off).boot_guard is False)
+        check("read_package reports unmarked as None", read_package(plain).boot_guard is None)
+
+        # Fail closed on anything but exactly one well-formed marker.
+        conflicted = root / "conflicted.zip"
+        make_package(conflicted, make_image([4], guard=[True, False]))
+        raises("an image with conflicting guard markers is refused", FleetError,
+               lambda: read_package(conflicted), must_contain="markers")
+
+        # Two IDENTICAL markers are refused too. The sketch emits exactly one, so a duplicate
+        # means the image is not the shape this gate assumes -- and a safety check that quietly
+        # de-duplicates its way to an answer is not a safety check.
+        doubled = root / "doubled.zip"
+        make_package(doubled, make_image([4], guard=[True, True]))
+        raises("an image with duplicate guard markers is refused", FleetError,
+               lambda: read_package(doubled), must_contain="markers")
+
+        # An unparseable marker must not fall through as "unmarked", which is the more permissive
+        # answer. Built by hand because make_image only emits well-formed ones.
+        malformed = root / "malformed.zip"
+        body = bytearray(make_image([4]))
+        body[2048:2048 + 15] = b"MSV3-GUARD2:7\x00\x00"
+        make_package(malformed, bytes(body))
+        raises("an image with a malformed guard marker is refused", FleetError,
+               lambda: read_package(malformed), must_contain="malformed")
+
+
+def test_hang_test_target_gate():
+    """A -HangTest image never opens a radio window, so the pads are the only way back."""
+    print("\nhang-test target gate")
+
+    from msv3_fleet import Probe, check_hang_test_target
+
+    def probe(**kw):
+        return Probe(sensor_id=6, name="MSV3-MOISTURE-006",
+                     application_address="F0:00:00:00:00:06",
+                     recovery_address="F0:00:00:00:00:07", bootloader="msv3-1.0.3",
+                     device_type=0x3356, ota_capable=True, **kw)
+
+    check("a probe on the bench is allowed", check_hang_test_target(probe(swd_accessible=True)) is None)
+    check("a probe with no reachable pads is refused",
+          check_hang_test_target(probe(swd_accessible=False)) is not None)
+
+    # The default matters: a probe added to the registry without the field must be treated as
+    # unreachable, because the failure mode of guessing wrong is an unrecoverable board.
+    check("swd_accessible defaults to False", probe().swd_accessible is False)
+
+    # Gated on present reachability, NOT on history. Probe 8 passed this very test as probe 99;
+    # that says nothing about whether it can be rescued once it is under conformal coating.
+    check("having passed the test before does not grant access after coating",
+          check_hang_test_target(probe(swd_accessible=False, guard2_validated=True)) is not None)
+
+    # THE TWO PREDICATES MUST NOT BE COUPLED. Guard 2 is a normal production feature and stays
+    # legitimate for the whole life of a coated probe; only the deliberately-hanging test image
+    # needs reachable pads. If these ever share a condition, coating a probe would silently
+    # forbid shipping it guard-enabled firmware -- a real regression hiding behind a safety fix.
+    from msv3_fleet import check_boot_guard_pairing
+
+    coated = probe(swd_accessible=False)          # 1.0.3 bootloader, pads gone
+    check("a coated probe still accepts a Guard-2 image",
+          check_boot_guard_pairing(coated, True) is None)
+    check("...while refusing a hang-test image", check_hang_test_target(coated) is not None)
+
+    # And the converse: reachable pads do not excuse an incompatible bootloader.
+    old_but_reachable = Probe(sensor_id=4, name="MSV3-MOISTURE-004",
+                              application_address="F0:00:00:00:00:04",
+                              recovery_address="F0:00:00:00:00:05", bootloader="msv3-1.0.1",
+                              device_type=0x3356, ota_capable=True, swd_accessible=True)
+    check("reachable pads do not excuse a pre-1.0.3 bootloader for Guard 2",
+          check_boot_guard_pairing(old_but_reachable, True) is not None)
+    check("...though a hang test is fine on it, since it can be recovered",
+          check_hang_test_target(old_but_reachable) is None)
+
+
 def main():
     print("MSV3 OTA preflight")
     test_registry()
@@ -1033,10 +1281,13 @@ def main():
     test_identity_override_is_bench_only()
     test_bootloader_key_is_pinned()
     test_refusal_happens_before_any_radio_call()
+    test_application_connection_retry_rescans()
     test_live_failures_trip_before_the_jump()
     test_happy_path_reaches_the_radio_boundary()
     test_stale_session_recovery()
     test_rollback_is_refused_against_the_recorded_version()
+    test_boot_guard_bootloader_pairing()
+    test_hang_test_target_gate()
     test_real_registry_matches_hardware()
 
     print()

@@ -9,11 +9,24 @@ param(
   [string]$Python,
   [switch]$GenerateSigningKey,
   [switch]$SkipApplicationCompile,
+  # Bench builds only. Forwarded to arduino_msv3_probe.ps1, which turns it into
+  # -DMSV3_ENABLE_SERIAL_LOGS=1. Fleet images ship with logging off.
+  [switch]$SerialLogs,
+  # Guard 2 and the deliberate-hang acceptance image. Forwarded to arduino_msv3_probe.ps1,
+  # which refuses -HangTest for any sensor id except the bench board.
+  [switch]$BootGuard,
+  [switch]$HangTest,
   # Which probe this release's APPLICATION package is for. Required unless the application build
   # is skipped: since 2026-09-05 the sketch takes its identity as a build parameter, so a release
   # is per-probe and the package name says which. The bootloader half is identity-free and shared.
   [int]$SensorId = -1,
-  [string]$BuildTag
+  [string]$BuildTag,
+  [ValidateRange(1, 65535)]
+  [int]$FdcSettleCount = 100,
+  [ValidateRange(0, 255)]
+  [int]$WakeDiscardConversions = 2,
+  [ValidateSet(10, 33)]
+  [int]$FdcDeglitchMhz = 10
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,14 +37,8 @@ $cacheRoot = Join-Path $msv3Root ".arduino-build"
 $source = Join-Path $cacheRoot "Adafruit_nRF52_Bootloader"
 $boardSource = Join-Path $msv3Root "bootloader\msv3_e73"
 $boardDest = Join-Path $source "src\boards\msv3_e73"
-$portablePython = Join-Path $cacheRoot "python-portable\runtime\python.exe"
-$pythonExe = if (![string]::IsNullOrWhiteSpace($Python)) {
-  $Python
-} elseif (Test-Path -LiteralPath $portablePython) {
-  $portablePython
-} else {
-  "python"
-}
+. (Join-Path $scriptDir "msv3_python.ps1")
+$pythonExe = Resolve-Msv3Python -Explicit $Python -Msv3Root $msv3Root
 $keyPath = if ([string]::IsNullOrWhiteSpace($SigningKey)) {
   Join-Path $msv3Root ".secrets\msv3-dfu-signing-private.pem"
 } elseif ([IO.Path]::IsPathRooted($SigningKey)) {
@@ -86,7 +93,7 @@ if (!(Test-Path -LiteralPath $requiredSource)) {
 # copy of a change -- see the repository CLAUDE.md rule about edits outside the tree.
 if (Test-Path -LiteralPath $boardDest) { Remove-Item -LiteralPath $boardDest -Recurse -Force }
 
-& git -C $source checkout -- lib src
+& git -C $source checkout -- lib src linker
 if ($LASTEXITCODE -ne 0) { throw "Could not reset the pinned bootloader checkout to its stock state" }
 
 # Submodules need their own reset. `git checkout -- lib` restores the superproject's gitlinks but
@@ -101,7 +108,7 @@ if ($LASTEXITCODE -ne 0) { throw "Could not reset the pinned bootloader checkout
 # Then refuse to build from anything still dirty, rather than trusting the two resets above to
 # have been exhaustive. Fail closed: an unexplained modification here ends up inside an immutable
 # bootloader, and no downstream check would attribute it.
-$residual = @(& git -C $source status --porcelain -- lib src |
+$residual = @(& git -C $source status --porcelain -- lib src linker |
               Where-Object { $_ -and ($_ -notmatch 'src/boards/msv3_e73') })
 if ($residual.Count -gt 0) {
   throw @"
@@ -129,6 +136,16 @@ if ([version]$ReleaseVersion -ge [version]"1.0.2") {
     # whose SWD pads are under coating. Absence must fail the build, not the field.
     Sentinel = "MSV3_VERSION_FLOOR_MAGIC"
     SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\bootloader_types.h"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.3") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.3-boot-guard-retained-ram.patch"
+    # Guard 2's counter lives at the final eight bytes of RAM. The application linker excludes
+    # them too; if either side omits its reservation, the bootloader/application stack can erase
+    # the very state meant to survive the reset between them.
+    Sentinel = "MSV3_BOOT_GUARD_RETAINED"
+    SentinelIn = "linker\nrf52840.ld"
   }
 }
 
@@ -213,6 +230,26 @@ if (!(Test-Path -LiteralPath $bootOnly) -or !(Test-Path -LiteralPath $bootMerged
   throw "Expected bootloader outputs were not created"
 }
 
+if ([version]$ReleaseVersion -ge [version]"1.0.3") {
+  # Verify the linked artifact, not only the patched source. This is the other half of the
+  # application/bootloader RAM ABI: the bootloader stack must end immediately below the retained
+  # guard word or a watchdog reset can erase the count before the application reads it.
+  $bootMap = Join-Path $buildDir "msv3_e73_bootloader-$bootVersion.out.map"
+  if (!(Test-Path -LiteralPath $bootMap)) {
+    throw "Bootloader 1.0.3+ build map is missing: $bootMap"
+  }
+  $bootMapText = [IO.File]::ReadAllText($bootMap)
+  if ($bootMapText -notmatch '(?m)^MSV3_BOOT_GUARD_RETAINED\s+0x2003fff8\s+0x00000008\b' -or
+      $bootMapText -notmatch '(?m)^\s*0x2003fff8\s+__StackTop\b') {
+    throw @"
+Bootloader 1.0.3+ did not link with the required retained-RAM ABI:
+  $bootMap
+Expected an 8-byte MSV3_BOOT_GUARD_RETAINED region at 0x2003FFF8 and __StackTop at 0x2003FFF8.
+"@
+  }
+  Write-Host "MSV3 bootloader map check: OK (stack ends below retained state at 0x2003FFF8)"
+}
+
 if (!$SkipApplicationCompile) {
   if ($SensorId -lt 0) {
     throw "-SensorId is required to build a release application (the sketch takes its identity as a build parameter). Pass -SkipApplicationCompile to build only the bootloader."
@@ -221,8 +258,18 @@ if (!$SkipApplicationCompile) {
     -Action doctor
   if ($LASTEXITCODE -ne 0) { throw "MSV3 doctor check failed" }
   $probeArgs = @("-Action", "compile", "-Sketch", "arduino/MSV3_Moisture_BLE_Sleep",
-                 "-SensorId", $SensorId)
+                 "-SensorId", $SensorId,
+                 "-FdcSettleCount", $FdcSettleCount,
+                 "-WakeDiscardConversions", $WakeDiscardConversions,
+                 "-FdcDeglitchMhz", $FdcDeglitchMhz)
   if ($BuildTag) { $probeArgs += @("-BuildTag", $BuildTag) }
+  # Forward -SerialLogs. It used to be absent from this script's param block entirely, so passing
+  # it produced three bench packages with logging OFF and no error at all -- and the guard-2
+  # watchdog-hang test's whole evidence is reading WATCHDOG on successive resets over serial.
+  # A build flag that is silently dropped is worse than one that is unsupported.
+  if ($SerialLogs) { $probeArgs += "-SerialLogs" }
+  if ($BootGuard) { $probeArgs += "-BootGuard" }
+  if ($HangTest) { $probeArgs += "-HangTest" }
   & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") @probeArgs
   if ($LASTEXITCODE -ne 0) { throw "MSV3 production application build failed" }
 }
@@ -267,31 +314,86 @@ $releaseDir = Join-Path $msv3Root "bootloader\generated\$ReleaseVersion"
 $canonicalDir = Join-Path $msv3Root "bootloader\generated"
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
 $releaseBoot = Join-Path $releaseDir "msv3-e73-recovery-signed-s140-6.1.1.hex"
-# From 1.0.2 the APPLICATION VERSION is part of the package name. Anti-rollback testing needs
-# N-1, N and N+1 for the same probe to exist side by side, and before this they differed only by
-# a field inside the signed init packet -- so each build silently overwrote the last, and the file
-# you reached for could not be identified from its name. Names below 1.0.2 are left exactly as
-# they were: those packages are archived artifacts and their names appear in the field records.
+# Every newly built per-probe APPLICATION package includes its application version in the name.
+# This was originally limited to bootloader release 1.0.2+, but probe 4 still runs 1.0.1 and needs
+# several controlled application-only experiments without replacing its bootloader. The older
+# unversioned artifacts stay untouched; this rule is additive and gives every new image a new path.
+# Anti-rollback and settling tests both need N-1, N and N+1 to coexist rather than differ only in a
+# signed init-packet field that is invisible in the filename.
 $otaName = if ($SensorId -lt 0) {
   "msv3-$ReleaseVersion-signed-ota.zip"
-} elseif ([version]$ReleaseVersion -ge [version]"1.0.2") {
-  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-v$ApplicationVersion-signed-ota.zip"
 } else {
-  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-signed-ota.zip"
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-v$ApplicationVersion-signed-ota.zip"
 }
 $signedOta = Join-Path $releaseDir $otaName
 # The migration package carries SoftDevice + bootloader + APPLICATION, so it embeds a sensor
-# identity exactly like the OTA package does, and from 1.0.2 its name says which. Before this it
-# did not: every build overwrote one file whose identity you could only discover by unzipping it.
+# identity and application version exactly like the OTA package does. Older builders omitted one
+# or both from this filename, so another application build in the same bootloader release collided
+# even though it contained different signed bytes.
 # Flashing the wrong one gives two probes the same sensor id and silently mixes two plants' data
 # in the receiver -- which has already happened once on this project, with identity 005.
-$initialInstallName = if ($SensorId -ge 0 -and [version]$ReleaseVersion -ge [version]"1.0.2") {
-  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-initial-install-from-stock.zip"
+$initialInstallName = if ($SensorId -ge 0) {
+  "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-v$ApplicationVersion-initial-install-from-stock.zip"
 } else {
   "msv3-$ReleaseVersion-initial-install-from-stock.zip"
 }
 $initialInstall = Join-Path $releaseDir $initialInstallName
-Copy-Item -LiteralPath $bootMerged -Destination $releaseBoot -Force
+
+# A DFU package is NOT byte-reproducible -- the ZIP carries timestamps and the ECDSA signature
+# uses a fresh nonce -- so "rebuild and compare bytes" cannot be the guard here. The invariant
+# that actually matters is weaker and enforceable: a released artifact path is written once.
+# WRITE-ONCE, with no override. There deliberately is no -Force switch here: "write-once unless
+# you pass a flag" is not write-once, and the flag would be reached for in exactly the situation
+# it exists to prevent. If a path needs different bytes, it needs a different name -- bump
+# -ApplicationVersion, which from 1.0.2 is part of the filename, or cut a new -ReleaseVersion for
+# the bootloader hex. Superseding an artifact is then additive and the old one survives intact.
+function Assert-NoSilentOverwrite {
+  param(
+    [string]$Path,
+    [string]$What,
+    # For an artifact that IS byte-reproducible, the file about to be written. Rewriting identical
+    # bytes is a no-op, not a replacement, and refusing it would block every later application
+    # build inside an existing release directory -- the bootloader hex is rebuilt on every run.
+    [string]$CandidatePath
+  )
+  # $true means "nothing is there, go ahead and write"; $false means "identical bytes already
+  # present, skip the write". A throw means the path is taken by different bytes.
+  if (!(Test-Path -LiteralPath $Path)) { return $true }
+
+  if ($CandidatePath -and (Test-Path -LiteralPath $CandidatePath)) {
+    $existingHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
+    $candidateHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $CandidatePath).Hash
+    if ($existingHash -eq $candidateHash) {
+      # Returns $false so the caller SKIPS the write entirely rather than being cleared to
+      # overwrite. Permitting the copy would leave a check/write window in which the artifact
+      # could change between the hash comparison and the copy -- and "write-once" has to mean the
+      # bytes are never rewritten, not that rewriting them was approved.
+      Write-Host "$What is unchanged (sha256 $($existingHash.ToLowerInvariant().Substring(0,16))...); leaving it untouched"
+      return $false
+    }
+  }
+
+  throw @"
+Refusing to overwrite an existing $What :
+  $Path
+This exact path was already released, and a DFU package is not byte-reproducible (ZIP timestamps,
+fresh ECDSA nonce), so rebuilding it can only ever make a (name, version) pair stop naming one
+image. That is how the 1.0.2 archive lost the provenance of probe 4's application -- see
+MSV3/bootloader/generated/1.0.2/DISPUTED.json.
+The resolution is always ADDITIVE: bump -ApplicationVersion so this build gets its own filename
+(or cut a new -ReleaseVersion for the bootloader hex) and leave the existing artifact where it is.
+Retiring the old one is a separate, reviewable commit -- record it in that directory's
+DISPUTED.json. Do NOT move it aside and reuse its pathname: that still ends with two different
+byte sequences having borne the same release identity, which is the whole failure being prevented.
+"@
+}
+
+$null = Assert-NoSilentOverwrite -Path $signedOta -What "signed OTA package"
+$null = Assert-NoSilentOverwrite -Path $initialInstall -What "initial-install package"
+$bootHexNeedsWrite = Assert-NoSilentOverwrite -Path $releaseBoot -What "release bootloader hex" `
+                       -CandidatePath $bootMerged
+
+if ($bootHexNeedsWrite) { Copy-Item -LiteralPath $bootMerged -Destination $releaseBoot -Force }
 
 & $nrfutil dfu genpkg --dev-type 0x3356 --dev-revision 52840 `
   --application-version $ApplicationVersion --sd-req 0xB6 `
@@ -358,11 +460,19 @@ $bootHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $canonicalBoot).Hash.To
 
 $vkHex = (& $nrfutil keys --show-vk hex $keyPath | Out-String).Trim()
 $files = @($releaseBoot, $signedOta, $initialInstall, $appHex) | ForEach-Object {
-  [ordered]@{
+  $entry = [ordered]@{
     name = [IO.Path]::GetFileName($_)
     sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_).Hash.ToLowerInvariant()
     bytes = (Get-Item -LiteralPath $_).Length
   }
+  # $appHex lives in the gitignored build cache and is never copied into the release directory.
+  # Recording its hash is worth doing -- it ties a release to the exact application hex behind its
+  # packages -- but the archive verifier must not then hunt for a file that was never archived.
+  if ($_ -eq $appHex) {
+    $entry.provenance_only = $true
+    $entry.note = "hash of the application hex this release was built from; it lives in the gitignored build cache and is deliberately not archived here"
+  }
+  $entry
 }
 $manifest = [ordered]@{
   release = $ReleaseVersion
@@ -380,7 +490,29 @@ $manifest = [ordered]@{
   files = $files
 }
 $manifestPath = Join-Path $releaseDir "release-manifest.json"
+
+# The `files` array belongs to the DIRECTORY, not to this build. It used to be rebuilt from only
+# the four files of the current run and written over the top, so a release directory's manifest
+# recorded nothing but its most recent build -- which is why 1.0.3 listed sensor008 alone while
+# probes 5, 6 and 7 had been flashed from packages sitting unrecorded beside it.
+#
+# So: preserve whatever is already recorded, and let verify_msv3_release_archive.py be the single
+# writer of that array. It merges in what is on disk and REFUSES to rewrite a name whose bytes
+# changed, which is a rule this script cannot enforce on its own from inside one build.
+if (Test-Path -LiteralPath $manifestPath) {
+  $existing = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+  if ($existing.PSObject.Properties.Name -contains "files") {
+    $manifest.files = $existing.files
+  }
+}
 [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 6) + "`n", [Text.UTF8Encoding]::new($false))
+
+# Record and then PROVE the archive, in that order. A release that cannot pass its own integrity
+# check is not a release: these packages are the recovery path for probes whose SWD pads are
+# about to disappear under conformal coating.
+& $pythonExe (Join-Path $repoRoot "scripts\verify_msv3_release_archive.py") `
+  --release $ReleaseVersion --sync-manifest --write-sums
+if ($LASTEXITCODE -ne 0) { throw "Release archive record/verification failed for $ReleaseVersion" }
 
 Write-Host "MSV3 release ready: $releaseDir"
 Write-Host "  Future OTA: $signedOta"

@@ -35,7 +35,11 @@
     "time and its silence says nothing.",
     "",
     "'observed' fields record a real scan or transfer, 'inferred' fields have not been seen yet.",
-    "installed_application_version is bookkeeping: the bootloader cannot report what it is running. Measured 2026-09-05, it also does not ENFORCE it -- dfu_init.c's version check is an explicit empty template, so a probe accepts an older validly signed image without complaint. ble_ota_update.py refuses a package below this value unless --allow-downgrade. That is a host-side check and cannot stop anyone who does not run it; it stops the accident of reaching for a stale package. Update it after every successful transfer. 0 disables the check."
+    "installed_application_version is bookkeeping: the bootloader cannot report what it is running. Stock and MSV3 1.0.1 do not enforce it; MSV3 1.0.2+ also records and enforces an on-device anti-rollback floor. ble_ota_update.py independently refuses a package below this value unless --allow-downgrade. Update it after every successful transfer. 0 disables the host-side check.",
+    "",
+    "swd_accessible is MUTABLE PHYSICAL STATE, not history: are this probe's SWD/USB pads reachable RIGHT NOW? Conformal coating makes it false. SET IT FALSE THE MOMENT A PROBE IS COATED -- arduino_msv3_probe.ps1 refuses to build a deliberately-hanging -HangTest image for any probe where this is false, and that refusal is the only thing standing between a coated probe and an image that never opens a radio window.",
+    "",
+    "guard2_validated is a DURABLE FACT and deliberately separate: this hardware has actually demonstrated the watchdog-loop -> BLE DFU escape. Having passed the test once does not make a coated probe recoverable today, so nothing gates on this field; it records what has been proven so a future session does not have to guess."
   ],
   "probes": [
     {
@@ -50,8 +54,10 @@
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults. PROVENANCE GAP, recorded 2026-09-05: the exact package installed on this probe was never archived -- it was built into the gitignored .arduino-build/ path, which later builds overwrote, and its source carried an uncommitted SENSOR_ID edit that no commit describes. The running image therefore cannot be reproduced byte-for-byte from this repository. Since 2026-09-05 identity is a build parameter (arduino_msv3_probe.ps1 -SensorId), so (commit, sensor id, build tag) reproduces an image exactly and this cannot recur. Rebuild an equivalent with -SensorId 4 before the next OTA to this probe, and archive the package.",
-      "installed_application_version": 0
+      "swd_accessible": false,
+      "guard2_validated": false,
+      "notes": "The water-immersion board. Migrated off the stock bootloader 2026-09-03 and updated over BLE alone. In soil, battery + solar. Running build 2026-09-05-guard1 (guard 1 only; ENABLE_BOOT_FAILURE_GUARD is staged off until the watchdog-hang test runs with SWD). Confirmed 2026-09-05 00:55 PDT: -72 dBm, 3983 mV, flags 0x1c, DIS reports the build over BLE, receiver ingesting with no false faults. PROVENANCE GAP, recorded 2026-09-05: the exact package installed on this probe was never archived -- it was built into the gitignored .arduino-build/ path, which later builds overwrote, and its source carried an uncommitted SENSOR_ID edit that no commit describes. The running image therefore cannot be reproduced byte-for-byte from this repository. Since 2026-09-05 identity is a build parameter (arduino_msv3_probe.ps1 -SensorId), so (commit, sensor id, build tag) reproduces an image exactly and this cannot recur. Rebuild an equivalent with -SensorId 4 before the next OTA to this probe, and archive the package. This is the battery-powered production unit; final provisioning and coating remain deferred until probes 6 and 7 have exercised the conformal-coating process and functional Probe 6 passes its post-cure check.",
+      "installed_application_version": 65558
     },
     {
       "sensor_id": 5,
@@ -59,29 +65,68 @@
       "name": "MSV3-MOISTURE-005",
       "application_address": "F9:18:9B:CA:10:B2",
       "recovery_address": "F9:18:9B:CA:10:B3",
-      "recovery_address_source": "inferred as application_address + 1; never observed",
-      "bootloader": "adafruit-stock-0.11.0",
-      "bootloader_key_sha256": "",
-      "device_type": "0x0052",
-      "legacy_package_sha256": [],
-      "ota_capable": false,
-      "notes": "NOT migrated. Advertisement flags 0x0d on 2026-09-04 -- bit4 clear at 4419 mV, far above the 3800 mV gate, which is the signature of firmware with no OTA feature rather than a shut gate. Needs the USB SoftDevice+bootloader migration before it can be updated over BLE at all; ble_ota_update.py refuses it until this entry says otherwise.",
-      "installed_application_version": 0
-    },
-    {
-      "sensor_id": 99,
-      "deployed": false,
-      "name": "MSV3-MOISTURE-099",
-      "application_address": "DB:AD:4D:9D:21:BA",
-      "recovery_address": "DB:AD:4D:9D:21:BB",
-      "recovery_address_source": "observed repeatedly through the 2026-09-02/03 bootloader work",
-      "bootloader": "msv3-1.0.2",
+      "recovery_address_source": "observed 2026-09-08 during final SWD provisioning",
+      "bootloader": "msv3-1.0.3",
       "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
       "device_type": "0x3356",
       "legacy_package_sha256": [],
       "ota_capable": true,
-      "notes": "USB-recoverable bench board, not a fleet unit. FIRST BOARD ON BOOTLOADER 1.0.2, installed over SWD 2026-09-07 after a mass erase that was blank-check VERIFIED rather than merely reported -- see docs/KNOWN_ISSUES.md, the previous erase silently faulted and left the old application running. Anti-rollback is confirmed live on this board: the settings page at 0x000FF000 reads magic 0x4D535633, floor 65551, complement 0xFFFEFFF0, written by the BLE install of msv3-1.0.2-sensor099-v65551 (that is the only code path that writes it -- an SWD-flashed application would leave the floor at 0). Trust root unchanged, same key as 1.0.1. Build its images with arduino_msv3_probe.ps1 -SensorId 99 -SerialLogs; note that build_msv3_release.ps1 does NOT forward -SerialLogs and silently ignores it, so the currently installed image has serial logging OFF and the guard-2 hang test needs a rebuilt image first.",
-      "installed_application_version": 65551
+      "swd_accessible": false,
+      "guard2_validated": false,
+      "notes": "Bootloader 1.0.3 installed over SWD on 2026-09-08. Signed application v65555 (MSV3-BUILD:2026-09-08-prod5; Guard 1 and Guard 2 on; serial logs off) installed over BLE from recovery address F9:18:9B:CA:10:B3 in 28 s. DIS read back the exact build ID. A 150-second scan observed 29 packets across two advancing wakes (+1), valid sensor data, 4411 mV, flags 0x1c, and an open OTA gate. The 4411 mV observation was while USB-powered with no battery attached, so it is not a cell-voltage measurement. Equality-version rescue package SHA-256: 0198dd469cbc2ba411b73f310c5d0054e84abe9a5bd7c0dc1db60faf46ddf735.",
+      "installed_application_version": 65555
+    },
+    {
+      "sensor_id": 6,
+      "deployed": false,
+      "name": "MSV3-MOISTURE-006",
+      "application_address": "D8:2B:71:CB:90:B0",
+      "recovery_address": "D8:2B:71:CB:90:B1",
+      "recovery_address_source": "observed 2026-09-08 after first SWD provisioning of the raw board",
+      "bootloader": "msv3-1.0.3",
+      "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+      "device_type": "0x3356",
+      "legacy_package_sha256": [],
+      "ota_capable": true,
+      "swd_accessible": false,
+      "guard2_validated": false,
+      "notes": "Raw board provisioned with bootloader 1.0.3 over SWD on 2026-09-08; all five segments read-back verified. Signed application v65556 (MSV3-BUILD:2026-09-08-prod6; Guard 1 and Guard 2 on; serial logs off) installed over BLE from recovery address D8:2B:71:CB:90:B1 in 26 s. DIS read back the exact build ID. A 150-second scan observed 31 packets across two advancing wakes (+1), valid sensor data, USB power, flags 0x1c, and an open OTA gate. Equality-version rescue package SHA-256: adfa0910a26874906aed5611c1308c2805c69205cbd319f5fe15620df68d408d. Final SWD settings-page readback passed: magic 0x4D535633, rollback floor 65556, complement 0xFFFEFFEB. Designated as the functional first conformal-coating trial. Conformal-coated by 2026-09-12; SWD pads are no longer accessible, while USB remains available for the diagnostic console. Verify air baseline, sensor/reference behavior, and BLE again after full cure before coating production Probe 4.",
+      "diagnostic_state": "2026-09-13 post-coating check: signed bring-up diagnostic v65561 (MSV3-BUILD:2026-09-13-coated6-diag) installed application-only over BLE; resident bootloader 1.0.3 preserved. USB console observation was approximately 20,000,000 DATA_CH0 in the untouched condition and approximately 19,000,000 with two-hand contact, a roughly 1,000,000-count / 5% decrease. This proves a substantial qualitative response survived coating; it is not yet an air/soil/watering calibration or a recorded connected-to-bare/phase acceptance result. Signed production restore v65562 (MSV3-BUILD:2026-09-13-prod6-restore) was built and preflighted before installing diagnostics.",
+      "installed_application_version": 65561
+    },
+    {
+      "sensor_id": 7,
+      "deployed": false,
+      "name": "MSV3-MOISTURE-007",
+      "application_address": "F7:B1:E6:50:EC:B6",
+      "recovery_address": "F7:B1:E6:50:EC:B7",
+      "recovery_address_source": "observed 2026-09-08 after first SWD provisioning of the raw board",
+      "bootloader": "msv3-1.0.3",
+      "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+      "device_type": "0x3356",
+      "legacy_package_sha256": [],
+      "ota_capable": true,
+      "swd_accessible": true,
+      "guard2_validated": false,
+      "notes": "NOT DEPLOYMENT-READY; SENSOR PATH EFFECTIVELY BRICKED: post-commissioning telemetry on 2026-09-08 exposed a TMUX1109 path fault. Phase 0 connected/bare counts were 19,502,047/19,502,915 and phase 1 counts were 20,784,705/20,784,074: the supposed bare reading mirrors connected within 0.005% in both phases, while phases 0/1 disagree by 1,282,658 counts (about 6.37%). MUX1/A1 (E73 P0.31 to TMUX1109 pin 16) therefore has no observable effect, and the phase disagreement repeatedly trips the large-swing advertising path, creating the 32k/45k dashboard alternation. The MCU, BLE, OTA, and bootloader are healthy. No replacement TMUX will be ordered. Future salvage plan: power off, remove the TMUX1109, then bridge TANK_HOT to MS_NODE_A and TANK_REF to MS_NODE_B; never add these bridges while the mux remains populated. A bypass-specific application must fix one phase and mark the bare reference invalid. Probe 7 may be a sacrificial conformal-coating process test, but cannot validate post-coat moisture sensing and coating before repair will obstruct mux removal/bridging. Raw board was provisioned with bootloader 1.0.3 over SWD on 2026-09-08; all five segments read-back verified. Signed application v65556 (MSV3-BUILD:2026-09-08-prod7; Guard 1 and Guard 2 on; serial logs off) installed over BLE from recovery address F7:B1:E6:50:EC:B7 in 29 s. DIS read back the exact build ID. Equality-version rescue package SHA-256: e40c8f0b712a9f72d322f14a512d4ef2484e76929c5bdd34457beeb617ec6c6f. Final SWD settings-page readback passed: magic 0x4D535633, rollback floor 65556, complement 0xFFFEFFEB.",
+      "installed_application_version": 65556
+    },
+    {
+      "sensor_id": 8,
+      "deployed": false,
+      "name": "MSV3-MOISTURE-008",
+      "application_address": "DB:AD:4D:9D:21:BA",
+      "recovery_address": "DB:AD:4D:9D:21:BB",
+      "recovery_address_source": "observed repeatedly through the 2026-09-02/03 bootloader work",
+      "bootloader": "msv3-1.0.3",
+      "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+      "device_type": "0x3356",
+      "legacy_package_sha256": [],
+      "ota_capable": true,
+      "swd_accessible": true,
+      "guard2_validated": true,
+      "notes": "Former USB/SWD-recoverable bench probe 99, reassigned as production identity 8 on 2026-09-08. Bootloader 1.0.3 was installed over SWD after a verified mass erase and previously passed the Guard-2 watchdog-loop/recovery test as probe 99. Signed application v65557 (MSV3-BUILD:2026-09-08-prod8; Guard 1 and Guard 2 on; serial logs off) installed over BLE in 36 s, and DIS read back the exact build ID. A 150-second scan observed 28 packets across two advancing scheduled advertisements (+1), valid sensor data, USB power, flags 0x1c, and an open OTA gate. Phase-0 connected DATA_CH0 was 20,424,754 versus bare 22,664,597, a healthy 10.97% separation; no Probe-7-like off-cadence alternating swings appeared, bounding gross phase asymmetry below the firmware's 300,000-count swing trigger during the scan. Equality-version rescue package SHA-256: 9c6955c104fe544c15f11ea24c52f08d01201431e88ff0764c5512815a8bacf5. Final settings-page SWD readback remains pending.",
+      "installed_application_version": 65557
     }
   ]
 }

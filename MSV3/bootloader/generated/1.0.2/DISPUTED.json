@@ -1,0 +1,82 @@
+{
+  "_comment": [
+    "Artifacts in this release directory whose provenance is NOT resolved, recorded 2026-09-09.",
+    "",
+    "These files are deliberately kept on disk and deliberately excluded from every automatic",
+    "rescue-package selection. They are not deleted, because a file whose history is unclear is",
+    "still evidence; they are not silently re-recorded at their current hash, because doing that",
+    "converts an open question into a false assurance -- which is how this directory reached the",
+    "state below in the first place.",
+    "",
+    "HOW THIS WAS FOUND. scripts/verify_msv3_release_archive.py compared the bytes on disk",
+    "against the two tracked integrity records in this directory. SHA256SUMS.txt and",
+    "release-manifest.json disagreed with the bytes AND with each other. The signed-ota packages",
+    "below still carry valid signatures and correct embedded identities, so nothing here is",
+    "forged; what is lost is the guarantee that a (name, application_version) pair names exactly",
+    "one image forever. Each of these was rebuilt under a name and version already in use.",
+    "",
+    "NONE OF THESE IS A RESCUE PACKAGE FOR A PROBE ABOUT TO BE COATED. Probes 5, 6, 7 and 8 run",
+    "bootloader 1.0.3 and their rescue packages live in ../1.0.3/, which is clean. Probe 4's",
+    "running image already has a separate, documented provenance gap recorded in MSV3/fleet.json,",
+    "and its fleet entry pins installed_application_version to 0.",
+    "",
+    "TO RESOLVE AN ENTRY: rebuild it from a clean checkout at the recorded commit and compare",
+    "bytes, or supersede it with a NEW application version and delete the ambiguous one. Do not",
+    "resolve an entry by editing a hash."
+  ],
+  "disputed": [
+    {
+      "name": "msv3-1.0.2-sensor004-initial-install-from-stock.zip",
+      "class": "bytes-changed-under-fixed-name",
+      "reason": "SHA256SUMS.txt and release-manifest.json record different hashes for this name; the manifest was updated to the current bytes and the checksum file was not.",
+      "sha256_on_disk": "7db76777278926bbe9147cd82ea055e93e275ffe72b57478f48682899202b284",
+      "sha256_in_sha256sums": "763418d44a6d33c6fee3b2d4634ad714a30ac7e35390b3aa2e9958140bd819be",
+      "sha256_in_manifest": "7db76777278926bbe9147cd82ea055e93e275ffe72b57478f48682899202b284"
+    },
+    {
+      "name": "msv3-1.0.2-sensor004-v65550-signed-ota.zip",
+      "class": "bytes-changed-under-fixed-name",
+      "reason": "Same application version 65550 now denotes different bytes. The image on disk is signed, sensor 004, build 2026-09-06-s4v50, 132448 bytes. Whether the superseded bytes were ever transferred to probe 4 is not recorded anywhere.",
+      "sha256_on_disk": "b9733c5736eecda2ef0acf200535d277b4f37acb5c530b4e239629c81d7e184e",
+      "sha256_in_sha256sums": "9f0a0518b8c49dc8902a6256c9f4ef05b2fa8b2baef8309f0b45d574f3c04860",
+      "sha256_in_manifest": "b9733c5736eecda2ef0acf200535d277b4f37acb5c530b4e239629c81d7e184e",
+      "embedded_identity": "sensor 004, application_version 65550, build 2026-09-06-s4v50, signed, 132448-byte image"
+    },
+    {
+      "name": "msv3-1.0.2-sensor099-initial-install-from-stock.zip",
+      "class": "bytes-changed-under-fixed-name",
+      "reason": "Bytes differ from SHA256SUMS.txt and the file grew from 324081 to 328969 bytes, so this 1.0.2-named bundle does not contain what the original 1.0.2 bundle contained. Sensor 099 no longer exists in MSV3/fleet.json; that identity was reassigned to probe 8 on 2026-09-08.",
+      "sha256_on_disk": "0665e838f8addfdac3e041d8fd82d54a427e613af2cf6e480b2cd3a331efbc8f",
+      "sha256_in_sha256sums": "93a0ca84438cbb1b6d8da90e0ca4e1a8ee515bf5a1f5005578238259a9361c6a"
+    },
+    {
+      "name": "msv3-1.0.2-sensor099-v65549-signed-ota.zip",
+      "class": "bytes-changed-under-fixed-name",
+      "reason": "Rebuilt under an existing name and version. Sensor 099 is no longer a fleet identity.",
+      "sha256_on_disk": "ed4dc8f49ae9f0db95dce35e03eabc5337c33b60db715c7f3c99a6be72fe32f9",
+      "sha256_in_sha256sums": "ef86bda918571eb5b193bd4bc8f356ccb0cfa380638e1b7e1c391e2027b20c62",
+      "embedded_identity": "sensor 099, application_version 65549, build 2026-09-07-b99v49, signed"
+    },
+    {
+      "name": "msv3-1.0.2-sensor099-v65550-signed-ota.zip",
+      "class": "bytes-changed-under-fixed-name",
+      "reason": "Rebuilt under an existing name and version. Sensor 099 is no longer a fleet identity.",
+      "sha256_on_disk": "152e4618bda1cb2596ce365318f43fa645f24ff968f9b259ba6f220390c2714c",
+      "sha256_in_sha256sums": "f5f92f75e275516f0d9d090e39ec031df013c89c27bc344b314660772028e3a8",
+      "embedded_identity": "sensor 099, application_version 65550, build 2026-09-07-b99v50, signed"
+    },
+    {
+      "name": "msv3-1.0.2-sensor099-v65551-signed-ota.zip",
+      "class": "recorded-but-absent",
+      "reason": "Listed in SHA256SUMS.txt but no longer on disk. The similarly-versioned file that remains, HANGTEST-msv3-1.0.2-sensor099-v65551-signed-ota.zip, is NOT the same bytes, so this was a rebuild-and-rename rather than a rename.",
+      "sha256_in_sha256sums": "532d6af78521f4a72015efbbf71421506714459352eafb54946b47d0f08c51ba"
+    },
+    {
+      "name": "HANGTEST-msv3-1.0.2-sensor099-v65551-signed-ota.zip",
+      "class": "known-defective-retained-for-forensics",
+      "reason": "This is the dead-stripped hang-test image described in MSV3_Moisture_BLE_Sleep.ino: because the deliberate hang made the advertising path unreachable, the linker discarded it and the MSV3-MOISTURE-NNN literal with it. The image is 93360 bytes instead of the normal ~132448 and carries NO MSV3-BUILD id at all. It is validly signed and still matches an identity regex, which is exactly why it must never be reachable by a rescue flow.",
+      "sha256_on_disk": "614cc75e16ab497ecd8576632703b2e325b4d643c5ff695b621d71c26d14cfdb",
+      "embedded_identity": "sensor 099, application_version 65551, NO build id, signed, 93360-byte image"
+    }
+  ]
+}

@@ -149,6 +149,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from msv3_fleet import (  # noqa: E402
     FleetError,
     advertisement_from_bleak,
+    check_boot_guard_pairing,
     load_fleet,
     load_release_public_key,
     normalise_address,
@@ -625,6 +626,10 @@ class PreflightError(Exception):
     """A target/package check failed. Nothing has been written and nothing has been jumped."""
 
 
+class JumpError(Exception):
+    """The application connection failed before the enter-DFU write was attempted."""
+
+
 def resolve_target(args):
     """Turn --probe / --app-address into a registry entry, or refuse.
 
@@ -713,6 +718,23 @@ def preflight(args, probe, fleet_source_name="MSV3/fleet.json"):
     how = (f"signature verifies against the key compiled into {probe.bootloader}"
            if package.signed else "unsigned, CRC16 OK")
     print(f"  integrity    OK -- {how}, device_type {package.device_type:#06x}", flush=True)
+
+    # BOOT-GUARD / BOOTLOADER RAM PAIRING. Checked only after integrity above, because the marker
+    # is read out of the image and an unverified image's contents are not evidence of anything.
+    #
+    # Guard 2's boot counter is an 8-byte record at 0x2003FFF8 shared with the bootloader. Only
+    # MSV3 1.0.3+ keeps its stack below it; 1.0.1 and 1.0.2 boot with MSP = 0x20040000 and descend
+    # straight through it. Sending a guard-enabled image to an older bootloader produces a guard
+    # that looks armed and can never fire -- the exact GPREGRET2 failure the retained-RAM scheme
+    # was built to replace. MSV3/bootloader/README.md has stated this rule since 1.0.3 landed;
+    # until now nothing enforced it, and probe 4 is deployed, in soil, on solar, with no SWD.
+    guard_refusal = check_boot_guard_pairing(probe, package.boot_guard, package.sha256)
+    if guard_refusal:
+        raise PreflightError(guard_refusal)
+    guard_state = ({True: "guard 2 ON", False: "guard 2 off"}
+                   .get(package.boot_guard, "unmarked (pre-2026-09-09 image)"))
+    print(f"  boot guard   OK -- {guard_state}, bootloader {probe.bootloader}"
+          f"{' reserves 0x2003FFF8' if probe.reserves_boot_guard_ram else ''}", flush=True)
 
     # The identity check below reads the name the firmware advertises. That only equals SENSOR_ID
     # for images built after the compile-time derivation landed; before it, the two were separate
@@ -910,7 +932,8 @@ async def read_firmware_revision(client):
     return text or None
 
 
-async def jump_to_bootloader(device, address_type, on_running_build=None):
+async def jump_to_bootloader(device, address_type, on_running_build=None, retries=3,
+                             reconnect=None, connect_delay=0.0, retry_scan_delay=5.0):
     """Enable notifications, then write the enter-bootloader opcode. Returns a status string.
 
     ResetSafeBLEDfu requires notifications enabled before it will authorize the write, and
@@ -925,41 +948,88 @@ async def jump_to_bootloader(device, address_type, on_running_build=None):
     if sys.platform == "win32" and address_type != "auto":
         kwargs["winrt"] = {"address_type": address_type}
 
-    started = time.time()
-    try:
-        async with BleakClient(device, **kwargs) as client:
-            print(f"  connected in {time.time() - started:.2f}s", flush=True)
+    retries = max(1, int(retries))
+    for attempt in range(1, retries + 1):
+        # Let WinRT finish tearing down the advertisement watcher before it creates the GATT
+        # requester. The recovery client has always observed this gap; the application jump path
+        # accidentally skipped it even though --connect-delay says it applies after a scan.
+        if connect_delay > 0:
+            await asyncio.sleep(connect_delay)
 
-            running = await read_firmware_revision(client)
-            if running is None:
-                print("  running build   not reported (pre-2026-09-04 firmware has no DIS)",
-                      flush=True)
-            else:
-                print(f"  running build   {running}", flush=True)
-            if on_running_build is not None:
-                # Raising here aborts BEFORE the jump opcode is written, so a refusal still costs
-                # the probe nothing.
-                on_running_build(running)
+        started = time.time()
+        write_started = None
+        try:
+            async with BleakClient(device, **kwargs) as client:
+                print(f"  connected in {time.time() - started:.2f}s", flush=True)
 
-            await client.start_notify(DFU_CONTROL_POINT_UUID, lambda _handle, _data: None)
-            payload = bytearray([OP_CODE_ENTER_BOOTLOADER, UPLOAD_MODE_APPLICATION])
-            write_started = time.time()
-            await client.write_gatt_char(DFU_CONTROL_POINT_UUID, payload, response=True)
-            return f"write acknowledged in {time.time() - write_started:.2f}s"
-    except PreflightError:
-        raise
-    except (NameError, AttributeError, TypeError, KeyError, ImportError):
-        # A bug in this file is not "the board reset". Letting these through the broad handler
-        # below printed `NameError: name 'package_info' is not defined` as "link dropped during
-        # write -- normal if the board reset", which is exactly the kind of masking this tool
-        # exists to avoid. Fail loudly instead.
-        raise
-    except Exception as error:
-        text = str(error).upper()
-        if "NOT_PERMITTED" in text:
-            return (f"REJECTED by firmware ({error}) -- ResetSafeBLEDfu's power gate is shut. "
-                    "Check advertisement flag bit4 against OTA_MIN_BATTERY_MV.")
-        return f"link dropped during write ({type(error).__name__}: {error}) -- normal if the board reset"
+                running = await read_firmware_revision(client)
+                if running is None:
+                    print("  running build   not reported (pre-2026-09-04 firmware has no DIS)",
+                          flush=True)
+                else:
+                    print(f"  running build   {running}", flush=True)
+                if on_running_build is not None:
+                    # Raising here aborts BEFORE the jump opcode is written, so a refusal still
+                    # costs the probe nothing.
+                    on_running_build(running)
+
+                await client.start_notify(DFU_CONTROL_POINT_UUID, lambda _handle, _data: None)
+                payload = bytearray([OP_CODE_ENTER_BOOTLOADER, UPLOAD_MODE_APPLICATION])
+                write_started = time.time()
+                await client.write_gatt_char(DFU_CONTROL_POINT_UUID, payload, response=True)
+                return f"write acknowledged in {time.time() - write_started:.2f}s"
+        except PreflightError:
+            raise
+        except (NameError, AttributeError, TypeError, KeyError, ImportError):
+            # A bug in this file is not "the board reset". Fail loudly instead of turning a host
+            # programming error into evidence about the probe.
+            raise
+        except Exception as error:
+            # A disconnect is evidence of a possible reset ONLY after write_gatt_char was entered.
+            # Previously a flaky connection failed before "connected in ..." was printed, yet the
+            # broad handler called it a normal reset and waited a full minute for a bootloader that
+            # had never been requested. Pre-write failures are safe to retry because no command has
+            # reached the probe. Once the write starts, never retry blindly: its acknowledgement may
+            # have been lost precisely because the requested reset happened.
+            if write_started is not None:
+                text = str(error).upper()
+                if "NOT_PERMITTED" in text:
+                    return (f"REJECTED by firmware ({error}) -- ResetSafeBLEDfu's power gate is "
+                            "shut. Check advertisement flag bit4 against OTA_MIN_BATTERY_MV.")
+                return (f"link dropped during write ({type(error).__name__}: {error}) -- normal "
+                        "if the board reset")
+
+            if attempt < retries:
+                print(f"  application connection attempt {attempt}/{retries} failed before the "
+                      f"DFU write ({type(error).__name__}: {error}); rescanning", flush=True)
+                if reconnect is None:
+                    await asyncio.sleep(float(attempt))
+                else:
+                    # The application advertises for only five seconds per wake. Reusing the
+                    # BLEDevice from that expired window made the nominal retries three calls
+                    # against one stale WinRT handle. Wait out the current window, then require a
+                    # fresh advertisement (and let the caller recheck its live identity) before
+                    # another connection attempt.
+                    await asyncio.sleep(retry_scan_delay)
+                    device = await reconnect()
+                    if device is None:
+                        raise JumpError(
+                            "application did not re-advertise for a safe connection retry; "
+                            "no reset or firmware write was requested") from error
+                continue
+            sandbox_hint = ""
+            if (sys.platform == "win32" and
+                    any(code in str(error) for code in ("-2147467260", "-2147467259"))):
+                sandbox_hint = (
+                    " If this is running under Codex or another workspace sandbox, rerun the "
+                    "same checked command outside the sandbox: passive WinRT scans can work "
+                    "while active GATT opens are blocked with E_ABORT/E_FAIL.")
+            raise JumpError(
+                f"application connection failed {retries} time(s) before the enter-DFU write; "
+                f"no reset or firmware write was requested ({type(error).__name__}: {error})."
+                f"{sandbox_hint}") from error
+
+    raise AssertionError("unreachable jump retry state")
 
 
 async def run(args):
@@ -1113,15 +1183,26 @@ async def run(args):
                     f"  Jumping it would take a live sensor off the air for a transfer that "
                     f"changes nothing. Pass --reflash-same-build if that is deliberate.")
 
+        async def rescan_application():
+            refreshed, refreshed_advertisement = await wait_for_advertisement(
+                probe.application_address, args.app_timeout, "application retry")
+            if refreshed is None:
+                return None
+            check_live_identity(args, probe, refreshed_advertisement)
+            return refreshed
+
         print("Jumping to bootloader...", flush=True)
-        print(f"  {await jump_to_bootloader(app, args.address_type, check_running_build)}",
-              flush=True)
+        jump_result = await jump_to_bootloader(
+            app, args.address_type, check_running_build, args.retry,
+            rescan_application, args.connect_delay)
+        print(f"  {jump_result}", flush=True)
 
         device, _ = await wait_for_advertisement(boot_addresses, args.bootloader_timeout,
                                                  "bootloader", require_dfu_service=True)
         if device is None:
             print("\nBootloader did not appear -- the jump did not take effect.", flush=True)
-            print("The board is still running its application; nothing was written.", flush=True)
+            print("No firmware image bytes were transferred; re-scan the application before "
+                  "retrying.", flush=True)
             return 1
 
     await asyncio.sleep(args.connect_delay)
@@ -1240,7 +1321,8 @@ def main():
                         help="Packet receipt interval (default 16, the measured optimum -- see the "
                              "module docstring for the PRN 4/16/32 sweep)")
     parser.add_argument("--delay", type=float, default=0.6, help="Start/size delay seconds (default 0.6)")
-    parser.add_argument("--retry", type=int, default=3, help="DFU connection attempts (default 3)")
+    parser.add_argument("--retry", type=int, default=3,
+                        help="Application-jump and DFU connection attempts (default 3)")
     parser.add_argument("--reflash-same-build", action="store_true",
                         help="Send the image even when the probe already reports running that "
                              "exact build. Off by default so a redundant update cannot take a "
@@ -1278,6 +1360,9 @@ def main():
         # target was left alone. Exit 2 so a script can tell it from a transfer that failed.
         print(f"\nREFUSED: {error}", file=sys.stderr)
         return 2
+    except JumpError as error:
+        print(f"\nFAILED: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

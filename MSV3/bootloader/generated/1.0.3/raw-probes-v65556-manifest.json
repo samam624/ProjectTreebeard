@@ -1,0 +1,27 @@
+{
+    "created_at":  "2026-09-08T12:12:03-07:00",
+    "release":  "1.0.3",
+    "application_version":  65556,
+    "device_type":  "0x3356",
+    "bootloader":  {
+                       "name":  "msv3-e73-recovery-signed-s140-6.1.1.hex",
+                       "sha256":  "a6e0ac0836bed2e1e426d24bbeeb33076929ce3ed1d86dd71fc55e148adb760d",
+                       "bytes":  526330
+                   },
+    "packages":  [
+                     {
+                         "sensor_id":  6,
+                         "build_id":  "MSV3-BUILD:2026-09-08-prod6",
+                         "name":  "msv3-1.0.3-sensor006-v65556-signed-ota.zip",
+                         "sha256":  "adfa0910a26874906aed5611c1308c2805c69205cbd319f5fe15620df68d408d",
+                         "bytes":  134240
+                     },
+                     {
+                         "sensor_id":  7,
+                         "build_id":  "MSV3-BUILD:2026-09-08-prod7",
+                         "name":  "msv3-1.0.3-sensor007-v65556-signed-ota.zip",
+                         "sha256":  "e40c8f0b712a9f72d322f14a512d4ef2484e76929c5bdd34457beeb617ec6c6f",
+                         "bytes":  134240
+                     }
+                 ]
+}

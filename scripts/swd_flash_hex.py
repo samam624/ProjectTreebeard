@@ -453,9 +453,10 @@ def main():
     # and a fresh bootloader write, the halted PC is not a state worth resuming from. A reset
     # boots from the reset vector, which is what the freshly written image expects.
     #
-    # This needs the nRESET wire still attached, which it is at this point in the flow -- the
-    # operator has been holding contact throughout. A power cycle achieves the same thing if the
-    # reset is skipped or fails, and that is what the message below tells them.
+    # This needs a separate GPIO7 -> target RESET wire. SWDIO/SWCLK contact does not imply that
+    # wire exists, and the adapter cannot sense it: the 2026-09-07 session proved it could print
+    # "nRESET pulsed" while the target saw nothing. A power cycle achieves the same post-flash
+    # start if the reset wire is absent, and the message below states that explicitly.
     if args.no_reset:
         print("--no-reset given: target left halted. Power-cycle it or send `reset` to start it.")
         return 0
@@ -463,18 +464,21 @@ def main():
     print("Resetting target so the newly written image starts...")
     ser.write(b"reset\n")
     deadline = time.time() + 5
-    saw_reset = False
+    saw_reset_pulse = False
     while time.time() < deadline:
         line = reader.read_line(timeout_s=2)
         if line is None:
             continue
         print(f"  {line}")
-        if "reset" in line.lower():
-            saw_reset = True
+        if "nreset pulse emitted" in line.lower():
+            saw_reset_pulse = True
             break
-    if not saw_reset:
+    if not saw_reset_pulse:
         print("  no reset confirmation from the adapter -- if the board does not come up,")
         print("  power-cycle it. The image is written and verified either way.")
+    else:
+        print("  adapter pulse emitted; target reset is not electrically verified.")
+        print("  GPIO7 must be wired to target RESET, or power-cycle the target now.")
     return 0
 
 

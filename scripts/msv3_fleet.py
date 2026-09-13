@@ -10,8 +10,9 @@ to the wrong probe:
    MSV3_Moisture_BLE_Sleep.ino. Two stale packages sitting in the build directories on 2026-09-04
    both contained `MSV3-MOISTURE-004` while the committed source said 005 -- an ordinary leftover
    from a reverted local edit, and nothing would have stopped either being flashed.
-3. **Which device type the target bootloader accepts.** Probe 5 is still on the stock Adafruit
-   bootloader (`0x0052`); probe 4 and the bench board run MSV3's own (`0x3356`).
+3. **Which device type the target bootloader accepts.** Probe 4 still runs MSV3 1.0.1; probes 5-8
+   run MSV3 1.0.3. All accept MSV3's `0x3356`, while a raw/stock Adafruit bootloader accepts
+   `0x0052` only until its one-time SWD provisioning.
 
 `MSV3/fleet.json` records all three, and this module is the single reader for it.
 
@@ -28,6 +29,7 @@ import hashlib
 import json
 import re
 import struct
+import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +58,15 @@ IDENTITY_RE = re.compile(rb"MSV3-MOISTURE-(\d{3})\x00")
 # The bootloader stores no application version (dfu_init.c never implements the version check), so
 # after an interrupted update this literal is the only way to tell what actually came back.
 BUILD_ID_RE = re.compile(rb"MSV3-BUILD:([0-9A-Za-z._-]{1,48})\x00")
+# Guard 2's boot counter lives at 0x2003FFF8 and only survives a reset if the BOOTLOADER also
+# excludes those bytes from its stack -- true only from MSV3 bootloader 1.0.3. The application
+# stamps this marker so a host can check the pairing before a transfer; see the long comment
+# beside MSV3_GUARD2_MARKER in MSV3_Moisture_BLE_Sleep.ino. THREE states, not two:
+#   b"1"  -> guard enabled, requires bootloader >= 1.0.3
+#   b"0"  -> guard disabled, cannot hit the incompatibility
+#   None  -> unmarked; every package built before 2026-09-09, including the archived rescue
+#            images for probes 5/6/7/8, so absence must never by itself mean refusal.
+GUARD2_RE = re.compile(rb"MSV3-GUARD2:([01])\x00")
 
 ADDRESS_RE = re.compile(r"^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$")
 
@@ -125,7 +136,47 @@ class Probe:
     # only place a rollback can be noticed at all, and it is host-side and therefore defeatable:
     # it catches the accident, not an attacker. 0 means "not recorded", which disables the check.
     installed_application_version: int = 0
+    # MUTABLE PHYSICAL STATE: are this probe's SWD/USB pads reachable right now? Conformal
+    # coating makes it false, and it must be set false the moment a probe is coated. Defaults
+    # to False so a probe added without the field is treated as unreachable -- the safe
+    # direction, since the only thing gated on it is permission to build an image that
+    # deliberately never advertises.
+    swd_accessible: bool = False
+    # DURABLE FACT, deliberately separate from the above: this hardware has demonstrated the
+    # Guard-2 watchdog-loop -> BLE DFU escape. Nothing gates on it; having passed the test once
+    # says nothing about whether the probe can be rescued today.
+    guard2_validated: bool = False
     notes: str = ""
+
+    @property
+    def bootloader_release(self) -> tuple[int, ...] | None:
+        """The MSV3 bootloader release as a comparable tuple, or None if it is not an MSV3 one.
+
+        Parsed structurally rather than compared as a string: "msv3-1.0.10" sorts BEFORE
+        "msv3-1.0.3" lexically, which is exactly the kind of quiet wrong answer a safety gate
+        must not produce. A stock Adafruit loader returns None, which callers must treat as
+        "does not have any MSV3 guarantee", never as "new enough".
+        """
+        prefix = "msv3-"
+        if not self.bootloader.startswith(prefix):
+            return None
+        try:
+            return tuple(int(part) for part in self.bootloader[len(prefix):].split("."))
+        except ValueError:
+            return None
+
+    @property
+    def reserves_boot_guard_ram(self) -> bool:
+        """Does this probe's bootloader keep its stack out of the 0x2003FFF8 retained record?
+
+        Measured from vector[0] of each shipped release hex on 2026-09-09:
+        1.0.1 -> MSP 0x20040000, 1.0.2 -> MSP 0x20040000, 1.0.3 -> MSP 0x2003FFF8. So only
+        1.0.3 and later leave the eight bytes alone; on anything older the bootloader's own
+        stack is the first thing to descend into them, and a guard-enabled application would
+        count boots that always read back as zero.
+        """
+        release = self.bootloader_release
+        return release is not None and release >= (1, 0, 3)
 
     @property
     def bootloader_addresses(self) -> list[str]:
@@ -207,6 +258,8 @@ def load_fleet(path: Path | None = None) -> Fleet:
             legacy_package_sha256=tuple(
                 h.lower() for h in entry.get("legacy_package_sha256", [])),
             installed_application_version=int(entry.get("installed_application_version", 0)),
+            swd_accessible=bool(entry.get("swd_accessible", False)),
+            guard2_validated=bool(entry.get("guard2_validated", False)),
             notes=entry.get("notes", ""),
         ))
     return Fleet(probes, source)
@@ -306,6 +359,9 @@ class Package:
     dfu_version: float
     signed: bool
     build_id: str = ""
+    # Tri-state, see GUARD2_RE: True = guard 2 compiled in, False = compiled out, None = the
+    # image predates the marker and cannot say.
+    boot_guard: bool | None = None
 
     def describe(self) -> str:
         signature = "signed" if self.signed else "UNSIGNED"
@@ -357,6 +413,25 @@ def read_package(path: Path) -> Package:
         raise FleetError(f"{path.name}: image contains several build ids ({found})")
     build_id = builds[0].decode() if builds else ""
 
+    # Fail closed on anything but exactly one well-formed marker. Deliberately NOT de-duplicated
+    # first: the sketch emits precisely one, so two -- even two identical ones -- means the image
+    # is not the shape this gate assumes, and a safety check must not paper over that.
+    guards = GUARD2_RE.findall(image)
+    if len(guards) > 1:
+        found = ", ".join(sorted(g.decode() for g in guards))
+        raise FleetError(
+            f"{path.name}: image contains {len(guards)} MSV3-GUARD2 markers ({found}); exactly "
+            f"one is expected. Refusing -- the boot-guard/bootloader RAM pairing cannot be "
+            f"checked against an image that does not state one configuration.")
+    # A marker the regex could not parse (a value other than 0/1, or a missing NUL terminator)
+    # would otherwise fall through as "unmarked", turning a corrupt or unexpected image into the
+    # most permissive answer. Detect the bare prefix and refuse instead.
+    if not guards and b"MSV3-GUARD2" in image:
+        raise FleetError(
+            f"{path.name}: image contains a malformed MSV3-GUARD2 marker. Refusing rather than "
+            f"treating an unparseable marker as an absent one.")
+    boot_guard = (guards[0] == b"1") if guards else None
+
     return Package(
         path=path,
         sensor_id=sensor_id,
@@ -368,6 +443,7 @@ def read_package(path: Path) -> Package:
         dfu_version=dfu_version,
         signed=(dfu_version == 0.8),
         build_id=build_id,
+        boot_guard=boot_guard,
     )
 
 
@@ -488,3 +564,124 @@ def verify_package_integrity(path: Path, expected_device_type: int, public_key: 
             raise FleetError(f"{path.name}: CRC16 mismatch")
     else:
         raise FleetError(f"{path.name}: unsupported DFU version {dfu_version}")
+
+
+# ------------------------------------------------------------- safety gates ----
+
+def check_boot_guard_pairing(probe: Probe, boot_guard: bool | None,
+                             image_sha256: str = "") -> str | None:
+    """Refusal text if this guard configuration is unsafe on this probe, else None.
+
+    Guard 2's counter is an eight-byte record at 0x2003FFF8 shared between the application and
+    the bootloader. Measured from vector[0] of each release hex: bootloader 1.0.1 and 1.0.2 boot
+    with MSP = 0x20040000, so that record is the first memory their stacks descend into; 1.0.3
+    boots with MSP = 0x2003FFF8 and leaves it alone. A guard-enabled application on an older
+    bootloader therefore counts boots that always read back as zero -- a guard that looks armed
+    and can never fire, which is exactly the GPREGRET2 failure the retained-RAM scheme replaced.
+
+    THE UNMARKED CASE, and why it is not simply allowed. Every package built before 2026-09-09
+    lacks the marker, so absence cannot mean "guard on". But it cannot mean "guard off" either:
+    a signature proves the bytes are authorised, not that the guard was compiled out. Guard 2
+    existed for two days before the marker did, so unmarked-but-guard-enabled images genuinely
+    exist. On a bootloader that already reserves the record the distinction cannot hurt anything,
+    so unmarked is allowed there. On an older bootloader it CAN hurt, so it needs the same
+    hash-pinned, reviewable exception the identity contract uses -- an edit to
+    legacy_package_sha256 in MSV3/fleet.json, not a command-line flag anybody can reach for.
+
+    Verified 2026-09-09 that this costs the coating work nothing: the rescue packages actually
+    installed on probes 5/6/7/8 (v65555/65556/65556/65557) are all unmarked AND all target
+    bootloader 1.0.3, so every one of them still passes.
+    """
+    if boot_guard is True:
+        if probe.reserves_boot_guard_ram:
+            return None
+        return (
+            f"probe {probe.sensor_id} runs bootloader {probe.bootloader}, which does not reserve "
+            f"the boot-guard retained record at 0x2003FFF8 (its stack starts at 0x20040000 and "
+            f"descends straight through it). This image has Guard 2 compiled in, so on this probe "
+            f"the boot counter would always read back as zero: the guard would look armed and "
+            f"could never escape into DFU. Install bootloader 1.0.3 or later over SWD first, or "
+            f"build this image without -BootGuard. See MSV3/bootloader/README.md.")
+
+    if boot_guard is False:
+        return None
+
+    # Unmarked from here on.
+    if probe.reserves_boot_guard_ram:
+        return None
+    if image_sha256 and image_sha256.lower() in probe.legacy_package_sha256:
+        return None
+    return (
+        f"probe {probe.sensor_id} runs bootloader {probe.bootloader}, which does not reserve the "
+        f"boot-guard retained record at 0x2003FFF8, and this image carries no MSV3-GUARD2 marker "
+        f"so nothing here can prove Guard 2 is compiled out of it.\n"
+        f"  Guard 2 predates the marker by two days, so an unmarked image genuinely may have it "
+        f"enabled -- in which case its boot counter on this probe would always read back as zero.\n"
+        f"  If this exact image is known to be guard-free, record its image SHA-256 "
+        f"{image_sha256 or '<unknown>'} in \"legacy_package_sha256\" for probe {probe.sensor_id}. "
+        f"That is a reviewable registry edit rather than a flag, deliberately.")
+
+
+def check_hang_test_target(probe: Probe) -> str | None:
+    """Refusal text if a deliberately-hanging image must not be built for this probe.
+
+    A -HangTest image boots, passes every integrity check, and then never opens a radio window.
+    On a probe whose pads are reachable that is a controlled experiment; on a coated probe it is
+    a brick with no way back, because the only recovery channel is the radio it never opens.
+
+    Gated on swd_accessible, which is MUTABLE state, not on guard2_validated, which is history.
+    Probe 8 passing this test as probe 99 says nothing about whether it can be rescued today.
+    """
+    if not probe.swd_accessible:
+        return (
+            f"probe {probe.sensor_id} is not marked swd_accessible in MSV3/fleet.json. A "
+            f"-HangTest image deliberately never advertises, so the only way back is the SWD/USB "
+            f"pads. If this probe really is on the bench with a debugger attached, set "
+            f"\"swd_accessible\": true for it -- and set it false again the moment it is coated.")
+    return None
+
+
+def _cli(argv: list[str]) -> int:
+    """Tiny gate CLI so PowerShell build wrappers do not have to parse fleet.json themselves.
+
+    This module is the single reader of MSV3/fleet.json (see the module docstring). A second
+    parser in PowerShell would be a second place for the registry's meaning to drift, which is
+    the class of bug this whole file exists to prevent -- so the wrapper shells out to here.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="msv3_fleet", description=__doc__.split("\n")[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    gate = sub.add_parser("gate", help="check whether a dangerous build mode is safe for a probe")
+    gate.add_argument("--sensor-id", type=int, required=True)
+    gate.add_argument("--boot-guard", action="store_true",
+                      help="the image will have Guard 2 compiled in")
+    gate.add_argument("--hang-test", action="store_true",
+                      help="the image will deliberately hang before advertising")
+    args = parser.parse_args(argv)
+
+    try:
+        probe = load_fleet().by_sensor_id(args.sensor_id)
+    except FleetError as error:
+        print(f"REFUSED: {error}", file=sys.stderr)
+        return 2
+
+    refusals = []
+    if args.hang_test:
+        refusals.append(check_hang_test_target(probe))
+    if args.boot_guard:
+        refusals.append(check_boot_guard_pairing(probe, True))
+    refusals = [r for r in refusals if r]
+
+    if refusals:
+        for refusal in refusals:
+            print(f"REFUSED: {refusal}", file=sys.stderr)
+        return 1
+
+    print(f"OK: probe {probe.sensor_id} ({probe.name}) bootloader={probe.bootloader} "
+          f"swd_accessible={probe.swd_accessible}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_cli(sys.argv[1:]))
