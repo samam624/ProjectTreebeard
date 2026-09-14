@@ -1285,6 +1285,19 @@ next session, none chosen:
 
 ## Suggested Next Work
 
+**⚠ OPEN HARDWARE TASK — 2026-09-14: probe 7's VBAT_OV resistor swap is NOT done.**
+Every other field probe got `R11` 5.62MΩ→4.42MΩ and `R14` 4.42MΩ→4.12MΩ today (harvester charge
+ceiling ≈4.26V → ≈3.90V). **`MSV3-MOISTURE-007` was skipped** — it was the board on the bench for
+the TMUX fault — so it is still on the original divider and still charging to ≈4.26V. It measured
+**4513–4529 mV** steady across 13 BLE advertisements over ~10 minutes, above the 4.20V cell spec.
+Do two things when it is next in hand:
+1. Meter the cell directly. It has been sitting over-voltage; confirm before trusting it.
+2. Swap `R11`→4.42MΩ (C332857) and `R14`→4.12MΩ (C367866). **Larger value in `R11`** — markings
+   `4424` vs `4124`, one character apart; reversed gives 3.623V instead of 3.897V.
+
+Full derivation, rejected alternatives, and the follow-up `BATTERY_CURVE` rescale:
+`MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`.
+
 Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
 not by completion):
 
@@ -1826,3 +1839,31 @@ reseating, retested clean (11.37% step, matching the other three boards).
   (flagged in `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open item 7); a future PCB revision could drop
   to a simpler/cheaper mux now that EC-check no longer demands the full 4-destination-per-electrode
   shape.
+
+
+## 2026-09-14: BQ25504 VBAT_OV lowered to a ~3.90V storage ceiling (hardware change, probes reworked)
+
+Probes were reading **4.27V** on the battery node — above the 4.20V LiPo spec — because the
+as-built BQ25504 OV divider programmed VBAT_OV to ≈4.26V. Swapped `R11` 5.62MΩ→4.42MΩ and `R14`
+4.42MΩ→4.12MΩ, moving the harvester charge ceiling to **≈3.90V** (3.887V at VBIAS 1.25V typ;
+≈3.897V using the 1.2532V backed out of the board's own 4.27V reading). Divider sum 10.04MΩ→8.54MΩ,
+still inside TI's ≤10MΩ rule. Both values were already in stock and already on the board elsewhere
+(`R9`=4.42MΩ, `R15`=4.12MΩ) — no new part number.
+
+Full record, including the stock enumeration behind the choice and why >10MΩ pairs and a stacked
+10MΩ‖10MΩ bodge for 4.00V were rejected:
+`MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`. Threshold tables updated in
+`MSV3/hardware/MSV3_Probe_PCB/reference/COMPONENT_INDEX.md` and
+`MSV3/docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md`.
+
+**Unchanged:** VBAT_UV (`R12`/`R15`, ≈3.04V), MPP/VOC (`R9`/`R10`/`R13`, ≈78%), and the BQ25170 USB
+path (`R8`=27kΩ → 4.20V). USB charging still reaches 4.20V, which is in-spec; it was the harvester
+that was over-spec.
+
+**Two open follow-ups:**
+- **Probe 7 not swapped** — see the flagged item at the top of "Suggested Next Work".
+- **`BATTERY_CURVE` not rescaled.** It maps 4200 mV → 100%, so on a reworked probe a *full* pack now
+  reports **63%** and floats ~58–63%. Harmless (above the dashboard's <20% low-battery flag) but
+  misleading. Needs rescaling in both deliberately byte-identical copies:
+  `DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` and
+  `MobileAppPage.h`.

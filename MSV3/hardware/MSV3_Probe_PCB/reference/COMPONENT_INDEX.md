@@ -176,10 +176,21 @@ disable threshold nearby — easy to grab the wrong constant from this datasheet
 
 | Threshold | Formula | Resistors (this board) | Value |
 |---|---|---|---|
-| VBAT_OV | 1.5·VBIAS·(1+R11/R14) | R11=5.62MΩ (VRDIV-side, "R_OV2" in TI's convention), R14=4.42MΩ (GND-side, "R_OV1") | ≈4.26V |
+| VBAT_OV **(reworked 2026-09-14)** | 1.5·VBIAS·(1+R11/R14) | R11=4.42MΩ (VRDIV-side, "R_OV2" in TI's convention), R14=4.12MΩ (GND-side, "R_OV1") | **≈3.90V** |
+| VBAT_OV *(as-built 2026-08-21 — superseded, see below)* | same | R11=5.62MΩ, R14=4.42MΩ | ≈4.26V |
 | VBAT_UV | VBIAS·(1+R12/R15) | R12=5.90MΩ (VRDIV-side), R15=4.12MΩ (GND-side) | ≈3.04V |
 | MPP/VOC ratio | (R10+R13)/(R9+R10+R13) | R9=4.42MΩ top, R10=10MΩ+R13=5.6MΩ bottom | ≈78% |
 | VBAT_OK | — | pin 11 floating, OK_HYST/OK_PROG tied GND | disabled on this board |
+
+**VBAT_OV rework, 2026-09-14 — see `MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` for the
+full derivation.** Field probes were reading **4.27V**, above the 4.20V LiPo cell spec, because the
+as-built divider put VBAT_OV at ≈4.26V. `R11` 5.62MΩ→4.42MΩ and `R14` 4.42MΩ→4.12MΩ moves the
+charge ceiling to **≈3.90V** (3.887V at VBIAS 1.25V typ; ≈3.897V using the 1.2532V backed out of
+this board's own 4.27V measurement). Divider sum drops 10.04MΩ→8.54MΩ, still inside TI's ≤10MΩ
+recommendation. Both replacement values were already in stock and already used elsewhere on this
+board (`R9`=4.42MΩ, `R15`=4.12MΩ), so no new part number. **`R12`/`R15` (VBAT_UV) and `R9`/`R10`/
+`R13` (MPPT) are unchanged**, as is the BQ25170 USB path (`R8`=27kΩ → 4.20V) — this rework only
+moves the *harvester* ceiling.
 
 Note the top/bottom resistor naming: TI's schematic figures consistently put the *larger* resistor
 on the VRDIV side and the *smaller* one on the GND side for both the OV and UV dividers — verify
