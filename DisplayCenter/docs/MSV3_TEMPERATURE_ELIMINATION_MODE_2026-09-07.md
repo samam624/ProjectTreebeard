@@ -1,5 +1,10 @@
 # MSV3 receiver-side temperature elimination mode (2026-09-07)
 
+> **Legacy scale-2 reference only (superseded 2026-09-14).** Capless scale-3 probes have C17
+> removed, never acquire a bare-tank value, and force this learned compensation channel off. Raw
+> connected counts and board temperature remain available for a future soil/interface model. See
+> `MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
+
 The first implementation lives in DisplayCenter, not in the MSV3 probe. An MSV3 continues to
 advertise the original connected FDC count, board (die) temperature, bare-tank FDC count, and tank
 phase. DisplayCenter calculates and stores a separate derived signal, so the raw observation is

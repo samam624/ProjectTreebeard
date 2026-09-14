@@ -186,15 +186,23 @@ bool fdcReadReg(uint8_t reg, uint16_t &val) {
 // 2026-08-30: ported the same three review-driven fixes as the production sketch
 // (MSV3_Moisture_BLE_Sleep.ino), so wakeprofile here actually profiles the config that ships,
 // not the old one. See that file's header comment for the full datasheet backing.
+#ifndef MSV3_FDC_IDRIVE_CODE
+#define MSV3_FDC_IDRIVE_CODE 16
+#endif
+static_assert(MSV3_FDC_IDRIVE_CODE >= 0 && MSV3_FDC_IDRIVE_CODE <= 31,
+              "MSV3_FDC_IDRIVE_CODE must be 0..31");
+
 bool fdcInit() {
   bool ok = true;
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0: was 0x0400 (~14 ENOB); 0xFFFF ~24.2ms, near-max resolution
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0: tS0 = 100*16/fREF0 (~37us) -- default 0 is too short, causes amplitude warnings
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01 (divide-by-1, 0.01-8.75MHz range), FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=11001b (code 25, 0.644mA) -- bench-tuned
-                                    // 2026-09-03 against a scope (was 0x8000 / code 25's predecessor code 16,
-                                    // ~0.169mA, which ran at ~0.5Vpk dry: a THIRD of the 1.2Vpk VSENSORMIN).
-                                    // Code 25 measures 1.9Vpk dry / 1.3Vpk under heavy load. Changing this
+  ok &= fdcWriteReg(0x1E, (uint16_t)MSV3_FDC_IDRIVE_CODE << 11);  // DRIVE_CURRENT_CH0
+                                    // Legacy C17 tuning chose code 25: code 16 measured ~0.5Vpk dry,
+                                    // while code 25 measured 1.9Vpk dry / 1.3Vpk under heavy load.
+                                    // After C17 removal, Probe 8 was stable at code 16 both dry and
+                                    // under two-hand load, so capless production returns to code 16.
+                                    // Changing this
                                     // shifts DATA_CH0 by ~0.2%; see MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4.
   // MUX_CONFIG (0x1B) left at its power-on-reset default (0x020F): AUTOSCAN_EN=0
   // (single-channel CH0 mode, correct for this board -- only CH0 is wired to
@@ -954,11 +962,11 @@ const float IDRIVE_MA[32] = {
   0.555, 0.644, 0.747, 0.867, 1.006, 1.167, 1.354, 1.571
 };
 
-// Kept in sync with fdcInit()'s DRIVE_CURRENT_CH0 starting value (0xC800 ->
-// code 25 since the 2026-09-03 bench tuning) so `idrive` reports the true
-// setting even before it's ever been called. fdcInit() rewrites 0x1E, so any
-// hand-set `idrive` is lost across a re-init -- re-issue it after fdcinit.
-uint8_t g_idriveCode = 25;
+// Kept in sync with fdcInit()'s build-selected DRIVE_CURRENT_CH0 starting value so `idrive`
+// reports the true setting even before it is called. Capless production defaults to code 16;
+// a targeted experiment can still override it through the guarded build wrapper. fdcInit()
+// rewrites 0x1E, so any hand-set `idrive` is lost across a re-init.
+uint8_t g_idriveCode = MSV3_FDC_IDRIVE_CODE;
 
 void doIdrive(int code) {
   if (code < 0 || code > 31) {

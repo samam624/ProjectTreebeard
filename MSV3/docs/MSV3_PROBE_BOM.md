@@ -38,10 +38,11 @@ sub-cent-to-a-few-cents parts regardless, so they don't move the total meaningfu
 | S2B-PH-K-S(LF)(SN) | JST | 2-position battery/probe connector | THT right-angle | 20 | **$0.0393** | |
 | HL-PSC-2012H203BC | Honglitronic | Status LED (blue) | 0805 | 20 | **$0.0245** | |
 
-**Padding capacitor (220-270pF C0G/NP0, needed to bring the FDC2214 tank to TI's recommended
-300pF-2nF window) is not in this order** — flagged in the CSV itself as unresolved. Matches
-`MOISTURE_SENSOR_FDC2212_FRONTEND.md`'s open item 1 (real capacitance measurement still needed
-to size it correctly). Still open.
+**C17 is DNP in production as of 2026-09-14.** Do not order or fit the former 270 pF C0G/NP0
+padding capacitor. Probe 8 established a stable approximately 88 pF connected tank at IDRIVE 16
+and about four times the former raw-count response after removal. The disconnected tank then
+exceeds the FDC2214 frequency range, so production firmware prohibits bare-tank mux codes 2/3.
+See `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md` for measurements and rollout requirements.
 
 ## Bulk passives (resistors/caps for biasing, filtering, dividers)
 

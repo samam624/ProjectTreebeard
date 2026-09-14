@@ -1,6 +1,32 @@
 # MSV2 Status Handoff
 
-Date: 2026-09-01 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-09-14 MSV3 capless production / no bare-tank measurement
+
+- **Decision:** C17 is DNP and must be removed from every healthy MSV3 during rollout. Production
+  firmware measures only connected electrode phases (mux 0/1), never selects disconnected mux 2/3,
+  leaves legacy bare bytes 19-22 zero/invalid, and advertises flag bit 6 as the capless identity.
+- **Probe 8 evidence:** removing C17 moved the connected dry count from about 20.49M to 39.41M.
+  Two-hand contact moved it from about 39M to 27M, roughly four times the former raw response.
+  Both phases were stable at IDRIVE 16 with `STATUS=0x8` and no amplitude fault. A deliberate bare
+  test returned exact over-range `0x0FFFFFFF` plus `ERR_WD`, consistent with the calculated 11-12
+  MHz capacitor-free disconnected tank exceeding the FDC2214 limit.
+- **Why the trade is accepted:** the real-pot result showed bare normalization removed only 11.7%
+  of the final day's daily harmonic. The dominant bulk-soil-temperature and probe/soil-interface
+  terms are not observed by the disconnected board tank; the measured approximately 4x useful
+  response is worth retiring that small correction.
+- **Receiver contract:** capless flag bit 6 selects moisture scale 3, a wider raw-count plausibility
+  range, and a separate cloud calibration epoch. Bare/reference temperature compensation is forced
+  off for scale 3; raw connected counts and die temperature remain available for a future physical
+  soil/interface model. Legacy C17/scale-2 packets still parse during rollout.
+- **Prepared, not deployed:** signed application v65564 packages are archived for healthy Probes
+  4, 5, 6, and 8. Probe 7 is excluded because its independent TMUX fault still requires the fixed-
+  phase bypass repair. DisplayCenter has only been compile-verified because COM3 is occupied by the
+  v1.2 overnight test. Probe 8 remains on signed diagnostic v65563; do not install v65564 until the
+  capless-aware receiver is actually running.
+- Full measurements, hashes, invariants, and receiver-first rollout order:
+  `MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
 
 ## 2026-09-01 DisplayCenter learned percentages, periodic freeze, and cloud reliability
 
@@ -1895,11 +1921,11 @@ with.
 dry ~50-60pF (matches original ~64-96pF bare-sensor RC estimate), fully wet ~500pF, moist soil
 ~400-500pF, "dried after wet" plateaus ~360pF (residual moisture, not a fault). Both
 `MSV3_PROBE_BOM.md` and `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open items 1 and 7 updated with this
-and the `R17` finding. **Padding cap (`C17`) must stay** — without it, bare dry capacitance
-(~50-60pF) sits 5-6x below TI's 300pF floor for this LC-tank architecture, outside the
-characterized operating range. Good news buried in the miss: the full measured range still fits
-comfortably inside FDC2214's 300pF-2nF window with padding, so this is more real signal for free,
-not a rework trigger.
+and the `R17` finding. **Superseded 2026-09-14:** the earlier conclusion that padding cap C17 had to
+stay relied on treating 300 pF as a hard device floor. Probe 8 subsequently proved the connected
+approximately 88 pF capless tank stable at IDRIVE 16 and measured about four times the prior raw
+response. C17 is now DNP; the resulting disconnected bare tank is over frequency and production
+must never select it. See `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
 
 **Four-board mux/tank triage, same day** (full detail, per-board data, and pass/fail methodology:
 `MSV3_FOUR_BOARD_MUX_TRIAGE_2026-08-31.md`): built to answer "does the mux still switch, and is

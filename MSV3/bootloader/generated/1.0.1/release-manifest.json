@@ -1,8 +1,14 @@
 {
     "release": "1.0.1",
-    "application_version": 65560,
+    "application_version": 65564,
     "device_type": "0x3356",
     "softdevice_requirement": "0x00B6 (S140 6.1.1)",
+    "application_configuration": {
+        "fdc_settle_count": 100,
+        "wake_discard_conversions": 2,
+        "fdc_idrive_code": 16,
+        "fdc_deglitch_mhz": 10
+    },
     "bootloader": {
         "upstream": "Adafruit_nRF52_Bootloader 0.11.0",
         "dual_bank": false,
@@ -65,6 +71,16 @@
             "name": "msv3-1.0.1-sensor004-v65560-signed-ota.zip",
             "sha256": "932d998d98fc413a05c59fe10444607fb7ff076eb38922543b7ab8c198208586",
             "bytes": 133904
+        },
+        {
+            "name": "msv3-1.0.1-sensor004-v65564-initial-install-from-stock.zip",
+            "sha256": "781144f38bb0ee01537e934f4ae8e19024a395e7e21ff329928846b697a3ab46",
+            "bytes": 323633
+        },
+        {
+            "name": "msv3-1.0.1-sensor004-v65564-signed-ota.zip",
+            "sha256": "466b6a11ae1995963e7c8058de5aec1fc67dedcaea23a91ebdbfd983e809853c",
+            "bytes": 133344
         }
     ]
 }

@@ -56,8 +56,18 @@ function Resolve-ProjectPath {
 
 function Invoke-ReceiverRegressionChecks {
   $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if ($null -eq $NodeCommand) {
-    throw "node is required to run DisplayCenter receiver regression checks before compile/upload"
+  $UseBundledElectronNode = $false
+  if ($null -ne $NodeCommand) {
+    $NodeExecutable = $NodeCommand.Source
+  } else {
+    # Arduino IDE 2 is Electron-based and includes a full Node runtime. A clean Windows bench
+    # machine may have the IDE/toolchain but no separate node.exe on PATH; use the runtime already
+    # installed with the IDE instead of weakening or skipping the pre-flash regression gate.
+    $NodeExecutable = Join-Path ([Environment]::GetFolderPath("ProgramFiles")) "Arduino IDE\Arduino IDE.exe"
+    if (!(Test-Path -LiteralPath $NodeExecutable)) {
+      throw "node (or Arduino IDE's bundled Electron/Node runtime) is required to run DisplayCenter receiver regression checks before compile/upload"
+    }
+    $UseBundledElectronNode = $true
   }
 
   # Keep every dependency-free firmware contract in the compile/upload gate. Running only
@@ -69,19 +79,30 @@ function Invoke-ReceiverRegressionChecks {
     "verify_moisture_alert_thresholds.mjs",
     "verify_receiver_moisture_filter.mjs",
     "verify_battery_curve_sync.mjs",
+    "verify_msv3_capless_policy.mjs",
     "verify_msv3_reference_compensation.mjs",
     "verify_msv3_temperature_compensation.mjs"
   )
 
-  foreach ($RegressionName in $RegressionScripts) {
-    $RegressionScript = Join-Path $ScriptDir $RegressionName
-    if (!(Test-Path -LiteralPath $RegressionScript)) {
-      throw "Receiver regression check not found at '$RegressionScript'"
-    }
+  $PreviousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  try {
+    if ($UseBundledElectronNode) { $env:ELECTRON_RUN_AS_NODE = "1" }
+    foreach ($RegressionName in $RegressionScripts) {
+      $RegressionScript = Join-Path $ScriptDir $RegressionName
+      if (!(Test-Path -LiteralPath $RegressionScript)) {
+        throw "Receiver regression check not found at '$RegressionScript'"
+      }
 
-    & $NodeCommand.Source $RegressionScript
-    if ($LASTEXITCODE -ne 0) {
-      throw "Receiver regression check '$RegressionName' failed; refusing to compile or flash"
+      & $NodeExecutable $RegressionScript
+      if ($LASTEXITCODE -ne 0) {
+        throw "Receiver regression check '$RegressionName' failed; refusing to compile or flash"
+      }
+    }
+  } finally {
+    if ($null -eq $PreviousElectronRunAsNode) {
+      Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+    } else {
+      $env:ELECTRON_RUN_AS_NODE = $PreviousElectronRunAsNode
     }
   }
 }

@@ -1,8 +1,14 @@
 {
     "release": "1.0.3",
-    "application_version": 65562,
+    "application_version": 65564,
     "device_type": "0x3356",
     "softdevice_requirement": "0x00B6 (S140 6.1.1)",
+    "application_configuration": {
+        "fdc_settle_count": 100,
+        "wake_discard_conversions": 2,
+        "fdc_idrive_code": 16,
+        "fdc_deglitch_mhz": 10
+    },
     "bootloader": {
         "upstream": "Adafruit_nRF52_Bootloader 0.11.0",
         "dual_bank": false,
@@ -93,6 +99,36 @@
             "name": "msv3-1.0.3-sensor006-v65562-signed-ota.zip",
             "sha256": "01c37c3775dc3d12268981477bb95739f8704ffba6a24c89bacb09ca7a3aaaed",
             "bytes": 134320
+        },
+        {
+            "name": "msv3-1.0.3-sensor008-v65564-initial-install-from-stock.zip",
+            "sha256": "48c59d87c401b1e60d5cbb9cad6817a7dab65855185988bb67c149ad39b5ab57",
+            "bytes": 324065
+        },
+        {
+            "name": "msv3-1.0.3-sensor008-v65564-signed-ota.zip",
+            "sha256": "ed2ef2ddd35576038ce1ca1144f7a361ad1f4ece23a2ee1cfebfe6b0d6f7e9dc",
+            "bytes": 133776
+        },
+        {
+            "name": "msv3-1.0.3-sensor005-v65564-initial-install-from-stock.zip",
+            "sha256": "80fea98d4ae6f4d0b4d327bdfa25f84ece3ca1546928f33e4b7504efa2142150",
+            "bytes": 324065
+        },
+        {
+            "name": "msv3-1.0.3-sensor005-v65564-signed-ota.zip",
+            "sha256": "9c31e04e058454bdd9ada5ad297a14934b9e216f62f77b1bceb06679fe77ab81",
+            "bytes": 133776
+        },
+        {
+            "name": "msv3-1.0.3-sensor006-v65564-initial-install-from-stock.zip",
+            "sha256": "81772f04de2af005b497b974aca944eab42a04350eaf7a1b107ca4614ee9bcc2",
+            "bytes": 324065
+        },
+        {
+            "name": "msv3-1.0.3-sensor006-v65564-signed-ota.zip",
+            "sha256": "daf2c13aeda69c2687c9eead3815182af3122837ce67402f5483bdb8fc802893",
+            "bytes": 133776
         }
     ]
 }

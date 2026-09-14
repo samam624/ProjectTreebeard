@@ -49,6 +49,7 @@ type PlantReading = {
     // for where these originate.
     boardTempQuarterC?: number;
     bareTankFdcCounts?: number;
+    caplessTank?: boolean;
     tankPhase?: number;
   };
   batteryPercent?: number;

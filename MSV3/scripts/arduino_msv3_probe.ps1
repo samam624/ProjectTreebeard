@@ -22,6 +22,8 @@ param(
   # Reproducible FDC settling-test parameters. Defaults are the committed production values.
   [ValidateRange(1, 65535)]
   [int]$FdcSettleCount = 100,
+  [ValidateRange(0, 31)]
+  [int]$FdcIdriveCode = 16,
   [ValidateRange(0, 255)]
   [int]$WakeDiscardConversions = 2,
   [ValidateSet(10, 33)]
@@ -409,6 +411,7 @@ if ($BuildTag) { $defines += "-DMSV3_BUILD_TAG=$BuildTag" }
 if ($SensorId -ge 0) {
   $fdcMuxConfig = if ($FdcDeglitchMhz -eq 10) { "0x020D" } else { "0x020F" }
   $defines += "-DMSV3_FDC_SETTLECOUNT_CH0=$FdcSettleCount"
+  $defines += "-DMSV3_FDC_IDRIVE_CODE=$FdcIdriveCode"
   $defines += "-DMSV3_WAKE_DISCARD_CONVERSIONS=$WakeDiscardConversions"
   $defines += "-DMSV3_FDC_MUX_CONFIG=$fdcMuxConfig"
 }
@@ -481,7 +484,7 @@ if ($SensorId -ge 0) {
   $logNote = if ($SerialLogs) { "SERIAL LOGS ON (bench build)" } else { "serial logs off (fleet build)" }
   $guardNote = if ($BootGuard) { "boot guard ON" } else { "boot guard off" }
   Write-Host "MSV3 build parameters: sensor $SensorId, $tagNote, $logNote, $guardNote"
-  Write-Host "  FDC: SETTLECOUNT=$FdcSettleCount, discarded conversions=$WakeDiscardConversions, deglitch=${FdcDeglitchMhz}MHz"
+  Write-Host "  FDC: IDRIVE=$FdcIdriveCode, SETTLECOUNT=$FdcSettleCount, discarded conversions=$WakeDiscardConversions, deglitch=${FdcDeglitchMhz}MHz"
 }
 
 $compileArgs = @(

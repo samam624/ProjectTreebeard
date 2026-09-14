@@ -1,5 +1,10 @@
 # MSV3 probe 4 real-pot thermal compensation -- first causal result
 
+> **Historical scale-2 analysis (superseded 2026-09-14).** Its final-day result showed bare-tank
+> normalization removed only 11.7% of the daily harmonic. That evidence now supports removing C17
+> and prohibiting production bare-tank measurements; see
+> [MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md](MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md).
+
 **Date:** 2026-09-07  
 **Status:** Offline proof of feasibility from real-pot data. Not deployed to DisplayCenter moisture,
 alerts, or calibration.

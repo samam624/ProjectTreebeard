@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-09 msv3-temp-comp-v2"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-14 msv3-capless-scale3"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -326,7 +326,9 @@ const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
 // 2026-08-25: MSV3_Moisture_BLE_Sleep.ino's software-only board-temperature/bare-tank-reference
 // addition widens the wide packet again, 17 -> 23 bytes (byte 16 gains phase/validity flag bits,
 // bytes 17-18 are signed board temp in quarter-degrees C, bytes 19-22 are the bare-tank FDC
-// count) - see that file's own wire-format comment above startAdv() for the exact layout. A
+// count). The 2026-09-14 capless policy keeps that length, zeros/invalidates the retired bare
+// field, and uses flag bit6 to select the capless scale. See the probe firmware's wire-format
+// comment above startAdv() for the exact layout. A
 // packet is wideRaw at length>=17 same as before (first 17 bytes are unchanged, so an older
 // receiver parses those fields identically); it additionally carries these diagnostics only at
 // length>=23. Named "diagnostic" rather than folded into wideRaw's own meaning because a shorter
@@ -334,11 +336,14 @@ const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
 // diagnostics, not be misparsed or rejected.
 const size_t MSV3_DIAGNOSTIC_PACKET_LEN = 23;
 // Version the receiver-derived numeric scale written to history. Scale 1 covers the
-// existing legacy/MSV2 mappings. Scale 2 is MSV3's 100-FDC-count high-resolution window
-// introduced below. The cloud uses a version change to start a fresh calibration epoch
-// without deleting older measurements or mixing incompatible numeric ranges.
+// existing legacy/MSV2 mappings. Scale 2 is MSV3 with the original 270pF C17 tank capacitor.
+// Scale 3 is the 2026-09-14 capless/no-bare-reference MSV3 policy. The probe marks scale 3 with
+// flag bit6, allowing old and reworked probes to coexist during rollout. The cloud uses a version
+// change to start a fresh calibration epoch without deleting older measurements or mixing
+// incompatible numeric ranges.
 const uint8_t MSV2_MOISTURE_SCALE_VERSION = 1;
 const uint8_t MSV3_MOISTURE_SCALE_VERSION = 2;
+const uint8_t MSV3_CAPLESS_MOISTURE_SCALE_VERSION = 3;
 // Keep a passive scan session alive long enough that advertisements from several probes do
 // not repeatedly collide with stop/clear/restart gaps. Results are still cleared between
 // sessions, bounding NimBLE's discovered-device storage, but the allocator churn now happens
@@ -532,6 +537,15 @@ const BuzzerStep BUZZER_WATER_WARNING[] = {
   { 2400, 58, 0 },
 };
 
+// Keep this first helper below BuzzerStep. Arduino inserts generated prototypes immediately
+// before the first .ino function definition; moving a function above this struct makes those
+// prototypes refer to BuzzerStep before the type exists (see the preprocessor warning at EOF).
+static inline uint8_t moistureScaleVersion(bool wideRaw, bool caplessTank)
+{
+  if (!wideRaw) return MSV2_MOISTURE_SCALE_VERSION;
+  return caplessTank ? MSV3_CAPLESS_MOISTURE_SCALE_VERSION : MSV3_MOISTURE_SCALE_VERSION;
+}
+
 uint16_t buzzerDutyRaw()
 {
   return (uint16_t)((BUZZER_PWM_MAX * BUZZER_DUTY_PERCENT + 50U) / 100U);
@@ -597,6 +611,9 @@ struct SensorReading
   int16_t rawBoardTempQuarterC = 0;
   bool bareTankValid = false;
   uint32_t rawBareTankFdcCounts = 0;
+  // Probe flag bit6. C17 is physically absent and firmware never selects mux code 2/3, so the
+  // bare field must be invalid and the capless presentation scale/calibration epoch must be used.
+  bool caplessTank = false;
   uint8_t tankPhase = 0;
   // Receiver-derived shadow channel. This never overwrites rawFdcCounts or the original
   // measuredMoisture. In Active mode (and only after two accepted daily fits), the equivalent
@@ -2003,9 +2020,7 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   pending.rawCharging = reading.rawCharging;
   pending.rssi = (int16_t)constrain(reading.rssi, -32768, 32767);
   pending.sensorId = sensorId;
-  pending.moistureScale = reading.wideRaw
-      ? MSV3_MOISTURE_SCALE_VERSION
-      : MSV2_MOISTURE_SCALE_VERSION;
+  pending.moistureScale = moistureScaleVersion(reading.wideRaw, reading.caplessTank);
   pending.batteryPercent = reading.batteryPercent;
   pending.hasRaw = reading.hasRaw;
   pending.wideRaw = reading.wideRaw;
@@ -6873,9 +6888,7 @@ String sensorDataJson()
     // unsmoothed receiver-derived reading beside it for diagnostics and cloud history.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = r.wideRaw
-        ? MSV3_MOISTURE_SCALE_VERSION
-        : MSV2_MOISTURE_SCALE_VERSION;
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -6907,6 +6920,7 @@ String sensorDataJson()
         {
           if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
         }
       }
@@ -7007,7 +7021,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
     output += F(",\"measuredMoisture\":");
     output += reading.measuredMoisture;
     output += F(",\"moistureScale\":");
-    output += reading.wideRaw ? MSV3_MOISTURE_SCALE_VERSION : MSV2_MOISTURE_SCALE_VERSION;
+    output += moistureScaleVersion(reading.wideRaw, reading.caplessTank);
     if (reading.batteryPercent != BATTERY_UNKNOWN)
     {
       output += F(",\"batteryPercent\":");
@@ -7062,6 +7076,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
             output += F(",\"bareTankFdcCounts\":");
             output += (unsigned long)reading.rawBareTankFdcCounts;
           }
+          if (reading.caplessTank) output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += reading.tankPhase;
         }
@@ -7150,6 +7165,8 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
           output += F(",\"bareTankFdcCounts\":");
           output += (unsigned long)pending.rawBareTankFdcCounts;
         }
+        if (pending.moistureScale == MSV3_CAPLESS_MOISTURE_SCALE_VERSION)
+          output += F(",\"caplessTank\":true");
         output += F(",\"tankPhase\":");
         output += pending.tankPhase;
       }
@@ -7467,9 +7484,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     // while receiver-snapshot stores measuredMoisture in the original history series.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = r.wideRaw
-        ? MSV3_MOISTURE_SCALE_VERSION
-        : MSV2_MOISTURE_SCALE_VERSION;
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -7492,6 +7507,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
         {
           if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
         }
       }
@@ -7619,11 +7635,13 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
             output += F(",\"boardTempQuarterC\":");
             output += pending.rawBoardTempQuarterC;
           }
-          if (pending.bareTankValid)
-          {
-            output += F(",\"bareTankFdcCounts\":");
-            output += (unsigned long)pending.rawBareTankFdcCounts;
-          }
+        if (pending.bareTankValid)
+        {
+          output += F(",\"bareTankFdcCounts\":");
+          output += (unsigned long)pending.rawBareTankFdcCounts;
+        }
+        if (pending.moistureScale == MSV3_CAPLESS_MOISTURE_SCALE_VERSION)
+          output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += pending.tankPhase;
         }
@@ -9120,6 +9138,15 @@ const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
 const uint32_t MSV3_FDC_MOISTURE_REFERENCE_COUNTS = 24000000UL;
 const uint32_t MSV3_FDC_COUNTS_PER_MOISTURE_UNIT = 100UL;
 
+// C17-free tanks run at much higher counts: Probe 8 measured ~39.4M dry and ~27M under a
+// repeatable two-hand load. Map the FDC's useful connected-tank range into approximately the same
+// uint16 presentation neighborhood as scale 2 while preserving a ~12,000-unit span for that test.
+// Raw counts remain untouched in local/cloud history; this is only the receiver presentation
+// transform. 80M also stays above the largest valid count expected from the configured 8.75MHz
+// input band across the internal-reference tolerance, avoiding a dry-end clamp.
+const uint32_t MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS = 80000000UL;
+const uint32_t MSV3_CAPLESS_FDC_COUNTS_PER_MOISTURE_UNIT = 1000UL;
+
 uint16_t calibrateMsv3Moisture(uint32_t rawFdcCounts)
 {
   if (rawFdcCounts >= MSV3_FDC_MOISTURE_REFERENCE_COUNTS)
@@ -9128,6 +9155,17 @@ uint16_t calibrateMsv3Moisture(uint32_t rawFdcCounts)
   }
   uint32_t moisture = (MSV3_FDC_MOISTURE_REFERENCE_COUNTS - rawFdcCounts) /
       MSV3_FDC_COUNTS_PER_MOISTURE_UNIT;
+  return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
+}
+
+uint16_t calibrateMsv3CaplessMoisture(uint32_t rawFdcCounts)
+{
+  if (rawFdcCounts >= MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS)
+  {
+    return 0;
+  }
+  uint32_t moisture = (MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS - rawFdcCounts) /
+      MSV3_CAPLESS_FDC_COUNTS_PER_MOISTURE_UNIT;
   return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
 }
 
@@ -9443,6 +9481,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     int16_t rawBoardTempQuarterC = 0;
     bool bareTankValid = false;
     uint32_t rawBareTankFdcCounts = 0;
+    bool caplessTank = false;
     uint8_t tankPhase = 0;
     if (wideRaw)
     {
@@ -9450,7 +9489,6 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                      ((uint32_t)buffer[12] << 16) | ((uint32_t)buffer[13] << 24);
       rawBatteryMv = buffer[14] | (buffer[15] << 8);
       rawCharging = (buffer[16] & 0x01) != 0;
-      moisture = calibrateMsv3Moisture(rawFdcCounts);
 
       // 2026-08-25: board-temp/bare-tank-reference diagnostics extension - see
       // MSV3_DIAGNOSTIC_PACKET_LEN's comment. startAdv() always sends the full 23 bytes once its
@@ -9472,6 +9510,15 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         rawBoardTempQuarterC = boardTempValid ? tempField : 0;
         bareTankValid = (flags & 0x08) != 0;
         rawBareTankFdcCounts = bareTankValid ? bareTankField : 0;
+        caplessTank = (flags & 0x40) != 0;
+        // The capless policy and a valid bare reference are mutually exclusive. Fail closed if a
+        // malformed packet asserts both: retain the capless hardware identity and discard the
+        // impossible reference field rather than feeding it into the retired compensation path.
+        if (caplessTank)
+        {
+          bareTankValid = false;
+          rawBareTankFdcCounts = 0;
+        }
 
         // 2026-09-04, MSV3 probe flag bit5: the probe advertised but its FDC read failed.
         //
@@ -9481,15 +9528,23 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         // moisture value.
         //
         // Same belt-and-braces as the temperature field directly above: do not trust the probe's
-        // bit alone. A real MSV3 connected count sits around 15-23 million; the probe zeroes the
-        // field when it sets this bit, and anything outside a sane band is not a reading whatever
+        // bit alone. Legacy C17 tanks sit around 15-23M; Probe 8's capless tank measured 39.4M
+        // dry and 27M under a two-hand load. The probe zeroes the field when it marks the reading
+        // invalid, and anything outside the hardware-specific sane band is not a reading whatever
         // the flags claim.
         const uint32_t MSV3_PLAUSIBLE_COUNT_MIN = 5000000UL;
-        const uint32_t MSV3_PLAUSIBLE_COUNT_MAX = 40000000UL;
+        const uint32_t MSV3_LEGACY_PLAUSIBLE_COUNT_MAX = 40000000UL;
+        const uint32_t MSV3_CAPLESS_PLAUSIBLE_COUNT_MAX = 80000000UL;
+        const uint32_t plausibleCountMax = caplessTank
+            ? MSV3_CAPLESS_PLAUSIBLE_COUNT_MAX
+            : MSV3_LEGACY_PLAUSIBLE_COUNT_MAX;
         readingValid = (flags & 0x20) == 0 &&
                        rawFdcCounts >= MSV3_PLAUSIBLE_COUNT_MIN &&
-                       rawFdcCounts <= MSV3_PLAUSIBLE_COUNT_MAX;
+                       rawFdcCounts <= plausibleCountMax;
       }
+      moisture = caplessTank
+          ? calibrateMsv3CaplessMoisture(rawFdcCounts)
+          : calibrateMsv3Moisture(rawFdcCounts);
     }
     else if (hasRaw)
     {
@@ -9555,7 +9610,14 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     if (duplicateWake) return;
 
     TemperatureCompensationResult temperatureCompensationResult;
-    if (wideRaw && hasMsv3Diagnostics && boardTempValid && bareTankValid)
+    if (caplessTank)
+    {
+      // No reference exists by design. Report the derived channel as off rather than leaving the
+      // UI indefinitely claiming that a model with no possible input is still "learning".
+      temperatureCompensationResult.configuredMode = TEMPERATURE_COMPENSATION_OFF;
+      temperatureCompensationResult.effectiveMode = TEMPERATURE_COMPENSATION_OFF;
+    }
+    else if (wideRaw && hasMsv3Diagnostics && boardTempValid && bareTankValid)
     {
       temperatureCompensationResult = updateTemperatureCompensation(
           sensorId, rawFdcCounts, rawBareTankFdcCounts,
@@ -9578,7 +9640,8 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
     // A probe generation/packet-format change under the same sensor ID also changes its
     // numeric scale. Do not blend across those incompatible scales.
-    if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw))
+    if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw ||
+                         reading.caplessTank != caplessTank))
     {
       reading.moistureCenterCount = 0;
       reading.moistureCenterNext = 0;
@@ -9641,6 +9704,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.rawBoardTempQuarterC = rawBoardTempQuarterC;
     reading.bareTankValid = bareTankValid;
     reading.rawBareTankFdcCounts = rawBareTankFdcCounts;
+    reading.caplessTank = caplessTank;
     reading.tankPhase = tankPhase;
     reading.temperatureCompensationValid = temperatureCompensationResult.valid;
     reading.temperatureCompensatedLogRatioPpm = temperatureCompensationResult.logRatioPpm;

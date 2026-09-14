@@ -25,6 +25,8 @@ param(
   [int]$FdcSettleCount = 100,
   [ValidateRange(0, 255)]
   [int]$WakeDiscardConversions = 2,
+  [ValidateRange(0, 31)]
+  [int]$FdcIdriveCode = 16,
   [ValidateSet(10, 33)]
   [int]$FdcDeglitchMhz = 10
 )
@@ -261,6 +263,7 @@ if (!$SkipApplicationCompile) {
                  "-SensorId", $SensorId,
                  "-FdcSettleCount", $FdcSettleCount,
                  "-WakeDiscardConversions", $WakeDiscardConversions,
+                 "-FdcIdriveCode", $FdcIdriveCode,
                  "-FdcDeglitchMhz", $FdcDeglitchMhz)
   if ($BuildTag) { $probeArgs += @("-BuildTag", $BuildTag) }
   # Forward -SerialLogs. It used to be absent from this script's param block entirely, so passing
@@ -454,9 +457,19 @@ print('MSV3 package identity check: OK (MSV3-MOISTURE-%03d, version %d)'
 if ($LASTEXITCODE -ne 0) { throw "Initial migration package verification failed" }
 
 $canonicalBoot = Join-Path $canonicalDir "msv3-e73-recovery-signed-s140-6.1.1.hex"
-Copy-Item -LiteralPath $releaseBoot -Destination $canonicalBoot -Force
-$bootHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $canonicalBoot).Hash.ToLowerInvariant()
-[IO.File]::WriteAllText("$canonicalBoot.sha256", "$bootHash  $([IO.Path]::GetFileName($canonicalBoot))`n", [Text.UTF8Encoding]::new($false))
+$newerRelease = Get-ChildItem -LiteralPath $canonicalDir -Directory | Where-Object {
+  $_.Name -match '^\d+\.\d+\.\d+$' -and [version]$_.Name -gt [version]$ReleaseVersion
+} | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+if ($null -eq $newerRelease) {
+  # This unversioned alias is the recovery image a human will reach for first. Only the newest
+  # release may own it; rebuilding an older probe-specific application must never silently roll
+  # the canonical rescue bootloader backward.
+  Copy-Item -LiteralPath $releaseBoot -Destination $canonicalBoot -Force
+  $bootHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $canonicalBoot).Hash.ToLowerInvariant()
+  [IO.File]::WriteAllText("$canonicalBoot.sha256", "$bootHash  $([IO.Path]::GetFileName($canonicalBoot))`n", [Text.UTF8Encoding]::new($false))
+} else {
+  Write-Host "Canonical recovery alias left at newer release $($newerRelease.Name); historical $ReleaseVersion build cannot replace it"
+}
 
 $vkHex = (& $nrfutil keys --show-vk hex $keyPath | Out-String).Trim()
 $files = @($releaseBoot, $signedOta, $initialInstall, $appHex) | ForEach-Object {
@@ -479,6 +492,12 @@ $manifest = [ordered]@{
   application_version = $ApplicationVersion
   device_type = "0x3356"
   softdevice_requirement = "0x00B6 (S140 6.1.1)"
+  application_configuration = [ordered]@{
+    fdc_settle_count = $FdcSettleCount
+    wake_discard_conversions = $WakeDiscardConversions
+    fdc_idrive_code = $FdcIdriveCode
+    fdc_deglitch_mhz = $FdcDeglitchMhz
+  }
   bootloader = [ordered]@{
     upstream = "Adafruit_nRF52_Bootloader 0.11.0"
     dual_bank = $false

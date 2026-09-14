@@ -8,6 +8,8 @@ param(
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[A-Za-z0-9._-]+$')]
   [string]$BuildTag,
+  [ValidateRange(0, 31)]
+  [int]$FdcIdriveCode = 16,
   [string]$BootloaderRelease = "1.0.3",
   [string]$SigningKey,
   [string]$Python
@@ -50,7 +52,7 @@ if ($LASTEXITCODE -ne 0) { throw "MSV3 doctor check failed" }
 
 & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") `
   -Action compile -Sketch "arduino/MSV3_Probe_Bringup_Test" -SensorId $SensorId `
-  -SerialLogs -BuildTag $BuildTag
+  -SerialLogs -BuildTag $BuildTag -FdcIdriveCode $FdcIdriveCode
 if ($LASTEXITCODE -ne 0) { throw "MSV3 bring-up diagnostic compile failed" }
 
 $appHex = Join-Path $msv3Root ".arduino-build\msv3-probe\MSV3_Probe_Bringup_Test.ino.hex"
@@ -84,7 +86,7 @@ if ($LASTEXITCODE -ne 0) {
 $packageHash = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Host ""
 Write-Host "Signed MSV3 bring-up diagnostic package: $packagePath"
-Write-Host "  sensor=$SensorId app_version=$ApplicationVersion build=$BuildTag guard2=off"
+Write-Host "  sensor=$SensorId app_version=$ApplicationVersion build=$BuildTag guard2=off idrive=$FdcIdriveCode"
 Write-Host "  sha256=$packageHash"
 Write-Host "  Recovery: this targeted build opens a power-gated 5-second OTA window every 60 seconds."
 Write-Host "  The 115200-baud USB-console 'dfu' command remains the immediate wired fallback."

@@ -64,6 +64,16 @@
 // step ~1 moisture point when they take this firmware. Re-baseline rather than treating it as a
 // drop-in. See MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4 for the full sweep and derivation.
 //
+// 2026-09-14 CAPLESS POLICY: C17 must be removed from every MSV3 probe running this image.
+// Probe 8 measured a
+// 39.4M -> 27M two-hand response without C17, about four times the former raw-count span.
+// The capacitor-free bare tank is only about 25-30pF: a live test returned the exact 28-bit
+// over-range sentinel plus ERR_WD, consistent with its calculated 11-12MHz resonance exceeding
+// the FDC2214's 10MHz ceiling. Production therefore NEVER selects mux code 2/3 or attempts a
+// bare-tank conversion. The packet stays 23 bytes for compatibility, but its bare field is zero,
+// bit3 is clear, and bit6 explicitly identifies the capless scale. IDRIVE returns to code 16;
+// Probe 8 was stable at that setting in both electrode orientations, dry and under two-hand load.
+//
 // 2026-08-30, later same day: removed MUX_SWITCH_SETTLE_MS entirely (was 300ms, added just
 // above on 2026-08-29). Pulled the real TMUX1109 datasheet (SCDS406A) rather than continuing to
 // guess: worst case across -40..125C at VS=3V, tTRAN=19ns, tON(EN)=20ns, tOFF(EN)=9ns -- the
@@ -284,7 +294,10 @@ const uint32_t ADVERTISE_INTERVAL_MS = 60000;
 // deliberately NOT trying to catch on its own). Retune once real
 // wet-soil/dry-soil raw values are logged -- same "policy, not calibration"
 // reasoning as MSV2's threshold, so it stays on the probe.
-const uint32_t MOISTURE_SWING_THRESHOLD = 300000UL;
+// C17 removal increased Probe 8's repeatable raw-count response by approximately 4x. Scale the
+// trigger by the same measured factor so the higher sensitivity does not turn ordinary drift into
+// extra off-cadence radio wakes. Retune from real capless soil data, not another hand estimate.
+const uint32_t MOISTURE_SWING_THRESHOLD = 1200000UL;
 const uint32_t MIN_SWING_ADVERTISE_INTERVAL_MS = 30000;
 // A legacy BLE DFU transfer takes several minutes. Permit the app-to-bootloader handoff only
 // while USB input is power-good or a valid LiPo reading is at least 3.80V. This is intentionally
@@ -357,9 +370,8 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 // gap between setMux() and the oscillator actually starting (FDC_TSDWAKEUP_US's 2.5ms, plus the
 // I2C transactions inside fdcInit(), plus FDC_ACTIVATION_US's 400us) already leaves the mux
 // microseconds-to-nanoseconds switch several orders of magnitude of margin with zero added
-// delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and ~600ms on
-// every advertising wake (it ran twice there -- once for the electrode-swap phase, once for the
-// bare-tank EC-check mux code).
+// delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and historically
+// ~600ms on advertising wakes when those also performed the now-retired bare-tank conversion.
 #define PIN_CNF_DISCONNECTED 2UL  // nRF52840 reset default: input buffer disconnected, no pull.
 
 #define WDT_TIMEOUT_MS 5000UL
@@ -460,11 +472,16 @@ bool fdcReadReg(uint8_t reg, uint16_t &val)
 #ifndef MSV3_FDC_SETTLECOUNT_CH0
 #define MSV3_FDC_SETTLECOUNT_CH0 0x0064
 #endif
+#ifndef MSV3_FDC_IDRIVE_CODE
+#define MSV3_FDC_IDRIVE_CODE 16
+#endif
 #ifndef MSV3_FDC_MUX_CONFIG
 #define MSV3_FDC_MUX_CONFIG 0x020D
 #endif
 static_assert(MSV3_FDC_SETTLECOUNT_CH0 >= 1 && MSV3_FDC_SETTLECOUNT_CH0 <= 0xFFFF,
               "MSV3_FDC_SETTLECOUNT_CH0 must be 1..65535");
+static_assert(MSV3_FDC_IDRIVE_CODE >= 0 && MSV3_FDC_IDRIVE_CODE <= 31,
+              "MSV3_FDC_IDRIVE_CODE must be 0..31");
 static_assert(MSV3_FDC_MUX_CONFIG == 0x020D || MSV3_FDC_MUX_CONFIG == 0x020F,
               "MSV3_FDC_MUX_CONFIG must select the reviewed 10MHz or 33MHz CH0 configuration");
 
@@ -474,7 +491,7 @@ bool fdcInit()
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0 -- see 2026-08-30 comment above
   ok &= fdcWriteReg(0x10, MSV3_FDC_SETTLECOUNT_CH0);  // SETTLECOUNT_CH0
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01, FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=25 (0.644mA), bench-tuned 2026-09-03
+  ok &= fdcWriteReg(0x1E, (uint16_t)MSV3_FDC_IDRIVE_CODE << 11);  // DRIVE_CURRENT_CH0
   // MUX_CONFIG (0x1B): AUTOSCAN_EN=0 / RR_SEQUENCE=00 keeps single-channel CH0, which is
   // correct for this board (CH1-3 grounded per netlist) and is also the POR default. What is
   // NOT the POR default is DEGLITCH: its reset value is b111 (33MHz), the widest filter.
@@ -486,10 +503,10 @@ bool fdcInit()
   // reference -> 3.63MHz. So the tank spans roughly 3.2-3.6MHz depending on electrode loading.
   //
   // The datasheet says to select the lowest deglitch setting that EXCEEDS the sensor
-  // oscillation frequency. That is b101 (10MHz) here, not b100 (3.3MHz): 3.3MHz sits BELOW the
-  // 3.63MHz bare-tank reading, so b100 would filter the reference channel's own signal. b101
-  // keeps margin over the whole 3.2-3.6MHz span while admitting 3.3x less EMI/ringing
-  // bandwidth than the 33MHz default.
+  // oscillation frequency. That remains b101 (10MHz) after C17 removal: Probe 8's capless
+  // connected tank measured 6.499MHz dry, so b100 (3.3MHz) would reject the wanted signal.
+  // The 10MHz setting covers the connected tank while admitting 3.3x less EMI/ringing bandwidth
+  // than the 33MHz default. It does not make the retired 11-12MHz bare tank valid.
   //
   // Bits [12:3] are reserved and the datasheet requires them to be written as 00 0100 0001,
   // so the full word is 0x208 | DEGLITCH -> 0x020D. Do not write a bare 0x0005 here.
@@ -835,16 +852,16 @@ void delayFeedingWatchdog(uint32_t ms)
 // [7-9]   wake, 24-bit LE
 // [10-13] raw FDC2214 DATA_CH0, 32-bit LE
 // [14-15] raw battery mV, 16-bit LE
-// [16]    flags: bit0=charging (existing meaning, unchanged), bit1=moisture/reference phase
-//         used (0/1), bit2=board temp valid, bit3=bare-tank reference valid,
-//         bit4=OTA power gate open (USB PG or VBAT >= OTA_MIN_BATTERY_MV), bits5-7=reserved/0
+// [16]    flags: bit0=charging (existing meaning, unchanged), bit1=electrode-swap phase
+//         used (0/1), bit2=board temp valid, bit3=legacy bare-tank reference valid,
+//         bit4=OTA power gate open (USB PG or VBAT >= OTA_MIN_BATTERY_MV),
+//         bit5=connected reading invalid, bit6=capless tank / bare measurement prohibited,
+//         bit7=reserved/0
 // [17-18] board temperature, signed int16 LE, quarter-degrees C (sd_temp_get() native units;
 //         0/invalid when bit2 is clear) -- see readBoardTempQuarterC(). This is nRF52840 die
 //         temperature, NOT soil or blade temperature.
-// [19-22] bare-tank FDC2214 DATA_CH0, uint32 LE (0/invalid when bit3 is clear) -- reading taken
-//         with the mux on EC-check code 2|phase, disconnecting the electrodes so the FDC is
-//         oscillating on the bare L2/C17 tank alone. Board/tank-adjacent reference, NOT soil
-//         temperature or a moisture reading.
+// [19-22] legacy bare-tank FDC2214 DATA_CH0, uint32 LE. Always zero in capless firmware and bit3
+//         is always clear. Retained solely so the packet remains backward compatible.
 //
 // 23 total bytes. First 17 bytes are byte-for-byte unchanged from the prior wire format --
 // Treebeard_ESP32_Display_Runtime.ino's existing MSV2_RAW_PACKET_WIDE_LEN=17 parse path (including
@@ -1008,19 +1025,18 @@ void bleInit()
 #define ADV_FLAG_CHARGING        (1U << 0)
 #define ADV_FLAG_PHASE           (1U << 1)
 #define ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
-#define ADV_FLAG_BARE_TANK_OK    (1U << 3)
-#define ADV_FLAG_READING_INVALID (1U << 5)
 #define ADV_FLAG_OTA_POWER_OK    (1U << 4)
+#define ADV_FLAG_READING_INVALID (1U << 5)
+#define ADV_FLAG_CAPLESS_TANK    (1U << 6)
 
 bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk, uint8_t phaseUsed,
-              bool boardTempValid, int16_t boardTempQuarterC,
-              bool bareTankValid, uint32_t bareTankDataCh0, bool readingValid)
+              bool boardTempValid, int16_t boardTempQuarterC, bool readingValid)
 {
   if (!g_bleInited) return false;
 
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
   uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
-  uint32_t bareTankField = bareTankValid ? bareTankDataCh0 : 0;
+  constexpr uint32_t bareTankField = 0;
   uint8_t mfg[23];
   // Enforce the "3+3+(2+23)=31" arithmetic from mfg[]'s own declaration comment at compile
   // time, not just in prose. The runtime addData() failure check a few lines down exists too,
@@ -1050,8 +1066,8 @@ bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool ota
   mfg[16] = (isCharging ? ADV_FLAG_CHARGING : 0) |
             (phaseUsed ? ADV_FLAG_PHASE : 0) |
             (boardTempValid ? ADV_FLAG_BOARD_TEMP_OK : 0) |
-            (bareTankValid ? ADV_FLAG_BARE_TANK_OK : 0) |
             (otaPowerOk ? ADV_FLAG_OTA_POWER_OK : 0) |
+            ADV_FLAG_CAPLESS_TANK |
             (readingValid ? 0 : ADV_FLAG_READING_INVALID);
   mfg[17] = (uint8_t)(boardTempField & 0xFF);
   mfg[18] = (uint8_t)((boardTempField >> 8) & 0xFF);
@@ -1582,8 +1598,9 @@ void loop()
     }
     else if ((errAhw || errAlw) && ENABLE_SERIAL_LOGS)
     {
-      // Amplitude out of range -- IDRIVE (0x8000 in fdcInit()) is not
-      // bench-tuned for soil yet. Logged, but NOT suppressed: this is
+      // Amplitude out of range -- IDRIVE code 16 was validated on Probe 8 in dry air and under
+      // a two-hand load after C17 removal, but still needs real-soil/cold/saturation coverage.
+      // Logged, but NOT suppressed: this is
       // exactly the condition most likely right after watering, and
       // suppressing it risks losing the overnight test's key data point.
       Serial.print(F("[WARN] FDC status"));
@@ -1645,47 +1662,12 @@ void loop()
 
   if (shouldAdvertise)
   {
-    // Bare-tank (EC-check) reference reading -- only on advertising wakes, so this stays
-    // temporally paired with every transmitted moisture sample while limiting extra FDC energy
-    // and electrode DC exposure. The FDC is already in shutdown (probeSleep() just ran above)
-    // and the mux at MUX_SLEEP_CODE(0); this switches to the EC-check code for the phase just
-    // used, takes one reading, then unconditionally returns to shutdown/code-0 before doing
-    // anything else -- including on any failure path, so mux code 2/3 is never left selected
-    // across sleep, BLE advertising, or an early return (there is none here; this block always
-    // runs straight through to its own probeSleep() call below).
-    uint8_t bareTankMuxCode = 2 | phaseUsed;  // phase 0 -> code 2, phase 1 -> code 3
-    setMux(bareTankMuxCode);
-    // No settle delay here either -- same removed-MUX_SWITCH_SETTLE_MS reasoning as the
-    // electrode-swap mux switch above.
-    bool bareWakeOk = probeWake(WAKE_DISCARD_CONVERSIONS);
-    uint32_t bareTankData = 0;
-    uint16_t bareTankStatus = 0;
-    bool bareReadOk = bareWakeOk && fdcReadChannel0(bareTankData, bareTankStatus);
-    bool bareErrWd = bareReadOk && (bareTankStatus & (1 << 11)) != 0;
-    bool bareTankValid = bareReadOk && !bareErrWd;
-    if (!bareTankValid) bareTankData = 0;
-
-    if (ENABLE_SERIAL_LOGS && bareReadOk)
-    {
-      bool bareErrAhw = (bareTankStatus & (1 << 10)) != 0;
-      bool bareErrAlw = (bareTankStatus & (1 << 9)) != 0;
-      if (bareErrAhw || bareErrAlw)
-      {
-        // Logged only, per spec: amplitude flags do not invalidate the bare-tank reading --
-        // retained for initial characterization unless bench evidence shows it's unusable.
-        Serial.print(F("[WARN] Bare-tank FDC status"));
-        if (bareErrAhw) Serial.print(F(" ERR_AHW(amplitude-too-high)"));
-        if (bareErrAlw) Serial.print(F(" ERR_ALW(amplitude-too-low)"));
-        Serial.println(F(" -- retaining raw result"));
-        Serial.flush();
-      }
-    }
-
-    // Unconditional, even on failure -- immediately returns the mux to code 0 and shuts the FDC
-    // back down. Reuses the exact same safety-critical sequence probeSleep() already performs
-    // for the normal moisture reading (see its own comment on the ~33uA EC-check-code leak risk
-    // in wet soil).
-    probeSleep();
+    // CAPLESS INVARIANT: the FDC is already shut down and the mux parked at code 0 by
+    // probeSleep(). Do not select mux 2/3 here. Without C17 that disconnects the electrodes and
+    // leaves a roughly 25-30pF, 11-12MHz tank, beyond the FDC2214's 10MHz ceiling. The legacy
+    // packet field remains zero/invalid and bit6 tells an updated receiver to use the capless
+    // presentation scale. Keeping this block free of another probeWake() also removes the old
+    // reference conversion's energy cost.
 
     wakeCount++;
 
@@ -1694,12 +1676,11 @@ void loop()
       char buf[220];
       snprintf(buf, sizeof(buf),
                "[DIAG] wake=%lu%s phase=%d DATA_CH0=%lu status=0x%X "
-               "tempQ4C=%d tempValid=%d bareDATA_CH0=%lu bareStatus=0x%X bareValid=%d "
+               "tempQ4C=%d tempValid=%d bareDisabled=1 "
                "vbat_mV=%d charging=%d",
                (unsigned long)wakeCount, bigSwing ? " (swing)" : "", (int)phaseUsed,
                (unsigned long)rawData, fdcStatus,
                (int)boardTempQuarterC, boardTempValid ? 1 : 0,
-               (unsigned long)bareTankData, bareTankStatus, bareTankValid ? 1 : 0,
                (int)(batteryMv + 0.5f), charging ? 1 : 0);
       Serial.println(buf);
       Serial.flush();
@@ -1713,8 +1694,7 @@ void loop()
     // ADV_FLAG_READING_INVALID stores an obviously-wrong 0 rather than a believable wrong number.
     bool advStarted = startAdv(measurementOk ? rawData : 0u,
                                batteryMv, charging, otaPowerOk, phaseUsed,
-                               boardTempValid, boardTempQuarterC,
-                               bareTankValid, bareTankData, measurementOk);
+                               boardTempValid, boardTempQuarterC, measurementOk);
 
     if (advStarted)
     {

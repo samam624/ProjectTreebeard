@@ -35,6 +35,32 @@ one three-second bench sensor plus 15 normal sensors. Sixteen probes all produci
 three seconds indefinitely is unsupported. See
 [the complete root cause, architecture, capacity math, durability boundary, and live evidence](../DisplayCenter/docs/RECEIVER_PERCENT_RANGES_DISPLAY_FREEZE_AND_UPLOAD_FIX_2026-09-01.md).
 
+## MSV3: capless production must never attempt a bare-tank conversion
+
+**Status:** Decided, repo-enforced, compiled, and signed as application v65564 on 2026-09-14; not
+yet deployed because the capless-aware DisplayCenter must be installed first.
+
+**Affected:** Every healthy MSV3 running the capless production image. C17 is DNP/removed. Probe 7
+is excluded until its separate TMUX bypass repair is complete.
+
+**Failure mode:** With the electrodes disconnected, the C17-free tank is only about 25-30 pF and
+resonates around 11-12 MHz. Probe 8 returned exact FDC over-range `0x0FFFFFFF` and `ERR_WD` even at
+minimum IDRIVE. Raising drive does not correct a frequency-range violation. An old production image
+would still select mux 2/3 on each advertising wake and manufacture an invalid reference reading.
+
+**Portable enforcement:** Production selects only the connected phase (0/1) and sleep code 0,
+sets capless flag bit 6, clears legacy bare-valid bit 3, and zeros bytes 19-22. DisplayCenter maps
+bit 6 to scale 3, accepts the higher valid connected counts, starts a new calibration epoch, and
+forces reference-based temperature compensation off. `verify_msv3_capless_policy.mjs` is part of
+the standard receiver compile/upload gate and fails if those invariants regress. The production
+IDRIVE and all release-build defaults are code 16.
+
+**Rollout rule:** receiver first, then signed capless application, then remove all power and remove
+C17, then verify both connected phases and amplitude/frequency margins before recalibration. Never
+install capless firmware on a still-legacy receiver, and never leave capless hardware running an
+old image. See
+[the complete evidence, package hashes, and rollout checklist](../MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md).
+
 ## MSV3: soil-exposed blade coating and routed-edge water retention
 
 **Status:** Confirmed physical failure mode on the current field blade; repair process defined but

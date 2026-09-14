@@ -135,6 +135,11 @@ EC-check divider (EC-check mode). Confirmed empirically 8/20: electrode-swap cod
 ~20.34M, EC-check codes read ~22.62M (bare-tank-only, no electrode capacitance) — a clean,
 repeatable ~11% step, not an oscillation failure in either mode.
 
+**2026-09-14 production rework:** the topology above documents the original/as-built PCB, but C17
+is now DNP and must be removed from every healthy probe during rollout. Production firmware
+consequently never selects the electrode-disconnected mux codes. See
+`MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
+
 ## MUX — TMUX1109PWR (dual 4:1 precision mux)
 
 Select pins: A0 (pin1, = MUX0 net) and A1 (pin16, = MUX1 net) — no separate EN net found, likely
