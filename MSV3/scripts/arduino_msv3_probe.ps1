@@ -351,6 +351,49 @@ for exactly that reason. Passing it here makes (commit, sensor id) reproduce an 
 
 Assert-ProductionBuildParameters
 
+function Assert-TargetedOtaWindowContract {
+  # A sketch carrying a fleet SENSOR_ID can be signed and installed on a coated probe. Once that
+  # happens, USB/SWD may be physically unavailable, so every such image must periodically expose
+  # the same reset-safe OTA handoff as production. Probe 6's 2026-09-13 bring-up image lacked it
+  # and required a USB-data reconnection solely to restore production firmware.
+  if ($SensorId -lt 0) { return }
+
+  $inoFiles = @(Get-ChildItem -LiteralPath $sketchPath -File -Filter *.ino)
+  if ($inoFiles.Count -ne 1) {
+    throw "A targeted MSV3 sketch must contain exactly one .ino file for OTA-contract inspection; found $($inoFiles.Count) in '$sketchPath'."
+  }
+  $source = Remove-CCommentsAndStrings -Text (Get-Content -LiteralPath $inoFiles[0].FullName -Raw)
+  $required = [ordered]@{
+    "ResetSafeBLEDfu service" = 'ResetSafeBLEDfu\s+bledfu\s*;'
+    "Device Information Service" = 'BLEDis\s+bledis\s*;'
+    "periodic advertising cadence" = '(?:ADVERTISE_INTERVAL_MS|OTA_ADV_INTERVAL_MS)'
+    "bounded OTA listen window" = 'OTA_ADV_LISTEN_MS'
+    "DFU service registration" = 'bledfu\.begin\s*\(\s*\)'
+    "DIS registration" = 'bledis\.begin\s*\(\s*\)'
+    "battery/USB authorization gate" = 'bledfu\.setDfuAllowed\s*\('
+    "deferred reset check" = 'bledfu\.dfuResetPending\s*\('
+    "reset-safe handoff" = 'bledfu\.completeDfuReset\s*\('
+  }
+  $missing = @()
+  foreach ($entry in $required.GetEnumerator()) {
+    if ($source -notmatch $entry.Value) { $missing += $entry.Key }
+  }
+  if ($missing.Count -gt 0) {
+    throw @"
+Targeted MSV3 build REFUSED: '$($inoFiles[0].Name)' carries sensor ID $SensorId but is missing the
+periodic OTA recovery contract:
+  $($missing -join "`n  ")
+
+Any image that can reach a coated probe must open a bounded, power-gated ResetSafeBLEDfu window
+periodically and publish its exact build through DIS. Use an untargeted bench build (omit
+-SensorId) only while wired recovery is genuinely available.
+"@
+  }
+  Write-Host "MSV3 targeted OTA-window check: OK (ResetSafeBLEDfu + DIS + periodic bounded window)"
+}
+
+Assert-TargetedOtaWindowContract
+
 $defines = @(
   "-DCONFIG_NFCT_PINS_AS_GPIOS",
   # The production sketch fails closed without this define. It is paired with the custom

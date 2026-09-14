@@ -114,6 +114,32 @@ The wrapper finds the active installed Adafruit nRF52 core, repairs/verifies `va
 
 Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades and another PC will not inherit it. See [the complete LFCLK/RTC1 investigation](../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md).
 
+## MSV3: every fleet-targeted application must expose a periodic OTA window
+
+**Status:** Enforced in the guarded build as of 2026-09-13.
+
+**Affected:** Any `MSV3_Moisture_BLE_Sleep` or `MSV3_Probe_Bringup_Test` build made with
+`-SensorId`. An untargeted wired bench build may omit the window, but must never be signed and
+installed on a probe whose USB/SWD access may disappear.
+
+**Failure that established the rule:** Probe 6's signed post-coating bring-up diagnostic v65561
+had a USB `dfu` command but no application-side GATT DFU service and no automatic advertisement.
+After its sensitivity test, BLE-only production restore was impossible even though bootloader
+1.0.3 remained intact; the board had to be reconnected by USB data solely to enter recovery.
+
+**Portable enforcement:** `MSV3/scripts/arduino_msv3_probe.ps1` inspects every targeted build and
+refuses it unless it contains `ResetSafeBLEDfu`, DIS build identification, a periodic bounded
+advertising cadence, the USB/battery authorization gate, the deferred ATT-response handling, and
+the reset-safe handoff. The targeted bring-up sketch now reuses production's proven DFU service and
+opens a non-blocking five-second window every 60 seconds. It publishes the exact build through DIS
+and retains the USB `dfu` command as an immediate fallback. Its diagnostic advertisement keeps the
+separate `MSV3` magic so a receiver cannot ingest placeholder diagnostic data; the guarded updater
+recognizes that prefix only for identity and OTA-power checks.
+
+Targeted diagnostic windows initialize the SoftDevice and therefore are not the lowest-current
+bench configuration. Omit `-SensorId` for wired sleep-floor experiments; use `-SensorId` for any
+image that could remain on a coated or otherwise inaccessible fleet probe.
+
 ## MSV3: the bootloader accepts an OLDER signed image -- rollback is not prevented on the device
 
 **Status:** Measured 2026-09-05 on bootloader 1.0.1. Fixed in bootloader 1.0.2 and retained in

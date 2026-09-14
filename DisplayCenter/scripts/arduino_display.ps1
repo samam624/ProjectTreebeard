@@ -123,7 +123,11 @@ switch ($Action) {
     Invoke-ArduinoCli @("upload", "-p", $Port, "--fqbn", $Fqbn, "--input-dir", $BuildPath, $Sketch)
   }
   "monitor" {
-    Invoke-ArduinoCli @("monitor", "-p", $Port, "-c", "baudrate=115200")
+    # Arduino CLI otherwise defaults both modem-control lines to "on". On this ESP32-S3
+    # board those lines drive the auto-program/reset circuit, so merely attaching to or
+    # detaching from a read-only serial monitor visibly reboots the receiver. Keep both
+    # inactive; upload still performs its own deliberate reset through esptool.
+    Invoke-ArduinoCli @("monitor", "-p", $Port, "-c", "baudrate=115200,dtr=off,rts=off")
   }
   "board-list" {
     Invoke-ArduinoCli @("board", "list")

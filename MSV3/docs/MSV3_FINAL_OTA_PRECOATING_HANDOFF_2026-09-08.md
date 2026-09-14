@@ -14,7 +14,14 @@ applications, provision each probe once over SWD, verify it, and coat it.
   untouched condition and 19.0M with two-hand contact: about a 1.0M-count or 5% decrease. This is
   positive qualitative evidence that moisture/contact sensitivity survived coating, but it does
   not replace an air/soil/watering calibration or the connected-to-bare/phase acceptance check.
-  Signed production restore v65562 was built and preflighted before the diagnostic install.
+  Signed production restore v65562 was built and preflighted before the diagnostic install. It was
+  restored on 2026-09-13 through bootloader 1.0.3 after positive USB-console identity on COM21. An
+  accidental USB-power interruption at the first transfer's validation step was recovered by the
+  updater's second attempt. DIS then reported `2026-09-13-prod6-restore`, and a clean 150-second
+  scan advanced two advertisements to wake 8 with valid connected/bare readings, 4466 mV on USB,
+  flags 0x1c, and the OTA gate open. The v65561 diagnostic exposed a design gap: it required USB
+  to return to recovery. Targeted bring-up builds are now build-enforced to open the same bounded,
+  power-gated periodic OTA window as production.
 - **Probe 7 is sensor-path bricked, not radio/MCU bricked.** Its MCU, bootloader 1.0.3, signed
   application, BLE/OTA path, and rollback floor work, but the TMUX1109 path does not. Connected and
   supposed bare readings mirror within 0.005% while the two electrode-swap phases differ by about

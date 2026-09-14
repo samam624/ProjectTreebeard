@@ -2766,7 +2766,7 @@ const char TREEBEARD_WEB_MANIFEST[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 const char TREEBEARD_SERVICE_WORKER_JS[] PROGMEM = R"rawliteral(
-const TREEBEARD_CACHE = "msv2-app-v2";
+const TREEBEARD_CACHE = "msv2-app-v3";
 const TREEBEARD_SHELL = ["/app", "/manifest.webmanifest", "/app-icon.svg"];
 
 self.addEventListener("install", (event) => {

@@ -178,6 +178,12 @@ def msv3_payload(sensor_id, wake=100, raw=19_000_000, battery_mv=3950, flags=0x1
             + struct.pack("<h", temp_q4) + struct.pack("<I", bare))
 
 
+def diagnostic_payload(sensor_id, wake=7, raw=0, battery_mv=4100, flags=0x10):
+    """Targeted bring-up heartbeat: distinct magic, shared identity/power prefix."""
+    return (b"MSV3" + bytes([sensor_id]) + wake.to_bytes(3, "little")
+            + struct.pack("<IHB", raw, battery_mv, flags))
+
+
 # -------------------------------------------------------------------- tests ----
 
 def test_registry():
@@ -410,6 +416,17 @@ def test_live_identity():
     healthy = FakeAdvertisement("MSV3-MOISTURE-004", {0xFFFF: msv3_payload(4)})
     check_live_identity(Args(), probe, healthy)
     check("a matching live board passes", True)
+
+    diagnostic = FakeAdvertisement(
+        "MSV3-MOISTURE-004", {0xFFFF: diagnostic_payload(4)})
+    check_live_identity(Args(), probe, diagnostic)
+    check("a targeted bring-up heartbeat passes the same identity and OTA-power checks", True)
+
+    diagnostic_shut = FakeAdvertisement(
+        "MSV3-MOISTURE-004",
+        {0xFFFF: diagnostic_payload(4, battery_mv=3700, flags=0x00)})
+    raises("a targeted bring-up heartbeat with its OTA gate shut is refused", PreflightError,
+           lambda: check_live_identity(Args(), probe, diagnostic_shut), "power gate is shut")
 
     wrong_sensor = FakeAdvertisement("MSV3-MOISTURE-004", {0xFFFF: msv3_payload(5)})
     raises("a board advertising another sensor ID is refused", PreflightError,

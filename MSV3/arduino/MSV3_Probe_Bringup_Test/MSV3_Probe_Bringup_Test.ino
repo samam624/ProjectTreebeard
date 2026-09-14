@@ -45,6 +45,16 @@
 #include <bluefruit.h>
 #include <nrf_nvic.h>
 
+#ifdef MSV3_SENSOR_ID
+// A targeted diagnostic image can outlive USB access once a probe is coated. Reuse the exact
+// reset-safe DFU implementation exercised by production rather than maintaining a third copy of
+// this security-sensitive handoff. The guarded wrapper compiles from
+// MSV3/.arduino-build/msv3-probe/sketch/, so this path deliberately resolves from that generated
+// translation-unit location back to the canonical production source. Raw IDE builds are already
+// forbidden for MSV3 by the LFRC/linker guards above.
+#include "../../../arduino/MSV3_Moisture_BLE_Sleep/ResetSafeBLEDfu.cpp"
+#endif
+
 // This is a compile-time safety property, not merely documentation. Both
 // wiring.c (FreeRTOS/RTC1 boot) and Bluefruit.begin() consume these variant
 // macros. LFXO on this crystal-less PCB can hang SoftDevice initialization
@@ -449,9 +459,9 @@ constexpr char BLE_DEVICE_NAME[] = {
 #define MSV3_BRINGUP_BUILD_ID "MSV3-BUILD:bringup-diagnostic"
 #endif
 const char FIRMWARE_BUILD_ID[] = MSV3_BRINGUP_BUILD_ID;
-// This image intentionally does not carry production Guard 2. Its recovery invariant is the
-// always-available USB `dfu` command below plus the resident bootloader; state that fact explicitly
-// so package preflight never has to guess from an old/unmarked image.
+// This image intentionally does not carry production Guard 2. Its recovery invariants are the
+// periodic reset-safe OTA window below and the USB `dfu` command plus resident bootloader; state
+// the Guard-2 fact explicitly so package preflight never has to guess from an old/unmarked image.
 const char FIRMWARE_GUARD2_MARKER[] = "MSV3-GUARD2:0";
 volatile const char* g_firmwareBuildIdAnchor = nullptr;
 volatile const char* g_guard2MarkerAnchor = nullptr;
@@ -494,13 +504,61 @@ const uint8_t BLE_WAKE_DISCARD_CONVERSIONS = 2;
 
 bool g_bleInited = false;
 uint32_t g_bleWakeCount = 0;
+const uint16_t OTA_MIN_BATTERY_MV = 3800;
+const uint16_t BLE_ADV_FAST_INTERVAL_UNITS = 32;  // 20ms
+
+#ifdef MSV3_SENSOR_ID
+// Targeted diagnostic builds must remain recoverable after USB is removed or coated over. Match
+// production's proven five-second-per-minute discovery opportunity and 30-second connected hold.
+// The window is non-blocking while idle, so the USB console remains responsive throughout it.
+const uint32_t OTA_ADV_INTERVAL_MS = 60000;
+const uint32_t OTA_ADV_LISTEN_MS = 5000;
+const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
+const uint32_t DFU_RESPONSE_SETTLE_MS = 150;
+const uint16_t OTA_ADV_SLOW_INTERVAL_UNITS = 400;  // 250ms for the rest of the window
+const uint16_t OTA_ADV_FAST_TIMEOUT_SECONDS = 1;
+const uint16_t OTA_ADV_HARD_TIMEOUT_SECONDS = OTA_ADV_LISTEN_MS / 1000;
+static_assert(OTA_ADV_LISTEN_MS >= 1000 && OTA_ADV_LISTEN_MS % 1000 == 0,
+              "OTA_ADV_LISTEN_MS must be a whole number of seconds");
+
+ResetSafeBLEDfu bledfu;
+BLEDis bledis;
+bool g_otaServiceReady = false;
+bool g_disReady = false;
+volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+uint32_t g_otaConnectionStartMs = 0;
+uint32_t g_otaWindowStartMs = 0;
+uint32_t g_lastOtaWindowStartMs = 0;
+bool g_otaWindowActive = false;
+bool g_otaWindowEverStarted = false;
+
+void otaConnectCallback(uint16_t connHandle) {
+  g_otaConnectionHandle = connHandle;
+}
+
+void otaDisconnectCallback(uint16_t connHandle, uint8_t reason) {
+  (void)reason;
+  if (g_otaConnectionHandle == connHandle) g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+}
+#endif
 
 void bleInitOnce() {
   if (g_bleInited) return;
   Bluefruit.autoConnLed(false);
-  Bluefruit.begin();
+  if (!Bluefruit.begin()) return;
   Bluefruit.setTxPower(4);
   Bluefruit.setName(BLE_DEVICE_NAME);
+#ifdef MSV3_SENSOR_ID
+  bledis.setManufacturer("Treebeard");
+  bledis.setModel("MSV3-DIAG");
+  bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
+  g_disReady = (bledis.begin() == ERROR_NONE);
+
+  g_otaServiceReady = (bledfu.begin() == ERROR_NONE);
+  Bluefruit.Periph.setConnectCallback(otaConnectCallback);
+  Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
+  Bluefruit.Advertising.setFastTimeout(OTA_ADV_FAST_TIMEOUT_SECONDS);
+#endif
   g_bleInited = true;
 }
 
@@ -509,7 +567,8 @@ void bleInitOnce() {
 // the only change is widening the 2-byte RC-oscillator kHz field to a
 // 4-byte raw FDC2214 DATA_CH0, since that reading is up to 28 bits and
 // doesn't fit in 2 bytes the way MSV2's oscillator count did.
-void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
+void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk,
+                 uint16_t slowIntervalUnits, uint16_t timeoutSeconds) {
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
   uint8_t mfg[17];
   mfg[0] = lowByte(BLE_COMPANY_ID);
@@ -525,7 +584,13 @@ void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
   mfg[13] = (uint8_t)((dataCh0 >> 24) & 0xFF);
   mfg[14] = (uint8_t)(batteryMvRounded & 0xFF);
   mfg[15] = (uint8_t)((batteryMvRounded >> 8) & 0xFF);
-  mfg[16] = isCharging ? 0x01 : 0x00;
+  // bit0 retains the historical charging meaning. bit4 mirrors production's OTA power gate so
+  // the identity-locked updater can distinguish an intentionally shut gate from old firmware.
+  mfg[16] = (isCharging ? 0x01 : 0x00) | (otaPowerOk ? 0x10 : 0x00);
+
+#ifdef MSV3_SENSOR_ID
+  bledfu.setDfuAllowed(otaPowerOk);
+#endif
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
@@ -534,9 +599,84 @@ void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
   Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
   Bluefruit.ScanResponse.addName();
   Bluefruit.Advertising.restartOnDisconnect(false);
-  Bluefruit.Advertising.setInterval(32, 32);  // 20-30 ms while awake, same as MSV2
-  Bluefruit.Advertising.start(0);
+  Bluefruit.Advertising.setInterval(BLE_ADV_FAST_INTERVAL_UNITS, slowIntervalUnits);
+  Bluefruit.Advertising.start(timeoutSeconds);
 }
+
+#ifdef MSV3_SENSOR_ID
+bool readOtaPowerState(float& batteryMv, bool& charging) {
+  batteryMv = readVbatMv(nullptr);
+  bool statHigh = true;
+  bool pgHigh = true;
+  readChargerPins(statHigh, pgHigh);
+  charging = statHigh == LOW;
+  const bool usbPowerGood = pgHigh == LOW;
+  const bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+  return usbPowerGood || (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+}
+
+// Non-blocking OTA maintenance for a targeted/fleet diagnostic image. Untargeted bench builds
+// deliberately keep their old on-demand BLE behavior so low-power experiments are not changed.
+void servicePeriodicOtaWindow() {
+  bleInitOnce();
+  if (!g_bleInited || !g_otaServiceReady) return;
+
+  uint16_t connectionHandle = g_otaConnectionHandle;
+  if (connectionHandle == BLE_CONN_HANDLE_INVALID && Bluefruit.connected()) {
+    connectionHandle = Bluefruit.connHandle();
+    g_otaConnectionHandle = connectionHandle;
+  }
+
+  if (connectionHandle != BLE_CONN_HANDLE_INVALID && Bluefruit.connected(connectionHandle)) {
+    g_otaWindowActive = false;
+    if (g_otaConnectionStartMs == 0) g_otaConnectionStartMs = millis();
+
+    // The authorize callback records the request only. Let its ATT response settle before the
+    // loop performs the reset-safe handoff, exactly as the production application does.
+    if (bledfu.dfuResetPending()) {
+      delayFeedingWatchdog(DFU_RESPONSE_SETTLE_MS);
+      bledfu.completeDfuReset();
+      return;  // reached only if the reset unexpectedly failed
+    }
+
+    if (millis() - g_otaConnectionStartMs >= OTA_CONNECTED_HOLD_MS) {
+      Bluefruit.disconnect(connectionHandle);
+      g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+      g_otaConnectionStartMs = 0;
+    }
+    return;
+  }
+  g_otaConnectionStartMs = 0;
+
+  if (g_otaWindowActive) {
+    if (millis() - g_otaWindowStartMs >= OTA_ADV_LISTEN_MS) {
+      if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+      g_otaWindowActive = false;
+    }
+    return;
+  }
+
+  // A user-requested `blestart` owns the advertiser until `blestop`; its GATT table still carries
+  // the same DFU service, and the connection/pending-reset path above remains active.
+  if (Bluefruit.Advertising.isRunning()) return;
+
+  const uint32_t nowMs = millis();
+  const bool due = !g_otaWindowEverStarted ||
+                   (nowMs - g_lastOtaWindowStartMs >= OTA_ADV_INTERVAL_MS);
+  if (!due) return;
+
+  float batteryMv = 0;
+  bool charging = false;
+  const bool otaPowerOk = readOtaPowerState(batteryMv, charging);
+  g_bleWakeCount++;
+  bleStartAdv(0, batteryMv, charging, otaPowerOk,
+              OTA_ADV_SLOW_INTERVAL_UNITS, OTA_ADV_HARD_TIMEOUT_SECONDS);
+  g_otaWindowEverStarted = true;
+  g_lastOtaWindowStartMs = nowMs;
+  g_otaWindowStartMs = nowMs;
+  g_otaWindowActive = Bluefruit.Advertising.isRunning();
+}
+#endif
 
 // Reads real sensor data (FDC2214 must already be fdcinit'd) + battery +
 // charger, builds the same manufacturer-data packet shape MSV2 sends, and
@@ -572,7 +712,13 @@ void doBleCycle(int n) {
     // Must go through readChargerPins()' pull-up path -- STAT is open-drain
     // with no board pull-up, so a bare digitalRead() here floats and reported
     // a bogus charging=1 even with no battery attached.
-    bool charging = isBatteryCharging();
+    bool statHigh = true;
+    bool pgHigh = true;
+    readChargerPins(statHigh, pgHigh);
+    bool charging = statHigh == LOW;
+    bool batteryReadingValid = vBatMv >= 2500.0f && vBatMv <= 5000.0f;
+    bool otaPowerOk = pgHigh == LOW ||
+                      (batteryReadingValid && vBatMv >= (float)OTA_MIN_BATTERY_MV);
 
     g_bleWakeCount++;
     char buf[160];
@@ -582,7 +728,7 @@ void doBleCycle(int n) {
              charging ? 1 : 0, (unsigned long)BLE_ADVERTISE_MS);
     printLineResilient(buf);
 
-    bleStartAdv(data, vBatMv, charging);
+    bleStartAdv(data, vBatMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
     delayFeedingWatchdog(BLE_ADVERTISE_MS);
     Bluefruit.Advertising.stop();
 
@@ -754,6 +900,7 @@ void printHelp() {
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
 #ifdef MSV3_SENSOR_ID
   Serial.println(F("  dfu                      - USB-gated reset into resident BLE recovery bootloader"));
+  Serial.println(F("  OTA recovery             - automatic 5s connectable window every 60s (USB or VBAT >= 3800mV)"));
 #endif
   Serial.println(F("  blestart                 - init BLE, advertise continuously (one-shot reading) until blestop"));
   Serial.println(F("  blestop                  - stop advertising"));
@@ -1674,8 +1821,22 @@ void handleCommand(String cmd) {
       uint32_t data = 0;
       uint16_t status = 0;
       fdcReadChannel0(data, status);
+      float batteryMv = 0;
+      bool charging = false;
+#ifdef MSV3_SENSOR_ID
+      bool otaPowerOk = readOtaPowerState(batteryMv, charging);
+#else
+      batteryMv = readVbatMv(nullptr);
+      bool statHigh = true;
+      bool pgHigh = true;
+      readChargerPins(statHigh, pgHigh);
+      charging = statHigh == LOW;
+      bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+      bool otaPowerOk = pgHigh == LOW ||
+                        (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+#endif
       g_bleWakeCount++;
-      bleStartAdv(data, 0, false);  // one-shot reading; use blecycle for live battery/charging too
+      bleStartAdv(data, batteryMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
       Serial.print(F("  advertising as \""));
       Serial.print(BLE_DEVICE_NAME);
       Serial.println(F("\" continuously (until blestop)"));
@@ -1777,6 +1938,9 @@ void handleCommand(String cmd) {
 
 void loop() {
   feedWatchdog();
+#ifdef MSV3_SENSOR_ID
+  servicePeriodicOtaWindow();
+#endif
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {
