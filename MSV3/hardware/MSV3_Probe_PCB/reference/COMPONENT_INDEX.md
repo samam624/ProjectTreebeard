@@ -186,6 +186,8 @@ disable threshold nearby — easy to grab the wrong constant from this datasheet
 | MPP/VOC ratio | (R10+R13)/(R9+R10+R13) | R9=4.42MΩ top, R10=10MΩ+R13=5.6MΩ bottom | ≈78% |
 | VBAT_OK | — | pin 11 floating, OK_HYST/OK_PROG tied GND | disabled on this board |
 
+**Full rework derivation: `MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`** (brought onto this branch 2026-09-19 by cherry-picking `edc9705`). **Read it with the correction below:** that document states the reworked 8.54 MΩ sum is "still inside TI's ≤10MΩ recommendation", which follows section 8.3.3's incomplete body text. The Recommended Operating Conditions table has a **9 MΩ minimum**, so 8.54 MΩ is **0.46 MΩ below spec** on every reworked field probe.
+
 **Resistor naming: RESOLVED 2026-09-15.** Equation 3 read off the *rendered* page 13 of SLUSAH0G
 rev G (extracted text scrambles it; render the page) is
 `VBAT_OV = (3/2) · VBIAS · (1 + R_OV2/R_OV1)`. `R_OV2` is the **VRDIV-side** resistor (R11) and

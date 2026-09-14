@@ -248,10 +248,17 @@ datasheet's own formulas, verified against TI's own worked design examples — n
 
 | BQ25504 threshold | Formula (VBIAS = 1.25V typ) | This board's real resistors | Computed value |
 |---|---|---|---|
-| VBAT_OV (charge ceiling, boost disables above this) | 1.5·VBIAS·(1+R11/R14) | R11=5.62MΩ (VRDIV-side), R14=4.42MΩ (GND-side) | **≈4.26V** |
+| VBAT_OV (charge ceiling, boost disables above this) — **reworked 2026-09-14** | 1.5·VBIAS·(1+R11/R14) | R11=4.42MΩ (VRDIV-side), R14=4.12MΩ (GND-side) | **≈3.90V** |
+| VBAT_OV — *as-built 2026-08-21, superseded* | same | R11=5.62MΩ, R14=4.42MΩ | ≈4.26V |
 | VBAT_UV (PFET VSTOR→VBAT gate threshold) | VBIAS·(1+R12/R15) | R12=5.90MΩ (VRDIV-side), R15=4.12MΩ (GND-side) | **≈3.04V** |
 | MPP / VOC sample ratio | (R10+R13)/(R9+R10+R13) | R9=4.42MΩ (top), R10=10MΩ+R13=5.6MΩ (bottom) | **≈78%** (typical solar range is 70-80%) |
 | VBAT_OK | not populated (pin 11 floating, OK_HYST/OK_PROG tied GND) | — | feature disabled on this board |
+
+**2026-09-14: the VBAT_OV row above was reworked.** Probes in the field were measuring 4.27V —
+above the 4.20V cell spec — which matches the as-built ≈4.26V ceiling within tolerance. `R11`
+5.62MΩ→4.42MΩ and `R14` 4.42MΩ→4.12MΩ brings it to ≈3.90V for calendar life. Full derivation,
+the rejected alternatives, and the per-board swap status are in
+`MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`. Everything else in this table is unchanged.
 
 VBAT_UV ≈3.04V is a real, useful number for interpreting future tests: a battery attached under
 weak light will show STAT/PG activity but **won't actually receive charge current until VSTOR
