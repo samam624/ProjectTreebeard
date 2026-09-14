@@ -111,8 +111,11 @@ more thermal drive on top of 32x more thermal sensitivity.
   682 times in 1498 consecutive readings, at 4280–4441 mV — a charger hovering at its regulation
   threshold and toggling, not a day/night pattern. It does not track `tank_phase` (50.3% agreement
   is chance), so it is not the phase bit leaking. Do not use bit0 as evidence of harvesting.
-- Probe 5's resting battery of 4280–4441 mV is above a single LiPo's ceiling, which is worth
-  confirming against what is actually fitted to that board.
+- ~~Probe 5's resting battery of 4280–4441 mV is above a single LiPo's ceiling, which is worth
+  confirming against what is actually fitted to that board.~~ **Resolved 2026-09-14: no battery was
+  connected during that run.** The reading was the unloaded VBAT rail, not a cell, so there is
+  nothing anomalous here and no over-voltage was ever measured on a real battery. The charging-flag
+  finding above is unaffected.
 
 ## What would confirm this, cheaply
 

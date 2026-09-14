@@ -245,24 +245,45 @@ const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
 const char SOUND_SETTINGS_PATH[] = "/sound.json";
 const char AUTOCAL_CACHE_PATH[] = "/autocal-cache-v1.json";
 const char AUTOCAL_CACHE_TEMP_PATH[] = "/autocal-cache-v1.tmp";
-const char TEMPERATURE_COMPENSATION_CACHE_PATH[] = "/temp-comp-v2.json";
-const char TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH[] = "/temp-comp-v2.tmp";
+const char TEMPERATURE_COMPENSATION_CACHE_PATH[] = "/temp-comp-v3.json";
+const char TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH[] = "/temp-comp-v3.tmp";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
 
 // MSV3 receiver-side temperature compensation. The probe continues to transmit only raw
 // observables; this model lives here so raw history is never replaced and the correction can
-// be revised/audited without reflashing every probe. Model v2 was seeded from real in-pot probe
-// 4 data collected 2026-09-06..09. It estimates log(Cconnected/Cbare), removes the part that
-// covaries with a 2-hour effective board temperature, and retains a 48-hour moisture baseline.
-const uint8_t TEMPERATURE_COMPENSATION_MODEL_VERSION = 2;
+// be revised/audited without reflashing every probe. It estimates log(Cconnected/Cbare), removes
+// the part that covaries with a 2-hour effective board temperature, and retains a 48-hour
+// moisture baseline.
+//
+// Model v3 (2026-09-14) fixes a defect that made v2 actively harmful on some probes. v2 seeded
+// every probe with a POSITIVE gain and then rejected any fit that came back negative. Probe 8's
+// real coefficient is negative, so all four of its 24-hour fits were rejected, its gain stayed
+// pinned at the seed forever, and it applied a wrong-signed correction that made its daily swing
+// 2.5x WORSE than no compensation at all. Measured against 10 days of real history:
+//
+//   probe 8 daily peak-to-peak   uncorrected 0.907%   v2 2.289%   v3 0.701%
+//   probe 4 daily peak-to-peak   uncorrected 10.385%  v2 9.334%   v3 9.422%
+//
+// The three changes are: seed the gain at zero so an unlearned probe corrects nothing rather
+// than guessing; accept negative gains, because the sign is a physical property that differs
+// between probes; and adopt the first accepted fit outright instead of blending it 3:1 against
+// a seed that carries no information. See
+// MSV3/docs/MSV3_AM_VS_FM_SENSING_THERMAL_SELECTIVITY_2026-09-13.md for why the sign varies:
+// the thermal term is a difference of competing effects whose balance depends on soil wetness.
+const uint8_t TEMPERATURE_COMPENSATION_MODEL_VERSION = 3;
 const float TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C = 22.0f;
 const float TEMPERATURE_COMPENSATION_PROBE_4_REFERENCE_C = 22.34f;
 const float TEMPERATURE_COMPENSATION_TEMP_TAU_SECONDS = 2.0f * 60.0f * 60.0f;
 const float TEMPERATURE_COMPENSATION_MOISTURE_TAU_SECONDS = 48.0f * 60.0f * 60.0f;
-const float TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C = 0.01254f;
-const float TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C = 0.01568f;
+// Zero, deliberately. A probe that has not yet earned a fit must not apply a correction whose
+// sign it cannot know. The gain is a per-probe physical property, not a fleet constant.
+const float TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C = 0.0f;
+const float TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C = 0.0f;
+// Symmetric bound. v2 used 0.0f as the lower limit, which silently discarded every correctly
+// fitted negative gain instead of applying it.
+const float TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C = -0.04f;
 const float TEMPERATURE_COMPENSATION_SEED_PHASE_OFFSET = 0.0000496f;
 const uint32_t TEMPERATURE_COMPENSATION_FIT_BLOCK_MS = 24UL * 60UL * 60UL * 1000UL;
 const uint32_t TEMPERATURE_COMPENSATION_PERSIST_INTERVAL_MS = 15UL * 60UL * 1000UL;
@@ -1185,8 +1206,11 @@ uint8_t parseTemperatureCompensationMode(const char* value)
 
 float temperatureCompensationSeedGain(uint8_t sensorId)
 {
-  // Probe 4 is the only probe with a chronological real-pot fit so far. Other probes retain
-  // the conservative v1 fleet seed until they have their own controlled calibration window.
+  // Both seeds are zero since v3, so this is currently a no-op kept for shape: a probe with a
+  // genuinely measured per-probe gain could be seeded here. It must never be used to hand a
+  // probe a fleet-average gain, because the sign is not a fleet property. Probe 4 fits about
+  // +0.013 and probe 8 about -0.004 in the same week, and v2 shipping probe 8 a positive seed
+  // it could never fit its way out of is the exact defect v3 exists to fix.
   return sensorId == 4
       ? TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C
       : TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C;
@@ -1277,7 +1301,8 @@ bool loadTemperatureCompensationModels()
     float maxTempC = row["maxTempC"] | -1000.0f;
     double sumY = row["sumY"] | 0.0;
     double sumYSquared = row["sumYSquared"] | 0.0;
-    if (sensorId == 0 || sensorId > MAX_SENSOR_ID || !isfinite(gain) || gain < 0.0f || gain > 0.04f ||
+    if (sensorId == 0 || sensorId > MAX_SENSOR_ID || !isfinite(gain) ||
+        gain < TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C || gain > 0.04f ||
         !isfinite(referenceTempC) || referenceTempC < -40.0f || referenceTempC > 85.0f ||
         !isfinite(phaseOffset) || fabsf(phaseOffset) > 0.01f ||
         !isfinite(effectiveTempC) || effectiveTempC < -40.0f || effectiveTempC > 85.0f ||
@@ -1649,12 +1674,25 @@ TemperatureCompensationResult updateTemperatureCompensation(
       const double r2 = sst > 1e-10 ? 1.0 - max(0.0, sse) / sst : -1.0;
       const float candidateGain = (float)coefficients[2];
       const float candidatePhase = (float)coefficients[3];
-      if (isfinite(candidateGain) && candidateGain >= 0.0f && candidateGain <= 0.04f &&
+      if (isfinite(candidateGain) && candidateGain >= TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C &&
+          candidateGain <= 0.04f &&
           isfinite(candidatePhase) && fabsf(candidatePhase) <= 0.01f &&
           r2 >= TEMPERATURE_COMPENSATION_MIN_FIT_R2)
       {
-        state.gainPerC = 0.75f * state.gainPerC + 0.25f * candidateGain;
-        state.phaseOffset = 0.75f * state.phaseOffset + 0.25f * candidatePhase;
+        // The first accepted fit is taken outright. Blending it 3:1 against the seed only makes
+        // sense if the seed carries information, and since v3 the seed is deliberately zero.
+        // Blending against zero would leave a probe applying a quarter of its own measured gain
+        // for several days, which is a worse error than applying none.
+        if (state.acceptedFits == 0)
+        {
+          state.gainPerC = candidateGain;
+          state.phaseOffset = candidatePhase;
+        }
+        else
+        {
+          state.gainPerC = 0.75f * state.gainPerC + 0.25f * candidateGain;
+          state.phaseOffset = 0.75f * state.phaseOffset + 0.25f * candidatePhase;
+        }
         if (state.acceptedFits < 0xFF) state.acceptedFits++;
         accepted = true;
       }

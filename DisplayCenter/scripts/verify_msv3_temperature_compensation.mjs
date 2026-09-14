@@ -24,9 +24,58 @@ new vm.Script(browserScript);
 assert.match(firmware, /TEMPERATURE_COMPENSATION_TEMP_TAU_SECONDS = 2\.0f \* 60\.0f \* 60\.0f/);
 assert.match(firmware, /TEMPERATURE_COMPENSATION_MOISTURE_TAU_SECONDS = 48\.0f \* 60\.0f \* 60\.0f/);
 assert.match(firmware, /TEMPERATURE_COMPENSATION_REQUIRED_FITS = 2/);
-assert.match(firmware, /TEMPERATURE_COMPENSATION_MODEL_VERSION = 2/);
-assert.match(firmware, /TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C = 0\.01568f/);
+assert.match(firmware, /TEMPERATURE_COMPENSATION_MODEL_VERSION = 3/);
 assert.match(firmware, /TEMPERATURE_COMPENSATION_PROBE_4_REFERENCE_C = 22\.34f/);
+
+// --- v3 regression guards -------------------------------------------------------------------
+// v2 seeded every probe with a POSITIVE gain and then rejected any fit that came back negative.
+// Probe 8's real coefficient is negative, so all four of its 24-hour fits were rejected, its gain
+// stayed pinned at the seed, and it applied a wrong-signed correction that made its daily swing
+// 2.5x worse than no compensation at all. Each assertion below pins one half of that fix.
+
+// 1. An unlearned probe must correct nothing rather than guess a sign it cannot know.
+assert.match(
+  firmware,
+  /TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C = 0\.0f/,
+  "The default seed gain must be zero; a fleet-average gain has no defined sign.",
+);
+assert.match(
+  firmware,
+  /TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C = 0\.0f/,
+  "Per-probe seeds must also be zero until a probe has earned its own fit.",
+);
+
+// 2. The accepted gain range must be symmetric. A hard 0.0f lower bound is the original defect.
+assert.match(
+  firmware,
+  /TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C = -0\.04f/,
+  "The gain bound must be symmetric so correctly fitted negative gains are applied, not discarded.",
+);
+assert.doesNotMatch(
+  firmware,
+  /candidateGain >= 0\.0f/,
+  "Fit acceptance must not reject negative gains; the sign is a per-probe physical property.",
+);
+assert.doesNotMatch(
+  firmware,
+  /!isfinite\(gain\) \|\| gain < 0\.0f/,
+  "Restore validation must not reject a persisted negative gain.",
+);
+
+// 3. The first accepted fit is adopted outright. Blending 3:1 against a zero seed would leave a
+//    probe applying a quarter of its own measured gain for days.
+assert.match(
+  firmware,
+  /state\.acceptedFits == 0[\s\S]{0,200}state\.gainPerC = candidateGain;/,
+  "The first accepted fit must be taken outright rather than blended against the zero seed.",
+);
+
+// 4. Changing the model must invalidate persisted v2 state rather than reinterpret it.
+assert.match(
+  firmware,
+  /TEMPERATURE_COMPENSATION_CACHE_PATH\[\] = "\/temp-comp-v3\.json"/,
+  "A model change must move the cache path so v2 state is not restored under v3 semantics.",
+);
 assert.match(firmware, /TEMPERATURE_COMPENSATION_PERSIST_INTERVAL_MS = 15UL \* 60UL \* 1000UL/);
 assert.match(
   firmware,
@@ -102,4 +151,4 @@ assert.ok(
 );
 assert.match(app, /12 h EWMA moisture trend/);
 
-console.log("PASS MSV3 temperature compensation v2 is gated, restart-resumable, epoch-safe, and continuously trended");
+console.log("PASS MSV3 temperature compensation v3 is gated, sign-correct, restart-resumable, epoch-safe, and continuously trended");
