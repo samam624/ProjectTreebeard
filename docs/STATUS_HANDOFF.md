@@ -2,6 +2,52 @@
 
 Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-14 Bootloader 1.0.4 built (NOT installed), and evidence on the 1.0.3 archive dispute
+
+- **Bootloader 1.0.4 exists as a built, verified artifact and is installed on nothing.** No probe
+  runs it and none may until the acceptance list in the requirement document passes on probe 99.
+  `MSV3/bootloader/generated/1.0.4/msv3-e73-recovery-signed-s140-6.1.1.hex`, sha256
+  `1436177299cb8ad43f3d79d2f0af2985e4d54bb74cd01d7d1cc0620b9a4edb8d`.
+- **The design changed during implementation, and the first version would have been worse than
+  doing nothing.** Concurrent USB+BLE looked viable because `usb_init()` already supports a running
+  SoftDevice and `proc_soc()` already forwards SD USB power events to TinyUSB. It is not viable:
+  `bootloader_dfu_start()` starts exactly ONE transport, so initializing USB without starting the
+  serial transport enumerates a CDC port that accepts no DFU traffic -- the precise failure the
+  requirement document exists to prevent; `dfu_register_callback()` holds a single `m_data_pkt_cb`
+  that a second transport overwrites; and the close path dispatches on the single `is_ota()` global.
+  Concurrency needs the shared DFU state machine restructured, which is what was dropped from 1.0.2
+  scope after the completion-gate defect.
+- **1.0.4 is therefore sequential:** on recovery entry only (no valid application, so an
+  app-requested BLE OTA jump is never delayed), and only when `VBUSDETECT` shows bus power, it opens
+  a bounded 10 s CDC serial-DFU window, tears USB down, then falls through to the unchanged BLE
+  path. No cable or no recovery entry means nothing is initialized and the branch is byte-for-byte
+  1.0.3. The window cannot cut off a real transfer: `bootloader_timeout_startup_dfu()` only exits
+  while `m_startup_dfu_has_activity` is false, which is upstream behavior, not something this patch
+  adds. The 10 s value is a starting point and needs to be set on the bench.
+- **Verification lesson worth keeping.** The new link-map check fired on the first build: the helper
+  was absent from the map because it had been inlined, exactly as `check_dfu_mode()` already is. It
+  is now `noinline` so the linked artifact can be proven. A source sentinel proves a patch applied,
+  not that the code reached the binary -- different questions for a bootloader that cannot be
+  re-flashed on a coated probe.
+
+### Evidence on `1.0.3/raw-probes-v65556-manifest.json` (dispute NOT resolved)
+
+`verify_msv3_release_archive.py` currently fails on this one pre-existing entry. Measured
+2026-09-14, recorded as evidence only -- no hash in `DISPUTED.json` was edited, per its own rule:
+
+- The path has exactly **one** commit in history (`062d9e1`), blob `2dbae5ef...`. It has never been
+  edited since it was introduced.
+- `core.autocrlf` is `true` and there is no `.gitattributes`, so it checks out as CRLF. The CRLF
+  form hashes to `9073af59...`, which is **exactly** what both `SHA256SUMS.txt` and
+  `release-manifest.json` record. On this checkout the artifact matches its integrity records.
+- `DISPUTED.json`'s recorded `sha256_on_disk` is `4a979c49...`, and that matches **none** of the
+  serializations of the committed content: not LF (`2dbae5ef`), not CRLF (`9073af59`), not either
+  without a trailing newline (`a5a166c3` / `9073af59`).
+- So line-ending normalization explains why the file agrees with its integrity records, but it does
+  **not** explain `4a979c49`. That hash came from content that was in some working tree and was
+  never committed. Resolving this is a maintainer judgement call, not a mechanical fix, and the
+  verifier should keep failing until someone makes it.
+
 ## 2026-09-14 Maintainer decisions: C17 fleet-wide, coating test started, USB/BLE design scoped
 
 - **C17 is physically removed from every probe.** The hardware half of the capless rollout is done

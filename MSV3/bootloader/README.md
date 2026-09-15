@@ -17,6 +17,32 @@ product behavior. The maintainer requires a future path that keeps both USB and 
 preserving all recovery and authentication guarantees; see
 `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md`.
 
+**Release 1.0.4 is the first build that addresses this, and it is BUILT BUT NOT INSTALLED.** No
+probe runs it and none may until it passes the full acceptance list on probe 99. It is **sequential, not
+concurrent**: on recovery entry only (no valid application), and only when `VBUSDETECT` shows bus
+power, it opens a bounded 10 s CDC serial-DFU window, tears USB down, and then falls through to the
+unchanged BLE path. With no cable, or on an application-requested BLE OTA jump, nothing is
+initialized and the branch is byte-for-byte 1.0.3. It is CDC only, never UF2: mass storage writes
+unsigned images by definition and would route around signed-init verification, the device-type check
+and the version floor. Mechanism, risks and the bench plan:
+`MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md`.
+
+Concurrent transports were tried first and rejected on evidence, which is worth knowing before
+anyone proposes them again: `bootloader_dfu_start()` starts only one transport, so initializing USB
+without starting the serial transport would enumerate a CDC port that accepts nothing;
+`dfu_register_callback()` holds a single `m_data_pkt_cb` that a second transport would overwrite;
+and the close path dispatches on the single `is_ota()` global. Serving both at once means
+restructuring the shared DFU state machine -- the area dropped from 1.0.2 scope after the
+completion-gate defect.
+
+The 1.0.4 patch is verified twice, because the two checks catch different failures. The source
+sentinel (`MSV3_USB_BLE_COEXIST` in `src/main.c`) catches a patch that silently failed to apply. The
+link-map check catches a patch that applied and still did not reach the binary -- and it found a
+real instance immediately: `msv3_usb_start_if_vbus()` was inlined out of the symbol table on the
+first build, exactly as `check_dfu_mode()` already is. The helper is therefore `noinline`, so the
+linked artifact can be proven rather than assumed. A source-level sentinel alone cannot tell
+"compiled in" from "`#define` still sitting in the file".
+
 MSV3 release 1.0.2 added an on-device monotonic application-version floor after a signed BLE
 activation. Release 1.0.3 retains that protection and reserves the final eight bytes of RAM at
 `0x2003FFF8` for the application's watchdog-loop recovery counter. The application linker reserves

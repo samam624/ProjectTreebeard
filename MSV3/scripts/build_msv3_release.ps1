@@ -150,6 +150,17 @@ if ([version]$ReleaseVersion -ge [version]"1.0.3") {
     SentinelIn = "linker\nrf52840.ld"
   }
 }
+if ([version]$ReleaseVersion -ge [version]"1.0.4") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.4-usb-ble-coexist.patch"
+    # Brings up USB alongside BLE when VBUS is present, instead of stock 0.11.0's either/or. A
+    # silent failure to apply would produce a bootloader that looks and installs correctly and
+    # still has no wired escape -- which is the entire defect, on exactly the coated probes that
+    # cannot be reached any other way.
+    Sentinel = "MSV3_USB_BLE_COEXIST"
+    SentinelIn = "src\main.c"
+  }
+}
 
 foreach ($p in $patches) {
   if (!(Test-Path -LiteralPath $p.File)) {
@@ -250,6 +261,28 @@ Expected an 8-byte MSV3_BOOT_GUARD_RETAINED region at 0x2003FFF8 and __StackTop 
 "@
   }
   Write-Host "MSV3 bootloader map check: OK (stack ends below retained state at 0x2003FFF8)"
+}
+
+if ([version]$ReleaseVersion -ge [version]"1.0.4") {
+  # Again, verify the linked artifact rather than only the patched source. The coexistence helper
+  # is static and reachable only from check_dfu_mode(), so -ffunction-sections/--gc-sections would
+  # be entirely within its rights to discard it if the call site ever got compiled out by the
+  # NRF_USBD/MSV3_USB_BLE_COEXIST guards. The sentinel grep above cannot see that: the #define
+  # would still be sitting in the source it just patched. A bootloader that silently linked without
+  # the wired path is the exact artifact this release exists to avoid shipping.
+  $bootMap = Join-Path $buildDir "msv3_e73_bootloader-$bootVersion.out.map"
+  if (!(Test-Path -LiteralPath $bootMap)) {
+    throw "Bootloader 1.0.4+ build map is missing: $bootMap"
+  }
+  if ([IO.File]::ReadAllText($bootMap) -notmatch 'msv3_try_wired_dfu_window') {
+    throw @"
+Bootloader 1.0.4+ linked without the USB/BLE coexistence helper:
+  $bootMap
+Expected msv3_try_wired_dfu_window in the link map. The patch applied but the function was not linked,
+so this bootloader would fall back to BLE-only recovery with no wired escape.
+"@
+  }
+  Write-Host "MSV3 bootloader map check: OK (USB/BLE coexistence helper linked)"
 }
 
 if (!$SkipApplicationCompile) {

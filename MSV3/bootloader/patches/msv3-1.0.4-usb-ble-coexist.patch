@@ -1,0 +1,114 @@
+diff --git a/src/main.c b/src/main.c
+index c988ee4..35c1e97 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -238,6 +238,95 @@ int main(void) {
+   NVIC_SystemReset();
+ }
+ 
++/*
++ * MSV3 1.0.4: a wired escape for probes whose SWD pads are under conformal coating.
++ *
++ * THE PROBLEM. Stock 0.11.0 brings up exactly one transport --
++ * `if (_ota_dfu) ble_stack_init(); else usb_init();` -- and DEFAULT_TO_OTA_DFU forces _ota_dfu
++ * whenever `!valid_app || dfu_start`. The USB branch is therefore unreachable in precisely the case
++ * that matters: an MSV3 with a dead application, no reachable SWD, and BLE as its only way back.
++ *
++ * WHY THIS IS NOT CONCURRENT. The first draft brought both transports up together, which looked
++ * right because usb_init() already supports a running SoftDevice (it branches on
++ * sd_softdevice_is_enabled(), routes power events via sd_power_usbdetected/usbpwrrdy/usbremoved,
++ * and leaves IRQ priorities 0-1 to the SD) and proc_soc() already forwards NRF_EVT_POWER_USB_* into
++ * TinyUSB. Reading further showed that is not enough, and would have been worse than doing nothing:
++ *
++ *   - bootloader_dfu_start(ota) starts ONE transport -- dfu_transport_ble_update_start() OR
++ *     dfu_transport_serial_update_start(). Initializing USB without starting the serial transport
++ *     enumerates a CDC port that accepts no DFU traffic, which is exactly the "host sees USB and
++ *     assumes the bootloader owns it" failure the requirement document warns about.
++ *   - dfu_register_callback() stores a SINGLE m_data_pkt_cb. A second transport's registration
++ *     overwrites the first, so two transports cannot both be served.
++ *   - bootloader_dfu_update_process() dispatches its close on is_ota(), one global.
++ *
++ * Serving both at once therefore means restructuring the shared DFU state machine -- the same area
++ * whose restructuring was deliberately dropped from 1.0.2 scope after the completion-gate defect.
++ * Not on a bootloader that cannot be re-flashed on a coated probe.
++ *
++ * WHAT THIS DOES INSTEAD. Sequential, wired-first, strictly bounded, and only on recovery entry:
++ *
++ *   1. Only when there is no valid application. An application that deliberately jumped here for a
++ *      BLE OTA (DFU_MAGIC_OTA_APPJUM, _sd_inited already true) has a host waiting on the radio right
++ *      now and must not be delayed.
++ *   2. Only when VBUSDETECT says bus power is actually present. With no cable the USB peripheral is
++ *      never initialized and a battery/solar probe behaves byte-for-byte as it does today.
++ *   3. CDC only, never UF2. Mass storage writes unsigned images by definition and would route around
++ *      signed-init verification, the device-type check and the monotonic version floor.
++ *   4. Bounded by MSV3_USB_DFU_WINDOW_MS with cancel_timeout_on_usb = false, so a host that
++ *      enumerates and then does nothing cannot hold the probe out of BLE recovery. The window is
++ *      safe against aborting a real transfer because bootloader_timeout_startup_dfu() only exits
++ *      when m_startup_dfu_has_activity is still false -- an update in progress makes the timeout a
++ *      no-op.
++ *   5. Then tear USB down and fall through to the unchanged BLE path, which remains the floor.
++ *
++ * Design, risks, and the acceptance criteria this must pass on probe 99 before any fleet probe runs
++ * it: MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md
++ */
++#define MSV3_USB_BLE_COEXIST 1
++#define MSV3_USB_DFU_WINDOW_MS 10000
++
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++/*
++ * noinline is load-bearing, not style. check_dfu_mode() is itself static and is inlined into
++ * main(), so a static helper called once from it leaves no symbol in the link map -- and the map is
++ * where build_msv3_release.ps1 proves the wired path actually linked. A source sentinel cannot tell
++ * "compiled in" from "#define still sitting in the file". This was not hypothetical: the first
++ * 1.0.4 build linked without a msv3_usb_start_if_vbus symbol at all because it had been inlined.
++ */
++__attribute__((noinline, used))
++static bool msv3_try_wired_dfu_window(bool valid_app)
++{
++  /*
++   * Recovery entry only. _sd_inited is true when the application jumped here for a BLE OTA, which
++   * is a session someone is already waiting on.
++   */
++  if (valid_app || _sd_inited) {
++    return false;
++  }
++
++  /*
++   * The SoftDevice is not enabled yet on this path, so USBREGSTATUS is ours to read directly.
++   * usb_init() performs the SD-aware version of this check for itself.
++   */
++  if (!(NRF_POWER->USBREGSTATUS & POWER_USBREGSTATUS_VBUSDETECT_Msk)) {
++    return false;
++  }
++
++  led_state(STATE_USB_UNMOUNTED);
++  usb_init(true);
++
++  /*
++   * ota = false selects the serial transport; timeout bounded; cancel_timeout_on_usb = false so
++   * mere enumeration cannot extend the window indefinitely.
++   */
++  bootloader_dfu_start(false, MSV3_USB_DFU_WINDOW_MS, false);
++
++  usb_teardown();
++  return true;
++}
++#endif
++
+ static void check_dfu_mode(void) {
+   uint32_t const gpregret = NRF_POWER->GPREGRET;
+ 
+@@ -324,6 +413,13 @@ static void check_dfu_mode(void) {
+   // Enter DFU mode accordingly to input
+   if (dfu_start || !valid_app) {
+     if (_ota_dfu) {
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++      /*
++       * Wired window first, then BLE. If this returns false nothing was initialized and the
++       * remainder of this branch is byte-for-byte the 1.0.3 behavior already proven in the field.
++       */
++      (void) msv3_try_wired_dfu_window(valid_app);
++#endif
+       led_state(STATE_BLE_DISCONNECTED);
+       if (!_sd_inited) mbr_init_sd();
+       _sd_inited = true;
