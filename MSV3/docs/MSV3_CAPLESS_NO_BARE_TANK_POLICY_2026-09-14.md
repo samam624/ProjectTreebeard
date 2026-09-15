@@ -64,21 +64,26 @@ small correction is justified by the approximately fourfold measured raw-count r
 5. Do not run mux 2/3 as a functional test. A scope-only engineering experiment requires an
    explicit diagnostic image and minimum drive; its FDC data is out of range by definition.
 
-Probe 7 is not a normal rollout member: its TMUX path is already diagnosed faulty. C17 removal does
-not repair that fault; it still needs the documented fixed-phase mux-bypass repair and matching
-firmware before it can produce trustworthy moisture data.
+Probe 7 was initially excluded because of a phase-dependent TMUX fault. Bench work later on
+2026-09-14 proved that fault was a pressure-sensitive code-1 solder connection and repaired it by
+reflow. Both connected phases now overlap near 36.73M with no FDC error bits. Probe 7 can therefore
+join the capless rollout after its archived v65565 production restore replaces the currently
+installed v65565 bring-up diagnostic.
 
 ## Prepared fleet packages (not installed)
 
-Application version 65564 is reserved for this capless production transition. Every package below
-was compiled with IDRIVE 16, checked for its embedded sensor identity/version/signature, and added
-to a release directory that passes `scripts/verify_msv3_release_archive.py`.
+Application version 65564 is reserved for the original capless fleet transition; Probe 7 uses
+v65565 because its diagnostic had to advance beyond its previously installed rollback floor. Every
+package below was compiled with IDRIVE 16, checked for its embedded sensor
+identity/version/signature, and added to a release directory that passes
+`scripts/verify_msv3_release_archive.py`.
 
 | Probe | Installed bootloader contract | Signed OTA package | SHA-256 |
 |---:|---|---|---|
 | 4 | 1.0.1, Guard 2 off | `msv3-1.0.1-sensor004-v65564-signed-ota.zip` | `466b6a11ae1995963e7c8058de5aec1fc67dedcaea23a91ebdbfd983e809853c` |
 | 5 | 1.0.3, Guard 2 on | `msv3-1.0.3-sensor005-v65564-signed-ota.zip` | `9c31e04e058454bdd9ada5ad297a14934b9e216f62f77b1bceb06679fe77ab81` |
 | 6 | 1.0.3, Guard 2 on | `msv3-1.0.3-sensor006-v65564-signed-ota.zip` | `daf2c13aeda69c2687c9eead3815182af3122837ce67402f5483bdb8fc802893` |
+| 7 | 1.0.3, Guard 2 on | `msv3-1.0.3-sensor007-v65565-signed-ota.zip` | `2ed999de3cb189f2f353fb562de615b2b9db5afc29e766ee086d423f69f5b456` |
 | 8 | 1.0.3, Guard 2 on | `msv3-1.0.3-sensor008-v65564-signed-ota.zip` | `ed2ef2ddd35576038ce1ca1144f7a361ad1f4ece23a2ee1cfebfe6b0d6f7e9dc` |
 
 Do not install these packages until a capless-aware DisplayCenter receiver is running. The probe

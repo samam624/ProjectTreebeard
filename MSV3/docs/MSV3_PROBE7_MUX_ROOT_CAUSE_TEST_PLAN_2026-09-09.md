@@ -1,10 +1,37 @@
 # Probe 7 TMUX1109 root-cause test plan
 
 **Date:** 2026-09-09  
-**Status:** Diagnostic plan recorded; do not reflow or remove the mux until the electrical evidence
-below has been captured.
+**Status:** Resolved 2026-09-14 by reflowing a pressure-sensitive code-1 analog-path solder joint.
+The original A1/decoder hypothesis below is retained as historical reasoning, not the final cause.
 
-## Existing fault signature
+## Resolution captured on 2026-09-14
+
+The static truth-table test showed the requested codes really reached the TMUX: code 2 drove
+Node A to 3V3 and Node B low/VDIV, while code 3 reversed them. That ruled out the suspected stuck
+`A1` select path. A signed, Probe-7-targeted bring-up image then ran `hotcoldstream` without losing
+BLE recovery:
+
+- code 0 (`A=HOT, B=COLD`) was stable near 38.69M;
+- code 1 (`A=COLD, B=HOT`) was stable but wrong near 53.89M;
+- pressing directly on the TMUX package restored code 1 from about 50M to the normal 38M region.
+
+The pressure response localized the problem to a solder joint on the code-1 analog routes (pin 5
+and/or pin 12), not the FDC2214, L2 tank, mux GPIOs, or firmware. During rework, an accidental bridge
+briefly stopped CH0 conversion. The console reported this as `I2C read failed`, but that string also
+covers a conversion timeout. After the bridge was cleaned up:
+
+- `i2cscan` found the FDC at `0x2A`;
+- `fdcid` returned manufacturer/device IDs `0x5449/0x3055`;
+- `fdctest` completed 10/10 reads with zero failures; and
+- repeated code-0/code-1 flips overlapped near 36.73M with normal `STATUS=0x8 CH0_UNREAD` and no
+  watchdog or amplitude errors.
+
+No mux removal or fixed-phase bypass is needed. Probe 7 is presently running signed targeted
+diagnostic v65565, and a paired signed capless production v65565 restore is archived.
+
+## Historical fault signature and test plan
+
+### Existing fault signature
 
 Probe 7's production telemetry is consistent with the TMUX1109 address input `A1` being stuck low:
 
@@ -18,7 +45,7 @@ E73 `P0.31` / module pin 9 -> `MUX1` -> TMUX1109PWR pin 16. TMUX pin 15, immedia
 is GND. Leading possibilities are a pin-16-to-pin-15 solder bridge, an open pin-16 or E73-pin-9
 joint/trace, a damaged E73 `P0.31` output, or damage to the TMUX1109's internal A1 input/decoder.
 
-## Preserve evidence before applying heat
+### Preserve evidence before applying heat
 
 Disconnect USB, battery, and solar before resistance or continuity measurements.
 
@@ -35,7 +62,7 @@ Disconnect USB, battery, and solar before resistance or continuity measurements.
 Do not use continuity mode on a powered board. Do not inject 3.3 V into `A1` while the MCU may be
 driving it low.
 
-## Decisive powered logic test
+### Decisive powered logic test
 
 The installed production application already requests codes 2/3 briefly for each advertised
 bare-tank reading. With the board powered, use a high-impedance oscilloscope or logic analyzer on
@@ -60,7 +87,7 @@ retains `ResetSafeBLEDfu` and holds each mux code for several seconds. Do not OT
 `MSV3_Probe_Bringup_Test` sketch on Probe 7: it has no reset-safe DFU jump and can be a one-way
 installation with this bootloader unless SWD/reset access is maintained.
 
-## Static four-code truth-table check
+### Static four-code truth-table check
 
 Perform this out of soil and keep codes 2/3 selected only long enough to measure:
 
@@ -80,7 +107,7 @@ If one Node bank switches and the other does not, check the affected common/sour
 If `A1` reaches pin 16 at a valid logic high, all package-lead-to-net continuity checks pass, and
 both banks still behave as codes 0/1, the evidence supports damaged TMUX1109 silicon.
 
-## Reflow/replacement decision
+### Reflow/replacement decision
 
 After recording the measurements, flux and reflow the localized A1 path first: TMUX pin 16 and the
 E73 module pin-9 joint. Recovery after that is strong evidence of an assembly joint. If the valid

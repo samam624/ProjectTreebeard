@@ -2,6 +2,29 @@
 
 Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-14 Probe 7 repair, current image, and USB + OTA follow-up
+
+- **Probe 7's TMUX fault is repaired.** Static codes 2/3 first proved that both select GPIOs and
+  the EC-side routes worked. The targeted `hotcoldstream` diagnostic then isolated the failure to
+  mux code 1: code 0 read about 38.69M while code 1 read about 53.89M, and pressing the TMUX package
+  restored code 1 to the normal region. That pressure sensitivity identified a package solder
+  joint, not an FDC, tank, firmware, or mux-decoder failure.
+- The TMUX was resoldered. A temporary rework bridge stopped CH0 conversions and produced the
+  bring-up console's ambiguous `I2C read failed` message; after cleanup, `i2cscan` found `0x2A`,
+  `fdcid` returned `0x5449/0x3055`, `fdctest` completed 10/10 with zero failures, and repeated
+  flips held both code 0 and code 1 near 36.73M with only normal `STATUS=0x8 CH0_UNREAD`.
+- **Probe 7 currently runs signed targeted bring-up application v65565**, build
+  `2026-09-14-probe7-mux-diag`. Its successful activation raised the on-device rollback floor to
+  65565. A paired capless production v65565 equality-version restore was built and archived before
+  installing the diagnostic; do not try to restore the older v65556 image.
+- **Open requirement from the maintainer:** USB and BLE OTA must coexist in the eventual MSV3
+  recovery design. The present bootloader's `DEFAULT_TO_OTA_DFU` behavior provides automatic BLE
+  recovery when the application is absent but removes bootloader USB CDC/DFU. Do not treat that
+  mutual exclusion as the desired final design. Preserve signed OTA, rollback protection, and
+  invalid-application recovery while restoring a dependable USB firmware path and application USB
+  serial access. Acceptance criteria and the failure mode are recorded in
+  `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md`.
+
 ## 2026-09-14 MSV3 capless production / no bare-tank measurement
 
 - **Decision:** C17 is DNP and must be removed from every healthy MSV3 during rollout. Production
@@ -20,11 +43,12 @@ Date: 2026-09-14 (the section immediately below is current; older deployment-sta
   range, and a separate cloud calibration epoch. Bare/reference temperature compensation is forced
   off for scale 3; raw connected counts and die temperature remain available for a future physical
   soil/interface model. Legacy C17/scale-2 packets still parse during rollout.
-- **Prepared, not deployed:** signed application v65564 packages are archived for healthy Probes
-  4, 5, 6, and 8. Probe 7 is excluded because its independent TMUX fault still requires the fixed-
-  phase bypass repair. DisplayCenter has only been compile-verified because COM3 is occupied by the
-  v1.2 overnight test. Probe 8 remains on signed diagnostic v65563; do not install v65564 until the
-  capless-aware receiver is actually running.
+- **Prepared, not deployed:** signed application v65564 packages are archived for Probes 4, 5, 6,
+  and 8. Probe 7's mux is now repaired and has its own v65565 production restore package, but it
+  currently remains on the matching v65565 diagnostic image. DisplayCenter has only been
+  compile-verified because COM3 is occupied by the v1.2 overnight test. Probe 8 remains on signed
+  diagnostic v65563; do not install capless production until the capless-aware receiver is actually
+  running.
 - Full measurements, hashes, invariants, and receiver-first rollout order:
   `MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
 

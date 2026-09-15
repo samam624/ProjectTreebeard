@@ -1,6 +1,6 @@
 {
     "release": "1.0.3",
-    "application_version": 65564,
+    "application_version": 65565,
     "device_type": "0x3356",
     "softdevice_requirement": "0x00B6 (S140 6.1.1)",
     "application_configuration": {
@@ -129,6 +129,16 @@
             "name": "msv3-1.0.3-sensor006-v65564-signed-ota.zip",
             "sha256": "daf2c13aeda69c2687c9eead3815182af3122837ce67402f5483bdb8fc802893",
             "bytes": 133776
+        },
+        {
+            "name": "msv3-1.0.3-sensor007-v65565-initial-install-from-stock.zip",
+            "sha256": "69a765a1d61583520b256f11891bb069a48684a2e1b6f3660d4f255d3df94c5f",
+            "bytes": 324081
+        },
+        {
+            "name": "msv3-1.0.3-sensor007-v65565-signed-ota.zip",
+            "sha256": "2ed999de3cb189f2f353fb562de615b2b9db5afc29e766ee086d423f69f5b456",
+            "bytes": 133792
         }
     ]
 }

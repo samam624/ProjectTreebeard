@@ -41,7 +41,8 @@ three seconds indefinitely is unsupported. See
 yet deployed because the capless-aware DisplayCenter must be installed first.
 
 **Affected:** Every healthy MSV3 running the capless production image. C17 is DNP/removed. Probe 7
-is excluded until its separate TMUX bypass repair is complete.
+was excluded while its TMUX fault was open; that solder fault was repaired on 2026-09-14 and its
+paired v65565 production restore is now archived.
 
 **Failure mode:** With the electrodes disconnected, the C17-free tank is only about 25-30 pF and
 resonates around 11-12 MHz. Probe 8 returned exact FDC over-range `0x0FFFFFFF` and `ERR_WD` even at
@@ -93,31 +94,34 @@ conductive edge plating. JLCPCB does not currently list epoxy edge encapsulation
 service; use a confirmed custom process or a secondary coating contractor. See
 [the complete field finding, repair process, safety notes, and V4 drawing note](../MSV3/docs/MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md).
 
-## MSV3 Probe 7: TMUX1109 path failure
+## MSV3 Probe 7: TMUX1109 path failure (resolved)
 
-**Status:** Confirmed from live two-phase telemetry on 2026-09-08. Probe 7 is not
-deployment-ready. Its MCU, bootloader, signed application, BLE/OTA path, and rollback record are
-healthy; “bricked” here means the moisture-sensing path is unusable, not that the board cannot boot
-or be updated.
+**Resolution:** Resolved by TMUX reflow and bench-verified on 2026-09-14. Static codes 2/3 proved
+the select GPIOs and EC-side paths worked. In a targeted live diagnostic, code 0 read about 38.69M
+and code 1 about 53.89M; pressing the TMUX restored code 1 to the normal region. After reflow and
+cleanup, I2C identity was correct, `fdctest` passed 10/10, and repeated code-0/code-1 flips
+overlapped near 36.73M with no FDC errors. The actual fault was a pressure-sensitive solder
+connection on a code-1 analog path. The planned mux removal and fixed-phase bypass are cancelled.
 
-**Evidence:** Phase 0 connected/bare counts were 19,502,047/19,502,915 and phase 1 counts were
-20,784,705/20,784,074. The supposed bare reading follows the connected reading within 0.005% in
-both phases, proving that MUX1/A1 has no observable selection effect. The connected phases differ
-by 1,282,658 counts (about 6.37%), repeatedly triggering swing advertisements and producing the
-32k/45k dashboard alternation.
+Probe 7 currently runs signed targeted bring-up v65565. The paired signed capless production
+v65565 equality restore is archived but not installed. The superseded diagnosis and bypass plan
+remain in the dated root-cause record for history; do not perform that bypass.
 
-**Disposition:** No replacement TMUX1109 will be ordered. To salvage Probe 7, first remove the
-TMUX1109, then bridge `TANK_HOT` to `MS_NODE_A` and `TANK_REF` to `MS_NODE_B`. Never add those
-bridges around a populated mux; an internal selected route can oppose the hard wiring and short the
-FDC tank. The bypass build must hold one phase and advertise the bare reference as invalid. Retest
-the direct count before coating. If Probe 7 is coated first as a process test, treat it as
-sacrificial: it cannot validate moisture sensing and the cured coating will obstruct the planned
-repair.
+## MSV3 bootloader USB and BLE OTA are mutually exclusive
 
-Probe 6 and Probe 7 are the first conformal-coating process trials. Probe 6 is the functional
-post-cure validation unit; Probe 7 is process-only unless repaired first. Battery-powered Probe 4
-is the actual production unit and remains uncoated until those trials establish the application and
-cure process.
+**Status:** Open design requirement, explicitly retained at the maintainer's request on 2026-09-14.
+
+The installed signed bootloader uses `DEFAULT_TO_OTA_DFU` so a missing or invalid application
+automatically advertises BLE recovery. In this upstream bootloader, that option bypasses
+`usb_init()` and removes bootloader USB CDC/serial DFU. This made a USB migration appear to fail
+when the port vanished and made later USB application replacement much harder even though the
+board enumerated normally while its application was running.
+
+The final recovery design must support both a dependable USB firmware path and BLE OTA without
+weakening signature enforcement, the device-type check, rollback protection, equality-version
+rescue, or missing-application recovery. This is recorded as an unsolved requirement, not as a
+completed feature. See
+[the full acceptance criteria](../MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md).
 
 ## MSV3: missing 32.768 kHz crystal versus stock PCA10056 variant
 

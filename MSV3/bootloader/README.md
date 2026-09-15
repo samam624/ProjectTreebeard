@@ -11,6 +11,12 @@ application packages. The release configuration enables:
 - the real active-high status LED on P1.10 and no nonexistent DFU buttons;
 - SoftDevice S140 6.1.1 and its required internal-RC LFCLK boot path.
 
+`DEFAULT_TO_OTA_DFU` currently makes automatic BLE recovery and bootloader USB CDC/DFU mutually
+exclusive in the pinned upstream implementation. That is a known limitation, not the desired final
+product behavior. The maintainer requires a future path that keeps both USB and BLE OTA while
+preserving all recovery and authentication guarantees; see
+`MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md`.
+
 MSV3 release 1.0.2 added an on-device monotonic application-version floor after a signed BLE
 activation. Release 1.0.3 retains that protection and reserves the final eight bytes of RAM at
 `0x2003FFF8` for the application's watchdog-loop recovery counter. The application linker reserves
