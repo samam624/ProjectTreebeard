@@ -140,6 +140,49 @@ probe participates until every acceptance criterion has passed there.
 - If any of it requires relaxing signed-init, device-type or version-floor enforcement, it does not
   ship. The wired path is a convenience; those three are why the fleet is safe to update at all.
 
+## How 1.0.4 actually gets onto a board: does it need SWD?
+
+Answered 2026-09-14 by reading the DFU stack, not by assumption. **Mechanically it does not require
+SWD. Practically, for the already-coated probes, it does -- for now.**
+
+A bootloader update over the air is genuinely supported. `dfu_start_pkt_handle()` dispatches
+`IS_UPDATING_BL()` to `dfu_activate_bl()`, and that path is present in the single-bank build, not
+only the banked one. It is not theoretical either: probe 4 took a SoftDevice + bootloader +
+application package over the air from the stock loader on 2026-09-03 with `swd_accessible: false`.
+
+Two things stand in the way today, and neither is a property of 1.0.4 itself.
+
+**1. The package type does not exist.** `build_msv3_release.ps1` builds SD+BL+APP only with
+`--dev-type 0x0052`, a deliberate one-time bridge for the generic stock loader. Once a probe is on
+MSV3's own `0x3356`, the only artifact the script produces is application-only; the bootloader is
+archived as a merged hex, which is an SWD/flash artifact. Delivering 1.0.4 over the air needs a
+`--dev-type 0x3356 --bootloader` package, and it needs the fleet tooling taught about bootloader
+packages: `msv3_fleet.py` binds a package to a probe by reading the sensor identity and application
+version out of the image, and a bootloader package carries neither, so every wrong-target guard
+downstream of that binding is currently undefined for it.
+
+**2. There is one unrecoverable window.** Staging is safe: `dfu_prepare_func_app_erase` erases the
+application first, and an interruption there leaves an invalid application, which is exactly the
+condition `DEFAULT_TO_OTA_DFU` turns into persistent BLE recovery. The swap is not safe. Losing
+power while the bootloader itself is being rewritten leaves it half-written with no SWD underneath
+it on a coated board, and nothing recovers that.
+
+So the deployment picture:
+
+| Board | Path |
+|---|---|
+| Probe 99 (bench) | SWD. No risk, and where the acceptance list runs. |
+| Probe 7 (`swd_accessible: true`) | SWD. Straightforward. |
+| Probes 4, 5, 6, 8 (coated) | OTA possible in principle. Needs the package type built, proven on probe 99, and a deliberate decision about the swap window. |
+| Every board provisioned from now on | SWD at provisioning, **before** coating. Free. |
+
+**Treat 1.0.4 as forward-looking rather than a retrofit.** There is an irony worth stating plainly
+so nobody re-derives it later: this release exists to give conformally coated probes a wired escape,
+and the coated probes are precisely the population for which delivering it carries the most risk.
+Its real value is on every board built from here, provisioned with 1.0.4 before the coating goes on.
+Retrofitting the existing coated four is a separate decision with its own evidence requirement, and
+should not be folded into "install the new bootloader".
+
 ## Verification note worth keeping
 
 The link-map check caught a real failure on the first 1.0.4 build: the USB helper did not appear in
