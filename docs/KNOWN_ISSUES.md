@@ -37,8 +37,28 @@ three seconds indefinitely is unsupported. See
 
 ## MSV3: capless production must never attempt a bare-tank conversion
 
-**Status:** Decided, repo-enforced, compiled, and signed as application v65564 on 2026-09-14; not
-yet deployed because the capless-aware DisplayCenter must be installed first.
+**Status:** Decided, repo-enforced, compiled, and signed as application v65564 on 2026-09-14.
+**Rollout started 2026-09-14:** the capless-aware receiver (`Treebeard runtime build 2026-09-14
+msv3-capless-scale3`) is installed and running on COM16, and Probe 6 is on capless production
+v65564 with flags `0x54` (bit 6 set, bare-valid clear) confirmed on the air. Probes 4, 5 and 8 have
+signed v65564 packages archived but NOT installed; Probe 7 still runs its v65565 bring-up
+diagnostic and needs its paired v65565 production restore.
+
+**C17 is physically removed from ALL probes as of 2026-09-14 (maintainer).** That completes the
+hardware half of the rollout but INVERTS the remaining risk: the probes still on legacy firmware are
+now capless hardware running an image that selects mux 2/3 on each advertising wake. That is the
+exact forbidden combination this entry exists to prevent -- "never leave capless hardware running an
+old image" -- and it manufactures an invalid reference reading from a tank that is now out of the
+FDC's frequency range. Completing the v65564/v65565 installs on probes 4, 5, 7 and 8 is therefore
+no longer routine sequencing; it is the fix for a misconfiguration.
+
+**The risk is currently latent, not active.** A 200 s whole-fleet scan at 18:41 on 2026-09-14 found
+**none of probes 4, 5, 7 or 8 advertising** -- consistent with them being off the air for the C17
+rework -- so no mismatched probe is presently producing invalid reference readings. Probe 6 was the
+only MSV3 on the air and is a matched pair (flags `0x56`, `DATA_CH0` 37,522,374, bare invalid).
+The operational rule that follows: **install the capless image on each of those four before it is
+powered back into service**, not afterwards. A probe returned to service on its old image is the
+active version of this fault.
 
 **Affected:** Every healthy MSV3 running the capless production image. C17 is DNP/removed. Probe 7
 was excluded while its TMUX fault was open; that solder fault was repaired on 2026-09-14 and its
@@ -64,8 +84,17 @@ old image. See
 
 ## MSV3: soil-exposed blade coating and routed-edge water retention
 
-**Status:** Confirmed physical failure mode on the current field blade; repair process defined but
-not yet validated after re-entry into soil.
+**Status:** Confirmed physical failure mode on the current field blade; repair process defined.
+**Validation STARTED 2026-09-14** (maintainer) on the coated specimen tracked as **"MSV3 Coated
+Test"**. This is the first run of the acceptance gate below, so the repair process is now
+*in test*, not merely defined -- but it is not validated until the specimen completes the full
+cycle. Do not coat further production units on the strength of a partial result.
+
+**Acceptance gate for this run (unchanged, restated so the test has a pass condition):** the
+specimen must survive air -> soil -> watering -> return-to-air **without retaining a baseline
+offset**. A flat-looking signal partway through is not a pass: the original failure produced
+apparent stability that was saturation/equilibrium rather than a healthy calibrated state, so the
+return-to-air baseline compared against the pre-soil baseline is the measurement that decides it.
 
 **Affected:** MSV3 outer-layer sensing electrodes under solder mask, and potentially any MSV2/MSV3
 FR-4 blade that relies on a hand-applied face coating while leaving cut FR-4 edges unsealed.

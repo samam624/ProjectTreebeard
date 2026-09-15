@@ -9123,6 +9123,17 @@ const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
     3300, // sensor 3: AFE bench-test board (Capacitive Soil Moisture Sensor v1.2,
           // MSV2_Moisture_AFE_Test.ino) - raw is millivolts, not kHz. Provisional ceiling
           // (ESP32 ADC's practical max) - tighten once a real dry-air baseline is logged.
+    0,    // sensor 4: MSV3 probe - FDC counts, calibrated by calibrateMsv3Moisture, not this path
+    0,    // sensor 5: MSV3 probe - as sensor 4
+    0,    // sensor 6: MSV3 probe - as sensor 4
+    0,    // sensor 7: MSV3 probe - as sensor 4
+    0,    // sensor 8: MSV3 probe - as sensor 4
+    3300, // sensor 9: hybrid AFE rig - the same v1.2 front end as sensor 3 but with an MSV3 probe
+          // end in place of the module's own pad (2026-09-14). Raw is millivolts on the identical
+          // ESP32 ADC, so it takes sensor 3's ceiling: the two rigs are being compared directly,
+          // and giving them different ceilings would bake a presentation difference into an A/B
+          // whose entire point is that only the probe end differs. Without an entry here it would
+          // fall through to DEFAULT_MOISTURE_INVERT_CEILING (200) and every reading would clamp.
 };
 
 // Map the useful MSV3 FDC window into uint16 without first compressing the absolute

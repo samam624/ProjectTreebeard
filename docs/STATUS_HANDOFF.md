@@ -2,6 +2,80 @@
 
 Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-14 Maintainer decisions: C17 fleet-wide, coating test started, USB/BLE design scoped
+
+- **C17 is physically removed from every probe.** The hardware half of the capless rollout is done
+  fleet-wide. This makes probe 6 a matched pair (capless hardware + capless firmware) and makes
+  probes 4, 5, 7 and 8 a *mismatched* pair: capless hardware still running images that select mux
+  2/3. Finishing those installs is now remediation rather than routine sequencing. A 200 s scan at
+  18:41 found none of probes 4, 5, 7 or 8 advertising, so the risk is latent rather than active --
+  the rule is to install the capless image on each **before** it is powered back into service.
+  Probe 6 was the only MSV3 on the air and is a matched pair: flags `0x56`, wake 50 advancing +2,
+  `DATA_CH0` 37,522,374, bare invalid, die 20.50 C, 4263 mV. See `docs/KNOWN_ISSUES.md`.
+- **Battery percentage rescale is deliberately deferred.** Confirm the capless system works against
+  raw millivolts first. `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is in both copies
+  (`Treebeard_ESP32_Display_Runtime.ino`, `MobileAppPage.h`), so a reworked ~3.90 V pack reporting
+  about 63% is expected behavior for now and must not be "fixed" as a bug in the meantime.
+- **Blade coating validation is running**, on the specimen tracked as "MSV3 Coated Test". First real
+  run of the air -> soil -> watering -> return-to-air gate. Not validated until the cycle completes;
+  do not coat further production units on a partial result.
+- **USB + BLE OTA coexistence: design started and explicitly scoped.** The USB recovery path is
+  **MSV3-only** remediation for the resident 1.0.3 bootloader; the signed BLE OTA architecture
+  (device type, signed init, monotonic version floor, boot-guard pairing, fleet registry, fail-closed
+  preflight) is the long-lived envelope and **carries forward to MSV4**. The USB work may not add an
+  MSV3 special case to any of those. Mechanism, risks and bench plan:
+  `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md`.
+- Key design finding: the bootloader's USB/BLE mutual exclusion is a **policy choice in one if/else
+  in `src/main.c`**, not a stack limitation. `usb_init()` already branches on
+  `sd_softdevice_is_enabled()` and routes power events through `sd_power_usbdetected/pwrrdy/removed`,
+  reserves IRQ priorities 0-1 for the SoftDevice, and `proc_soc()` already forwards SD USB power
+  events into TinyUSB. Upstream wrote the coexistence plumbing and simply never calls both
+  init paths in one boot. Proposed approach is therefore BLE unconditionally, plus USB additionally
+  when VBUS is present, with a single-winner rule before any flash write. Nothing is implemented.
+
+## 2026-09-14 Probe 6 capless install, capless receiver live, and the sensor 9 hybrid rig
+
+- **The capless-aware receiver is now actually running**, not just compile-verified. `Treebeard
+  runtime build 2026-09-14 msv3-capless-scale3` was flashed to COM16 (the v1.2 overnight rig that
+  had been occupying the bench was unplugged, which was the only thing blocking it). This had to
+  happen first: the capless policy's rollout order is receiver-first, and installing scale-3
+  firmware against a scale-2 receiver mis-ingests every reading.
+- **Probe 6 is on signed capless production v65564** (`MSV3-BUILD:2026-09-14-capless-prod6`),
+  installed over BLE in 38 s through the resident 1.0.3 bootloader. DIS read back the exact build
+  ID. Verification detail worth reusing: the DIS was proven by re-running the SAME package, which
+  `check_running_build()` refuses *before* the jump opcode is written -- so the build ID is read off
+  the live device without taking it off the air, and without `--reflash-same-build`.
+- Post-install scan: 36 packets, wake advancing, 4264 mV, die 22.75 C, flags `0x54` (capless bit 6
+  SET, bareValid CLEAR), `DATA_CH0` 38,019,830, bare invalid, OTA gate open. `MSV3/fleet.json`
+  updated to 65564 only after all three postconditions passed.
+- **C17 is physically removed from ALL probes** (maintainer, 2026-09-14), so rollout step 3 is done
+  fleet-wide and probe 6 is now capless hardware running capless firmware -- a matched pair. The same
+  fact inverts the risk on the rest of the fleet: probes 4, 5, 7 and 8 are now capless hardware still
+  running images that select mux 2/3, which is the combination
+  `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md` forbids. Finishing those installs is now a fix,
+  not a scheduling item.
+- Probe 6 still has the as-built BQ25504 OV divider and charges to ~4.26 V; it has not had the
+  R11/R14 ~3.90 V storage rework from `edc9705`. **Deliberately deferred** (maintainer): the battery
+  percentage rescale waits until the capless system is confirmed working against raw millivolts, so
+  `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is for now and a reworked pack reading ~63% is
+  expected, not a bug.
+- **New sensor 9: the hybrid AFE rig.** A second ESP32-S3 runs the same v1.2 analog front end with
+  an MSV3 probe end in place of the module's own pad, advertising from `AC:A7:04:31:8A:09` on the
+  identical MSV3 duty cycle as sensor 3. Sensor 3 is untouched as the control, so only the probe end
+  differs, and the pair runs for a couple of days to see whether the MSV3 electrode removes the
+  temperature-shaped artefact rung 1 did not. `MOISTURE_INVERT_CEILING_BY_SENSOR[9]` = 3300, same as
+  sensor 3. AFE sensor identity is now a build parameter (`-SensorId`) with a per-ID build
+  directory, for the reason MSV3 made probe identity one in `ba76e29`.
+- The probe end was attached at `2026-09-15 01:21 UTC` and sensor 9 immediately read **2409-2411
+  mV**, holding within 2 mV across ten advertisements -- a sane dry baseline for this front end. The
+  nine earlier unloaded-input rows were deleted from cloud history (ids 617379-617422), backed up
+  first and scoped by primary key; the board's wake counter reset to 1 at the power-cycle, so the
+  bad and good series are separated by an independent reboot boundary rather than by a judgement
+  about which values looked wrong. Learned range re-read clean afterwards at `890/891` with no false
+  watering rises, and sensor 3's stayed untouched at `850/1130`.
+- Details, plus a serial-monitoring pitfall that can silently leave one of these ESP32-S3 boards in
+  download mode: `MSV3/docs/MSV3_CAPACITIVE_V1_2_AFE_CHECKOUT_2026-09-14.md`.
+
 ## 2026-09-14 Probe 7 repair, current image, and USB + OTA follow-up
 
 - **Probe 7's TMUX fault is repaired.** Static codes 2/3 first proved that both select GPIOs and

@@ -51,8 +51,17 @@
   consecutive missed advertisements before the card goes stale -- the same margin
   the MSV3 probes have.
 
+  2026-09-14 -- A SECOND BOARD NOW RUNS THIS SKETCH. Sensor 9 is the "hybrid" rig: the same v1.2
+  analog front end, but with an MSV3 probe end soldered in place of the module's own sense pad. It
+  runs in parallel with sensor 3 (unchanged, module's own pad) so the two log the same days in the
+  same room, and the only difference between them is the probe end. The question is whether the
+  MSV3 electrode removes the temperature-shaped artefact that rung 1 of the duty-cycle ladder below
+  did not. Keep both rigs on the SAME AFE_MODE for that comparison to mean anything -- changing the
+  duty cycle on one and not the other reintroduces exactly the confound the ladder exists to avoid.
+
   Board: ESP32-S3 devkit (native USB). Flash/monitor with:
-    powershell -ExecutionPolicy Bypass -File scripts\arduino_moisture_afe_test.ps1 upload -Port COM12
+    powershell -ExecutionPolicy Bypass -File MSV2\scripts\arduino_moisture_afe_test.ps1 upload -Port COM12 -SensorId 3
+    powershell -ExecutionPolicy Bypass -File MSV2\scripts\arduino_moisture_afe_test.ps1 upload -Port COM13 -SensorId 9
     powershell -ExecutionPolicy Bypass -File scripts\arduino_moisture_afe_test.ps1 monitor -Port COM12
 
   BLE feed into the display center: also advertises as sensor 3, in the same MSV2
@@ -64,7 +73,7 @@
   just putting millivolts in it here. Byte layout (15 bytes total):
     [0-1]  company ID 0xFFFF, LE
     [2-5]  'M','S','V','2' magic
-    [6]    sensor ID (3)
+    [6]    sensor ID (3 = this bench rig; 9 = the hybrid rig, see AFE_SENSOR_ID below)
     [7-9]  24-bit wake counter, LE - must change every packet or the receiver dedups it
     [10-11] raw reading (this sketch's medianMv), LE
     [12-13] "battery" mV, LE - fixed placeholder (this board is USB-powered, no cell)
@@ -75,7 +84,23 @@
 
 const int SENSE_PIN = 4; // IO4/GPIO4 silkscreen label - ADC1_CH3 on ESP32-S3
 
-const uint8_t SENSOR_ID = 3; // sensor 1 = Scindapsus probe, 2 = Alocasia probe, 3 = this bench rig
+// 2026-09-14 -- SENSOR IDENTITY IS A BUILD PARAMETER, NOT A LINE TO EDIT. Two boards now run this
+// same sketch in parallel: sensor 3 is the original bench rig reading the v1.2 module's own pad,
+// and sensor 9 is the hybrid rig with an MSV3 probe end in place of that pad. The entire value of
+// running them together is that only the probe end differs, which is worth nothing if a flash
+// silently gives both boards the same ID. Hand-editing a constant between flashes is exactly how
+// that happens -- MSV3 hit it on the probes and fixed it the same way (see ba76e29, and the
+// stale-package story in scripts/msv3_fleet.py).
+//
+// Pass -SensorId to MSV2/scripts/arduino_moisture_afe_test.ps1. That script also gives each ID its
+// own build directory, so one board's image can never be uploaded to the other from a stale
+// --input-dir.
+#ifndef AFE_SENSOR_ID
+#define AFE_SENSOR_ID 3
+#endif
+const uint8_t SENSOR_ID = AFE_SENSOR_ID; // 1 = Scindapsus probe, 2 = Alocasia probe,
+                                         // 3 = AFE bench rig (v1.2 module's own pad),
+                                         // 9 = hybrid AFE + MSV3 probe end
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint16_t PLACEHOLDER_BATTERY_MV = 4200; // "full, not charging" - no real battery on this board
 BLEAdvertising* pAdvertising = nullptr;
@@ -185,7 +210,12 @@ void setup()
   digitalWrite(MODULE_POWER_PIN, LOW); // start unpowered; the first cycle powers it
 #endif
 
-  BLEDevice::init("MSV2-AFE-TEST");
+  // Name the radio after the identity this image was actually built for. With two AFE rigs on the
+  // air at once, a fixed "MSV2-AFE-TEST" on both makes a generic scan useless for telling them
+  // apart -- and telling them apart is the one thing a parallel A/B depends on.
+  char bleName[24];
+  snprintf(bleName, sizeof(bleName), "MSV2-AFE-%u", (unsigned)SENSOR_ID);
+  BLEDevice::init(bleName);
   pAdvertising = BLEDevice::getAdvertising();
 #if AFE_MODE == AFE_MODE_CONSTANT
   // Bluedroid start() advertises indefinitely; data is pushed via setAdvertisementData() per loop.
@@ -200,6 +230,11 @@ void setup()
   Serial.println("MSV2 analog-front-end sensor bench test (Capacitive Soil Moisture Sensor v1.2)");
   Serial.printf("Chip: %s rev%d, %d cores @ %dMHz\n", ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), ESP.getCpuFreqMHz());
   Serial.println("Sense pin: IO4 (ADC), lower mV = wetter");
+  // A serial capture that does not say which rig produced it cannot be attributed later, and two
+  // rigs now produce identically-shaped CSV.
+  Serial.printf("Sensor ID: %u, advertising as %s (%s)\n", (unsigned)SENSOR_ID, bleName,
+                SENSOR_ID == 3 ? "v1.2 module's own pad"
+                               : (SENSOR_ID == 9 ? "hybrid: MSV3 probe end" : "unregistered rig"));
 
   // Print the rung the board is actually running, so a serial capture is
   // self-describing and cannot be misattributed later.

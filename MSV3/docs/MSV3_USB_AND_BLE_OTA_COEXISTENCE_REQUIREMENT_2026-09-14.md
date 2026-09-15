@@ -2,7 +2,16 @@
 
 **Date:** 2026-09-14
 
-**Status:** Open requirement; not implemented or bench-proven.
+**Status:** Open requirement; not implemented or bench-proven. **Design started 2026-09-14** --
+see `MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md` for the proposed mechanism. This
+document remains the owner of the acceptance criteria below; if the two disagree, this one wins.
+
+**Scope decision, 2026-09-14 (maintainer):** the **USB recovery path is MSV3-only** -- remediation
+for the resident 1.0.3 bootloader on this generation's hardware, not a platform feature, and it must
+not constrain MSV4's own recovery design. The **signed BLE OTA architecture carries forward to MSV4
+as well**: device type, signed-init verification, the monotonic version floor, boot-guard pairing,
+the fleet registry, and the fail-closed preflight are the long-lived envelope. The USB work
+therefore may not add an MSV3 special case to any of them.
 
 ## Required outcome
 
