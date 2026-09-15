@@ -7,28 +7,33 @@ Date: 2026-09-14 (the section immediately below is current; older deployment-sta
 - **Bootloader 1.0.4 exists as a built, verified artifact and is installed on nothing.** No probe
   runs it and none may until the acceptance list in the requirement document passes on probe 99.
   `MSV3/bootloader/generated/1.0.4/msv3-e73-recovery-signed-s140-6.1.1.hex`, sha256
-  `1436177299cb8ad43f3d79d2f0af2985e4d54bb74cd01d7d1cc0620b9a4edb8d`.
-- **The design changed during implementation, and the first version would have been worse than
-  doing nothing.** Concurrent USB+BLE looked viable because `usb_init()` already supports a running
-  SoftDevice and `proc_soc()` already forwards SD USB power events to TinyUSB. It is not viable:
-  `bootloader_dfu_start()` starts exactly ONE transport, so initializing USB without starting the
-  serial transport enumerates a CDC port that accepts no DFU traffic -- the precise failure the
-  requirement document exists to prevent; `dfu_register_callback()` holds a single `m_data_pkt_cb`
-  that a second transport overwrites; and the close path dispatches on the single `is_ota()` global.
-  Concurrency needs the shared DFU state machine restructured, which is what was dropped from 1.0.2
-  scope after the completion-gate defect.
-- **1.0.4 is therefore sequential:** on recovery entry only (no valid application, so an
-  app-requested BLE OTA jump is never delayed), and only when `VBUSDETECT` shows bus power, it opens
-  a bounded 10 s CDC serial-DFU window, tears USB down, then falls through to the unchanged BLE
-  path. No cable or no recovery entry means nothing is initialized and the branch is byte-for-byte
-  1.0.3. The window cannot cut off a real transfer: `bootloader_timeout_startup_dfu()` only exits
-  while `m_startup_dfu_has_activity` is false, which is upstream behavior, not something this patch
-  adds. The 10 s value is a starting point and needs to be set on the bench.
-- **Verification lesson worth keeping.** The new link-map check fired on the first build: the helper
-  was absent from the map because it had been inlined, exactly as `check_dfu_mode()` already is. It
-  is now `noinline` so the linked artifact can be proven. A source sentinel proves a patch applied,
-  not that the code reached the binary -- different questions for a bootloader that cannot be
-  re-flashed on a coated probe.
+  `47cf4e9b0a1412261efc71b42eec9b0579471921fe75a53283b52f8aee11330c`.
+- **USB is a normal transport now, not a window.** Whenever the bootloader is in DFU mode and
+  VBUSDETECT shows a cable, USB CDC serial DFU is up for as long as the cable is there -- no timer,
+  nothing to miss -- and BLE OTA runs on top of it at the same time. No cable means usb_init() is
+  never called and behavior is byte-for-byte 1.0.3, so a battery/solar probe pays nothing.
+- **The blocker was never "can both stacks run".** usb_init() already supports a running SoftDevice,
+  wait_for_events() already calls tud_task() whenever tusb_inited() regardless of DFU mode, and
+  serial DFU *is* USB CDC -- the SLIP layer's tud_cdc_rx_cb() reads straight from
+  tud_cdc_read_char(). The real blocker was one level down: dfu_register_callback() holds a single
+  m_data_pkt_cb, and single-bank DFU erases the application before Init authentication, so two
+  transports feeding one bank would destroy the image with no recoverable copy on either side.
+- **`dfu_transport_claim()` is what makes it safe** and is the piece to understand before touching
+  any of this. First transport to present traffic while the state machine is idle owns the session;
+  the other is refused until dfu_init() resets ownership. Serial silently consumes and drops so the
+  host retries; BLE answers NRF_ERROR_INVALID_STATE. Do not add a third caller of the DFU packet
+  handlers without going through it.
+- **An earlier draft of 1.0.4 was sequential** -- a bounded 10 s wired window, then BLE -- and is
+  recorded in the design doc as the safe retreat if both stacks live together destabilize BLE DFU on
+  real hardware. It costs a delay before BLE appears.
+- **Verification lesson worth keeping.** The link-map check fired on the first build: the USB helper
+  was absent from the map because it had been inlined, exactly as check_dfu_mode() already is. It is
+  now noinline, and the release build checks for both msv3_usb_attach_if_vbus and
+  dfu_transport_claim. A source sentinel proves a patch applied, not that the code reached the
+  binary -- different questions for a bootloader that cannot be re-flashed on a coated probe.
+- Cost: FLASH 84.52% -> 85.34% (+320 bytes), about 5.7 KB left in the 38 KB region. 1.0.3 was
+  rebuilt after the change and still reproduces byte-identically (`a6e0ac08...`), so nothing the
+  fleet currently runs moved.
 
 ### Evidence on `1.0.3/raw-probes-v65556-manifest.json` (dispute NOT resolved)
 

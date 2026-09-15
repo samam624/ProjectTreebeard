@@ -274,15 +274,25 @@ if ([version]$ReleaseVersion -ge [version]"1.0.4") {
   if (!(Test-Path -LiteralPath $bootMap)) {
     throw "Bootloader 1.0.4+ build map is missing: $bootMap"
   }
-  if ([IO.File]::ReadAllText($bootMap) -notmatch 'msv3_try_wired_dfu_window') {
+  $bootMapText104 = [IO.File]::ReadAllText($bootMap)
+  if ($bootMapText104 -notmatch 'msv3_usb_attach_if_vbus') {
     throw @"
 Bootloader 1.0.4+ linked without the USB/BLE coexistence helper:
   $bootMap
-Expected msv3_try_wired_dfu_window in the link map. The patch applied but the function was not linked,
+Expected msv3_usb_attach_if_vbus in the link map. The patch applied but the function was not linked,
 so this bootloader would fall back to BLE-only recovery with no wired escape.
 "@
   }
-  Write-Host "MSV3 bootloader map check: OK (USB/BLE coexistence helper linked)"
+  if ($bootMapText104 -notmatch 'dfu_transport_claim') {
+    throw @"
+Bootloader 1.0.4+ linked without the DFU transport arbiter:
+  $bootMap
+Expected dfu_transport_claim in the link map. Without it both transports could write the same
+single bank, which erases the application before Init authentication and leaves neither image
+recoverable.
+"@
+  }
+  Write-Host "MSV3 bootloader map check: OK (USB/BLE coexistence + transport arbiter linked)"
 }
 
 if (!$SkipApplicationCompile) {

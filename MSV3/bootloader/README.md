@@ -18,30 +18,33 @@ preserving all recovery and authentication guarantees; see
 `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md`.
 
 **Release 1.0.4 is the first build that addresses this, and it is BUILT BUT NOT INSTALLED.** No
-probe runs it and none may until it passes the full acceptance list on probe 99. It is **sequential, not
-concurrent**: on recovery entry only (no valid application), and only when `VBUSDETECT` shows bus
-power, it opens a bounded 10 s CDC serial-DFU window, tears USB down, and then falls through to the
-unchanged BLE path. With no cable, or on an application-requested BLE OTA jump, nothing is
-initialized and the branch is byte-for-byte 1.0.3. It is CDC only, never UF2: mass storage writes
-unsigned images by definition and would route around signed-init verification, the device-type check
-and the version floor. Mechanism, risks and the bench plan:
+probe runs it and none may until it passes the full acceptance list on probe 99. It runs **both
+transports at once**: whenever the bootloader is in DFU mode and VBUSDETECT shows a cable, USB CDC
+serial DFU is up for as long as the cable is there -- no timer, no window to miss, no mode to select
+-- and BLE OTA runs on top of it rather than instead of it. With no cable, usb_init() is never
+called and behavior is byte-for-byte 1.0.3. CDC only, never UF2: mass storage writes unsigned images
+by definition and would route around signed-init verification, the device-type check and the version
+floor. Mechanism, risks and the bench plan:
 `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md`.
 
-Concurrent transports were tried first and rejected on evidence, which is worth knowing before
-anyone proposes them again: `bootloader_dfu_start()` starts only one transport, so initializing USB
-without starting the serial transport would enumerate a CDC port that accepts nothing;
-`dfu_register_callback()` holds a single `m_data_pkt_cb` that a second transport would overwrite;
-and the close path dispatches on the single `is_ota()` global. Serving both at once means
-restructuring the shared DFU state machine -- the area dropped from 1.0.2 scope after the
-completion-gate defect.
+What made this safe is `dfu_transport_claim()`. Single-bank DFU erases the application before Init
+authentication, and `dfu_register_callback()` holds a single `m_data_pkt_cb`, so two transports
+feeding one bank would destroy the image with no recoverable copy on either side. The arbiter gives
+the session to the first transport that presents traffic while the state machine is idle and refuses
+the other until `dfu_init()` resets ownership -- the serial side silently consumes and drops the
+packet so the host retries, the BLE side answers `NRF_ERROR_INVALID_STATE`. Do not add a third
+caller of the DFU packet handlers without going through it.
 
-The 1.0.4 patch is verified twice, because the two checks catch different failures. The source
-sentinel (`MSV3_USB_BLE_COEXIST` in `src/main.c`) catches a patch that silently failed to apply. The
-link-map check catches a patch that applied and still did not reach the binary -- and it found a
-real instance immediately: `msv3_usb_start_if_vbus()` was inlined out of the symbol table on the
-first build, exactly as `check_dfu_mode()` already is. The helper is therefore `noinline`, so the
-linked artifact can be proven rather than assumed. A source-level sentinel alone cannot tell
-"compiled in" from "`#define` still sitting in the file".
+The 1.0.4 patch is verified three ways, because they catch different failures. The source sentinel
+(`MSV3_USB_BLE_COEXIST` in `src/main.c`) catches a patch that silently failed to apply. Two link-map
+checks catch a patch that applied and still did not reach the binary -- one for
+`msv3_usb_attach_if_vbus`, one for `dfu_transport_claim`. That second class is not hypothetical: the
+first 1.0.4 build linked with no USB helper symbol at all because it had been inlined, exactly as
+`check_dfu_mode()` already is. The helper is `noinline` for that reason. A source sentinel cannot
+tell "compiled in" from "`#define` still sitting in the file".
+
+Cost: FLASH 32,888 B (84.52%) on 1.0.3 to 33,208 B (85.34%) on 1.0.4, leaving about 5.7 KB in the
+38 KB region. There is room for a fix, not for another feature.
 
 MSV3 release 1.0.2 added an on-device monotonic application-version floor after a signed BLE
 activation. Release 1.0.3 retains that protection and reserves the final eight bytes of RAM at
