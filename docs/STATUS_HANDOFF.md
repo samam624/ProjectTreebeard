@@ -84,6 +84,226 @@ Date: 2026-09-14 (the section immediately below is current; older deployment-sta
   init paths in one boot. Proposed approach is therefore BLE unconditionally, plus USB additionally
   when VBUS is present, with a single-winner rule before any flash write. Nothing is implemented.
 
+## 2026-09-16 MSV4 front end decided: FDC out, software lock-in in
+
+- **The FDC2214 comes out.** Controlled comparison: sensor 9 (MSV3 electrode, uncoated, fixed-frequency
+  AM) is clean; probe 8 (MSV3 electrode, uncoated, FDC resonant) wobbles 1.956%. Same electrode, both
+  uncoated, one variable. The AM/FM bench checklist's decision rule fires.
+- **Correction: only probe 6 is coated.** This session briefly concluded probes 4/5/6 all were, which
+  would have confounded the above. The error was reading `swd_accessible: false` as "coated" — that
+  field means "pads reachable right now," also false for a probe buried in a pot. **Never infer
+  coating status from it.** Consequence: the entire AM-vs-FM thermal dataset is uncoated probes, so
+  none of it needs revisiting.
+- **New experiment (maintainer):** uncoated probe by a window for a day read **flat in pure water,
+  flat in air, and wobbled hugely in moist soil.** Rules out board, clock, inductor, battery and
+  temperature-on-electronics. The wobble needs the soil matrix — i.e. dissolved ions, whose mobility
+  rises ~2 %/C. **Outstanding: the salty-water test**, which separates a conductivity-tempco artefact
+  from genuine thermally-driven moisture migration. Highest-value experiment pending.
+- **Architecture: one chopper switch with phase AND frequency as firmware parameters** — a software
+  lock-in. Sweeping phase on a single switch eliminates I/Q mismatch structurally, and the pedestal
+  falls out of the N-phase fit, so no balanced branch and no calibration reference are needed. One
+  phase = AM detector; four = IQ demodulator; **same board**, so the IQ decision defers to firmware.
+- **Frequency: 1–3 MHz, and do NOT auto-track.** Sweep to characterise, then lock — auto-tuning
+  rebuilds the exact FM failure that killed the FDC. Sweepability replaces the LCR/VNA measurement
+  every analysis has been waiting on.
+- **TS3USB221A is a DPDT**, so one part does the whole A/B swap on one GPIO, with `OE` giving a free
+  OPEN reference. **Its t_ON = 30 ns / t_OFF = 12 ns caps the chopper at 1–2 MHz, not 8** — the 18 ns
+  asymmetry is a temperature-varying duty error. The "900 MHz bandwidth" headline is the *signal* path,
+  not the select path.
+- **R_on and capacitance trade directly**: the 0.3 ohm TS3A24159 carries 224 pF. Buy the higher-R_on,
+  lower-C part and shop USB/HDMI signal switches, not precision muxes.
+- Full write-up, topology diagram, BOM and the datasheet traps:
+  `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+
+## 2026-09-16 MSV4 BOM drafted for Altium
+
+- `MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md`. Scope per maintainer: nRF module with attached antenna,
+  same BQ25504, the lock-in front end, a soil NTC. No USB, no FDC, no 555.
+- **The cost saving is already banked, and it is not the MCU.** From this project's own LCSC orders:
+  removing the **FDC2214 saves $6.70**, the USB stack (BQ25170 + USBLC6 + PMEG2010 + Type-C) another
+  $1.53, plus the 4052 and the tank inductor — **-$8.37** against ~+$1.5 of new parts. That is ~42 %
+  off a ~$16.5 electronics BOM before any MCU decision.
+- **But two thirds of the ~$50 board is not on the BOM at all** (~$33.5 of fab, assembly, shipping,
+  panel, battery, enclosure). **Asked the maintainer for the real breakdown** — quantity, unique part
+  count and stocked-vs-not are probably bigger levers than any part swap.
+- **Recommendation: stay on nRF52840 / E73-2G4M08S1C ($7.5888 verified) for V4.0.** The nRF52832
+  E73-2G4M04S1B (C411306) would save ~$3 — 6 % of the board — but costs revalidating the entire OTA
+  chain (fleet registry, signed packages, Guard 2 / bootloader 1.0.3 pairing) on a different
+  SoftDevice, and V4 already changes electrode, front end and panel at once. Revisit on V4.1.
+- **LCSC blocks automated fetches** (404 on every product URL this session), so the ~$4.59 figure for
+  the 52832 module is an unverified search summary. Confirm on the page before ordering.
+- **New recommendation: fit a 32.768 kHz crystal and keep `P0.00`/`P0.01` free for it.** ~$0.15
+  retires the entire `MSV3_LFCLK_RTC1_HANG` class of problem *and* saves the LFRC recalibration
+  wakeups against a 10-15 uA sleep budget. This is a layout constraint — decide before routing.
+- Panel is now a **hard electrical spec on the BOM**: `V_OC` <= 2.7 V at 25 C.
+- Also corrected for V4: the BQ25504 OV divider sum must be **9-11 MOhm**; MSV3's reworked 8.54 MOhm
+  is out of spec and must not be carried over.
+
+## 2026-09-16 REVERSAL: sensor 9 shows the thermal swing too — the readout was never the variable
+
+- **The comparison that justified dropping the FDC is void.** `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+  recorded sensor 9 (MSV3 electrode, uncoated, fixed-frequency AM) as **clean** against probe 8's
+  1.956 % wobble, and concluded the modulation scheme was the cause. **Sensor 9 was not clean — it had
+  not run long enough.** Observed 2026-09-16: it shows the same daily swing, with the **same
+  anti-thermal signature seen from MSV3 in this same pot** (warm afternoon reads drier).
+- **Both AM and FM swing, same electrode, same pot.** The FDC, the LC tank, the oscillator and the
+  driving circuit are all exonerated. **The cause is the electrode geometry and the soil-probe
+  interface** — the sensor is accurately reporting something real at 0.48 mm sensing depth.
+- **The FDC still comes out, on different grounds** (maintainer): BOM cost, AM-over-FM for long-term
+  deployment, and firmware-settable frequency/phase. The architectural objection to FM — *"the
+  interrogation frequency IS the output"* — never depended on the thermal data and survives.
+- **What must not be claimed again: removing the FDC does not fix the daily wobble.** The **electrode
+  redesign is the fix**, and is now the load-bearing change in V4 rather than a parallel improvement.
+  0.48 mm -> 2.90 mm averages interface movement over millimetres instead of a fraction of one.
+- **A third mechanism is now on the table and no planned test catches it:** soil-probe *interface
+  movement* (soil shrinking and moving against the blade). A glass of water has no interface to move,
+  so the salty-water test cannot see it. Separating it from moisture migration needs a **mechanical**
+  test, not a chemical one.
+- **The sign argues against conductivity tempco.** Warmer reads drier; rising ion mobility should read
+  *wetter*. Confirm the polarity chain on both rigs — it is nearly free and could retire a candidate.
+
+## 2026-09-16 V4 stays on the nRF52840; excitation and phase come from TIMER/PPI/GPIOTE
+
+- **MCU decided: E73 / nRF52840, not ESP32.** The low-power architecture is why the project is on
+  that part; 10-15 uA sleep and a 528 uW average are not reproducible on an ESP32. Earlier drafts of
+  the front-end doc specified ESP32 `LEDC` with phase via `hpoint` — replaced.
+- **One TIMER at 16 MHz, four compares, two GPIOTE channels through PPI** makes the excitation square
+  wave and the phase-offset chopper select. Both come off the *same counter*, so the phase relation
+  is exact and jitter-free by construction — structurally better than two independent LEDC channels.
+  Four CCs and four PPI channels, so TIMER1/2 suffice; avoid TIMER0 (SoftDevice).
+- **Operating point N = 16, f = 1.000 MHz.** Quadrature lands on ticks 0/4/8/12 exactly, the 16-phase
+  diagnostic sweep is exactly the full grid, and 1 MHz is where the TS3USB221A's 18 ns asymmetry costs
+  least (6.5 deg). Cost is electrode |Z| rising to ~1990 -> 795 ohm dry to wet, which is what sets Rs.
+- **The coarser phase grid is not a coarser measurement.** 16 MHz gives 5x fewer steps than LEDC's
+  80 MHz, but `V(theta)` is *fitted* — recovered phase precision is set by SNR and point count, not
+  step size. Quadrature is exact on any N divisible by 4.
+- **Hard rule: excitation off HFXO, never HFINT.** A shared clock means clock error does not corrupt
+  phase — but it moves the interrogation frequency, and a +/-6 % RC with a tempco against a
+  frequency-dependent soil impedance injects exactly the FM-class thermal artefact V4 exists to kill.
+- SAADC sampled by PPI from the same TIMER, oversampled hard, `CALIBRATEOFFSET` at wake.
+- `MSV4/docs/MSV4_PROBE_BOM_DRAFT.md` (09-02) now carries a banner: its TLC555 sensing block is
+  superseded; its power chain, BQ25504 network and cost model still stand.
+
+## 2026-09-16 VIN_DC measured at the pin: 5.0 V in sun, 4.1 V at the window
+
+- **Root cause confirmed by direct measurement.** Loaded `SP+` (= VIN_DC) reads **5.0 V in direct
+  sun** and **4.1 V indoors against the deployment window** — 1.4x to 1.7x the BQ25504's 3 V
+  recommended input maximum, with the 6 V `V_OC` at each MPPT open-circuit sample above the 5.5 V
+  absolute maximum.
+- **The window figure is the one that matters.** 4.1 V is above any 1S cell state of charge, so the
+  PMOS body-diode path conducts **all day in normal indoor deployment** — this was never an
+  outdoors-only failure, and probe 6 did not need direct sun to reach 4.49 V. It also means the part
+  has been run continuously out of spec, raising the prior on the damaged-BQ25504 branch of the
+  post-clamp verification.
+- **4.1 V was a spot reading; the window peak is 4.7 V — predicted from probe 6's own cell voltage,
+  then measured the same day.** The window runs at ~94 % of the direct-sun condition, not a milder one.
+- **The ceiling is arithmetic: `VBAT = 0.78 x V_OC - 0.3 V`.** MPPT holds VIN at its programmed
+  fraction of `V_OC` (0.78 x 6.0 = 4.68 V, measured 4.70) and the body diode drags the cell to just
+  under it (4.38 V predicted, ~4.44 measured). One expression reproduces every charge observation on
+  file, and `VBAT_OV` appears nowhere in it. It also prices the lower-`V_OC` panel fix exactly.
+- **The clamp interacts with MPPT, and the old power table was optimistic.** A shunt zener clamps the
+  open-circuit excursion too, so the BQ samples `V_OC` = `Vz` and then regulates to 78 % of *that* —
+  a 3.3 V clamp operates the panel at **2.57 V**, not 3.3 V. Harmless in sun (77 mW, 146x) but it
+  makes the window margin the live question: 1 mA at the window is 4.9x the load, 300 uA is 1.5x,
+  which is not a margin. **Re-choose the `RMPPT1/2/3` ratio when fitting the clamp** — once a clamp
+  sets the sampled `V_OC`, MPPT is tracking the zener, not a real MPP, and 78 % is 22 % given away.
+- **Zener dissipation is a non-issue: 99 mW peak, 1.6 mW average, zero harvest cost.** Verified from
+  SLUSAH0G 8.3.1 — the BQ resamples `V_OC` every **16 s** by disabling the charger for **256 ms**.
+  MPPT holds VIN at 2.57 V the rest of the time, below the 3.3 V knee, so the clamp conducts only
+  during that 1.6 % window — while the charger is disconnected and harvesting nothing anyway. Package
+  is not a constraint. **Leakage is the only continuous loss** (daylight-only; budget <20 uA at
+  2.6 V = 51 uW, ~10 % of load). The real cost is the operating point, not the diode.
+- **The clamp cannot affect sleep current — structurally, not marginally.** Netlist confirms
+  `NET SP+ : C4-2, C8-1, L1-1, R9-2, SP+1-1, SP_IC-2` — panel side of the boost only, and **USB is not
+  on it** (`VBUS` enters at `Q1-1 -> VSTOR`). Draining the cell into the zener would mean running
+  backwards through the high-side PMOS body diode, which is blocked; the same diode that causes the
+  overcharge prevents reverse drain. At night VIN_DC ~0 V, so leakage is zero. Leakage is a *daylight
+  harvest tax*, never a sleep-current cost — separate budgets.
+- **The soft knee is mostly a benefit.** Under load the clamp sits above nominal `Vz`, raising the
+  sampled `V_OC` and the operating point, recovering harvest. Safe because the 78 % MPPT ratio is a
+  free safety factor the original tolerance stack never claimed: ceiling is `0.78 x V_clamp - 0.3`,
+  which allows `V_clamp` to ~5.1 V. Still specify 3.3 V (holds even if MPPT is disabled), but do not
+  reject a part that measures 3.8-4.0 V at 30 mA.
+- Window `I_SC` is **no longer a gate** — maintainer can duty-cycle the probe deeper into sleep to meet
+  whatever the panel delivers. Nice to know, not blocking. (No ammeter on hand; the earlier
+  2.7 V / 50 uA figure was indoors under LED light, not the window.)
+- **V4 answer: fix the panel, do not design the clamp in. Target `V_OC` <= 2.7 V at 25 C** — under the
+  3000 mV recommended max *at open circuit*, with headroom for the -0.3 %/C rise as temperature falls
+  (a 3.0 V panel at 25 C is out of spec at 0 C). Fewer cells in series for the same die area is the
+  same power at a legal voltage, so it costs nothing — and MPPT then tracks the real MPP, giving V4
+  **100 % of MPP where a clamped V3 gets 61 %**.
+- **Keep the BQ25504.** 330 nA `I_Q`, operation down to 130 mV, 10 uW minimum input power — the
+  harvester was never at fault, the panel/input mismatch was.
+- **Datasheet correction: `VIN(CS)` is 600 mV typ / 700 mV max, not 330 mV.** TI raised it in a later
+  revision; 330 nA is the *quiescent current*, a different parameter. The bench plan already has this
+  right — do not let the old number back in.
+- Resistor-only fallback if no zener is available: lower the MPPT ratio to ~50 % so VIN never exceeds
+  `VBAT_OV`. **Weaker** — it leaves the 6 V `V_OC` sample violating the 5.5 V absolute maximum every
+  16 s. Only the zener kills that excursion.
+- **Clamp size settled: 3.3 V, 5 %, SOD-123 or larger** (100 mW worst case). The window data breaks
+  the old 3.0-vs-3.3 near-tie — indoors the panel operates at 4.1-4.75 V, so every 100 mV of clamp is
+  harvest given up, and 3.3 V is the highest value the `VBAT_OV` tolerance stack allows.
+- **The clamp analysis now has a hole: every margin figure uses `I_SC` = 30 mA, a direct-sun
+  number.** The only indoor current on record (50 uA) was taken at a deliberately dim spot, not the
+  window. **Measure panel `I_SC` at the window** — it decides both break-even (~160 uA continuous,
+  ~380 uA over 8 h) and whether a cheap zener's soft-knee leakage, invisible against 30 mA, eats a
+  large fraction of a few hundred microamps. Specify reverse leakage near `Vz`, not just `Vz`.
+- Free discriminator still open: read `raw_battery_mv` at the same instant as `SP+`. A 0.3-0.4 V gap
+  proves the diode path is conducting in situ rather than MPPT setting the operating point.
+- Written up in `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`, which also now records
+  that the bench plan's "real deploy condition" panel measurement (2.7 V / 50 uA) is not the
+  deployment condition.
+
+## 2026-09-15 MSV4 electrode architecture decided
+
+- **Penetration depth is set by electrode pitch alone** — `depth = lambda/2pi`, where lambda is twice
+  the electrode centre-to-centre spacing. Finger count, finger length and board area do not appear.
+  MSV3's 1.5 mm pitch means it reads a soil skin **0.48 mm** thick; the v1.2 reaches **2.71 mm**.
+- **This explains the coated-probe failures.** A 75 um soldermask + conformal stack holds **14.5%** of
+  MSV3's field energy versus 2.7% of the v1.2's. The coating absorbs water, its permittivity climbs,
+  then it *saturates* — a large signal that stops responding. It is a geometry problem, not a coating
+  chemistry problem; no change of material fixes a 0.48 mm sensor.
+- **Decided: two symmetric electrodes inside a guard ring, mirrored front and back**, on an
+  18 x 110 mm blade — `guard 1 | clr 1 | A 4.9 | gap 4.2 | B 4.9 | clr 1 | guard 1`. Reaches
+  **2.90 mm**, beats the v1.2, keeps electrode swapping (A and B interchangeable), drops the coating
+  to 2.6%. Mirroring roughly doubles capacitance *and* raises the soil fraction (48% -> 65% dry).
+- **Vias: one pair at the dry end only.** A through-hole in the wet zone is a hole in the coating
+  barrier. At 6 MHz a 110 mm trace is lambda/218, so one connection is electrically identical to
+  fifty.
+- A soil-depth **0402 NTC at the tip costs 0.04 mm of penetration** if its traces are RF-bypassed to
+  the guard net (~1 nF to guard at the top: a short at 6 MHz, open at DC).
+- Rejected: three-prong G-H-G. `lambda = W - W_ground` appears to allow thin grounds, but the ground
+  must still terminate the field — keep `W_ground >= gap` and `W_high/W_ground <= 4.5`, which caps an
+  honest 3-prong at **2.47 mm** at 18 mm width.
+- Full write-up with the termination limits, mirroring analysis and temperature-sensor routing:
+  `MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md`. Scale drawings:
+  <https://claude.ai/artifact/LsGnvQqxJycer2YNNZSL75>
+
+## 2026-09-15 VBAT_OV root cause: the 6 V panel, not the divider
+
+- **The BQ25504's overvoltage protection has never bounded the cell on any probe, and the
+  2026-09-14 resistor rework could not have fixed it.** The panel is `V_OC` = 6 V (this project's
+  own 2026-08-21 measurement), against a BQ25504 input rated **3 V recommended / 5.5 V absolute**.
+  A boost converter cannot output below its input: when VIN_DC exceeds VSTOR the panel charges the
+  cell straight through the high-side PMOS **body diode**, a passive path with no comparator and no
+  enable. `VBAT_OV` is bypassed entirely. Datasheet footnote (2) on page 6 states the requirement
+  directly: *"VBAT_OV setting must be higher than VIN_DC."*
+- Confirmed against telemetry: probe 6 charged 4248 → 4295 mV on 09-15 with a 3.887 V ceiling
+  programmed, tapering with the sun rather than stopping at a threshold. Probe 6's cell reached
+  **4487 mV (~4.44 V)** across 09-08 → 09-14. The battery ADC is good to +1.0 % (DMM 4.25 V vs
+  4293 mV telemetry), so those readings are real.
+- **Fix is a shunt zener on `SP+`, 2.4–3.3 V** (3.3 V best, 3.0 V strictly in spec; **not** 3.6 V or
+  above — it fails the tolerance stack against `VBAT_OV`). Costs nothing: measured average load is
+  **528 µW** against 90–100 mW of clamped panel, a ~180x margin.
+- **New measured power budget** from probe 4's night-only discharge: **126 µA / 528 µW**, 3.03
+  mAh/day, ~50 days from full with no sun. Consumption dropped **5.5x around 2026-08-29**; not yet
+  attributed.
+- Also corrected: the `R_OV1`/`R_OV2` orientation question in `COMPONENT_INDEX.md` is resolved (the
+  documented orientation was right), and the divider-sum rule is 9–11 MΩ **with a minimum**, so the
+  reworked 8.54 MΩ is out of spec. Maintainer has deliberately left it there for now.
+- Full analysis, zener selection table, scrounged-part alternatives, and the marking-code reference:
+  `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`.
+
 ## 2026-09-14 Probe 6 capless install, capless receiver live, and the sensor 9 hybrid rig
 
 - **The capless-aware receiver is now actually running**, not just compile-verified. `Treebeard

@@ -3,6 +3,14 @@
 **Status:** architecture/BOM draft, not ready to order
 **Date:** 2026-09-02
 
+> **Superseded on sensing (2026-09-16).** The TLC555 capacitance-to-frequency block below is no
+> longer the V4 sensing choice. V4 is a software lock-in: fixed-frequency excitation plus a phase-
+> swept chopper built from two `TS3USB221A` DPDT switches, driven by TIMER/PPI/GPIOTE. See
+> `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md` and
+> `MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md`. The MCU (E73/nRF52840), power chain,
+> BQ25504 network and cost model below still stand; the `TLVH431B` clamp footprint is now a
+> live requirement, not a DNP option — see `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`.
+
 ## Baseline assumptions
 
 - One capacitive moisture channel.
