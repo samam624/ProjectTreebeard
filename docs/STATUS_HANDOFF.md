@@ -2,6 +2,25 @@
 
 Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-16 V4 solar decision from probe 4's measured recharge
+
+- Probe 4's clean post-08-30 deployment cycles, excluding the labelled USB interventions, imply
+  about **8-9 mAh/day gross harvest** and **5-6 mAh/day net cell gain** after the measured
+  **3.03 mAh/day** probe load. That agrees with the observed two-to-three-week recharge of the
+  150 mAh pack.
+- The existing 6 V / 30 mA panel behind a 2.75 V clamp retains only about 45-55% of the old harvest:
+  roughly 3.6-4.8 mAh/day gross and only 0.6-1.8 mAh/day net. It is safe and usually energy-positive,
+  but weak days are flat or negative. Reducing the cell to 60 mAh shortens the buffer; it does not
+  repair the energy margin.
+- **V4 small-batch choice: two commodity 1.5 V / 60 mA / 30 x 30 mm panels in parallel.** Ten-packs
+  cost $6.37-$9.79 on 2026-09-16, or $1.27-$1.96 per two-panel probe. The 30 x 60 mm array needs a
+  carrier only 6 mm taller than V3. It stays safely below the BQ25504 input limit; the BQ's 100 mA
+  average-input ceiling clips only strongest sun and leaves about 140 mW useful peak input.
+- Production target: consolidate the array into one approximately **2.5 V / 60 mA / 150 mW** panel
+  no larger than 30 x 55 mm, with `V_OC` ≤ 2.7 V over the specified cold range. Full arithmetic,
+  sourcing links, cost comparison and acceptance test:
+  `MSV4/docs/MSV4_SOLAR_PANEL_SELECTION_2026-09-16.md`.
+
 ## 2026-09-16 Probe 7 on capless production, potted as the zener-clamp trial
 
 - **Probe 7 now runs signed capless production v65565** (`2026-09-14-capless-prod7-restore`),

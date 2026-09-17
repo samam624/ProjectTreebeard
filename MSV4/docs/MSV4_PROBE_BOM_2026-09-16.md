@@ -11,6 +11,8 @@ Architecture references — read these before drawing, they contain the constrai
 - `MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md` — blade geometry, guard, NTC routing
 - `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md` — lock-in topology, TIMER/PPI/GPIOTE, switches
 - `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md` — the panel spec, and why it matters
+- `MSV4/docs/MSV4_SOLAR_PANEL_SELECTION_2026-09-16.md` — measured recharge budget, panel-array cost
+  comparison and the small-batch selection
 
 ## First: where the $50 actually is
 
@@ -119,8 +121,8 @@ and a stock check at order time.
 | Q2 | 1 | 2N7002 | — | SOT-23 | ~$0.02 | inverts `VBAT_OK` to drive Q1 |
 | J1 | 1 | S2B-PH-K-S | C173752 | TH right-angle | $0.0393 **(v)** | battery |
 | J2 | 1 | solder pads | — | — | — | panel; decide removable vs soldered |
-| PV1 | 1 | **panel, `V_OC` ≤ 2.7 V @ 25 °C** | — | — | TBD | **hard spec — see below** |
-| BT1 | 1 | protected 1S LiPo | — | — | TBD | 150 mAh gives ~50 days with no sun |
+| PV1A/B | 2 | 1.5 V / 60 mA, 30 x 30 mm panels in parallel | — | — | $1.27-$1.96/pair | V4 prototype; production target is one ~2.5 V / 60 mA panel |
+| BT1 | 1 | protected 1S LiPo | — | — | TBD | 60 mAh candidate gives ~20 days with no sun; verify ≥30 mA charge rating |
 
 BQ25504 resistor network, `VBAT_OK` thresholds and decoupling: carry over from
 `MSV4_PROBE_BOM_DRAFT.md`, with **one correction** — the OV divider sum must be **9–11 MΩ** (page 6
@@ -182,7 +184,9 @@ number that disqualifies an over-small module.
 
 ## The panel is a hard electrical spec now, not a shopping preference
 
-**`V_OC` ≤ 2.7 V at 25 °C.** Full reasoning in `MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`.
+**Production `V_OC` ≤ 2.7 V across the specified cold-temperature range.** Full safety reasoning is
+in `MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`; the measured recharge and sourcing decision is
+in `MSV4_SOLAR_PANEL_SELECTION_2026-09-16.md`.
 Short version: the BQ25504's `V_IN(DC)` recommended maximum is 3000 mV, panel `V_OC` rises about
 0.3 %/°C as temperature falls, and MSV3's 6 V panel is the root cause of every overcharged cell in the
 fleet. A panel that violates this makes `VBAT_OV` inoperative no matter what the resistors say.
@@ -191,13 +195,19 @@ Fewer cells in series at the same die area gives the same power at a legal volta
 nothing** — and MPPT then tracks the real maximum power point instead of a clamp, which is worth
 roughly 40 % more harvested power than a clamped V3.
 
-**Record the panel's MPN, dimensions, connector, specified maximum `V_OC` and price.** The 09-02 draft
-listed this as unknown; it is now the single most safety-relevant unknown on the board.
+For the five-probe prototype batch, two commodity 1.5 V / 60 mA / 30 x 30 mm panels in parallel cost
+about $1.27-$1.96 per probe, remain far below the input-voltage limit and restore about 140 mW of
+useful peak input. Production should consolidate those into one approximately 2.5 V / 60 mA panel in
+the 30 x 55 mm envelope.
+
+**Record the final panel's MPN, dimensions, connector, specified maximum `V_OC` over temperature and
+price.** It remains the single most safety-relevant sourcing item.
 
 ## Before this is orderable
 
 1. **The ~$50 breakdown** — fab, assembly, shipping, panel, battery, enclosure, separately.
-2. **Panel sourced against the ≤ 2.7 V spec**, with a datasheet.
+2. **Prototype parallel panels bench-qualified; production panel sourced against the ≤ 2.7 V
+   maximum-over-temperature spec**, with a datasheet.
 3. **TS3USB221A price and LCSC stock**, or a substitute chosen by the low-`C_off` rule.
 4. **E73-2G4M04S1B price confirmed on LCSC** if the MCU downgrade is taken — and the firmware port
    budgeted honestly if so.
