@@ -31,6 +31,8 @@ import msv3_fleet  # noqa: E402
 from msv3_fleet import (  # noqa: E402
     IDENTITY_CONTRACT_MIN_APP_VERSION,
     FleetError,
+    any_advertisement_from_bleak,
+    decode_diagnostic_manufacturer_data,
     decode_manufacturer_data,
     load_fleet,
     next_address,
@@ -238,6 +240,43 @@ def test_advertisement_decode():
     check("foreign manufacturer data is not an MSV probe",
           decode_manufacturer_data(b"\x01\x02\x03\x04\x05\x06\x07\x08") is None)
     check("truncated payload is rejected", decode_manufacturer_data(b"MSV2") is None)
+    check("pre-capless production reads as not capless",
+          (probe4.capless, probe4.reading_invalid) == (False, False))
+
+    # Probe 6 on 2026-09-16, capless production: flags 0x54 = phase 0, temp valid, OTA gate, bit6.
+    probe6 = decode_manufacturer_data(
+        bytes.fromhex("4d53563206" "6b0900" "e62d4f02" "b110" "54" "5100" "00000000"))
+    check("capless production decodes",
+          (probe6.capless, probe6.reading_invalid, probe6.bare_valid, probe6.phase,
+           probe6.data_ch0, probe6.battery_mv, probe6.die_temp_c)
+          == (True, False, False, 0, 38_743_526, 4273, 20.25))
+    # Synthetic: the same probe with a failed FDC read.
+    invalid = decode_manufacturer_data(
+        bytes.fromhex("4d53563206" "6c0900" "00000000" "af10" "76" "5200" "00000000"))
+    check("bit5 reads as an invalid reading", invalid.reading_invalid is True)
+
+    # Probe 7 on 2026-09-16, running targeted bring-up v65565: an OTA heartbeat with no reading.
+    probe7_bytes = bytes.fromhex("4d53563307" "150000" "00000000" "cb0f" "10")
+    check("a bring-up heartbeat is not production telemetry",
+          decode_manufacturer_data(probe7_bytes) is None)
+    probe7 = decode_diagnostic_manufacturer_data(probe7_bytes)
+    check("bring-up heartbeat decodes identity and power",
+          (probe7.diagnostic, probe7.sensor_id, probe7.wake, probe7.data_ch0,
+           probe7.battery_mv, probe7.ota_gate_open, probe7.charging)
+          == (True, 7, 21, 0, 4043, True, False))
+    check("bring-up heartbeat leaves production-only bits undefined",
+          (probe7.phase, probe7.temp_valid, probe7.bare_valid, probe7.reading_invalid,
+           probe7.capless) == (None, None, None, None, None))
+    check("the diagnostic decoder refuses production telemetry",
+          decode_diagnostic_manufacturer_data(probe6.raw_bytes) is None)
+    check("a truncated heartbeat is rejected",
+          decode_diagnostic_manufacturer_data(probe7_bytes[:14]) is None)
+    check("the combined decoder takes both formats",
+          any_advertisement_from_bleak(FakeAdvertisement(None, {0xFFFF: probe7_bytes})).diagnostic
+          and not any_advertisement_from_bleak(
+              FakeAdvertisement(None, {0xFFFF: probe6.raw_bytes})).diagnostic)
+    check("the combined decoder ignores other advertisers",
+          any_advertisement_from_bleak(FakeAdvertisement(None, {0x004C: probe7_bytes})) is None)
 
 
 def test_package_identity():
@@ -1057,7 +1096,11 @@ def test_real_registry_matches_hardware():
     check("every OTA-capable probe pins its bootloader's public key",
           all(p.bootloader_key_sha256 == REAL_KEY_SHA256 for p in fleet if p.ota_capable))
     check("only newly commissioned probes are non-deployed",
-          [p.sensor_id for p in fleet if not p.deployed] == [6, 7, 8])
+          [p.sensor_id for p in fleet if not p.deployed] == [6, 8])
+    seven = fleet.by_sensor_id(7)
+    check("probe 7 is potted on capless production v65565 (2026-09-16)",
+          seven.deployed and not seven.swd_accessible
+          and seven.installed_application_version == 65565)
 
     # Guard 2 on a pre-1.0.3 bootloader is a guard that can never fire. Probe 4 is the one probe
     # still on 1.0.1 AND the one that is deployed, in soil, on solar, with no SWD -- so it is both

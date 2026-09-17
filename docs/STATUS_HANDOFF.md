@@ -2,6 +2,35 @@
 
 Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-16 Probe 7 on capless production, potted as the zener-clamp trial
+
+- **Probe 7 now runs signed capless production v65565** (`2026-09-14-capless-prod7-restore`),
+  installed over BLE in 49 s, replacing the `2026-09-14-probe7-mux-diag` bring-up image. DIS
+  confirmed the build. A 300 s scan saw wake +3, flags `0x56` (capless set, invalid clear),
+  4021 mV, and phase 0/1 means 1,180 counts apart, so the repaired TMUX shows no phase asymmetry.
+  Evidence: `dumps/probe7-prod65565-postrestore.json`. `MSV3/fleet.json` now has it
+  `deployed: true`, `swd_accessible: false` (potted, not coated).
+- **Purpose: the first test of the `SP+` shunt-zener clamp** against the body-diode overcharge in
+  `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`. **The fitted part is a temporary
+  1N4728A** (3.3 V, soft knee, the only zener on hand). The maintainer measured it holding `SP+`
+  **below 2.2 V in direct sun**, which is below any cell voltage, so the diode path is off. The data
+  will be in the maintainer's own doc. A better part is on order, and data from before and after
+  the swap is not directly comparable. Watch the window-light harvest: that soft knee is exactly the
+  leakage case the root-cause doc warns can eat a few-hundred-µA window current.
+- **Probe 7 still has the as-built OV divider** (R11 5.62 MΩ / R14 4.42 MΩ). The maintainer skipped
+  the 2026-09-14 storage rework before fitting its battery and panel and accepts the shorter cell
+  life. **Its harvester ceiling is therefore about 4.26 V, not 3.89 V.** Pass: the cell stops near
+  probe 4's as-built cap of **4309 mV** telemetry. Fail: it keeps following the sun toward probe 6's
+  unclamped **~4.44-4.49 V**. That margin is only about 150 mV, so also take the free
+  discriminator: a DMM on `SP+` at the same moment as `raw_battery_mv`. With a working clamp, `SP+`
+  sits below the cell, so the diode path cannot conduct.
+- **The fleet scanner now reads bring-up heartbeats** (`MSV3` magic) as DIAGNOSTIC rather than
+  NOT SEEN, decodes production flag bits 5 (reading invalid) and 6 (capless), flags pre-capless
+  images, and compares phase 0/1 means against the firmware's 1,200,000-count swing threshold.
+  `ble_ota_update.py` now uses the same shared decoder.
+- `main` and this branch have diverged: `main` has `edc9705` (the R11/R14 rework), and this branch
+  has the fleet tooling and the VIN_DC root cause. Neither contains the other.
+
 ## 2026-09-14 Bootloader 1.0.4 built (NOT installed), and evidence on the 1.0.3 archive dispute
 
 - **Bootloader 1.0.4 exists as a built, verified artifact and is installed on nothing.** No probe

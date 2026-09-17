@@ -49,6 +49,10 @@ BLE_COMPANY_ID = 0xFFFF
 BLE_MAGIC = b"MSV2"  # Real production magic for every generation -- see the sketch's comment on
                      # why MSV3 kept MSV2's, and MSV3_Probe_Bringup_Test's distinct "MSV3" magic.
 MSV3_WIDE_LEN = 21   # 23-byte payload minus the 2-byte company ID the scanner strips.
+# MSV3_Probe_Bringup_Test's targeted fleet diagnostic. A different magic on purpose, so a production
+# receiver can never ingest its placeholder reading -- see that sketch's bleStartAdv().
+DIAGNOSTIC_MAGIC = b"MSV3"
+DIAGNOSTIC_LEN = 15  # 17-byte payload minus the company ID.
 
 # The advertised name as it appears in the compiled image. Anchored on the trailing NUL so a
 # partial match inside a longer string cannot pass.
@@ -269,7 +273,12 @@ def load_fleet(path: Path | None = None) -> Fleet:
 
 @dataclass(frozen=True)
 class Advertisement:
-    """A decoded MSV-family manufacturer payload, company ID already stripped by the scanner."""
+    """A decoded MSV-family manufacturer payload, company ID already stripped by the scanner.
+
+    `wide` means battery and flags were decoded. `diagnostic` marks a bring-up heartbeat: its
+    DATA_CH0 is not production telemetry, and only its charging and OTA-gate bits are defined, so
+    the other flag properties read None for it rather than a misleading False.
+    """
 
     sensor_id: int
     wake: int
@@ -280,6 +289,12 @@ class Advertisement:
     flags: Optional[int] = None
     die_temp_c: Optional[float] = None
     bare_ch0: Optional[int] = None
+    diagnostic: bool = False
+
+    def _production_bit(self, mask: int) -> Optional[bool]:
+        if self.flags is None or self.diagnostic:
+            return None
+        return bool(self.flags & mask)
 
     # flags bits, from the sketch's advertisement layout comment
     @property
@@ -288,15 +303,26 @@ class Advertisement:
 
     @property
     def phase(self) -> Optional[int]:
-        return None if self.flags is None else (self.flags >> 1) & 0x01
+        bit = self._production_bit(0x02)
+        return None if bit is None else int(bit)
 
     @property
     def temp_valid(self) -> Optional[bool]:
-        return None if self.flags is None else bool(self.flags & 0x04)
+        return self._production_bit(0x04)
 
     @property
     def bare_valid(self) -> Optional[bool]:
-        return None if self.flags is None else bool(self.flags & 0x08)
+        return self._production_bit(0x08)
+
+    @property
+    def reading_invalid(self) -> Optional[bool]:
+        """bit5: the FDC read failed and DATA_CH0 is a deliberate 0. Always clear before 2026-09-04."""
+        return self._production_bit(0x20)
+
+    @property
+    def capless(self) -> Optional[bool]:
+        """bit6: capless firmware, which never selects the disconnected mux 2/3."""
+        return self._production_bit(0x40)
 
     @property
     def ota_gate_open(self) -> Optional[bool]:
@@ -339,10 +365,40 @@ def decode_manufacturer_data(data: bytes) -> Optional[Advertisement]:
     )
 
 
+def decode_diagnostic_manufacturer_data(data: bytes) -> Optional[Advertisement]:
+    """Decode a targeted bring-up heartbeat, or return None if it is not one.
+
+    Kept apart from decode_manufacturer_data so nothing takes it for production telemetry: its
+    DATA_CH0 is 0 in the periodic OTA heartbeat and a console-requested reading otherwise.
+    """
+    if len(data) < DIAGNOSTIC_LEN or data[0:4] != DIAGNOSTIC_MAGIC:
+        return None
+    data_ch0, battery_mv, flags = struct.unpack_from("<IHB", data, 8)
+    return Advertisement(
+        sensor_id=data[4],
+        wake=int.from_bytes(data[5:8], "little"),
+        raw_bytes=bytes(data),
+        wide=True,
+        data_ch0=data_ch0,
+        battery_mv=battery_mv,
+        flags=flags,
+        diagnostic=True,
+    )
+
+
 def advertisement_from_bleak(advertisement) -> Optional[Advertisement]:
-    """Pull the MSV payload out of a Bleak AdvertisementData, if it carries one."""
+    """Pull the production MSV payload out of a Bleak AdvertisementData, if it carries one."""
     payload = (advertisement.manufacturer_data or {}).get(BLE_COMPANY_ID)
     return decode_manufacturer_data(payload) if payload else None
+
+
+def any_advertisement_from_bleak(advertisement) -> Optional[Advertisement]:
+    """Production telemetry or a bring-up heartbeat. Check `.diagnostic` before using data_ch0."""
+    payload = (advertisement.manufacturer_data or {}).get(BLE_COMPANY_ID)
+    if not payload:
+        return None
+    data = bytes(payload)
+    return decode_manufacturer_data(data) or decode_diagnostic_manufacturer_data(data)
 
 
 # ------------------------------------------------------------------ packages ----

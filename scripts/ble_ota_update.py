@@ -147,9 +147,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from msv3_fleet import (  # noqa: E402
-    Advertisement,
     FleetError,
-    advertisement_from_bleak,
+    any_advertisement_from_bleak,
     check_boot_guard_pairing,
     load_fleet,
     load_release_public_key,
@@ -868,7 +867,9 @@ def check_live_identity(args, probe, advertisement):
     firmware still blocks under it: those are not disagreements about which probe this is, they
     are the board telling you it will refuse the jump.
     """
-    advert = application_advertisement_from_bleak(advertisement)
+    # A targeted bring-up heartbeat carries the same identity, battery and OTA-gate prefix as
+    # production telemetry, so either one can authorise the jump.
+    advert = any_advertisement_from_bleak(advertisement)
     name = advertisement.local_name or ""
     identity_problems = []
     blocking_problems = []
@@ -914,36 +915,6 @@ def check_live_identity(args, probe, advertisement):
     extra = (f", sensor {advert.sensor_id}, {advert.battery_mv} mV, OTA gate open"
              if advert is not None and advert.wide else "")
     print(f"  live check   OK -- {name or 'unnamed'}{extra}", flush=True)
-
-
-def application_advertisement_from_bleak(advertisement):
-    """Decode either production telemetry (``MSV2``) or a targeted bring-up heartbeat.
-
-    Fleet diagnostics deliberately use a different ``MSV3`` magic so a production receiver can
-    never ingest their placeholder sensor value. They still carry the same identity, wake,
-    battery, and flag prefix needed by the updater. Keeping this decoder local prevents the fleet
-    health scanner from mistaking a diagnostic heartbeat for production sensor telemetry.
-    """
-    advert = advertisement_from_bleak(advertisement)
-    if advert is not None:
-        return advert
-
-    payload = (advertisement.manufacturer_data or {}).get(0xFFFF)
-    if payload is None:
-        return None
-    data = bytes(payload)
-    if len(data) < 15 or data[0:4] != b"MSV3":
-        return None
-
-    return Advertisement(
-        sensor_id=data[4],
-        wake=int.from_bytes(data[5:8], "little"),
-        raw_bytes=data,
-        wide=True,
-        data_ch0=int.from_bytes(data[8:12], "little"),
-        battery_mv=int.from_bytes(data[12:14], "little"),
-        flags=data[14],
-    )
 
 
 async def read_firmware_revision(client):

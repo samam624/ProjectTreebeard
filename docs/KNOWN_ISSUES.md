@@ -41,8 +41,8 @@ three seconds indefinitely is unsupported. See
 **Rollout started 2026-09-14:** the capless-aware receiver (`Treebeard runtime build 2026-09-14
 msv3-capless-scale3`) is installed and running on COM16, and Probe 6 is on capless production
 v65564 with flags `0x54` (bit 6 set, bare-valid clear) confirmed on the air. Probes 4, 5 and 8 have
-signed v65564 packages archived but NOT installed; Probe 7 still runs its v65565 bring-up
-diagnostic and needs its paired v65565 production restore.
+signed v65564 packages archived but NOT installed. Probe 7 has been on its paired capless production
+v65565 since 2026-09-16 (flags `0x56` confirmed on the air) and is a matched pair.
 
 **C17 is physically removed from ALL probes as of 2026-09-14 (maintainer).** That completes the
 hardware half of the rollout but INVERTS the remaining risk: the probes still on legacy firmware are
@@ -132,8 +132,8 @@ cleanup, I2C identity was correct, `fdctest` passed 10/10, and repeated code-0/c
 overlapped near 36.73M with no FDC errors. The actual fault was a pressure-sensitive solder
 connection on a code-1 analog path. The planned mux removal and fixed-phase bypass are cancelled.
 
-Probe 7 currently runs signed targeted bring-up v65565. The paired signed capless production
-v65565 equality restore is archived but not installed. The superseded diagnosis and bypass plan
+Probe 7 has run its paired signed capless production v65565 since 2026-09-16. Its first scan on
+that image put the phase 0/1 means 1,180 counts apart, so the repair holds on the air. The superseded diagnosis and bypass plan
 remain in the dated root-cause record for history; do not perform that bypass.
 
 ## MSV3 bootloader USB and BLE OTA are mutually exclusive
