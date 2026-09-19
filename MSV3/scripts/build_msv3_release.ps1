@@ -28,7 +28,11 @@ param(
   [ValidateRange(0, 31)]
   [int]$FdcIdriveCode = 16,
   [ValidateSet(10, 33)]
-  [int]$FdcDeglitchMhz = 10
+  [int]$FdcDeglitchMhz = 10,
+  # Forwarded to arduino_msv3_probe.ps1. Probe-specific experiment image; see that script.
+  [switch]$HybridV12Tank,
+  [ValidateSet(0, 2)]
+  [int]$HybridMuxCode = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -316,6 +320,10 @@ if (!$SkipApplicationCompile) {
   if ($SerialLogs) { $probeArgs += "-SerialLogs" }
   if ($BootGuard) { $probeArgs += "-BootGuard" }
   if ($HangTest) { $probeArgs += "-HangTest" }
+  if ($PSBoundParameters.ContainsKey('HybridMuxCode') -and -not $HybridV12Tank) {
+    throw "-HybridMuxCode only applies with -HybridV12Tank; on its own it would be silently ignored."
+  }
+  if ($HybridV12Tank) { $probeArgs += @("-HybridV12Tank", "-HybridMuxCode", $HybridMuxCode) }
   & powershell -ExecutionPolicy Bypass -File (Join-Path $scriptDir "arduino_msv3_probe.ps1") @probeArgs
   if ($LASTEXITCODE -ne 0) { throw "MSV3 production application build failed" }
 }

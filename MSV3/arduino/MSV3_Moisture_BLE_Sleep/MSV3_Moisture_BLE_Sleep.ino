@@ -352,6 +352,40 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 // not the sole guarantee of a settled conversion.
 #define FDC_ACTIVATION_US 400
 #define MUX_SLEEP_CODE 0        // electrode-swap. NEVER 2 or 3 -- see probeSleep().
+
+// 2026-09-18 INVERTED HYBRID TEST (probe 4 only; build flag, never a fleet default).
+// Probe 4's C17 pads now carry an external v1.2 capacitive sensor, so that sensor sits directly
+// across the FDC tank. With the mux on an electrode-disconnected code the tank is only
+// L + board/TMUX off-capacitance + the v1.2 sensor: this board's electronics, battery and BLE
+// driving someone else's electrode. That separates "the MSV3 electronics swing with temperature"
+// from "the MSV3 electrode/soil interface does".
+// - Every measurement uses code 2 and only code 2. Codes 2 and 3 park the electrodes on different
+//   EC-check throws, so alternating them would put a phase artifact into exactly the signal
+//   under test. Code 2 is also what the pre-capless image used for its phase-0 bare reads.
+// - The mux is on code 2 ONLY while the FDC converts. probeSleep() still parks it on code 0,
+//   because an EC-check code left selected is a continuous 3V3->soil->VDIV leak (~33uA) through
+//   the MSV3 electrodes if they are still in soil.
+// - Code 2 is the configuration the capless policy forbids for production: with no C17 its tank
+//   resonates above the FDC's range. Here the v1.2 sensor is the added capacitance, and whether
+//   the result is in range is a property of that rework, not of this code. The 0x0FFFFFFF
+//   over-range sentinel is therefore rejected as an invalid reading, like ERR_WD.
+#ifndef MSV3_HYBRID_V12_TANK
+#define MSV3_HYBRID_V12_TANK 0
+#endif
+static_assert(MSV3_HYBRID_V12_TANK == 0 || MSV3_HYBRID_V12_TANK == 1,
+              "MSV3_HYBRID_V12_TANK is a 0/1 build flag");
+// Code 2 alone put probe 4's tank at ~10.5 MHz (v1.2 dry is only ~6-10 pF), above the FDC's 10 MHz
+// ceiling. Code 0 adds the MSV3 electrode as fixed padding capacitance, which is only legitimate
+// with that electrode held in AIR: the 2026-09-15 glass-of-water test read an uncoated MSV3 probe
+// flat in air for a full day by a window. In soil it would be the very interface under suspicion.
+// Code 0 is also the sleep code, so on this setting the mux never moves.
+#ifndef MSV3_HYBRID_MUX_CODE
+#define MSV3_HYBRID_MUX_CODE 2
+#endif
+static_assert(MSV3_HYBRID_MUX_CODE == 0 || MSV3_HYBRID_MUX_CODE == 2,
+              "hybrid mux code: 0 = MSV3 electrode (in air) as padding, 2 = electrodes disconnected");
+#define MUX_HYBRID_MEASURE_CODE MSV3_HYBRID_MUX_CODE
+#define FDC_DATA_OVER_RANGE 0x0FFFFFFFUL
 // REMOVED 2026-08-30: MUX_SWITCH_SETTLE_MS (300ms, added 2026-08-29 as a preemptive safety
 // margin -- see the file header comment for that history). Checked the real TMUX1109 datasheet
 // (SCDS406A) against this board's actual load rather than continuing to guess: at VS=3V, worst
@@ -1571,8 +1605,9 @@ void loop()
   // near MUX_SLEEP_CODE above; the switch is done in tens of nanoseconds and
   // probeWake()'s own tSDWAKEUP/I2C/activation sequence already leaves it
   // orders of magnitude of margin before the oscillator starts.
-  uint8_t phaseUsed = currentTankPhase;
-  setMux(phaseUsed);
+  // Hybrid test: one fixed code, so the reported phase is always 0 and never toggles.
+  uint8_t phaseUsed = MSV3_HYBRID_V12_TANK ? 0 : currentTankPhase;
+  setMux(MSV3_HYBRID_V12_TANK ? MUX_HYBRID_MEASURE_CODE : phaseUsed);
 
   uint32_t rawData = 0;
   uint16_t fdcStatus = 0;
@@ -1585,6 +1620,7 @@ void loop()
     bool errWd = (fdcStatus & (1 << 11)) != 0;   // ERR_WD -- watchdog/no-oscillation
     bool errAhw = (fdcStatus & (1 << 10)) != 0;  // ERR_AHW -- amplitude too high
     bool errAlw = (fdcStatus & (1 << 9)) != 0;   // ERR_ALW -- amplitude too low
+    if (MSV3_HYBRID_V12_TANK && rawData >= FDC_DATA_OVER_RANGE) errWd = true;  // see definition
     if (errWd)
     {
       // Not a real reading -- same treatment as an outright I2C failure:

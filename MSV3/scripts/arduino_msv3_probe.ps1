@@ -28,6 +28,13 @@ param(
   [int]$WakeDiscardConversions = 2,
   [ValidateSet(10, 33)]
   [int]$FdcDeglitchMhz = 10,
+  # 2026-09-18 inverted-hybrid experiment: measure on mux code 2 only (an external sensor wired
+  # across the tank at the C17 pads). Probe-specific, needs -SensorId and a -BuildTag so DIS names
+  # the experiment. See MSV3_HYBRID_V12_TANK in the production sketch.
+  [switch]$HybridV12Tank,
+  # 2 = MSV3 electrodes disconnected; 0 = MSV3 electrode connected as padding (hold it in AIR).
+  [ValidateSet(0, 2)]
+  [int]$HybridMuxCode = 2,
   # Only consulted for -BootGuard/-HangTest, which must ask MSV3/fleet.json whether the target
   # can survive the image being built. An ordinary build never needs an interpreter.
   [string]$Python,
@@ -408,6 +415,16 @@ if ($SerialLogs) { $defines += "-DMSV3_ENABLE_SERIAL_LOGS=1" }
 if ($BootGuard) { $defines += "-DMSV3_ENABLE_BOOT_FAILURE_GUARD=1" }
 if ($HangTest) { $defines += "-DMSV3_HANG_BEFORE_ADVERTISE=1" }
 if ($BuildTag) { $defines += "-DMSV3_BUILD_TAG=$BuildTag" }
+if ($PSBoundParameters.ContainsKey('HybridMuxCode') -and -not $HybridV12Tank) {
+  throw "-HybridMuxCode only applies with -HybridV12Tank; on its own it would be silently ignored."
+}
+if ($HybridV12Tank) {
+  if ($SensorId -lt 0 -or -not $BuildTag) {
+    throw "-HybridV12Tank needs -SensorId and a -BuildTag: it is a probe-specific experiment image, and DIS must say which one is running."
+  }
+  $defines += "-DMSV3_HYBRID_V12_TANK=1"
+  $defines += "-DMSV3_HYBRID_MUX_CODE=$HybridMuxCode"
+}
 if ($SensorId -ge 0) {
   $fdcMuxConfig = if ($FdcDeglitchMhz -eq 10) { "0x020D" } else { "0x020F" }
   $defines += "-DMSV3_FDC_SETTLECOUNT_CH0=$FdcSettleCount"
