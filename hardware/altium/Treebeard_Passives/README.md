@@ -1,0 +1,126 @@
+# Treebeard Altium passive library
+
+This is the small, controlled library for ordinary 0805 passives used across
+Project Treebeard. It deliberately contains **only commodity resistors and
+ceramic capacitors**. ICs, connectors, semiconductors, LEDs, thermistors,
+crystals, inductors, ferrite beads, and other exact-part components stay in the
+normal manufacturer-part workflow.
+
+## The intended workflow
+
+1. Add both `Treebeard_Passives.SchLib` and `Treebeard_Passives.PcbLib` to the
+   Altium project (or install both as file-based libraries).
+2. Place one of the symbols below.
+3. For routine value changes, edit exactly one visible parameter:
+   `Resistance` or `Capacitance`.
+4. Export the BOM with `Comment`, `Designator`, `Footprint`, `LCSC Part #`, and
+   the structured passive parameters. `Comment` is generated from those
+   parameters and reads, for example,
+   `200 ohm 1% 0.125W 150V 100ppm/C 0805 thick-film resistor`. It is for humans
+   and design review. **It is never an ordering key.**
+5. Before any LCSC/JLCPCB upload, freeze **every** line to a verified
+   `LCSC Part #`, using `hardware/procurement/lcsc_verified_parts.csv` and the
+   `lcsc-bom-order` skill (`.claude/skills/`, and `~/.codex/skills/` for Codex).
+   On 2026-09-19, relying on LCSC's fuzzy match picked discontinued parts,
+   backordered parts and a 10 milliohm shunt for "10M". The footprint does not
+   change when you freeze a part.
+
+For the minimum-click path in Altium, show `Resistance`/`Capacitance` in the
+Properties panel and leave the generated `Comment` hidden. The visible value is
+the only routine edit.
+
+## Symbols
+
+The resistor uses the ANSI/US zigzag symbol. Capacitors use the standard
+non-polarized two-plate symbol with a compact 50 mil plate gap. Both retain a
+400 mil pin-to-pin span so they land cleanly on the schematic grid.
+
+| Library symbol | Normal edit | Fixed sourcing constraints | Footprint |
+| --- | --- | --- | --- |
+| `R_0805_1PCT_0P125W_150V` | `Resistance` | 1%, 0.125 W, 150 V, 100 ppm/C, thick film | `TB_R_0805_2012M` |
+| `C_0805_X5R_16V_10PCT` | `Capacitance` | 10%, 16 V, X5R MLCC | `TB_C_0805_2012M` |
+| `C_0805_X5R_25V_10PCT` | `Capacitance` | 10%, 25 V, X5R MLCC | `TB_C_0805_2012M` |
+| `C_0805_X7R_50V_10PCT` | `Capacitance` | 10%, 50 V, X7R MLCC | `TB_C_0805_2012M` |
+| `C_0805_C0G_50V_5PCT` | `Capacitance` | 5%, 50 V, C0G/NP0 MLCC | `TB_C_0805_2012M` |
+
+The four capacitor presets are intentional: changing capacitance is normally
+safe within a preset, while silently changing dielectric or voltage rating is
+not. They cover the current MSV4 values (10 uF X5R/16 V, 4.7 uF X5R/25 V,
+100 nF and 1 uF X7R/50 V, and C0G timing/sensing capacitors).
+
+## Controlled footprints
+
+Both footprints are IPC-7351 nominal 0805/2012 metric land patterns. They have
+separate names because resistor and MLCC nominal pads differ slightly:
+
+| Footprint | Pad centers | Pad size | Courtyard |
+| --- | ---: | ---: | ---: |
+| `TB_R_0805_2012M` | +/-0.9125 mm | 1.025 x 1.400 mm | 3.36 x 1.90 mm |
+| `TB_C_0805_2012M` | +/-0.9500 mm | 1.000 x 1.450 mm | 3.40 x 1.96 mm |
+
+The footprint layers are:
+
+- Top Overlay: only the two legal center silk segments, kept off the pads.
+- Mechanical 1: component courtyard.
+- Mechanical 13: 2.0 x 1.25 mm assembly/body outline.
+- 3D Body: generic extruded body (0.70 mm resistor, conservative 1.45 mm MLCC).
+
+These dimensions follow the KiCad IPC-7351 nominal 0805 resistor and capacitor
+land patterns. Keeping separate controlled names avoids the vendor-library
+footprint drift that prompted this library.
+
+## BOM behavior and its hard limit
+
+The library makes a generic BOM row readable and unit-explicit (resistances carry
+` ohm `; enter capacitances with their `F`, e.g. `10pF`). Fuzzy matching on that text
+is not an acceptable way to order: see step 5 above. It cannot make Octopart or Altium ActiveBOM deterministically select
+an arbitrary cheapest part from constraints alone: those systems rank supplier
+offers after a manufacturer part number/candidate part has been identified.
+That is why MPN and LCSC fields start blank and can be filled only at BOM freeze.
+
+Recommended Altium BOM/ActiveBOM fields and grouping keys are listed in
+[`bom/Treebeard_Passives_BOM_columns.csv`](bom/Treebeard_Passives_BOM_columns.csv).
+Group on the structured value/spec fields as well as footprint; do not group all
+instances merely because they share the same library reference.
+
+## Never use the generic entries for
+
+- the 500 Mohm high-voltage resistor;
+- NTC thermistors;
+- ferrite beads (a `22 ohm @ 100 MHz` bead is not a 22 ohm resistor);
+- inductors, where current, DCR, saturation, and SRF matter;
+- safety, pulse, current-sense, precision, RF, or other specialty resistors;
+- polarized capacitors or MLCCs whose DC-bias/capacitance behavior must be
+  guaranteed by a specific series.
+
+Those remain exact manufacturer components even if their body size is 0805.
+
+## Rebuilding
+
+The checked-in libraries are native Altium binary files generated by AD25/AD26.
+To rebuild them on a Windows machine with Altium installed:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\generator\Build-TreebeardPassives.ps1
+```
+
+The generator writes into a temporary directory, checks the Altium compound-file
+signature, reopens the result to verify its symbol geometry and model links, and
+only then replaces the checked-in outputs. Each build stages a uniquely named
+script project so an already-open Altium session cannot silently reuse cached
+generator source. The source is retained so the footprints and metadata are
+reviewable instead of being opaque binary-only assets.
+
+References:
+
+- Altium file-based schematic libraries and component parameters:
+  <https://www.altium.com/documentation/altium-designer/components-libraries/file-based-libraries/schematic>
+- Altium special strings/formulas used by `Comment`:
+  <https://www.altium.com/documentation/altium-designer/schematic/text-objects>
+- Altium ActiveBOM grouping:
+  <https://www.altium.com/documentation/altium-designer/activebom/creating-document#identifying-identical-components>
+- JLCPCB BOM format and fuzzy matching:
+  <https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly>
+- IPC nominal 0805 references used for the geometry:
+  <https://github.com/KiCad/kicad-footprints/blob/master/Resistor_SMD.pretty/R_0805_2012Metric.kicad_mod> and
+  <https://github.com/KiCad/kicad-footprints/blob/master/Capacitor_SMD.pretty/C_0805_2012Metric.kicad_mod>

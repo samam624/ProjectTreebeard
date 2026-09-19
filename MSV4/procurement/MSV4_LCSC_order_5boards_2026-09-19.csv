@@ -1,0 +1,22 @@
+﻿Comment,Designator,Quantity,LCSC Part #,Manufacturer,Manufacturer Part Number,Notes
+4.7uF 10% 25V X5R 0805 MLCC,"C1, C7, C11",20,C1779,Samsung Electro-Mechanics,CL21A475KAQNNNE,"need 15, have 5 from MSV3; LCSC min 20"
+10pF 5% 50V C0G/NP0 0805 MLCC,"C2, C3",20,C107107,YAGEO,CC0805JRNPO9BN100,need 10; Samsung C1785 went Not Available 2026-09-19; backup Walsin C123640
+100nF 10% 50V X7R 0805 MLCC,"C4, C6, C12, C15, C17",40,C49678,YAGEO,CC0805KRX7R9BB104,"need 25, no stock (MSV3 used more than it bought); min 20 mult 20"
+1nF 5% 50V C0G/NP0 0805 MLCC,"C8, C9, C16",20,C62774,YAGEO,CC0805JRNPO9BN102,need 15; Samsung CL21C102 parts Not Available; backup Walsin C152850
+10nF 5% 50V C0G/NP0 0805 MLCC,C10,10,C97905,muRata,GRM2195C1H103JA01D,have 5 from MSV3 (covers all 5 boards); topping up - same low-leakage C0G bought for MSV3
+1uF 10% 50V X7R 0805 MLCC,"C13, C14",10,C28323,Samsung Electro-Mechanics,CL21B105KBFNNNE,"need 10, have 5 from MSV3; min 10"
+NTZD3155CT2G,Q1,10,C895156,onsemi,NTZD3155CT2G,need 5; SOT-563 - spares for hand soldering; min 5
+1M ohm 1% 0.125W 0805 thick-film resistor,"R1, R3, R24",100,C2933280,FOJAN,FRC0805F1004TS,need 15; min 100
+5.36M ohm 1% 0.125W 0805 thick-film resistor,R11,100,C483171,YAGEO,RC0805FR-075M36L,need 5; min 100
+4.99M ohm 1% 0.125W 0805 thick-film resistor,R13,50,C2091880,VISHAY,CRCW08054M99FKEA,need 5; min 50
+3.48M ohm 1% 0.125W 0805 thick-film resistor,R7,100,C483097,YAGEO,RC0805FR-073M48L,need 5; min 100
+1k ohm 1% 0.125W 0805 thick-film resistor,R15,100,C2907232,FOJAN,FRC0805F1001TS,need 5; min 100
+NCP15XH103F03RC,R17,50,C77131,muRata,NCP15XH103F03RC,need 5; 0402 NTC; min 50
+TPS7A0233PDBVR,U2,5,C2887324,Texas Instruments,TPS7A0233PDBVR,"need 5, all MSV3 stock used"
+FSUSB42UMX,"U3, U4",12,C11145,onsemi,FSUSB42UMX,need 10; 1.4x1.8 mm UMLP - 2 spares for hand soldering
+BQ25504RGTR,U,5,C2876746,Texas Instruments,BQ25504RGTR,"need 5, have 1 BQ25504RGTT from MSV3 (same part); 4 + 1 spare for QFN hand soldering"
+SC-32S32.768kHz20PPM7pF,Y1,6,C97604,Seiko,SC-32S32.768KHZ20PPM7PF,need 5; 1 spare
+ESP32-S3-WROOM-1U-N16R8,DisplayCenter: ESP32 MCU,1,C3013946,Espressif,ESP32-S3-WROOM-1U-N16R8,DisplayCenter #2; the DigiKey order had 1 and it was used. U.FL version - needs an external 2.4 GHz antenna
+2N7002 N-MOSFET SOT-23,"DisplayCenter: Q2, Q3",20,C8545,JSCJ,2N7002,"DisplayCenter #2; DigiKey order had 2, both used; LCSC minimum"
+AP2112K-3.3TRG1 LDO,DisplayCenter: LDO 3V3,2,C51118,Diodes Inc.,AP2112K-3.3TRG1,optional spares: exactly 1 left from DigiKey
+"2.4 GHz PCB antenna 50x10 mm, IPEX gen 1 (U.FL)",DisplayCenter: ESP32 antenna,1,C454914,ZIISOR (Ebyte),TX2400-PCB-5010,"verified in stock on LCSC 2026-09-19 (176 pcs); replaces DigiKey ANT-DB1-LPD-125. IPEX-1 = U.FL, matches ESP32-S3-WROOM-1U. Mount inside the enclosure away from the LCD metal frame"
