@@ -1,12 +1,21 @@
-# MSV3 VBAT_OV never worked: the panel is 6 V and the boost has a body diode (2026-09-15)
+# MSV3 VIN_DC overvoltage investigation (2026-09-15; corrected 2026-09-16)
 
-**Status: root cause identified from the datasheet and confirmed against fleet telemetry. Fix is a
-one-part bodge. Not yet installed.**
+> **Correction, 2026-09-16:** the input-rating violation in this report is confirmed, but its claim
+> that `VBAT_OV` is structurally unable to stop body-diode charging omitted the BQ25504's documented
+> `VIN_DC` pull-down when `VIN_DC > VSTOR > VBAT_OV`. The clamp remains necessary because the 6 V
+> panel exceeds the 5.5 V absolute maximum. The coated Probe 6 nevertheless measured 5.01 V at
+> loaded `SP+` with its reworked 3.887 V threshold and battery near 4.30 V, so the documented
+> pull-down was not operating on that board (unless the one reading caught the 256 ms MPPT sample).
+> The temporary 1N4728A also operates far below its labelled voltage because 3.3 V is specified at
+> 76 mA. Read `MSV3_PROBE7_ZENER_CHARGING_REASSESSMENT_2026-09-16.md` before any clamp or MPPT
+> rework. It supersedes the mechanism, part-selection, dissipation, and 90%-MPPT recommendations here.
 
-The BQ25504's battery overvoltage protection has never bounded the cell on any MSV3 probe. It is
-not a resistor value, not a solder joint, and not contamination. The 6 V solar panel exceeds the
-part's input rating, and a boost converter physically cannot stop current flowing from a higher
-input to a lower output.
+**Status: the panel/input rating violation is confirmed. The BQ25504 documents a protection path,
+but Probe 6 supplies direct evidence that it was ineffective on actual fleet hardware. Probe 7 now
+has a temporary clamp; use the reassessment before changing it.**
+
+Confirmed fact: the 6 V solar panel exceeds the BQ25504 input rating. Not established: that the
+high-side path necessarily bypasses the IC's documented input pull-down on every healthy board.
 
 ## The two datasheet violations
 

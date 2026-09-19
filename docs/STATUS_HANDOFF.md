@@ -1,6 +1,97 @@
 # MSV2 Status Handoff
 
-Date: 2026-09-14 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-09-19 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-09-18/19 MSV4 bring-up firmware, layout audits, electrode physics, orders placed
+
+**Ordered 2026-09-19: MSV4 x5 (JLCPCB PCBs + LCSC parts; E73 modules from Ebyte), plus DisplayCenter #2 parts.**
+Upload file: `MSV4/procurement/MSV4_LCSC_order_5boards_2026-09-19.csv`. The parts to pull from MSV3
+and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards_2026-09-19.md`.
+**Physically count** the scarce leftovers before assembly: 1x BQ25504RGTT, 5x 4.7 uF, 5x 1 uF.
+
+- **MSV4 BLE bring-up firmware** (`MSV4/arduino/MSV4_Probe_Bringup_BLE`, tracked LFXO variant, build
+  script, `MSV4/scripts/msv4_ble_console.py`). It has console commands, a dead-crystal escape to DFU,
+  and a `spectrum` command: a 250 kHz-4 MHz sweep with a model fit. **Not yet run on hardware.**
+  Workflow and first-board checklist: `MSV4/docs/MSV4_BLE_BRINGUP_FIRMWARE_2026-09-18.md`.
+  The ADC pins were re-pinned to the final layout (TEMP P0.03, SENSE_OUT P0.30, DRV_OUT P0.31).
+- **Layout audited from IPC-2581 exports** (`MSV4/hardware/reference/PIN_NET_REFERENCE.md` findings
+  8-13). The final netlist `MSV4_sch_2026-09-18_final.NET` matches the layout pin for pin. The
+  `R24` pulldown was added on the Q1 gate. Open label items: the DNP cap is designated `DNP`, and
+  the BQ25504 is designated `U`.
+- **Electrode physics** (`MSV4/docs/MSV4_ELECTRODE_FIELD_SOLVE_2026-09-19.md`, solver
+  `MSV4/scripts/msv4_electrode_fieldsolve.py`):
+  - The geometry is correct; no respin.
+  - At 1-4 MHz in moist soil the reading is conductance- and interface-dominated (Maxwell-Wagner
+    through the mask).
+  - Use Rsoil (temperature-corrected with the tip NTC) as the moisture proxy.
+  - The fitted mask/interface capacitance Cm is a contact-quality channel. Soil permittivity is
+    not identifiable below 4 MHz.
+- **Polarity chain** (appended to `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`): every
+  shared-pot rig reads drier when warm. On the same days, the MSV3 electrode's temperature
+  coefficient is 5.9-8.5x the v1.2 electrode's. Physical attribution is still open.
+- **Probe 4 is the inverted-hybrid rig** (v65567 `hybridv12-airpad`, `-HybridV12Tank
+  -HybridMuxCode 0`, default-off build flag, default build byte-identical to HEAD). A v1.2 sensor is
+  jumpered across the tank, and the MSV3 blade must be held in air. Split probe 4's history at
+  2026-09-18 16:38. Plan: position swap with sensor 3 after 3-4 clean days. To return it to
+  production, build a new capless image **above 65567**.
+- **The shared Alocasia pot had no temperature channel from 09-14 to 09-18** (probe 8 went to the
+  C17 diagnostic image). **Restored 2026-09-18 evening:** probe 4 now sits in that pot, and its board
+  die temperature (valid in the capless packet) is the reference again. Like probe 8's, it is a
+  board-head temperature in air beside the pot, not soil depth. Only the 09-15 to 09-18 slopes rely
+  on the probe 6/7 room proxies. Probe 8's return to production (capless v65564 prepared) is optional.
+- **Procurement process:**
+  - New skill `lcsc-bom-order` (repo `.claude/skills/` and `~/.codex/skills/`).
+  - New verified-part table `hardware/procurement/lcsc_verified_parts.csv`.
+  - The Codex `altium-generic-passives` and `altium-component-generator` skills were corrected.
+  - `Treebeard_Passives` was regenerated through Altium: resistor Comment now carries ` ohm `, and
+    `Procurement Class` says to freeze the LCSC number. Run *Tools -> Update From Libraries* in
+    existing schematics before their next BOM export.
+- **Nothing from this session is committed.** It is mixed with earlier uncommitted maintainer edits.
+
+## 2026-09-17 V4 power decisions and LCSC stock check
+
+- **Decided (revised later on 09-17): 3.3 V rail (TPS7A0233PDBVR, C2887324)** — the MSV3 part, kept
+  because the architecture was validated at 3.3 V. Also the maintainer's stock of 60 mAh cells,
+  `VBAT_OV` 3.889 V (ROV1 4.99 MΩ bottom / ROV2 5.36 MΩ top), `VBAT_UV` 3.04 V, and
+  `VBAT_OK` 3.369 V off / 3.728 V on (ROK1 3.48 / ROK2 5.90 / ROK3 1.00 MΩ). Usable window
+  3.37–3.89 V, about 30 mAh of the 60 mAh cell, roughly 10 no-sun days.
+- **Battery divider reworked:** high-side switched from VBAT by one NTZD3155C N+P dual (C2940634)
+  plus a 1 MΩ gate pull-up, replacing MSV3's low-side enable. Now **active-high**, so
+  `readVbatMv()`'s drive-LOW logic must be flipped. This removes the idle ADC pin sitting above
+  VDD and the ~27 µA back-powering path that V4's Q1 load switch would otherwise have created.
+- **Panel:** one 2 V / 60 mA / 36 x 30 mm panel ordered on Amazon; replaces the two-panel 1.5 V
+  array and keeps the V3 envelope. Qualify `V_OC` ≤ 2.8 V and `I_SC` in sun before fitting.
+- **Stock (LCSC API, 09-17):** everything is in stock except that LCSC has **no record for the
+  E73-2G4M08S1C** (JLCPCB mirror still shows 1,431) — confirm before ordering, and do not swap in
+  the `-CX` IPEX-antenna variant. BQ25504 is thin at 319. The DNP clamp is now ATL431BIDBZR, not a
+  zener. Table and C-numbers: `MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md`.
+- **Still open before ordering:** battery connector/polarity and max charge current, E73 source,
+  panel qualification, Rs at commissioning.
+
+## 2026-09-16 Probe 7 live; zener charging reassessed
+
+- **Probe 7 is online and healthy.** A 150 s guarded scan at about 18:54 PDT saw 32 packets at mean
+  -73 dBm, two wakes advancing +1 to 104, 4011 mV, valid capless flags `0x56`, 22.75 C and an open
+  OTA gate. The linked cloud history has 56 rows from 17:51-18:55 PDT, 4022 -> 4018 mV with
+  4000-4022 mV sample spread. That one hour around sunset proves operation and ingest, not charge.
+- **The temporary 1N4728A likely did not hard-short the panel, but it did erase most charging
+  margin.** Its 3.3 V rating is specified at 76 mA; the panel is only 30 mA in direct sun. The
+  measured steady `SP+ < 2.2 V`, divided by the 77.9% MPPT ratio, implies a plausible 2.82 V sampled
+  soft-knee clamp. Scaling Probe 4's measured harvest puts Probe 7 near only 0.7-1.2 mAh/day net,
+  with the deployment-window current still unmeasured.
+- **Correction to the 09-15 root-cause note:** TI explicitly documents an internal `VIN_DC`
+  pull-down when `VIN_DC > VSTOR > VBAT_OV`; the claim that the body diode makes `VBAT_OV`
+  structurally inoperative was too strong. **But the coated Probe 6 was reworked to a 3.887 V
+  nominal threshold and then measured 5.01 V at loaded `SP+` outdoors while its battery remained
+  near 4.30 V.** That satisfies the exact pull-down condition, so protection was ineffective on the
+  measured board unless the single DMM update happened to catch the 256 ms MPPT sample. A 20 s
+  scope capture distinguishes those cases. The 6 V panel still violates the 3.0 V recommended and
+  5.5 V absolute input limits, so it must still be replaced or clamped.
+- **Recommendation:** lower-voltage/higher-current panel first. If keeping the 6 V panel, bench an
+  ATL431B precision shunt near 2.80-2.85 V and pair it with a characterized MPPT ratio; do not fit
+  another ordinary 3.3 V zener or blindly apply the old 90% divider suggestion. Full calculations,
+  exact resistor candidates, primary sources and the required I-V/scope/daylight test are in
+  `MSV3/docs/MSV3_PROBE7_ZENER_CHARGING_REASSESSMENT_2026-09-16.md`.
 
 ## 2026-09-16 V4 solar decision from probe 4's measured recharge
 
