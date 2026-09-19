@@ -412,8 +412,10 @@ ADC: 2 channels (measurement, drift monitor).
 - [x] Confirm sensor 9 and probe 8 are seeing comparable conditions. **Done 2026-09-16, and it
       reversed the conclusion** — sensor 9 shows the same anti-thermal swing. See the corrected table
       at the top of this document.
-- [ ] Work out the polarity chain on both rigs and check the sign of the thermal coefficient against
-      each mechanism. Nearly free, and it can retire the conductivity-tempco candidate outright.
+- [x] Work out the polarity chain on both rigs and check the sign of the thermal coefficient against
+      each mechanism. **Code/mapping sign audit done 2026-09-18 — see "Polarity chain, measured" below.**
+      Physical attribution stays OPEN: the post-09-14 slopes use room-temperature proxies, and the
+      FDC loss-sign question needs a controlled bench test.
 - [ ] Mechanism 3 (interface movement) is untestable in a glass. If it needs separating from
       mechanism 2, the test is mechanical, not chemical — e.g. the same probe in the same pot at two
       insertion depths, or a probe in a medium that cannot shrink.
@@ -421,3 +423,51 @@ ADC: 2 channels (measurement, drift monitor).
 - [ ] Once built: sweep frequency and measure selectivity, relaxation frequency and the optimal
       operating point on a real electrode in a real pot. Replaces every fitted parameter in these docs.
 - [ ] Pick Rs at commissioning from the measured |Z| at the chosen frequency.
+
+## Polarity chain, measured (2026-09-18)
+
+**Algebra, from the code, per readout.** On every rig a rise in soil conductivity reads *wetter*:
+
+| rig | raw quantity | wetter means | conductivity rises -> |
+|---|---|---|---|
+| MSV3 FDC (probes 4, 8) | `DATA_CH0` ∝ f = 1/(2π√LC) | C up -> counts **down**; receiver `moisture = (ref − counts)/k` | Maxwell-Wagner raises C_eff -> counts down -> **wetter** |
+| AM divider (sensor 3 = v1.2 electrode, sensor 9 = MSV3 electrode) | detector mV (`raw_moisture_khz` field) | pad \|Z\| down -> mV **down** (`MSV2_Moisture_AFE_Test.ino`: "lower mV = wetter"; receiver inverts `ceiling − raw`) | G up -> \|Z\| down -> mV down -> **wetter** |
+
+**The thermal doc's damping sign is disputed, not settled.** `MSV3_AM_VS_FM_SENSING_THERMAL_SELECTIVITY`
+lists the resonant-damping `1/(4Q²)` term as pushing counts *up*. For an ideal zero-phase oscillator
+on a parallel-loss tank the frequency does not move with loss, and series loss lowers it, which
+would make the term ~0 or negative. The FDC2214's sustaining loop is not an ideal zero-phase
+oscillator, so treat the direction as OPEN until a controlled bench test (tank + known parallel R,
+swept) measures it. The "conductivity reads wetter" column below is a first-order model on that basis.
+
+**Measured, per-day detrended (repo rule), cloud data pulled 2026-09-18.** Shared Alocasia pot. The
+pot lost its only temperature channel on 2026-09-14 (probe 8 went to the C17-removal diagnostic
+image, which the receiver ignores), so 09-15 onward uses probe 6's and probe 7's die temperatures
+as room proxies. Sign is robust; slopes against a proxy are indicative only.
+
+Correlations are descriptive: 10-min medians are autocorrelated, so no significance is claimed.
+
+| series | days | r (reading vs temp) | slope, % of reading per °C | reads when warm |
+|---|---|---|---|---|
+| sensor 3, v1.2 electrode, AM | 09-12..09-18 (09-14 watering excluded) | +0.55 .. +0.93 | +0.02 .. +0.15 | **drier** |
+| sensor 9, MSV3 electrode, AM | 09-15..09-18 | +0.31 .. +0.90 | +0.14 .. +1.26 | **drier** |
+| probe 8, MSV3 electrode, FDC | 09-12..09-13 (probe 8 temp) | +0.35 .. +0.51 | +0.03 .. +0.04 (counts) | **drier** |
+
+Conclusions:
+1. Directly supported: in the shared pot every rig's raw reading moved toward *drier* as
+   temperature rose. Under the first-order model that is the opposite of the conductivity sign, so
+   conductivity is unlikely to be the dominant term there. Provisional for 09-15 onward (room proxy).
+2. On the same days against the same temperature reference, sensor 9's observed coefficient was
+   **5.9-8.5x** sensor 3's (probe 6 ref: 6.0, 7.8, 6.7, 8.5; probe 7 ref: 5.9, 7.3). Both are AM
+   front ends of the same design in the same soil, so the electrode is the leading suspect for the
+   magnitude, consistent with the 0.48 mm sensing-depth argument. The two AM builds are separate
+   boards, so an electronics difference is not fully excluded.
+3. Probe 4's own pot reads *wetter* when warm (r ≈ −0.93 on counts): the conductivity-consistent
+   sign, not proof of it. Dielectric, geometry and thermal-lag effects remain alternatives. The pots
+   behave differently, so a single compensation coefficient cannot cover both.
+
+Open: the salty-water test still separates migration from interface movement. The shared pot's
+temperature channel is **back since 2026-09-18 evening**: probe 4, the inverted-hybrid rig, now sits
+in that pot and reports its board die temperature. Re-score sensors 3 and 9 against probe 4's
+temperature once a few clean days accrue, replacing the room-proxy slopes above.
+Scoring script: per-day linear detrend, 10-min medians, days with a >5 % bin-to-bin step excluded.

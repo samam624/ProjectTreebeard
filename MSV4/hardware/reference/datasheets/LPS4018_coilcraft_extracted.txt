@@ -1,0 +1,332 @@
+
+===PAGE 1===
+US +1-847-639-6400   sales@coilcraft.com
++44-1236-730595   sales@coilcraft-europe.com
+UK
++886-2-2264 3646   sales@coilcraft.com.tw
+Taiwan
++86-21-6218 8074   sales@coilcraft.com.cn
+China
++ 65-6484 8412   sales@coilcraft.com.sg
+Singapore
+© Coilcraft Inc. 2022
+This product may not be used in medical or high
+risk applications without prior Coilcraft approval.
+Specification subject to change without notice.
+Please check web site for latest information.
+AEC
+Q200 125°C
++
+Halogen
+Free
+Shielded Power Inductors – LPS4018
+Document 435-1
+
+Document 435-1  Revised 02/23/22
+Core material  Ferrite
+Core and winding loss  See www.coilcraft.com/coreloss
+Environmental  RoHS compliant, halogen free
+Terminations  RoHS compliant matte tin over nickel over silver. 
+Other terminations available at additional cost.
+Weight  54 – 100 mg
+Ambient temperature  –40°C to +125°C with (40°C rise) Irms current.
+Maximum part temperature  +165°C (ambient + temp rise). Derating.
+Storage temperature  Component: –40°C to +165°C. 
+Tape and reel packaging: –40°C to +80°C
+Resistance to soldering heat  Max three 40 second reflows at 
++260°C, parts cooled to room temperature between cycles
+Moisture Sensitivity Level (MSL)  1 (unlimited floor life at <30°C / 
+85% relative humidity)
+Packaging  1000/7″ reel; 3500/13″ reel  Plastic tape:  12 mm wide, 
+0.23 mm thick, 8 mm pocket spacing, 1.9 mm pocket depth
+Recommended pick and place nozzle  OD: 4 mm;  ID: ≤ 2 mm
+PCB washing Tested to MIL-STD-202 Method 215 plus an additional 
+aqueous wash. See Doc787_PCB_Washing.pdf.
+1.	Please specify termination and packaging codes:
+LPS4018-223MRC
+Termination:	R	=	RoHS compliant matte tin over 
+nickel over silver.
+Special order, added cost:
+Q = RoHS tin-silver-copper (95.5/4/0.5) 
+or P = non-RoHS tin-lead (63/37).
+Packaging:	 C	=	7″ machine-ready reel. EIA-481 
+embossed plastic tape (1000 parts 
+per full reel). Quantities less than 
+full reel available: in tape (not 
+machine ready) or with leader and 
+trailer ($25 charge).
+	
+D	=	13″ machine-ready reel. EIA-481 
+embossed plastic tape. Factory 
+order only, not stocked (3500 parts 
+per full reel).
+	
+B	=	Less than full reel. In an effort 
+to simplify our part numbering 
+system, Coilcraft is eliminating the 
+need for multiple packaging codes. 
+When ordering, simply change the 
+last letter of your part number from 
+B to C.
+2.	Inductance tested at 100  kHz, 0.1 Vrms using an 
+Agilent/HP 4192A. Inductance at 1 MHz is the same 
+for parts with SRF ≥10 MHz.
+3.	DCR measured on a micro-ohmmeter.
+4.	SRF measured using Agilent/HP 8753ES or equivalent. 
+5.	DC current at 25°C that causes the specified induc­
+tance drop from its value without current. 
+Click for temperature derating information.
+6.	 Current that causes the specified temperature rise from 
+25°C ambient. This information is for reference only and 
+does not represent absolute maximum ratings. 
+Click for temperature derating information.
+7.	Electrical specifications at 25°C.
+Refer to Doc 362 “Soldering Surface Mount Compo­
+nents” before soldering.
+	
+	
+	
+DCR 	
+SRF	
+	
+ Isat (A)5	
+	        Irms (A)6
+	
+	
+ Inductance2	 max3	
+ typ4	 10%	 20%	
+30%	
+20°C	 40°C
+	 Part number1	
+(µH)	
+(Ohms)	 (MHz)	 drop	 drop	 drop	
+rise	
+rise
+LPS4018-561MR_	      0.56 ±20%	 0.033	 250	
+4.8	
+5.2	
+5.3	
+1.9	
+2.8
+LPS4018-102NR_	      1.0 ±30%	 0.042	 180	
+3.8	
+3.9	
+4.0	
+1.8	
+2.5
+LPS4018-222MR_	      2.2 ±20%	 0.070	
+90	
+2.7	
+2.8	
+2.9	
+1.5	
+2.0
+LPS4018-332MR_	      3.3 ±20%	 0.080	
+75	
+1.9	
+2.0	
+2.0	
+1.4	
+1.9
+LPS4018-472MR_	      4.7 ±20%	 0.125	
+65	
+1.8	
+1.9	
+1.9	
+1.3	
+1.8
+LPS4018-682MR_	      6.8 ±20%	 0.150	
+50	
+1.2	
+1.3	
+1.3	
+1.0	
+1.5
+LPS4018-103MR_	    10 ±20%	
+0.200	
+40	
+1.1	
+1.2	
+1.3	
+0.90	
+1.25
+LPS4018-153MR_	    15 ±20%	
+0.260	
+32	
+0.86	
+0.91	
+0.94	
+0.80	
+1.12
+LPS4018-183MR_	    18 ±20%	
+0.270	
+27	
+0.78	
+0.83	
+0.85	
+0.70	
+1.00
+LPS4018-223MR_	    22 ±20%	
+0.360	
+26	
+0.74	
+0.80	
+0.83	
+0.65	
+0.90
+LPS4018-333MR_	    33 ±20%	
+0.420	
+20	
+0.58	
+0.64	
+0.68	
+0.55	
+0.80
+LPS4018-473MR_	    47 ±20%	
+0.650	
+16	
+0.51	
+0.55	
+0.56	
+0.45	
+0.68
+LPS4018-683MR_	    68 ±20%	
+0.950	
+13	
+0.41	
+0.45	
+0.46	
+0.40	
+0.56
+LPS4018-104MR_	  100 ±20%	
+1.40	
+10	
+0.34	
+0.36	
+0.37	
+0.35	
+0.50
+LPS4018-124MR_	  120 ±20%	
+1.60	
+9.0	 0.31	
+0.33	
+0.34	
+0.30	
+0.45
+LPS4018-154MR_	  150 ±20%	
+2.00	
+8.0	 0.27	
+0.29	
+0.30	
+0.28	
+0.40
+LPS4018-184MR_	  180 ±20%	
+2.50	
+7.5	 0.24	
+0.26	
+0.27	
+0.26	
+0.36
+LPS4018-224MR_	  220 ±20%	
+3.70	
+6.5	 0.21	
+0.225	 0.235	 0.20	
+0.30
+LPS4018-334MR_	  330 ±20%	
+5.90	
+5.5	 0.18	
+0.19	
+0.20	
+0.17	
+0.23
+LPS4018-474MR_	  470 ±20%	
+7.80	
+4.5	 0.14	
+0.16	
+0.17	
+0.15	
+0.20
+LPS4018-564MR_	  560 ±20%	
+10.0	
+4.0	 0.13	
+0.14	
+0.15	
+0.14	
+0.18
+LPS4018-684MR_	  680 ±20%	
+11.5	
+3.5	 0.12	
+0.13	
+0.14	
+0.12	
+0.16
+LPS4018-824MR_	  820 ±20%	
+14.0	
+2.9	 0.11	
+0.12	
+0.13	
+0.10	
+0.14
+LPS4018-105MR_	1000 ±20%	
+18.0	
+2.8	 0.10	
+0.11	
+0.11	
+0.098	 0.125
+•	Very low DCR; excellent current handling
+•	4.0 × 4.0 mm footprint; less than 1.8 mm tall
+•	AEC-Q200 Grade 1 (–40°C to +125°C)
+Coilcraft Designer’s Kit C392 contains samples of 0.56 µH to 33 µH parts (3 each) 
+from LPS3008, LPS3010 and LPS3015. Kit C401 contains samples of 0.56 µH to 
+33 µH parts (3 each) from LPS4012 and LPS4018. Kit C402 contains samples of 220 
+µH to 2200 µH parts (3 each) from four series. For details of kit contents and to order, 
+contact Coilcraft or visit https://www.coilcraft.com/en-us/kits/.
+Sample
+& buy
+Support
+& FAQ
+Web
+page
+Tools &
+software
+
+===PAGE 2===
+US +1-847-639-6400   sales@coilcraft.com
++44-1236-730595   sales@coilcraft-europe.com
+UK
++886-2-2264 3646   sales@coilcraft.com.tw
+Taiwan
++86-21-6218 8074   sales@coilcraft.com.cn
+China
++ 65-6484 8412   sales@coilcraft.com.sg
+Singapore
+© Coilcraft Inc. 2022
+This product may not be used in medical or high
+risk applications without prior Coilcraft approval.
+Specification subject to change without notice.
+Please check web site for latest information.
+AEC
+Q200 125°C
++
+Halogen
+Free
+Shielded SMT Power Inductors – LPS4018 Series 
+Document 435-2 
+
+Document 435-2  Revised 02/23/22
+Typical L vs Frequency
+Typical L vs Current
+Dimensions are in inches
+mm
+Packaging  1000/7″ reel; 3500/13″ reel  Plastic tape:  12 mm wide, 
+0.23 mm thick, 8 mm pocket spacing, 1.9 mm pocket depth
+NOTE NEW PART ORIENTATION  Parts are rotated 90° in the 
+packaging tape compared to previous versions of this product.
+NEW
+OLD
+123
+123
+123
+123
+123
+123

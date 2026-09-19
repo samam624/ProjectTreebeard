@@ -173,7 +173,12 @@ Three terms act at once, and they do not share a sign in the count domain:
 |---|---|---|
 | Maxwell-Wagner apparent-permittivity inflation | **negative** | dominant when wet, scales with `tan^2 d` |
 | water permittivity falling with temperature | positive | small, roughly -0.36 %/C on `C` |
-| resonant damping, the `1/(4Q^2)` term | positive | matters only once Q reaches single digits |
+| resonant damping, the `1/(4Q^2)` term | positive — **disputed 2026-09-18, see below** | matters only once Q reaches single digits |
+
+> **2026-09-18:** this sign is disputed. For an ideal zero-phase oscillator, parallel loss leaves the
+> frequency at ω0 and series loss lowers it, which would make the term ~0 or negative on counts. The
+> FDC's sustaining loop is not ideal, so the direction is OPEN until a bench test measures it. Measured signs per rig, and what they rule out, are in
+> `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md` → "Polarity chain, measured".
 
 Maxwell-Wagner alone is always negative, yet probe 8 measures **+0.0389 %/C**. So on that probe the
 two positive terms are winning. The net coefficient is a difference of comparable terms, which is
