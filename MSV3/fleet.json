@@ -378,10 +378,18 @@
       "Why probe 4 BEFORE 2026-09-18, when it was MSV3 blade + FDC, was strongly thermal (-0.387 %/C, 2.60% daily swing), and probe 8 on the same pairing wobbled 1.956%."
     ],
     "prediction_probe5": [
-      "Probe 5 is MSV3 blade + FDC, the pairing that stacks the VERY-susceptible electrode with the susceptible readout.",
-      "PREDICTION: probe 5 should show the LARGEST thermal response of the four corners, and because the FDC readout is low-noise it should show it CLEANLY -- the most legible thermal signature in the pot.",
-      "This is falsifiable and needs no new hardware, only clean days on a probe already in the shared pot.",
-      "CAVEAT on sign: historically blade+FDC (probe 8) read DRIER when warm while v1.2+FDC (probe 4 now) reads WETTER when warm, so the electrode flips the sign within one readout. Do not assume the two temperature terms simply add; check the sign before fitting a combined magnitude."
+      "Probe 5 is MSV3 blade + FDC in the shared pot. As of 2026-09-19 it has ~1.5 hours of data, all overnight, so there is NO thermal excursion in it yet. One clean sunny day resolves this.",
+      "If the terms add: -0.041 + (-0.346) = -0.387 %/C capacitance, drier when warm, ~2.6% daily swing.",
+      "Outcomes: strongly thermal and DRIER when warm -> model holds. Strongly thermal and WETTER -> matches probe 8, so the blade's SIGN is board- or contact-dependent. Near-flat like probe 4 -> the blade term is not an electrode property and an interaction term is needed.",
+      "HONEST CAVEAT: existing blade measurements bracket +0.064 to -0.387 %/C, so almost any probe 5 result lands inside that range. One day tests the sign and rough magnitude, NOT the additive form. Establishing additivity needs the electrode crossover (thermal doc, next steps A2)."
+    ],
+    "status": "HYPOTHESIS, stated by the maintainer and explicitly not yet established. Partially tested 2026-09-19, see MSV3/docs/MSV3_THERMAL_DECOMPOSITION_2026-09-19.md.",
+    "tested_2026_09_19": [
+      "SUPPORTED -- 'FDC readout is temperature-susceptible': probe 4's BARE TANK, with the electrode physically disconnected, is r=-0.994 at -0.041 %/C. Real and almost perfectly thermal, but ~8x smaller than the blade's contribution.",
+      "SUPPORTED -- 'MSV3 blade is VERY susceptible vs v1.2': within the FDC readout the isolated electrode terms are blade -0.346 %/C vs v1.2 +0.094 %/C, a 3.7x ratio with OPPOSITE SIGN. The AM readout independently gives 2.9x. Two measurement chains, two units, agreeing to within 30%.",
+      "SUPPORTED, PARTIALLY -- 'the v1.2 driving circuit is noisy': sensors 3 and 9 have essentially identical noise (0.80 vs 0.92 LSB RMS) despite different electrodes, so the noise is a CIRCUIT property. Ranking FDC against the v1.2 circuit is NOT possible without the detector's mV-per-pF slope; sensor 3 is also quantization-limited at 37 LSB per day.",
+      "NOT ESTABLISHED -- the ADDITIVE form. The blade term is not reproducible across boards: probe 4 (blade+FDC, own pot) measured -0.387 %/C while probe 8 (blade+FDC, shared pot) measured +0.064 %/C. Opposite signs, 6x magnitude. Either something uncontrolled matters (soil contact, insertion depth, orientation) or the terms interact rather than add.",
+      "NEW -- the electrode INVERTS the sign within one readout, it does not merely scale. Any compensation assuming a single signed coefficient per readout will fail."
     ]
   }
 }
