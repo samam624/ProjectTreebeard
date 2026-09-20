@@ -12,6 +12,32 @@ is marked DISPUTED rather than superseded.
 > `moisture` and claimed the electrode effect was *smaller* than the repository record. **That claim
 > is withdrawn** -- it was an artifact of normalising by an arbitrary offset. See "The offset trap".
 
+## SUPERSEDED FRAMING -- read this first
+
+**The question this document is built around, "is the thermal artifact in the electrode OR the
+readout", is the wrong question.** The maintainer's physical reading, stated 2026-09-19 and recorded
+in `MSV3/fleet.json` under `measurement_model`, is **two-factor**: the readout and the electrode each
+contribute their own noise term and their own temperature term.
+
+| factor | noise | temperature |
+|---|---|---|
+| FDC readout | **low** | susceptible |
+| v1.2 driving circuit (AM) | **noisy** | low |
+| MSV3 blade electrode | -- | **VERY susceptible** |
+| v1.2 electrode | -- | low |
+
+This resolves what this document could not. The electrode effect measured 1.36x within the AM pair
+and about 4x within the FDC pair **because the readout adds its own temperature term on top** --
+neither number was "the" electrode effect. Sensor 3 shows large drift with a low thermal coefficient
+(noisy circuit, immune electrode). Sensor 9 shows clean traces with a high coefficient (low-temp
+circuit, very-susceptible electrode). Probe 4 is the flattest rig because v1.2 + FDC pairs the immune
+electrode with the low-noise readout. And probe 4 **before** 2026-09-18, when it was blade + FDC, was
+strongly thermal at -0.387 %/C with a 2.60 % daily swing, as was probe 8 on the same pairing.
+
+**Everything below remains valid as measurement** -- the numbers, the offset trap, the units problem,
+the autocorrelation limits, the clean-window derivation. What is superseded is the framing that one
+factor must win.
+
 ## Bottom line
 
 - **Two rig labels in earlier notes were wrong.** Sensor 2 carries the **MSV2 interdigitated**
@@ -339,11 +365,14 @@ Split by question, because the two threads compete for the same bench time.
    permanent in MSV4 as well. Conformal coating has already made SWD inaccessible on several MSV3
    probes; do not repeat that pattern before the characterisation exists.
 
-8. **Falsifiable prediction now that probe 5 is live.** If the electrode is the variable, probe 5
-   (MSV3 blade + FDC, on USB) should be **noisy** like sensor 9, despite sharing probe 4's readout.
-   If instead probe 5 is quiet like probe 4, the readout is the variable and the electrode story
-   collapses. This is the cheapest remaining discriminator and it needs no new hardware — just clean
-   days on a probe that is already in the pot.
+8. **Falsifiable prediction now that probe 5 is live.** Probe 5 is MSV3 blade + FDC, the pairing
+   that stacks the **VERY** temperature-susceptible electrode with the temperature-susceptible
+   readout. Under the two-factor model it should show the **largest thermal response of the four
+   corners**, and because the FDC readout is low-noise it should show it **cleanly**: the most
+   legible thermal signature in the pot. **Caveat on sign:** historically blade + FDC (probe 8) read
+   *drier* when warm while v1.2 + FDC (probe 4 now) reads *wetter* when warm, so the electrode flips
+   the sign within one readout. Do not assume the two temperature terms simply add; check the sign
+   before fitting a combined magnitude. Needs no new hardware, only clean days.
 
 ### B. Power and solar health
 
