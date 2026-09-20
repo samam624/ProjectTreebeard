@@ -65,7 +65,7 @@
         "location": "shared Alocasia pot",
         "pot": "shared-alocasia",
         "room": "desk room, shelf",
-        "power": "battery + solar panel",
+        "power": "battery ONLY (+ solar panel). NOT mains/USB -- galvanically isolated, unlike every other rig in the shared pot.",
         "electrode_in_soil": "v1.2",
         "electrode_notes": "v1.2 sensor wired across the FDC tank; the MSV3 blade is held in AIR as tank padding",
         "readout": "MSV3 FDC2214",
@@ -99,7 +99,7 @@
         "location": "shared Alocasia pot",
         "pot": "shared-alocasia",
         "room": "desk room, shelf",
-        "power": "USB",
+        "power": "USB from the computer, which is on the shared mains outlet",
         "electrode_in_soil": "MSV3 blade",
         "electrode_notes": "standard MSV3 blade in soil",
         "readout": "MSV3 FDC2214",
@@ -249,7 +249,7 @@
         "generation": "AM bench rig",
         "location": "shared Alocasia pot",
         "pot": "shared-alocasia",
-        "power": "mains",
+        "power": "mains -- ESP32-powered, shared outlet",
         "electrode_in_soil": "v1.2",
         "readout": "AM detector",
         "notes": "the original AFE rig. Has a documented history of mains-coupling noise bands traced to the receiver PSU sharing an outlet."
@@ -259,7 +259,7 @@
         "generation": "AM bench rig",
         "location": "shared Alocasia pot",
         "pot": "shared-alocasia",
-        "power": "mains",
+        "power": "mains -- ESP32-powered, shared outlet",
         "electrode_in_soil": "MSV3 blade",
         "readout": "AM detector",
         "notes": "the hybrid rig: MSV3 blade read by the AM front end"
@@ -305,5 +305,39 @@
       ],
       "notes": "Probe 6 sits on the desk with no sun; probe 8 is unplugged and unpowered."
     }
+  },
+  "power_topology": {
+    "_comment": [
+      "CONFOUND, recorded 2026-09-19. Three of the four electrode x readout corners in the shared",
+      "Alocasia pot share ONE mains outlet. The fourth, probe 4, is battery-only and galvanically",
+      "isolated -- and it is also the quietest rig by 4-5x. Power topology is therefore confounded",
+      "with the factorial, and any AM-vs-FDC conclusion inherits it.",
+      "Sensor 3 already has a documented history of cyclic noise bands traced to the receiver PSU",
+      "sharing an outlet with the bench rig, so this is a measured failure mode on this exact setup,",
+      "not a theoretical one."
+    ],
+    "verified": "2026-09-19",
+    "source": "maintainer, answered directly 2026-09-19",
+    "shared_outlet": {
+      "sensors": [
+        3,
+        5,
+        9
+      ],
+      "detail": "sensor 3 = ESP32-powered v1.2 rig; sensor 9 = ESP32-powered hybrid rig; probe 5 = USB from the computer. All on the same outlet."
+    },
+    "isolated": {
+      "sensors": [
+        2,
+        4
+      ],
+      "detail": "probe 4 = battery only plus solar; sensor 2 = battery."
+    },
+    "consequences": [
+      "CLEAN: the within-AM electrode comparison (sensor 3 vs sensor 9) -- both are ESP32-powered on the SAME outlet, so power topology cancels. This is why it is the load-bearing result.",
+      "CONFOUNDED: any comparison of probe 4 against sensors 3 or 9. Probe 4 differs in electrode, readout AND power isolation.",
+      "CONFOUNDED: the FDC pair (probe 4 vs probe 5) -- differs in electrode AND power. Moving probe 5 to battery would fix this one and make the FDC row internally clean.",
+      "PERMANENT: AM-vs-FDC will always carry a power-topology difference as well as the unit-comparability problem, because the AM rigs cannot run on battery."
+    ]
   }
 }
