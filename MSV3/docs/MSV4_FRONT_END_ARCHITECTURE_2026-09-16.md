@@ -37,6 +37,21 @@ So the corrected table is:
 the variable.** The FDC, the LC tank, the oscillator and the driving circuit are all exonerated — as
 the glass-of-water experiment below had already implied, and this now confirms independently.
 
+> **DISPUTED 2026-09-19 — see `MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md`.**
+> "The readout was never the variable" is **not currently supported**, for two reasons.
+> **(1) Units.** This table and the one at lines 452-454 compare AM **detector millivolts** against
+> FDC **frequency counts** as if a `%/C` in one were a `%/C` in the other. They are different
+> physical quantities related by the AM detector's mV-per-pF slope, which has never been measured.
+> No AM-vs-FDC ratio in this repository is quantified until it is.
+> **(2) Magnitudes.** The reversal was argued qualitatively — both rigs *show* a swing — but on
+> 2026-09-19 the two AM rigs were the noisiest nodes in the shared pot (3.77 % and 5.11 % daily
+> swing) and the one FDC rig was the quietest (0.95 %). Whether that is an electrode effect, a
+> readout effect, or the unit artifact above cannot be told apart yet.
+> Probe 5 entered the pot on 2026-09-19 as MSV3 blade + FDC, filling the fourth corner
+> contemporaneously for the first time. **Do not re-cite this table as settled** until the detector
+> is calibrated and probe 5 has clean days. The V4 decision to drop the FDC does not depend on this
+> and is unaffected; the claim that the *electrode redesign fixes the wobble* does depend on it.
+
 **The cause is the electrode geometry and the soil-probe interface.** The sensor is not malfunctioning;
 it is accurately reporting something that is really happening at a 0.48 mm sensing depth.
 

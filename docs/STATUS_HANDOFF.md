@@ -2,6 +2,61 @@
 
 Date: 2026-09-19 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-19 (evening) Probe 5 fixed, probe 4 history corrected, thermal attribution disputed
+
+New docs: `MSV3/docs/MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md`,
+`MSV3/docs/MSV3_SOLAR_CHARGING_STATE_2026-09-19.md`,
+`MSV3/docs/MSV3_PROBE5_CAPLESS_FIX_2026-09-19.md`.
+
+- **Probe 5 is in the shared Alocasia pot and was broken; now fixed.** It was placed there as the
+  MSV3-blade + FDC arm (mistaken for probe 8 — probe 8 is still `deployed: false` and unseen). It
+  returned after six days dark still on pre-capless **v65555**, computing `moisture = 0` with
+  `bare_tank_fdc_counts` at 65.5M — **the same out-of-range failure as probe 4's deleted v65566
+  block**, because a pre-capless image measures a bare tank that C17-removed hardware no longer has.
+  Signed capless **v65564** (`2026-09-14-capless-prod5`) installed over BLE in 32 s; DIS proven via
+  the already-running-build refusal; flags now `0x54`, `moisture_scale` 2→3, bare→NULL,
+  moisture→~44,500. `fleet.json` updated to 65564. **Its alarming 116M phase gap was insertion
+  transients** — 47,934 after settling. Do not scan a probe while handling it.
+  **OPEN: it is on USB** in the pot whose AM rig had mains-coupling noise bands; move it to battery
+  before its data counts.
+- **All four electrode/readout corners are live for the first time** (s9 MSV3+AM, s3 v1.2+AM,
+  probe 4 v1.2+FDC, probe 5 MSV3+FDC). **But the comparison is blocked**: AM reports detector mV and
+  the FDC reports counts, and no AM-vs-FDC `%/C` ratio in this repo is meaningful until the AM
+  detector's **mV-per-pF slope is measured on the bench**. `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+  is now marked DISPUTED where it concludes "the readout was never the variable". **V4's decision to
+  drop the FDC is unaffected**; the claim that the electrode redesign *fixes the wobble* is not.
+- **Two rig labels were wrong.** Sensor 2 carries the **MSV2 interdigitated** electrode, not v1.2.
+  And **sensor 2 is quantization-dead** — 3 LSB of daily swing, 4 distinct values. Drop it from every
+  comparison; the MSV2-electrode column is unmeasured, not measured-as-quiet.
+- **Probe 4's cloud history was cleaned and its split point corrected.** 18 out-of-range v65566 rows
+  deleted from `msv2_sensor_history`, backed up to
+  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv` (all 21 columns, re-insertable).
+  **Split at 20:53:20, not 16:38.** Also: the rig was **physically disturbed at 15:17 on 09-19**
+  (+82,831 counts, two dropped wakes, RSSI shift) — do not pool data across that step.
+- **Probe 4's solar charging ramp is gone** in the most sun it has ever seen: eight days of +25 to
+  +90 mV ramps through 09-13, then **−6 mV on 09-19 at the highest insolation of the series**, wake
+  cadence unchanged. Cause **not yet proven** — a working 3.887 V `VBAT_OV` and a dead harvester look
+  identical at 3.99 V. **CORRECTED: the test is not a "3.89 V crossing".** The harvester restart band
+  is `VBAT_OV` corner (3.857-3.937 V) minus `VBAT_OV_HYST` (18/35/89 mV) = **~3.77-3.92 V, 151 mV
+  wide**, so the window is **~2026-09-20 to 09-24**; watch for the daytime ramp *returning*, not a
+  voltage. Probe 4 currently reads above its own ceiling because the rework left the BQ25170 **USB**
+  path at 4.20 V and it was on USB while off-air 09-14..09-18.
+- **Probe 4's rework is a documented record, not an inference.**
+  `MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` has a per-board table: *all field probes except
+  probe 7 were swapped on 2026-09-14*. **That doc is on `main` (`edc9705`) and NOT on this branch** --
+  which is exactly why this session inferred it instead of reading it.
+- **Probe 6 is indoors on a desk** since ~09-16 and its battery trace proves nothing about clamps.
+  Any such analysis is void. It is now useful as a clean indoor temperature reference (2.50 C swing
+  vs 9.00 C for a sun-exposed board).
+- **Probe 7 is charging well**: +40.6 mV/day net, 4002 → 4121 mV over 09-16..09-19. The 09-16
+  reassessment's "0.7-1.2 mAh/day, nearly flat" estimate is withdrawn; the part is still the wrong
+  part. Reaches its as-built ceiling ~2026-09-23, which is the real clamp test.
+- **Probe 4 is no longer a same-divider peer for probe 7** — its 4309 mV cap predates the 09-14
+  rework. Corrected in `fleet.json` and below.
+- **Probe 4's die temperature is a poor pot reference**: it tracks room air overnight, then steps
+  **+3.75 C in one 30-minute bin at noon** and swings 3.6x the indoor board. It is substantially an
+  insolation sensor. An **overcast day** is needed to separate room/sun/soil.
+
 ## 2026-09-18/19 MSV4 bring-up firmware, layout audits, electrode physics, orders placed
 
 **Ordered 2026-09-19: MSV4 x5 (JLCPCB PCBs + LCSC parts; E73 modules from Ebyte), plus DisplayCenter #2 parts.**
@@ -31,9 +86,15 @@ and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards
   coefficient is 5.9-8.5x the v1.2 electrode's. Physical attribution is still open.
 - **Probe 4 is the inverted-hybrid rig** (v65567 `hybridv12-airpad`, `-HybridV12Tank
   -HybridMuxCode 0`, default-off build flag, default build byte-identical to HEAD). A v1.2 sensor is
-  jumpered across the tank, and the MSV3 blade must be held in air. Split probe 4's history at
-  2026-09-18 16:38. Plan: position swap with sensor 3 after 3-4 clean days. To return it to
-  production, build a new capless image **above 65567**.
+  jumpered across the tank, and the MSV3 blade must be held in air. **Split probe 4's history at
+  2026-09-18 20:53:20 PDT, not 16:38** (corrected 2026-09-19). The wake-counter resets give the real
+  boundaries: v65566 ran 16:39:31–16:59:21 on mux code 2 and was out of FDC range; v65567 `airpad`
+  started 17:00:10 but ran **on the bench** until the probe went into the pot at 20:53:20. A 16:38
+  split pulls both of those into the series and yields nonsense (+9.0 %/C, r²=0.21). The 18
+  out-of-range v65566 rows were deleted from `msv2_sensor_history` on 2026-09-19 and backed up to
+  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv`. Plan: position swap with
+  sensor 3 after 3-4 clean days. To return it to production, build a new capless image **above
+  65567**.
 - **The shared Alocasia pot had no temperature channel from 09-14 to 09-18** (probe 8 went to the
   C17 diagnostic image). **Restored 2026-09-18 evening:** probe 4 now sits in that pot, and its board
   die temperature (valid in the capless packet) is the reference again. Like probe 8's, it is a
@@ -130,7 +191,10 @@ and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards
 - **Probe 7 still has the as-built OV divider** (R11 5.62 MΩ / R14 4.42 MΩ). The maintainer skipped
   the 2026-09-14 storage rework before fitting its battery and panel and accepts the shorter cell
   life. **Its harvester ceiling is therefore about 4.26 V, not 3.89 V.** Pass: the cell stops near
-  probe 4's as-built cap of **4309 mV** telemetry. Fail: it keeps following the sun toward probe 6's
+  probe 4's as-built cap of **4309 mV** telemetry — but note (corrected 2026-09-19) that this is a
+  **historical** figure from 2026-09-13, the day before the rework; probe 4 is no longer on the
+  as-built divider, so probe 7 has no contemporaneous same-divider peer. Fail: it keeps following
+  the sun toward probe 6's
   unclamped **~4.44-4.49 V**. That margin is only about 150 mV, so also take the free
   discriminator: a DMM on `SP+` at the same moment as `raw_battery_mv`. With a working clamp, `SP+`
   sits below the cell, so the diode path cannot conduct.
@@ -875,7 +939,7 @@ and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards
   receivers still consume `ready`, `dryBound`, and `wetBound`. The alert-threshold firmware
   change does require a receiver flash, which the production receiver has now received.
 - Full design and operations reference:
-  `docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md`.
+  `MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`.
 
 ## 2026-08-17 Netlify Service Worker Stale-Data Bug
 

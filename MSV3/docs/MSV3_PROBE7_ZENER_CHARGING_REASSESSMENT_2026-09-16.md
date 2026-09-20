@@ -254,3 +254,28 @@ not a substitute for the panel fix.
 Until those measurements exist, the defensible conclusion is: **Probe 7 is alive; the temporary
 1N4728A likely halved the harvest and erased most recharge margin, but tonight's data cannot yet
 prove a negative daily energy balance.**
+
+## CORRECTION 2026-09-19: the harvest penalty was overestimated
+
+Three further days of telemetry contradict the magnitude of the estimate above. See
+`MSV3_SOLAR_CHARGING_STATE_2026-09-19.md`.
+
+Probe 7 went **4002 → 4121 mV across 2026-09-16..09-19, a net +40.6 mV/day**, with daytime slopes of
++7.94, +15.82 and +6.36 mV/h. The "approximately 0.7-1.2 mAh/day net" figure — and the reading of it
+as a nearly flat battery — rested on a single sunset hour and **should not be re-cited**.
+
+What stands unchanged: everything in this document about the 1N4728A's soft knee, its 76 mA
+characterisation being wrong for a 30 mA source, the case for a characterised precision shunt
+(ATL431B) or a lower-voltage panel, and the matched-MPPT-ratio arithmetic. The part is still the
+wrong part. It simply is not costing as much harvest as this document projected.
+
+**Probe 7 reaches its as-built ~4.26 V ceiling around 2026-09-23**, which is the real clamp test.
+
+Two further corrections to this document's framing:
+
+- **Probe 6 is no longer outdoors.** It has been indoors on a desk since approximately 2026-09-16, so
+  its post-09-16 battery trace carries no information about clamps or thresholds. The 5.01 V loaded
+  `SP+` measurement and the pull-down argument built on it are unaffected — they predate the move.
+- **Probe 4 is no longer a same-divider peer for probe 7.** Its 4309 mV cap is a 2026-09-13
+  observation, the day before the R11/R14 rework. Probe 7 is now the only board known to be on the
+  as-built divider.
