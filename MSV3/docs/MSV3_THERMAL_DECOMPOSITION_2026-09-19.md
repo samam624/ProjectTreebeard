@@ -1,6 +1,7 @@
 # Thermal decomposition: testing the two-factor hypothesis (2026-09-19)
 
-**Status: the electrode half of the hypothesis is supported by two independent readouts. The noise
+**Status: SEE THE CORRECTION IMMEDIATELY BELOW -- the headline 3.7x ratio is withdrawn as cross-pot.
+The electrode half of the hypothesis rests on the within-AM 2.9x only. The noise
 half is only half-testable. The additive form of the model is NOT established, because the blade's
 thermal term is not reproducible across boards. Probe 5 is the discriminator and has 1.5 hours of
 overnight data, so this is a checkpoint, not a conclusion.**
@@ -18,6 +19,45 @@ temperature term.
 
 **It is a hypothesis. The maintainer has said so explicitly.** This document tests it rather than
 assuming it.
+
+## CORRECTION 2026-09-19 (maintainer): the 3.7x ratio is CROSS-POT and is withdrawn
+
+**Do not compare a probe's data across a pot change.** Different pot, different soil, different
+moisture history, different contact. The maintainer flagged this immediately after the decomposition
+below was written.
+
+The decomposition subtracted across exactly that boundary:
+
+| term | source | pot |
+|---|---|---|
+| readout, -0.041 %/C | probe 4 bare tank | **no soil at all** -- pot-independent |
+| blade, -0.346 %/C | probe 4, 2026-09-05..09-09 | **its own pot** |
+| v1.2, +0.094 %/C | probe 4, 2026-09-19 | **shared Alocasia pot** |
+
+**The blade and v1.2 electrode terms were measured in different soils, so the 3.7x ratio between them
+is withdrawn.** It is not evidence of an electrode property.
+
+This also re-explains what this document called a board reproducibility problem. Probe 4's blade
+figure (-0.387 %/C) was its own pot; probe 8's (+0.064 %/C) was the shared pot. That is two POTS, not
+two boards -- and `MSV3_AM_VS_FM_SENSING_THERMAL_SELECTIVITY_2026-09-13.md` already said so: *"The
+pots behave differently, so a single compensation coefficient cannot cover both."*
+
+**What survives:**
+
+- **The readout term, -0.041 %/C at r = -0.994.** The bare tank has the electrode physically
+  disconnected and touches no soil, so no pot confound can reach it.
+- **The 2.9x within-AM electrode ratio**, sensor 3 against sensor 9 across 2026-09-17..09-19. Both
+  rigs were in the shared pot on the same days in the same soil, so this is a within-pot,
+  contemporaneous comparison. *Subject to confirming when sensor 3 entered the shared pot* -- the
+  repository record says 2026-09-08, which would make this window clean, but that date has not been
+  re-verified with the maintainer.
+
+**What replaces it: probe 4 vs probe 5, from now on.** Both in the shared Alocasia pot, same soil,
+same FDC readout, same days, differing only in electrode. No units problem, no pot confound, no
+cross-board subtraction. **That is the real electrode measurement** and it starts accumulating as
+soon as probe 5 sees a thermal cycle.
+
+The decomposition below is kept as the record of what was tried and why it does not hold.
 
 ## The one comparison with no units problem
 

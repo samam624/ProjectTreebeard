@@ -386,10 +386,16 @@
     "status": "HYPOTHESIS, stated by the maintainer and explicitly not yet established. Partially tested 2026-09-19, see MSV3/docs/MSV3_THERMAL_DECOMPOSITION_2026-09-19.md.",
     "tested_2026_09_19": [
       "SUPPORTED -- 'FDC readout is temperature-susceptible': probe 4's BARE TANK, with the electrode physically disconnected, is r=-0.994 at -0.041 %/C. Real and almost perfectly thermal, but ~8x smaller than the blade's contribution.",
-      "SUPPORTED -- 'MSV3 blade is VERY susceptible vs v1.2': within the FDC readout the isolated electrode terms are blade -0.346 %/C vs v1.2 +0.094 %/C, a 3.7x ratio with OPPOSITE SIGN. The AM readout independently gives 2.9x. Two measurement chains, two units, agreeing to within 30%.",
+      "WITHDRAWN as cross-pot (maintainer, 2026-09-19) -- the 3.7x blade-vs-v1.2 ratio subtracted probe 4's blade term (its OWN pot, 09-05..09-09) from its v1.2 term (SHARED pot, 09-19). Different soil on each side. This also re-explains the probe 4 vs probe 8 blade disagreement as two POTS, not two boards. What survives: the within-AM 2.9x (sensors 3 and 9, same pot, same days), and the readout term below which touches no soil.",
       "SUPPORTED, PARTIALLY -- 'the v1.2 driving circuit is noisy': sensors 3 and 9 have essentially identical noise (0.80 vs 0.92 LSB RMS) despite different electrodes, so the noise is a CIRCUIT property. Ranking FDC against the v1.2 circuit is NOT possible without the detector's mV-per-pF slope; sensor 3 is also quantization-limited at 37 LSB per day.",
       "NOT ESTABLISHED -- the ADDITIVE form. The blade term is not reproducible across boards: probe 4 (blade+FDC, own pot) measured -0.387 %/C while probe 8 (blade+FDC, shared pot) measured +0.064 %/C. Opposite signs, 6x magnitude. Either something uncontrolled matters (soil contact, insertion depth, orientation) or the terms interact rather than add.",
       "NEW -- the electrode INVERTS the sign within one readout, it does not merely scale. Any compensation assuming a single signed coefficient per readout will fail."
+    ],
+    "comparison_rules": [
+      "NEVER compare a probe's data across a pot change. Different pot = different soil, moisture history and contact. Sensor 3 and probe 4 have both moved pots; their pre-move data is not 1:1 with their current data.",
+      "The REAL electrode measurement going forward is probe 4 vs probe 5: both in the shared Alocasia pot, same soil, same FDC readout, same days, differing only in electrode. No units problem, no pot confound, no cross-board subtraction.",
+      "Bare-tank measurements are pot-independent because the electrode is disconnected and touches no soil. They are the only figures safe to carry across pot changes.",
+      "OPEN: the date sensor 3 entered the shared pot has not been re-verified with the maintainer. The repository record says 2026-09-08."
     ]
   }
 }
