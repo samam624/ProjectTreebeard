@@ -175,7 +175,7 @@ authenticated receiver. Migrations 024-027 make that result time-weighted and ad
 The RPC itself remains `service_role` only. Do not call it directly from a browser or place
 the service-role key in firmware. Operational behavior, alert thresholds, production
 evidence, and verification commands are documented in
-[Treebeard Adaptive Moisture Calibration](../../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md).
+[Treebeard Adaptive Moisture Calibration](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md).
 
 The claim endpoint URL should be:
 

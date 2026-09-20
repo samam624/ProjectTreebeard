@@ -125,7 +125,7 @@ Moisture alert semantics are intentionally different from battery semantics:
 - `0%`: red, flashing, and eligible for the receiver's watering buzzer.
 
 Battery keeps its own existing warning thresholds. See
-[Treebeard Adaptive Moisture Calibration](../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md) for the
+[Treebeard Adaptive Moisture Calibration](../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md) for the
 model, deployment, diagnostics, and reset behavior.
 
 The ESP32 also serves a web app manifest, service worker, and icon. After opening the app on your phone, use the browser's add-to-home-screen/install action if your browser offers it. Some browsers treat local `http://` device pages as shortcuts rather than full PWAs; the later cloud app will solve that with HTTPS. True remote monitoring still requires the cloud relay described in the product roadmap.
