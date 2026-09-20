@@ -2,6 +2,28 @@
 
 Date: 2026-09-19 (the section immediately below is current; older deployment-status notes are historical)
 
+## 2026-09-19 PHYSICAL STATE RE-BASELINED -- read `MSV3/fleet.json` before anything below
+
+**Every section of this file is history. `MSV3/fleet.json` is the only current truth**, and it now
+carries `probes[].physical_state`, `non_msv3_nodes` and `pots`, all verified with the maintainer on
+2026-09-19. See the rule at the top of `CLAUDE.md` / `AGENTS.md`.
+
+What the re-baseline corrected, all of which had been wrong in analysis:
+
+- **Probe 4 has a zener AND the reworked divider.** Two variables changed at once, so its loss of
+  charging cannot distinguish "VBAT_OV working" from "clamp too aggressive" by telemetry alone.
+  A third hypothesis is now recorded in `MSV3_SOLAR_CHARGING_STATE_2026-09-19.md`.
+- **Probe 7 is on the SAME SHELF as probe 4**, in a begonia. Insolation is comparable; earlier notes
+  treated them as unrelated locations.
+- **Probe 8 is unplugged and unpowered on the desk.** Its silence is expected, not a fault.
+- **Sensor 1 is an MSV2 node outdoors** in a thaumatophilum pot, far from the desk. It was previously
+  untracked anywhere.
+- **The shared Alocasia pot holds 2, 3, 4, 5 and 9**, which completes the electrode x readout 2x2:
+  9 = MSV3 blade + AM, 3 = v1.2 + AM, 5 = MSV3 blade + FDC, 4 = v1.2 + FDC.
+- **Electrodes in soil**: 2 = MSV2 interdigitated, 3 = v1.2, 4 = v1.2, 5 = MSV3 blade, 9 = MSV3 blade.
+- **Mains/USB right now**: 3, 5 and 9.
+- **Divider swap** went to every probe except 7. **C17 is removed from all.**
+
 ## 2026-09-19 (evening) Probe 5 fixed, probe 4 history corrected, thermal attribution disputed
 
 New docs: `MSV3/docs/MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md`,

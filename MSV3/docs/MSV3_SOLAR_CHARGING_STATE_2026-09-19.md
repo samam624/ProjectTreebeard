@@ -90,11 +90,25 @@ current, and -- importantly -- **a change in the battery-sense divider calibrati
 an artifact rather than discharge. **A single DMM reading on the cell compared against
 `raw_battery_mv` settles that and is the cheapest open item in this document.**
 
-**Not established:** the cause. Two hypotheses fit identically at 3.99 V:
+**Not established:** the cause. **THREE** hypotheses fit identically at 3.99 V:
 
-- **(a)** the divider was reworked to 3.887 V nominal `VBAT_OV`, the cell is ~100 mV above it, and the
-  IC is correctly refusing to charge;
-- **(b)** the divider is still as-built at 4.26 V and the harvester is not delivering at all.
+- **(a)** `VBAT_OV` is doing its job -- the divider is reworked to 3.887 V nominal, the cell is above
+  it, and the IC is correctly refusing to charge;
+- **(b)** the harvester is not delivering at all;
+- **(c)** **the zener is clamping `SP+` too low for the harvester to work.**
+
+**Correction 2026-09-19 (maintainer): probe 4 has an SP+ shunt zener fitted, as well as the reworked
+divider.** Everything written earlier in this document assumed only probe 7 carried a zener, and
+therefore treated (a) and (b) as the only options. They are not. Probe 4 changed *two* things at once
+-- divider and clamp -- so its loss of charging cannot distinguish them from telemetry alone.
+
+This is the same mechanism the 2026-09-16 reassessment measured on probe 7, where the temporary
+1N4728A held `SP+` below 2.2 V in direct sun. If probe 4 carries a similar part, hypothesis (c) is
+not a remote possibility but the expected behaviour of a soft-knee zener on a low-current source.
+
+**The 3.89 V crossing separates (a) from (b) and (c), but NOT (b) from (c).** If the ramp returns,
+(a) holds and both the divider and the clamp are fine. If it does not, a DMM or scope on `SP+` in
+sun is what separates a dead harvester from an over-aggressive clamp -- telemetry cannot.
 
 **The discriminator is whether the daytime ramp returns as the cell descends through the restart
 envelope.** Under (a) charging resumes somewhere in it and the cell then floats at the ceiling. Under
