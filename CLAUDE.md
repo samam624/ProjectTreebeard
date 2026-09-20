@@ -20,6 +20,15 @@ has been reworked is the single most repeated failure mode in this project.
   have no bootloader/OTA entry. Their electrode and location are what analysis most often gets wrong.
 - `pots` -- which sensors share soil. Two sensors in one pot see the same water; two in different
   pots do not, and must never be compared as if they did.
+- `power_topology` -- which rigs share a mains outlet, and which comparisons that does and does not
+  confound.
+- `measurement_model` -- **read before analysing any thermal data.** The maintainer's physical
+  reading is TWO-FACTOR: the readout and the electrode each contribute their own noise term and
+  their own temperature term. FDC readout = low noise, temperature-susceptible. v1.2 driving
+  circuit = noisy, low temperature susceptibility. MSV3 blade = VERY temperature-susceptible.
+  v1.2 electrode = low. **Do not try to force a single-factor answer** ("is it the electrode OR the
+  readout"); sessions have repeatedly got stuck doing that. It is both, which is why the apparent
+  electrode effect changes size depending on which readout it is measured through.
 
 Rules:
 

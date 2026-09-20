@@ -340,5 +340,48 @@
       "STILL WORTH REMOVING: the topology asymmetry is real even if it is not the explanation. Moving probe 5 to battery makes the FDC row power-matched.",
       "OPEN PREDICTION: if the electrode is the variable, probe 5 (blade + FDC, on USB) should be NOISY like sensor 9 despite sharing probe 4's readout. If probe 5 is quiet like probe 4, the readout is the variable instead. Cheapest remaining discriminator; needs only clean days."
     ]
+  },
+  "measurement_model": {
+    "_comment": [
+      "The maintainer's physical reading of what drives noise and thermal drift, stated 2026-09-19.",
+      "READ THIS BEFORE ANALYSING THERMAL DATA. It is a TWO-FACTOR model: the readout and the electrode",
+      "each contribute their own noise term and their own temperature term, and they are separable.",
+      "Sessions have repeatedly tried to force a single-factor answer ('is it the electrode OR the",
+      "readout') and got stuck. The answer is BOTH, which is why the apparent electrode effect changes",
+      "size depending on which readout it is measured through."
+    ],
+    "verified": "2026-09-19",
+    "source": "maintainer, stated directly 2026-09-19",
+    "factors": {
+      "FDC readout": {
+        "noise": "LOW",
+        "temperature": "susceptible"
+      },
+      "v1.2 driving circuit (AM readout)": {
+        "noise": "NOISY",
+        "temperature": "LOW susceptibility"
+      },
+      "MSV3 blade electrode": {
+        "noise": "-",
+        "temperature": "VERY susceptible"
+      },
+      "v1.2 electrode": {
+        "noise": "-",
+        "temperature": "low susceptibility"
+      }
+    },
+    "explains": [
+      "Why the apparent electrode effect changed size with the readout it was measured through (1.36x within the AM pair, ~4x within the FDC pair): the readout adds its own temperature term on top.",
+      "Why sensor 3 (v1.2 electrode + v1.2 driving circuit) shows LARGE drift but a LOW thermal coefficient -- noisy circuit, immune electrode.",
+      "Why sensor 9 (MSV3 blade + v1.2 driving circuit) shows CLEAN traces with a HIGH thermal coefficient -- low-temp circuit, very-susceptible electrode.",
+      "Why probe 4 (v1.2 electrode + FDC) is the flattest rig measured -- low-noise readout AND immune electrode, the best available pairing.",
+      "Why probe 4 BEFORE 2026-09-18, when it was MSV3 blade + FDC, was strongly thermal (-0.387 %/C, 2.60% daily swing), and probe 8 on the same pairing wobbled 1.956%."
+    ],
+    "prediction_probe5": [
+      "Probe 5 is MSV3 blade + FDC, the pairing that stacks the VERY-susceptible electrode with the susceptible readout.",
+      "PREDICTION: probe 5 should show the LARGEST thermal response of the four corners, and because the FDC readout is low-noise it should show it CLEANLY -- the most legible thermal signature in the pot.",
+      "This is falsifiable and needs no new hardware, only clean days on a probe already in the shared pot.",
+      "CAVEAT on sign: historically blade+FDC (probe 8) read DRIER when warm while v1.2+FDC (probe 4 now) reads WETTER when warm, so the electrode flips the sign within one readout. Do not assume the two temperature terms simply add; check the sign before fitting a combined magnitude."
+    ]
   }
 }
