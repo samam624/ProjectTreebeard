@@ -113,8 +113,9 @@ which made them appear to disagree in sign).
 | probe 4 | **+0.053 %/C, r = +0.676** | **+0.260 %/C, r = +0.924** | 0.95 % of tank C |
 
 **Probe 4's 0.95 % is the quietest number in the table and is also the only battery-isolated rig.**
-Do not attribute that margin to its electrode or readout until the power confound in "Why the
-comparison is not identified", item 4, is addressed.
+Item 4 below tested whether isolation explains that, using sensors 3 and 9 as a same-outlet control,
+and found it does not. The margin is therefore more likely electrode or readout than power — but
+probe 4 still differs from the AM rigs in all three.
 
 The AM percentage columns are retained only so nobody re-derives them and believes them; use the
 mV/C table above.
@@ -211,20 +212,40 @@ outlier:
 | MSV3 blade + FDC | probe 5 | USB to the computer, **same outlet** |
 | **v1.2 + FDC** | **probe 4** | **battery only -- galvanically isolated** |
 
-**Probe 4 is the quietest rig by 4-5x and is also the only isolated one.** "Probe 4 is quiet because
-it is battery-isolated" explains the headline result as well as any electrode or readout mechanism
-does, and this data cannot separate them.
+**DOWNGRADED 2026-09-19, same day, by the maintainer's observation: the existing data already
+contains the control that tests this, and mains coupling fails it.**
 
-This is not speculative. Sensor 3 has a **measured** history of cyclic noise bands on this exact
-setup, traced to the receiver PSU sharing an outlet with the bench rig, and the quantity being
-compared is a sub-1 % daily wobble.
+Sensors 3 and 9 are **both** ESP32-powered on the **same outlet** — identical mains exposure. Per-day
+against probe 6's room reference:
+
+| day | s3, v1.2 + AM | s9, blade + AM |
+|---|---|---|
+| 2026-09-17 | 8.04 mV/C, r = -0.696 | 20.35 mV/C, r = -0.785 |
+| 2026-09-18 | 9.86 mV/C, r = -0.535 | 21.41 mV/C, r = -0.832 |
+| 2026-09-19 | 7.54 mV/C, r = -0.675 | 31.20 mV/C, r = -0.970 |
+
+**s3 is ~2.9x more thermally immune than s9 despite identical mains exposure.** Mains coupling
+therefore does not explain which rigs are thermally quiet on this bench. The v1.2 electrode is quiet
+**hardwired** (s3) and quiet **on battery** (probe 4); the blade is noisy hardwired (s9).
+
+**Consequence for the earlier claim.** "Probe 4 is quiet because it is battery-isolated" is now a
+*weak* alternative, not a co-equal one: mains exposure demonstrably does not make a v1.2 rig noisy.
+The power topology is still a real asymmetry and is still worth removing, but it should no longer be
+treated as an explanation competing with the electrode.
+
+Sensor 3's documented cyclic noise bands remain real, but they are a distinct artifact (a coupling
+signature) from the diurnal thermal response measured here, and s3's lower `r` values (-0.54 to
+-0.70, against s9's -0.79 to -0.97) are consistent with s3 carrying *more* non-thermal drift and
+*less* thermal coupling — i.e. more immune, not less.
 
 **What survives and what does not:**
 
-- **CLEAN -- the within-AM electrode comparison (sensor 3 vs sensor 9).** Both are ESP32-powered on
-  the *same* outlet, so power topology cancels. This is why it is the load-bearing result here.
-- **CONFOUNDED -- probe 4 against either AM rig.** Three variables differ at once: electrode,
-  readout, and power isolation.
+- **CLEAN, and now doing double duty -- the within-AM electrode comparison (sensor 3 vs sensor 9).**
+  Both are ESP32-powered on the *same* outlet, so power cancels. It is the load-bearing electrode
+  result AND the control that demotes the power confound above.
+- **PARTLY CONFOUNDED -- probe 4 against either AM rig.** Electrode, readout and power all differ.
+  But the s3/s9 pair shows power is not what separates quiet rigs from noisy ones, so electrode and
+  readout remain the live candidates.
 - **CONFOUNDED -- the FDC pair, probe 4 vs probe 5.** Electrode *and* power differ. **Moving probe 5
   to battery fixes this one** and makes the FDC row internally clean.
 - **PERMANENT -- AM vs FDC** will always carry a power-topology difference on top of the
@@ -317,6 +338,12 @@ Split by question, because the two threads compete for the same bench time.
    is time-limited: once the boards are coated, the MSV3 electrode/readout confounding becomes
    permanent in MSV4 as well. Conformal coating has already made SWD inaccessible on several MSV3
    probes; do not repeat that pattern before the characterisation exists.
+
+8. **Falsifiable prediction now that probe 5 is live.** If the electrode is the variable, probe 5
+   (MSV3 blade + FDC, on USB) should be **noisy** like sensor 9, despite sharing probe 4's readout.
+   If instead probe 5 is quiet like probe 4, the readout is the variable and the electrode story
+   collapses. This is the cheapest remaining discriminator and it needs no new hardware — just clean
+   days on a probe that is already in the pot.
 
 ### B. Power and solar health
 

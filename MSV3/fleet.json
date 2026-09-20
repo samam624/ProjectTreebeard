@@ -334,10 +334,11 @@
       "detail": "probe 4 = battery only plus solar; sensor 2 = battery."
     },
     "consequences": [
-      "CLEAN: the within-AM electrode comparison (sensor 3 vs sensor 9) -- both are ESP32-powered on the SAME outlet, so power topology cancels. This is why it is the load-bearing result.",
-      "CONFOUNDED: any comparison of probe 4 against sensors 3 or 9. Probe 4 differs in electrode, readout AND power isolation.",
-      "CONFOUNDED: the FDC pair (probe 4 vs probe 5) -- differs in electrode AND power. Moving probe 5 to battery would fix this one and make the FDC row internally clean.",
-      "PERMANENT: AM-vs-FDC will always carry a power-topology difference as well as the unit-comparability problem, because the AM rigs cannot run on battery."
+      "DEMOTED 2026-09-19 (maintainer observation): sensors 3 and 9 are BOTH ESP32-powered on the SAME outlet, yet s3 is ~2.9x more thermally immune than s9 (per-day: s3 8.04/9.86/7.54 mV/C vs s9 20.35/21.41/31.20 mV/C against probe 6's room reference). Identical mains exposure, 3x different thermal response -- so mains coupling does NOT explain which rigs are thermally quiet here.",
+      "Therefore 'probe 4 is quiet because it is battery-isolated' is a WEAK alternative, not a co-equal explanation. The v1.2 electrode is quiet hardwired (s3) and quiet on battery (probe 4); the blade is noisy hardwired (s9).",
+      "STILL CLEAN and now doing double duty: the within-AM comparison (s3 vs s9) is both the load-bearing electrode result and the control that demotes this confound.",
+      "STILL WORTH REMOVING: the topology asymmetry is real even if it is not the explanation. Moving probe 5 to battery makes the FDC row power-matched.",
+      "OPEN PREDICTION: if the electrode is the variable, probe 5 (blade + FDC, on USB) should be NOISY like sensor 9 despite sharing probe 4's readout. If probe 5 is quiet like probe 4, the readout is the variable instead. Cheapest remaining discriminator; needs only clean days."
     ]
   }
 }
