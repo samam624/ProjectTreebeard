@@ -531,7 +531,8 @@ preferred over exact cutoff accuracy, and the clamp is what actually bounds the 
 
 **`MSV3_Probe_PCB/reference/COMPONENT_INDEX.md`.** Its flagged open question about `R_OV1`/`R_OV2`
 orientation is **resolved**. Equation 3, read off the rendered page 13, is
-`VBAT_OV = (3/2) · VBIAS · (1 + R_OV2/R_OV1)`, and probe 4's clean 4309 mV cap on the as-built
+`VBAT_OV = (3/2) · VBIAS · (1 + R_OV2/R_OV1)`, and probe 4's clean 4309 mV cap **(2026-09-13, while
+it was still on the as-built divider — it was reworked the next day)** on the as-built
 divider confirms empirically that `R_OV2` is the VRDIV-side resistor (R11) and `R_OV1` the GND-side
 (R14). The documented orientation was right.
 

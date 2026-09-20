@@ -113,9 +113,11 @@ cannot come from soil, the electrode or the interface. But its magnitude is abou
 the blade's contribution. So the readout term is *real, extremely clean, and small*. Both halves
 matter: clean enough to compensate for, small enough that it is not what drives the blade rigs.
 
-**2. "The MSV3 blade is VERY temperature-susceptible relative to v1.2" -- SUPPORTED.** 3.7x within
-the FDC readout, 2.9x within the AM readout. That two independent measurement chains agree to within
-30 % is the strongest evidence in this document.
+**2. "The MSV3 blade is VERY temperature-susceptible relative to v1.2" -- SUPPORTED BY ONE
+MEASUREMENT ONLY.** ~~3.7x within the FDC readout~~ **withdrawn as cross-pot, see the correction at
+the top of this document.** What remains is **2.9x within the AM readout** (sensors 3 and 9, same
+pot, same days, verified clean). One measurement chain, not two. The apparent agreement between
+"3.7x and 2.9x" was an artifact of subtracting across a pot change.
 
 **3. The sign flip is real.** Within one readout, the blade reads *drier* when warm and the v1.2
 reads *wetter*. The electrode does not merely scale the thermal response, it inverts it. Any

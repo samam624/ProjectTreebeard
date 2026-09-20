@@ -550,8 +550,12 @@ and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards
   running images that select mux 2/3, which is the combination
   `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md` forbids. Finishing those installs is now a fix,
   not a scheduling item.
-- Probe 6 still has the as-built BQ25504 OV divider and charges to ~4.26 V; it has not had the
-  R11/R14 ~3.90 V storage rework from `edc9705`. **Deliberately deferred** (maintainer): the battery
+- ~~Probe 6 still has the as-built BQ25504 OV divider and charges to ~4.26 V; it has not had the
+  R11/R14 ~3.90 V storage rework from `edc9705`.~~ **WRONG, corrected 2026-09-19.** Probe 6 **did**
+  receive the 09-14 rework and is on the 3.887 V ceiling — the maintainer confirmed it, `fleet.json`
+  probe 6 records it, and line ~516 of this same file already says "probe 6 charged 4248 → 4295 mV
+  on 09-15 with a 3.887 V ceiling programmed". Every field probe **except probe 7** was swapped.
+  The `BATTERY_CURVE` half of this bullet stands: **deliberately deferred** (maintainer), the battery
   percentage rescale waits until the capless system is confirmed working against raw millivolts, so
   `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is for now and a reworked pack reading ~63% is
   expected, not a bug.

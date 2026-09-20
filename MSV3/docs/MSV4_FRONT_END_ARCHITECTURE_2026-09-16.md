@@ -69,8 +69,12 @@ V4 drops the FDC anyway, for reasons that never depended on the thermal data (ma
   own impedance in situ. The FDC cannot do that.
 
 **What must not be claimed any more:** that removing the FDC fixes the daily thermal wobble. It does
-not. **The electrode redesign is the fix**, and it is now the load-bearing change in V4 rather than a
-parallel improvement — see `MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md`. Going from 0.48 mm to 2.90 mm
+not. ~~**The electrode redesign is the fix**~~ — **superseded 2026-09-19, see
+`MSV3_THERMAL_DECOMPOSITION_2026-09-19.md` and `fleet.json` -> `measurement_model`.** The electrode
+is *a* term, not *the* fix: the readout carries its own temperature term too, measured directly on
+probe 4's bare tank at −0.041 %/C with r = −0.994 and no electrode attached. Treat the electrode
+redesign as the larger of two terms, not as a complete remedy. It remains a load-bearing change in V4
+rather than a parallel improvement — see `MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md`. Going from 0.48 mm to 2.90 mm
 of penetration averages interface movement over several millimetres instead of a fraction of one,
 which is precisely the geometry argument that motivated it.
 

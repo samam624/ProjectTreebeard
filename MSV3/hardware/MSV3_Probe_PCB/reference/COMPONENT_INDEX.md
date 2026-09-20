@@ -192,7 +192,9 @@ disable threshold nearby — easy to grab the wrong constant from this datasheet
 rev G (extracted text scrambles it; render the page) is
 `VBAT_OV = (3/2) · VBIAS · (1 + R_OV2/R_OV1)`. `R_OV2` is the **VRDIV-side** resistor (R11) and
 `R_OV1` the **GND-side** (R14); the same ordering holds for `R_UV2`/`R_UV1` (R12/R15) in Equation 2.
-Confirmed empirically: probe 4 on the as-built divider capped cleanly at 4309 mV against a nominal
+Confirmed empirically: probe 4, **while it was still on the as-built divider (i.e. before the
+2026-09-14 rework; it was swapped along with every field probe except probe 7)**, capped cleanly at
+4309 mV against a nominal
 4.259 V, which only works with this orientation. The orientation documented above was correct.
 
 **Two further corrections from the same session, plus the 2026-09-16 protection correction:**

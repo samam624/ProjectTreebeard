@@ -72,7 +72,7 @@ happen.
 
 ## OPEN — needs a maintainer decision
 
-### 5. `BATTERY_CURVE` has not been rescaled, five days after the rework
+### 5. `BATTERY_CURVE` has not been rescaled -- DELIBERATE, not an oversight
 
 `MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` lists this as "Consequence 1 … **Not yet done**". It is
 still not done. The curve maps **4200 mV → 100 %** in both
@@ -82,11 +82,20 @@ deliberately byte-identical copy in `MobileAppPage.h`.
 Consequence: a reworked probe at its ≈3.89 V ceiling reports **~63 %** and can never read higher.
 Probe 4 currently reports 74–75 % at 3973–3984 mV and is still descending.
 
-**Why this was not simply fixed.** Probe 7 was deliberately *not* reworked and retains a 4.26 V
-ceiling. One shared curve can no longer serve both populations: rescaling so 3.90 V = 100 % makes
-probe 7 report above 100 %. This needs per-probe charge-profile metadata — plausibly keyed off
-`fleet.json`, which already records per-probe hardware state — rather than a clamp or a new constant.
-That is a design decision, and it also requires a receiver flash.
+**CORRECTED 2026-09-19: this is not an oversight, it is a deliberate maintainer decision that was
+already recorded.** `docs/STATUS_HANDOFF.md` states it plainly: *"**Deliberately deferred**
+(maintainer): the battery percentage rescale waits until the capless system is confirmed working
+against raw millivolts, so `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is for now and a
+reworked pack reading ~63% is expected, not a bug."*
+
+This review originally filed it as an open decision because that line sat in a bullet whose *other*
+half was wrong (it claimed probe 6 was still on the as-built divider), so the whole bullet read as
+stale. **A reworked pack reading ~63 % is expected behaviour, not a defect.**
+
+The design constraint still stands for whenever the rescale does happen: probe 7 was deliberately not
+reworked and retains a 4.26 V ceiling, so one shared curve cannot serve both populations. That wants
+per-probe charge-profile metadata keyed off `fleet.json`, not a clamp or a single new constant, and
+it requires a receiver flash.
 
 ### 6. Release-archive integrity failure has escalated
 
