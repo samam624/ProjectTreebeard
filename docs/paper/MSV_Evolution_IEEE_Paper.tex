@@ -25,7 +25,7 @@
 
 \begin{document}
 
-\title{Evolution of the MSV Soil-Moisture Platform: From 555-Timer Sensing to a Connected FDC2214 Probe}
+\title{Evolution of the MSV Soil-Moisture Platform: From 555-Timer Sensing to a Switched Lock-In Probe}
 
 \author{
 \IEEEauthorblockN{Sam Amezcua}
@@ -38,7 +38,7 @@ scamezcua@ucdavis.edu}
 \maketitle
 
 \begin{abstract}
-This paper summarizes three generations of a capacitive soil-moisture sensor. MSV1 used cascaded
+This paper summarizes four generations of a capacitive soil-moisture sensor. MSV1 used cascaded
 555 timers but compressed the useful response because its analog stage was designed for
 80--220\,pF while measurements reached 274\,pF--1.28\,nF. MSV2 replaced analog conversion with
 digitally timed relaxation oscillation and added Bluetooth Low Energy (BLE), an ESP32-S3 receiver,
@@ -47,20 +47,26 @@ coupling, electrode-bias risk, flash leakage, and receiver/cloud defects. MSV3 i
 progress using an FDC2214 resonant converter, a TMUX1109 to route two electrodes through four
 states, and solar harvesting. Bring-up verified a 17-byte packet, 900 consecutive post-repair
 samples, and 10--15\,\textmu A timed-sleep current. Wet-soil stability and energy-neutral operation
-remain open.
+remain open. A prefabrication MSV4 design replaces the shallow interdigitated electrode with a
+wide-spaced, polarity-reversing probe and synchronous lock-in readout. A two-dimensional complex
+electrostatic model predicts approximately fivefold greater median sensing depth and half the
+lossless interface-gap sensitivity, while also identifying soil conductivity and physical contact
+as the dominant remaining confounds. These MSV4 results are numerical predictions, not field data.
 \end{abstract}
 
 \begin{IEEEkeywords}
-capacitive soil-moisture sensing, Bluetooth Low Energy, FDC2214, nRF52840, energy harvesting,
-wireless sensor node
+capacitive soil-moisture sensing, Bluetooth Low Energy, FDC2214, lock-in detection, numerical
+electrostatics, nRF52840, energy harvesting, wireless sensor node
 \end{IEEEkeywords}
 
 \section{Introduction}
 Capacitive electrodes reduce the corrosion and polarization risk of low-cost resistive soil
 probes. The MSV project progressed from an analog proof of concept (MSV1), through a connected
 nRF52840/ESP32-S3 platform (MSV2), to a dedicated capacitance-converter and solar-assisted probe
-(MSV3). The objective remained a repeatable, low-power moisture indicator with wireless history.
-This paper emphasizes the measured shortcomings that motivated each transition.
+(MSV3), and finally to a prefabrication switched lock-in sensor with wider electrode spacing
+(MSV4). The objective remained a repeatable, low-power moisture indicator with wireless history.
+This paper emphasizes the measured shortcomings that motivated each transition and clearly
+separates measured results from MSV4 simulation predictions.
 
 \section{Architecture Evolution}
 
@@ -108,8 +114,18 @@ charger, and a TPS7A0233 3.3\,V regulator \cite{ti_bq25504}. MSV3 preserves the 
 cloud path unchanged; its observed live packet is 17 bytes. A 23-byte die-temperature/bare-tank
 reference format is compile- and cloud-tested but not confirmed flashed to a field unit.
 
-Fig.~\ref{fig:arch} summarizes the three signal paths and the receiver/cloud stage shared by MSV2
-and MSV3.
+\subsection{MSV4: Wide-Spaced Electrodes and Synchronous Detection}
+MSV4 retains the E73 nRF52840 and solar power architecture but replaces the resonant FDC2214 path
+with two FSUSB42 dual analog switches. One switch alternately drives electrode A or B through
+1\,k$\Omega$ while grounding the other; the second synchronously chops both the sensed voltage and
+a pre-resistor drive-reference voltage into matched 100\,k$\Omega$/1\,nF averaging filters. TIMER3,
+GPIOTE, and PPI generate phase-stable 1--4\,MHz excitation and four-phase sampling without
+software-timed edges. The drive-reference channel permits complex-ratio calibration of GPIO
+amplitude and common switch timing, while a thermistor at the blade tip supports first-order
+temperature correction. The fabricated hardware and its soil calibration remain future work.
+
+Fig.~\ref{fig:arch} summarizes the four signal paths and the receiver/cloud stage shared by MSV2
+through MSV4.
 
 \begin{figure*}[!t]
 \centering
@@ -155,13 +171,25 @@ and MSV3.
   \draw[arr] (m3d) -- (m3e);
   \node[font=\footnotesize\bfseries, left=4mm of m3a, anchor=east] {MSV3};
 
+  % MSV4 row
+  \node[box, below=10mm of m3a] (m4a) {Wide A/B plates\\+ FSUSB42};
+  \node[box, right=of m4a] (m4b) {1--4 MHz\\lock-in};
+  \node[box, right=of m4b] (m4c) {E73 nRF52840\\BLE};
+  \node[box, right=of m4c] (m4d) {ESP32-S3\\receiver};
+  \node[box, right=of m4d] (m4e) {Supabase\\+ PWA};
+  \draw[arr] (m4a) -- (m4b);
+  \draw[arr] (m4b) -- (m4c);
+  \draw[arr] (m4c) -- (m4d);
+  \draw[arr] (m4d) -- (m4e);
+  \node[font=\footnotesize\bfseries, left=4mm of m4a, anchor=east] {MSV4};
+
   % shared receiver/cloud annotation
-  \draw[dashed] ($(m2d.north west)+(-0.15,0.25)$) rectangle ($(m3e.south east)+(0.15,-0.15)$);
-  \node[font=\scriptsize, below=1mm of m3e, anchor=north] {shared receiver / cloud stack};
+  \draw[dashed] ($(m2d.north west)+(-0.15,0.25)$) rectangle ($(m4e.south east)+(0.15,-0.15)$);
+  \node[font=\scriptsize, below=1mm of m4e, anchor=north] {shared receiver / cloud stack};
 \end{tikzpicture}
-\caption{Three-generation signal path. MSV1 converts frequency to a threshold voltage entirely in
-analog hardware. MSV2 and MSV3 both measure digitally at the probe and share the same ESP32-S3
-receiver and cloud stack; only the sensing front end changed between them.}
+\caption{Four-generation signal path. MSV1 converts frequency to a threshold voltage entirely in
+analog hardware. MSV2--MSV4 measure digitally at the probe and share the same ESP32-S3 receiver
+and cloud stack; the sensing front end evolves between generations.}
 \label{fig:arch}
 \end{figure*}
 
@@ -214,6 +242,65 @@ reduced timed-sleep current from 65--71\,\textmu A to 10--15\,\textmu A. Direct 
 6\,V open-circuit and 30\,mA short-circuit; roughly 10\,mA of battery charging was inferred from
 voltage-rise behavior, not directly measured with an ammeter.
 
+\section{MSV4 Electrode Field Simulation}
+The prefabrication electrode was evaluated with a numerical rather than physical test apparatus.
+The exact MSV4 cross-section was taken from the Sept.~18 IPC-2581 export: two 4.725\,mm plates
+separated by 4.725\,mm, a grounded edge guard, an 81.1\,mm active length, 1.6\,mm FR4
+($\epsilon_r=4.4$), and 20\,\textmu m solder mask ($\epsilon_r=3.8$). A two-dimensional
+finite-volume model solved
+\begin{equation}
+ \nabla\!\cdot\!\left(\epsilon^*\nabla V\right)=0, \qquad
+ \epsilon^*=\epsilon_0\epsilon_r-j\frac{\sigma}{\omega},
+\end{equation}
+with electrode A at 1\,V and electrode B plus the guard at 0\,V. Complex admittance per unit length
+was obtained from the field-energy identity and multiplied by the active length. The fine mesh was
+50\,\textmu m laterally and 10\,\textmu m through the mask; expanding the exterior domain from
+20 to 45\,mm changed the $\epsilon_r=20$ result by less than 0.7\%. For a like-for-like geometry
+comparison, an idealized MSV3-style 0.5\,mm-finger/1.0\,mm-gap pattern was assigned the same blade
+width and extrusion length. Thus, Table~\ref{tab:fieldsolve} compares normalized geometries; its
+MSV3 capacitances are not the complete in-circuit FDC2214 tank capacitance.
+
+Penetration was calculated by replacing soil beyond depth $d$ with air and dividing the resulting
+capacitance change by the full $\epsilon_r=20$ soil-to-air change. Interface sensitivity was found
+by inserting a 10\,\textmu m air layer between solder mask and soil. These procedures produced the
+results in Table~\ref{tab:fieldsolve}; the median sampled depth increases from approximately
+0.2 to 1.0\,mm, while lossless air-gap sensitivity is halved. The absolute MSV4 capacitance is lower,
+but the sensing volume is substantially less concentrated at the board surface, consistent with
+the electrode-spacing dependence of fringing fields \cite{mamishev2004}.
+
+\begin{table}[!t]
+\caption{Modeled Electrode Comparison (Not Bench Data)}
+\label{tab:fieldsolve}
+\centering
+\footnotesize
+\begin{tabular}{@{}p{0.58\columnwidth}rr@{}}
+\toprule
+\textbf{Metric} & \textbf{MSV3-style} & \textbf{MSV4} \\
+\midrule
+Spatial period (mm) & 3.0 & 18.9 \\
+Capacitance in air (pF) & 34.9 & 6.1 \\
+Capacitance, lossless $\epsilon_r=20$ soil (pF) & 130.8 & 40.4 \\
+Median signal depth (mm) & $\sim$0.2 & $\sim$1.0 \\
+Signal within first 0.25\,mm (\%) & 55 & 19 \\
+Signal within first 0.5\,mm (\%) & 80 & 32 \\
+Signal within first 1.0\,mm (\%) & 95 & 50 \\
+Signal within first 2.0\,mm (\%) & 98 & 70 \\
+10\,\textmu m gap, lossless soil (\%) & $-17.0$ & $-8.5$ \\
+10\,\textmu m gap, moist soil at 1\,MHz (\%) & $-58.5$ & $-42.5$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Conductive soil remains the dominant limitation. For the illustrative moist-soil case
+($\epsilon_r=15$, $\sigma=0.02$\,S/m), the loss ratio $\sigma/(\omega\epsilon)$ falls from 24 at
+1\,MHz to 6 at 4\,MHz, and the modeled 10\,\textmu m-gap error falls from 42.5\% to 24.8\%.
+A 75\,\textmu m, $\epsilon_r=3$ coating reduces those errors to 21.1\% and 12.5\%, respectively.
+Higher-frequency soil sensors likewise show reduced salinity and texture sensitivity
+\cite{kizito2008}. Using explicit dry ($\epsilon_r=4$, $\sigma=0.002$\,S/m) and saturated
+($\epsilon_r=25$, $\sigma=0.1$\,S/m) endpoints, the model gives $|Z|=2.31$\,k$\Omega$ and
+227\,$\Omega$, respectively; this range supports the selected 1\,k$\Omega$ series resistor. The
+4\,MHz firmware path compiles but has not yet been verified on hardware.
+
 \section{Limitations and Next Work}
 MSV3 still requires wet-soil calibration, FDC2214 drive-current/ring-down tuning, multi-day drift
 measurement, and overcast/low-battery solar-recovery tests -- the latter is in progress as of this
@@ -224,15 +311,26 @@ temperature is MCU/electronics temperature and must not be labeled soil temperat
 receiver build should also be verified through its \texttt{/device} endpoint before presenting
 results; checked-in source alone does not prove what is flashed to the physical unit.
 
-\section{Conclusion}
-MSV evolved from an analog proof of concept to a connected field platform and then to a dedicated,
-solar-assisted probe. Its central lesson is that electrode physics, clocking, power state, packet
-compatibility, receiver recovery, calibration, and history handling must be validated together --
-most of MSV2's hardest bugs were system-integration failures, not sensing-principle failures. MSV3
-removes several sources of MSV2 timing error, but its value will be established only after
-long-duration wet-soil and energy-neutral field testing.
+MSV4 conclusions are presently limited to a two-dimensional, uniform-along-length,
+electroquasistatic model with assumed material properties. End fringing, coating thickness and
+water uptake, soil heterogeneity, packing gaps, frequency dispersion, switch/GPIO timing, and the
+square-wave excitation harmonics require bench validation. The first experiment should compare
+otherwise identical mask-only and approximately 75\,\textmu m-coated boards in controlled soil at
+1, 2, and 4\,MHz while recording gravimetric water content, bulk conductivity, and the blade-tip
+thermistor. The lock-in in-phase and quadrature terms must be calibrated as two empirical features;
+they must not be labeled pure conductance and permittivity before that calibration.
 
-\begin{thebibliography}{9}
+\section{Conclusion}
+MSV evolved from an analog proof of concept to a connected field platform, a dedicated resonant
+converter, and a prefabrication switched lock-in probe. Its central lesson is that electrode
+physics, clocking, power state, packet compatibility, receiver recovery, calibration, and history
+handling must be validated together -- most of MSV2's hardest bugs were system-integration
+failures, not sensing-principle failures. The MSV4 field model supports fabrication of the drawn
+wide-spaced geometry, predicting approximately fivefold greater median sensing depth and half the
+lossless interface-gap sensitivity of the normalized MSV3-style reference. Those predictions and
+the proposed 4\,MHz operating point remain to be confirmed by controlled soil measurements.
+
+\begin{thebibliography}{11}
 
 \bibitem{amezcua2026msv1}
 S. Amezcua, ``Design and Experimental Characterization of a Capacitive Soil Moisture Sensor Using a
@@ -266,6 +364,17 @@ MSV2/MSV3 Project, ``MSV3 LFCLK/RTC1 Hang,'' internal failure analysis, Aug. 21,
 \bibitem{project_production_firmware}
 MSV2/MSV3 Project, ``MSV3 Production Firmware,'' internal verification record, Aug. 22, 2026.
 
+\bibitem{mamishev2004}
+A. V. Mamishev, K. Sundara-Rajan, F. Yang, Y. Du, and M. Zahn, ``Interdigital sensors and
+transducers,'' \emph{Proc. IEEE}, vol. 92, no. 5, pp. 808--845, May 2004,
+doi: 10.1109/JPROC.2004.826603.
+
+\bibitem{kizito2008}
+F. Kizito, C. S. Campbell, G. S. Campbell, D. R. Cobos, B. L. Teare, B. P. Carter, and
+J. W. Hopmans, ``Frequency, electrical conductivity and temperature analysis of a low-cost
+capacitance soil moisture sensor,'' \emph{J. Hydrol.}, vol. 352, no. 3--4, pp. 367--378, 2008,
+doi: 10.1016/j.jhydrol.2008.01.021.
+
 \end{thebibliography}
 
 \end{document}
@@ -298,4 +407,9 @@ MSV2/MSV3 Project, ``MSV3 Production Firmware,'' internal verification record, A
 % 9. Do not call MCU die temperature "soil temperature."
 % 10. Do not state the solar harvester's charge current as directly measured --
 %     it is inferred via the R_BAT(on) method, not an ammeter reading.
+% 11. All MSV4 field-solver values are numerical predictions. The MSV3-style
+%     comparison normalizes both geometries to the same blade width and 81.1 mm
+%     extrusion; it is not a claim about complete in-circuit FDC tank capacitance.
+% 12. Do not label lock-in I/Q outputs as pure G and C until a soil/temperature/
+%     conductivity calibration matrix has been measured on fabricated hardware.
 % ============================================================================

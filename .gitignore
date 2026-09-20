@@ -1,4 +1,7 @@
 **/WiFiCredentials.h
+# MSV3 DFU private signing material. Public verification keys and hashes belong in manifests;
+# private keys must be backed up outside Git and must never be pushed.
+MSV3/.secrets/
 # Sensitive, not project content -- added 2026-08-29 after git add -A nearly swept this into a
 # commit during the project-treebeard reorg. Belongs somewhere outside any git repo (a password
 # manager or secure notes), not here -- flagged to the user, not moved unilaterally.
@@ -34,6 +37,7 @@ cloud/supabase/.env
 # text, netlist and indexes ARE tracked; re-fetch the PDFs with
 # scripts/fetch_datasheet.py if a page image or figure is needed.
 */hardware/*/reference/datasheets/*.pdf
+*/hardware/reference/datasheets/*.pdf
 
 # LaTeX build artifacts (aux/log/synctex/pdf) -- regenerable via LaTeX Workshop in VS Code or
 # Desktop\latex-tools\tex_compile.ps1 (not part of this repo); only the .tex source and figures/

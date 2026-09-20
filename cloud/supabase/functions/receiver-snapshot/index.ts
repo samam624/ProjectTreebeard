@@ -9,6 +9,7 @@ import {
   validateHistoryRowIdentity,
 } from "./history-batch.ts";
 import { parseMsv3Diagnostics } from "./msv3-diagnostics.ts";
+import { parseTemperatureCompensation } from "./temperature-compensation.ts";
 
 // Permissive on purpose - not a full RFC 791/4291 validator, just enough to keep obviously
 // non-address content (a hostname, an empty segment, stray proxy annotations) from ever
@@ -48,6 +49,7 @@ type PlantReading = {
     // for where these originate.
     boardTempQuarterC?: number;
     bareTankFdcCounts?: number;
+    caplessTank?: boolean;
     tankPhase?: number;
   };
   batteryPercent?: number;
@@ -58,6 +60,12 @@ type PlantReading = {
   // Server-time-anchored timestamp from durable receiver outboxes. Unlike queuedAgeMs,
   // this remains meaningful after the ESP32 reboots while rows are waiting on flash.
   observedAtMs?: number;
+  temperatureCompensatedLogRatioPpm?: number;
+  temperatureCompensationModelVersion?: number;
+  temperatureCompensation?: {
+    logRatioPpm?: number;
+    modelVersion?: number;
+  };
 };
 
 type Snapshot = {
@@ -429,6 +437,7 @@ Deno.serve(async (request) => {
           observationId,
           receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs, plant?.observedAtMs),
           ...parseMsv3Diagnostics(plant?.raw),
+          ...parseTemperatureCompensation(plant),
         });
       }
 
@@ -457,13 +466,34 @@ Deno.serve(async (request) => {
       // advance past the malformed rows too instead of retrying them forever.
       historyAccepted = stored + malformedDropped;
     } else if (!historySelection.usesBatch && historySelection.rows.length > 0) {
+      // THIS BRANCH MUST RETURN A TRUE PREFIX COUNT, exactly like the batch branch above.
+      //
+      // acknowledgeHistoryUploadBatch() on the receiver removes a contiguous PREFIX of its queue
+      // sized by historyAccepted -- it walks the journal from the head, matching bootId/sequence
+      // as it goes. The batch branch reasons about that explicitly and counts malformedDropped so
+      // its total still describes a prefix. This branch used to `continue` past a skipped row
+      // while NOT incrementing, which makes the returned number describe a non-prefix success set:
+      // skip row 3 of 10, return 9, and the receiver drops rows 1-9 -- discarding the row that
+      // actually failed and re-sending a tail row that had already succeeded.
+      //
+      // So: an unrecoverable row is COUNTED (retrying a wire-format problem never succeeds, and
+      // the batch branch drops those too), while a transient RPC failure STOPS the count where it
+      // is, leaving that row and everything after it queued for the next attempt.
+      let fellBackToRetry = false;
       for (const plant of historySelection.rows) {
         const sensorId = Number(plant?.sensor);
-        if (!Number.isFinite(sensorId) || sensorId <= 0) continue;
+        if (!Number.isFinite(sensorId) || sensorId <= 0) {
+          console.error(
+            `dropping malformed history row for receiver ${receiverId}: sensor=${plant?.sensor}`,
+          );
+          historyAccepted++;
+          continue;
+        }
 
         const displayMoisture = Number(plant?.moisture);
         const measuredMoisture = Number(plant?.measuredMoisture);
         const msv3Diagnostics = parseMsv3Diagnostics(plant?.raw);
+        const temperatureCompensation = parseTemperatureCompensation(plant);
 
         const { error: historyError } = await supabase.rpc("msv2_store_sensor_reading", {
           p_receiver_id: receiverId,
@@ -495,12 +525,25 @@ Deno.serve(async (request) => {
           p_board_temp_quarter_c: msv3Diagnostics.boardTempQuarterC,
           p_bare_tank_fdc_counts: msv3Diagnostics.bareTankFdcCounts,
           p_tank_phase: msv3Diagnostics.tankPhase,
+          p_temperature_compensated_log_ratio_ppm:
+            temperatureCompensation.temperatureCompensatedLogRatioPpm,
+          p_temperature_compensation_model_version:
+            temperatureCompensation.temperatureCompensationModelVersion,
         });
         if (historyError) {
           console.error(`sensor history insert failed for sensor ${sensorId}: ${historyError.message}`);
-          continue;
+          // Stop, do not skip. Everything from here on stays queued and is retried, which is the
+          // only behaviour that keeps historyAccepted a prefix the receiver can safely act on.
+          fellBackToRetry = true;
+          break;
         }
         historyAccepted++;
+      }
+      if (fellBackToRetry) {
+        console.error(
+          `history fallback stopped early for receiver ${receiverId}: accepted ${historyAccepted} ` +
+            `of ${historySelection.rows.length}; the remainder stays queued for retry`,
+        );
       }
     }
 

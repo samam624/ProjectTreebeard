@@ -135,6 +135,11 @@ EC-check divider (EC-check mode). Confirmed empirically 8/20: electrode-swap cod
 ~20.34M, EC-check codes read ~22.62M (bare-tank-only, no electrode capacitance) — a clean,
 repeatable ~11% step, not an oscillation failure in either mode.
 
+**2026-09-14 production rework:** the topology above documents the original/as-built PCB, but C17
+is now DNP and must be removed from every healthy probe during rollout. Production firmware
+consequently never selects the electrode-disconnected mux codes. See
+`MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
+
 ## MUX — TMUX1109PWR (dual 4:1 precision mux)
 
 Select pins: A0 (pin1, = MUX0 net) and A1 (pin16, = MUX1 net) — no separate EN net found, likely
@@ -176,27 +181,33 @@ disable threshold nearby — easy to grab the wrong constant from this datasheet
 
 | Threshold | Formula | Resistors (this board) | Value |
 |---|---|---|---|
-| VBAT_OV **(reworked 2026-09-14)** | 1.5·VBIAS·(1+R11/R14) | R11=4.42MΩ (VRDIV-side, "R_OV2" in TI's convention), R14=4.12MΩ (GND-side, "R_OV1") | **≈3.90V** |
-| VBAT_OV *(as-built 2026-08-21 — superseded, see below)* | same | R11=5.62MΩ, R14=4.42MΩ | ≈4.26V |
+| VBAT_OV — see corrected note below | 1.5·VBIAS·(1+R11/R14) | as-built R11=5.62MΩ (VRDIV-side, "R_OV2"), R14=4.42MΩ (GND-side, "R_OV1"); reworked 2026-09-14 to R11=4.42MΩ / R14=4.12MΩ | ≈4.26V as-built, ≈3.89V reworked |
 | VBAT_UV | VBIAS·(1+R12/R15) | R12=5.90MΩ (VRDIV-side), R15=4.12MΩ (GND-side) | ≈3.04V |
 | MPP/VOC ratio | (R10+R13)/(R9+R10+R13) | R9=4.42MΩ top, R10=10MΩ+R13=5.6MΩ bottom | ≈78% |
 | VBAT_OK | — | pin 11 floating, OK_HYST/OK_PROG tied GND | disabled on this board |
 
-**VBAT_OV rework, 2026-09-14 — see `MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` for the
-full derivation.** Field probes were reading **4.27V**, above the 4.20V LiPo cell spec, because the
-as-built divider put VBAT_OV at ≈4.26V. `R11` 5.62MΩ→4.42MΩ and `R14` 4.42MΩ→4.12MΩ moves the
-charge ceiling to **≈3.90V** (3.887V at VBIAS 1.25V typ; ≈3.897V using the 1.2532V backed out of
-this board's own 4.27V measurement). Divider sum drops 10.04MΩ→8.54MΩ, still inside TI's ≤10MΩ
-recommendation. Both replacement values were already in stock and already used elsewhere on this
-board (`R9`=4.42MΩ, `R15`=4.12MΩ), so no new part number. **`R12`/`R15` (VBAT_UV) and `R9`/`R10`/
-`R13` (MPPT) are unchanged**, as is the BQ25170 USB path (`R8`=27kΩ → 4.20V) — this rework only
-moves the *harvester* ceiling.
+**Full rework derivation: `MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`** (brought onto this branch 2026-09-19 by cherry-picking `edc9705`). **Read it with the correction below:** that document states the reworked 8.54 MΩ sum is "still inside TI's ≤10MΩ recommendation", which follows section 8.3.3's incomplete body text. The Recommended Operating Conditions table has a **9 MΩ minimum**, so 8.54 MΩ is **0.46 MΩ below spec** on every reworked field probe.
 
-Note the top/bottom resistor naming: TI's schematic figures consistently put the *larger* resistor
-on the VRDIV side and the *smaller* one on the GND side for both the OV and UV dividers — verify
-this orientation against a real schematic figure (not the equation text alone) before reusing this
-pattern elsewhere, since the datasheet's OCR'd/scanned equation text has inconsistent ROV1/ROV2
-variable-name ordering between design examples and needs the actual figure to disambiguate.
+**Resistor naming: RESOLVED 2026-09-15.** Equation 3 read off the *rendered* page 13 of SLUSAH0G
+rev G (extracted text scrambles it; render the page) is
+`VBAT_OV = (3/2) · VBIAS · (1 + R_OV2/R_OV1)`. `R_OV2` is the **VRDIV-side** resistor (R11) and
+`R_OV1` the **GND-side** (R14); the same ordering holds for `R_UV2`/`R_UV1` (R12/R15) in Equation 2.
+Confirmed empirically: probe 4 on the as-built divider capped cleanly at 4309 mV against a nominal
+4.259 V, which only works with this orientation. The orientation documented above was correct.
+
+**Two further corrections from the same session, plus the 2026-09-16 protection correction:**
+
+- The divider sum rule is **`R_OV1 + R_OV2` = MIN 9 / NOM 10 / MAX 11 MΩ** (Recommended Operating
+  Conditions, page 6) — it has a **minimum**. Section 8.3.3's body text says only "no higher than
+  10 MΩ", which is the incomplete version and is what commit `edc9705` followed when it took the
+  divider to 8.54 MΩ.
+- The 6 V panel exceeds the part's 3 V recommended / 5.5 V absolute input maximum and must be
+  replaced or clamped. However, the 2026-09-15 claim that `VBAT_OV` can never bound the cell omitted
+  the BQ25504's documented input pull-down when `VIN_DC > VSTOR > VBAT_OV`. The coated Probe 6 was
+  reworked to 3.887 V nominal but measured 5.01 V at loaded `SP+` with its battery near 4.30 V, so
+  that pull-down was ineffective on actual fleet hardware (apart from the narrow possibility of a
+  DMM update coinciding with the 256 ms MPPT sample). Corrected analysis and clamp selection:
+  `MSV3_PROBE7_ZENER_CHARGING_REASSESSMENT_2026-09-16.md`.
 
 **Partially tested, 2026-08-21 (nighttime bench session, real hardware)**: real solar panel wired
 to SP+/GND for the first time. Cold start confirmed working — starting from a fully dead board (no

@@ -1,0 +1,2860 @@
+
+===PAGE 1===
+BQ25504 Ultra Low-Power Boost Converter With Battery Management For Energy 
+Harvester Applications
+1 Features
+•
+Ultra low-power with high-efficiency DC-DC boost 
+converter/charger
+–
+Continuous energy harvesting from low-input 
+sources: VIN ≥ 130 mV (Typical)
+–
+Ultra-low quiescent current: IQ < 330 nA 
+(Typical)
+–
+Cold-start voltage: VIN ≥ 600 mV (typical)
+•
+Programmable dynamic maximum power point 
+tracking (MPPT)
+–
+Integrated dynamic maximum power point 
+tracking for optimal energy extraction from a 
+variety of energy generation sources
+–
+Input voltage regulation prevents collapsing 
+input source
+•
+Energy storage
+–
+Energy can be stored to rechargeable li-ion 
+batteries, thin-film batteries, super-capacitors, 
+or conventional capacitors
+•
+Battery charging and protection
+–
+User Programmable undervoltage and 
+overvoltage levels
+–
+On-chip temperature sensor with 
+programmable overtemperature shutoff
+•
+Battery status output
+–
+Battery good output pin
+–
+Programmable threshold and hysteresis
+–
+Warn attached microcontrollers of pending loss 
+of power
+–
+Can be used to enable or disable system loads
+2 Applications
+•
+Energy harvesting
+•
+Solar chargers
+•
+Thermal electric generator (TEG) harvesting
+•
+Wireless sensor networks (WSNs)
+•
+Industrial monitoring
+•
+Environmental monitoring
+•
+Bridge and structural health monitoring (SHM)
+•
+Smart building controls
+•
+Portable and wearable health devices
+•
+Entertainment system remote controls
+3 Description
+The BQ25504 device is the first of a new family of 
+intelligent integrated energy harvesting nano-power 
+management solutions that are well suited for meeting 
+the special needs of ultra low power applications. 
+The device is specifically designed to efficiently 
+acquire and manage the microwatts (µW) to miliwatts 
+(mW) of power generated from a variety of DC 
+sources like photovoltaic (solar) or thermal electric 
+generators. The BQ25504 is the first device of its 
+kind to implement a highly efficient boost converter/
+charger targeted toward products and systems, such 
+as wireless sensor networks (WSNs) which have 
+stringent power and operational demands. The design 
+of the BQ25504 starts with a DC-DC boost converter/
+charger that requires only microwatts of power to 
+begin operating.
+Once started, the boost converter/charger can 
+effectively extract power from low-voltage output 
+harvesters such as thermoelectric generators (TEGs) 
+or single- or dual-cell solar panels. The boost 
+converter can be started with VIN as low as 600 mV, 
+and once started, can continue to harvest energy 
+down to VIN = 130 mV.
+Device Information(1) 
+PART NUMBER
+PACKAGE
+BODY SIZE (NOM)
+BQ25504
+VQFN (16)
+3.00 mm x 3.00 mm
+(1)
+For all available packages, see the orderable addendum at 
+the end of the data sheet.
+1
+2
+4
+3
+5
+6
+7
+8
+9
+10
+11
+12
+16
+15
+14
+13
+`
+CHVR
+LBST
+CSTOR
+VSTOR
+VBAT_OK
+BQ25504
+Solar
+Cell
++
+-
+ROC1
+ROC2
+CREF
+ROV1
+ROV2
+RUV1
+RUV2
+ROK1
+ROK2
+ROK3
+Battery
+SYSTEM
+LOAD
+VSS
+VIN_DC
+AVSS
+VOC_SAMP
+VREF_SAMP
+OT_PROG VBAT_OV  VRDIV  VBAT_UV
+LBST
+VSTOR       VBAT
+VSS
+OK_HYST
+OK_PROG
+VBAT_OK
+CFLTR
+Solar Application Circuit
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+An IMPORTANT NOTICE at the end of this data sheet addresses availability, warranty, changes, use in safety-critical applications, 
+intellectual property matters and other important disclaimers. PRODUCTION DATA.
+
+===PAGE 2===
+Table of Contents
+1 Features............................................................................1
+2 Applications.....................................................................1
+3 Description.......................................................................1
+4 Revision History.............................................................. 2
+5 Description (continued).................................................. 4
+6 Pin Configuration and Functions...................................5
+7 Specifications.................................................................. 6
+7.1 Absolute Maximum Ratings........................................ 6
+7.2 ESD Ratings............................................................... 6
+7.3 Recommended Operating Conditions.........................6
+7.4 Thermal Information....................................................7
+7.5 Electrical Characteristics.............................................7
+7.6 Typical Characteristics................................................9
+8 Detailed Description......................................................11
+8.1 Overview................................................................... 11
+8.2 Functional Block Diagram.........................................12
+8.3 Feature Description...................................................12
+8.4 Device Functional Modes..........................................15
+9 Application and Implementation..................................18
+9.1 Application Information............................................. 18
+9.2 Typical Applications.................................................. 20
+10 Power Supply Recommendations..............................26
+11 Layout...........................................................................28
+11.1 Layout Guidelines................................................... 28
+11.2 Layout Example...................................................... 29
+11.3 Thermal Considerations..........................................29
+12 Device and Documentation Support..........................30
+12.1 Device Support....................................................... 30
+12.2 Documentation Support.......................................... 30
+12.3 Receiving Notification of Documentation Updates..30
+12.4 Support Resources................................................. 30
+12.5 Trademarks.............................................................30
+12.6 Electrostatic Discharge Caution..............................30
+12.7 Glossary..................................................................30
+13 Mechanical, Packaging, and Orderable 
+Information.................................................................... 30
+4 Revision History
+NOTE: Page numbers for previous revisions may differ from page numbers in the current version.
+Changes from Revision F (November 2019) to Revision G (August 2023)
+Page
+•
+Added "Connect to thermal pad." to AVSS and VSS pin descriptions in Pin Functions table.............................5
+•
+Added lines from AVSS and VSS to GND in Figure 11-1 ................................................................................ 29
+Changes from Revision E (March 2019) to Revision F (November 2019)
+Page
+•
+Deleted Not Recommended for New Designs ...................................................................................................1
+Changes from Revision D (December 2018) to Revision E (March 2019)
+Page
+•
+Changed Feature From: VIN ≥ 80 mV (Typical) To: VIN ≥ 130 mV (Typical)....................................................... 1
+•
+Changed From: VIN as low as 330 mV To: VIN as low as 600 mV in the Description ........................................1
+•
+Changed From: "harvest energy down to VIN = 80 mV." To: "harvest energy down to VIN = 130 mV." in the 
+Description .........................................................................................................................................................1
+•
+Changed From: "330 mV typical,.." To: "600 mV typical,.." in the second paragraph of the Overview section.....
+..........................................................................................................................................................................11
+•
+Changed Figure 8-1 .........................................................................................................................................14
+•
+Changed From: "VIN(CS) = 330 mV typical." To: "VIN(CS) = 600 mV typical." in the second paragraph of the 
+Cold-Start Operation section............................................................................................................................ 15
+Changes from Revision C (June 2015) to Revision D (December 2018)
+Page
+•
+Changed Feature From: Cold-Start Voltage: VIN ≥ 330 mV (Typical) To: Cold-Start Voltage: VIN ≥ 600 mV 
+(Typical) .............................................................................................................................................................1
+•
+Changed the RGT Package appearance ...........................................................................................................5
+•
+Moved Tstg to the Absolute Maximum Ratings table...........................................................................................6
+•
+Changed Handling Ratings To: ESD Ratings .................................................................................................... 6
+•
+Increased VIN(CS) From: TYP = 330 mV and MAX = 450 mV To: TYP = 600 mV and MAX = 700 mV in Section 
+7.5 table..............................................................................................................................................................7
+Changes from Revision B (December 2014) to Revision C (June 2015)
+Page
+•
+Changed the Test Condition for PIN(CS) in the Section 7.5 .................................................................................7
+•
+Changed the values for PIN(CS) in the Section 7.5 From: TYP = 10, MAX = 50 To: TYP = 15, MAX deleted .... 7
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+2
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 3===
+•
+Changed CFLTR To: CBYP Figure 9-1 ................................................................................................................20
+•
+Changed CBYP = 0.1 µF To: CBYP = 0.01 µF in Section 9.2.1.2 ................................................................... 20
+•
+Changed CFLTR To: CBYP in Figure 9-8 ............................................................................................................23
+•
+Changed CBYP = 0.1 µF To: CBYP = 0.01 µF in Section 9.2.2.2 ................................................................... 23
+•
+Changed CFLTR To: CBYP in Figure 9-15 ..........................................................................................................25
+•
+Changed CBYP = 0.1 µF To: CBYP = 0.01 µF in Section 9.2.3.2 ................................................................... 25
+•
+Changed Figure 11-1 .......................................................................................................................................29
+Changes from Revision A (September 2012) to Revision B (December 2014)
+Page
+•
+Added Handling Rating table, Feature Description section, Device Functional Modes, Application and 
+Implementation section, Power Supply Recommendations section, Layout section, Device and 
+Documentation Support section, and Mechanical, Packaging, and Orderable Information section...................1
+Changes from Revision * (October 2011) to Revision A (September 2012)
+Page
+•
+Changed the Cold -Start Operation section......................................................................................................15
+•
+Changed the Boost Converter, Charger Operation section.............................................................................. 16
+•
+Changed the Storage Element section.............................................................................................................16
+•
+Changed the CAPACITOR SELECTION section..............................................................................................19
+•
+Added CFLTR and Notes 1 and 2 to Figure 9-1 ................................................................................................ 20
+•
+Added CFLTR and Notes 1 and 2 to Figure 9-8 ................................................................................................ 23
+•
+Added CFLTR and Notes 1 and 2 to Figure 9-15 .............................................................................................. 25
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+3
+Product Folder Links: BQ25504
+
+===PAGE 4===
+5 Description (continued)
+The BQ25504 also implements a programmable maximum power point tracking sampling network to optimize 
+the transfer of power into the device. Sampling the VIN_DC open-circuit voltage is programmed using external 
+resistors, and held with an external capacitor (CREF).
+For example solar cells that operate at maximum power point (MPP) of 80% of their open-circuit voltage, the 
+resistor divider can be set to 80% of the VIN_DC voltage and the network will control the VIN_DC to operate 
+near that sampled reference voltage. Alternatively, an external reference voltage can be provide by a MCU to 
+produce a more complex MPPT algorithm.
+The BQ25504 was designed with the flexibility to support a variety of energy storage elements. The availability 
+of the sources from which harvesters extract their energy can often be sporadic or time-varying. Systems 
+will typically need some type of energy storage element, such as a rechargeable battery, super capacitor, or 
+conventional capacitor. The storage element ensures that constant power is available when needed for the 
+systems. The storage element also allows the system to handle any peak currents that cannot directly come 
+from the input source.
+To prevent damage to a customer’s storage element, both maximum and minimum voltages are monitored 
+against the user programmed undervoltage (UV) and overvoltage (OV) levels.
+To further assist users in the strict management of their energy budgets, the BQ25504 toggles the battery good 
+flag to signal an attached microprocessor when the voltage on an energy storage battery or capacitor has 
+dropped below a preset critical level. This warning should trigger the shedding of load currents to prevent the 
+system from entering an undervoltage condition. The OV, UV, and battery good thresholds are programmed 
+independently.
+All the capabilities of BQ25504 are packed into a small-footprint, 16-lead, 3-mm x 3-mm VQFN package.
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+4
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 5===
+6 Pin Configuration and Functions
+16
+LBST
+5
+OT_PROG
+1
+VSS
+12
+ AVSS
+15
+VSTOR
+6
+VBAT_OV
+2
+VIN_DC
+11
+ VBAT_OK
+14
+VBAT
+7
+VRDIV
+3
+VOC_SAMP
+10
+ OK_PROG
+13
+VSS
+8
+VBAT_UV
+4
+VREF_SAMP
+9
+ OK_HYST
+Not to scale
+Thermal
+Pad
+Figure 6-1. RGT Package 16 Pins Top View 
+Table 6-1. Pin Functions
+PIN
+I/O
+DESCRIPTION
+NAME
+NO.
+AVSS
+12
+Supply
+Signal ground connection for the device. Connect to thermal pad.
+LBST
+16
+Input
+Inductor connection for the boost charger switching node. Connect a 22 µH inductor between this pin and pin 2 
+(VIN_DC).
+OK_HYST
+9
+Input
+Connect to the mid-point of external resistor divider between VRDIV and GND for setting the VBAT_OK hysteresis 
+threshold. If not used, connect this pin to GND.
+OK_PROG
+10
+Input
+Connect to the mid-point of external resistor divider between VRDIV and GND for setting the VBAT_OK threshold. 
+If not used, connect this pin to GND.
+OT_PROG
+5
+Input
+Digital Programming input for IC overtemperature threshold. Connect to GND for 60 C threshold or VSTOR for 
+120 C threshold.
+VBAT
+14
+I/O
+Connect a rechargeable storage element with at least 100 uF of equivalent capacitance to this pin.
+VBAT_OK
+11
+Output
+Digital output for battery good indicator. Internally referenced to the VSTOR voltage. Leave floating if not used.
+VBAT_OV
+6
+Input
+Connect to the mid-point of external resistor divider between VRDIV and GND for setting the VSTOR = VBAT 
+overvoltage threshold.
+VBAT_UV
+8
+Input
+Connect to the mid-point of external resistor divider between VRDIV and GND for setting the VBAT undervoltage 
+threshold. The PFET between VBAT and VSTOR opens if the voltage on VSTOR is below this threshold.
+VIN_DC
+2
+Input
+DC voltage input from energy harvesters. Connect at least a 4.7 µF capacitor as close as possible between this 
+pin and pin 1.
+VOC_SAMP
+3
+Input
+Sampling pin for MPPT network. Connect to the mid-point of external resistor divider between VIN_DC and GND 
+for setting the MPP threshold voltage which will be stored on the VREF_SAMP pin. To disable the MPPT sampling 
+circuit, connect to VSTOR.
+VRDIV
+7
+Output
+Resistor divider biasing voltage.
+VREF_SAMP
+4
+Input
+Connect a 0.01 µF low leakage capacitor from this pin to GND to store the voltage to which VIN_DC will be 
+regulated. This voltage is provided by the MPPT sample circuit. When MPPT is disabled, either use an external 
+voltage source to provide this voltage or tie this pin to GND to disable input voltage regulation (i.e. operate from a 
+low impedance power supply).
+VSS
+1
+Input
+General ground connection for the device. Connect to thermal pad.
+VSS
+13
+Supply
+General ground connection for the device. Connect to thermal pad.
+VSTOR
+15
+Output
+Connection for the output of the boost charger, which is typically connected to the system load. Connect at least a 
+4.7 µF capacitor in parallel with a 0.1 µF capacitor as close as possible to between this pin and pin 1 (VSS).
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+5
+Product Folder Links: BQ25504
+
+===PAGE 6===
+7 Specifications
+7.1 Absolute Maximum Ratings
+over operating free-air temperature range (unless otherwise noted)(1)
+MIN
+MAX
+UNIT
+Input voltage
+VIN_DC, VOC_SAMP, VREF_SAMP, VBAT_OV, VBAT_UV, VRDIV, 
+OK_HYST, OK_PROG, VBAT_OK, VBAT, VSTOR, LBST(2)
+–0.3
+5.5
+V
+Peak Input Power, PIN_PK
+400
+mW
+Operating junction temperature range, TJ
+–40
+125
+°C
+Storage temperature range, Tstg
+–65
+150
+°C
+(1)
+Stresses beyond those listed under Absolute Maximum Ratings may cause permanent damage to the device. These are stress ratings 
+only and functional operation of the device at these or any other conditions beyond those indicated under Recommended Operating 
+Conditions is not implied. Exposure to absolute–maximum–rated conditions for extended periods may affect device reliability.
+(2)
+All voltage values are with respect to VSS/ground terminal.
+7.2 ESD Ratings
+MIN
+MAX
+UNIT
+V(ESD)
+Electrostatic discharge
+Human body model (HBM), per ANSI/ESDA/JEDEC JS-001, all 
+pins(1)
+2
+kV
+Charged device model (CDM), per JEDEC specification 
+JESD22-C101, all pins(2)
+500
+V
+(1)
+JEDEC document JEP155 states that 500-V HBM allows safe manufacturing with a standard ESD control process.
+(2)
+JEDEC document JEP157 states that 250-V CDM allows safe manufacturing with a standard ESD control process.
+7.3 Recommended Operating Conditions
+MIN
+NOM
+MAX
+UNIT
+VIN (DC)
+DC input voltage into VIN_DC(1)
+0.13
+3
+V
+VBAT
+Battery voltage range(2)
+2.5
+5.25
+V
+CHVR
+Input capacitance
+4.23
+4.7
+5.17
+µF
+CSTOR
+Storage capacitance
+4.23
+4.7
+5.17
+µF
+CBAT
+Battery pin capacitance or equivalent battery capacity
+100
+µF
+CREF
+Sampled reference storage capacitance
+9
+10
+11
+nF
+ROC1 + ROC2
+Total resistance for setting for MPPT reference.
+18
+20
+22
+MΩ
+ROK1 + ROK2 + ROK3
+Total resistance for setting reference voltage.
+9
+10
+11
+MΩ
+RUV1 + RUV2
+Total resistance for setting reference voltage.
+9
+10
+11
+MΩ
+ROV1 + ROV2
+Total resistance for setting reference voltage.
+9
+10
+11
+MΩ
+LBST
+Input inductance
+19.8
+22
+24.2
+µH
+TA
+Operating free air ambient temperature
+–40
+85
+°C
+TJ
+Operating junction temperature
+–40
+105
+°C
+(1)
+Maximum input power ≤ 300 mW. Cold start has been completed
+(2)
+VBAT_OV setting must be higher than VIN_DC
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+6
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 7===
+7.4 Thermal Information
+THERMAL METRIC(1)
+BQ25504
+UNIT
+RGT (QFN)
+16 PINS
+RθJA
+Junction-to-ambient thermal resistance
+48.5
+°C/W
+RθJC(top)
+Junction-to-case (top) thermal resistance
+63.9
+RθJB
+Junction-to-board thermal resistance
+22
+ψJT
+Junction-to-top characterization parameter
+1.8
+ψJB
+Junction-to-board characterization parameter
+22
+RθJC(bot)
+Junction-to-case (bottom) thermal resistance
+6.5
+(1)
+For more information about traditional and new thermal metrics, see the Semiconductor and IC Package Thermal Metrics application 
+report, .
+7.5 Electrical Characteristics
+Over recommended temperature range, typical values are at TA = 25°C. Unless otherwise noted, specifications apply for 
+conditions of VIN_DC = 1.2V, VBAT = VSTOR = 3V. External components LBST = 22 µH, CHVR = 4.7 µF CSTOR= 4.7 µF.
+PARAMETER
+TEST CONDITIONS
+MIN
+TYP
+MAX
+UNIT
+BOOST CONVERTER \ CHARGER STAGE
+VIN(DC)
+DC input voltage into VIN_DC
+Cold-start completed
+130
+3000
+mV
+IIN(DC)
+Peak Current flowing from VIN into VIN_DC input
+0.5V < VIN < 3 V; VSTOR = 4.2 V
+200
+300
+mA
+PIN
+Input power range for normal charging
+VBAT > VIN_DC; VIN_DC = 0.5 V
+0.01
+300
+mW
+VIN(CS)
+Cold-start Voltage. Input voltage that will start charging of 
+VSTOR
+VBAT < VBAT_UV; VSTOR = 0 V;
+0°C < TA < 85°C
+600
+700
+mV
+PIN(CS)
+Minimum cold-start input power to start normal charging
+VBAT < VSTOR(CHGEN)
+VIN_DC clamped to VIN_CS by cold start circuit
+VBAT = 100 µF ceramic
+15
+µW
+VSTOR_CHGEN
+Voltage on VSTOR when cold start operation ends and 
+normal charger operation begins
+1.6
+1.77
+1.95
+V
+RBAT(on)
+Resistance of switch between VBAT and VSTOR when 
+turned on.
+VBAT = 4.2 V; VSTOR load = 50 mA
+2
+Ω
+RDS(on)
+Charger Low Side switch ON resistance
+VBAT = 2.1 V
+2
+Ω
+VBAT = 4.2 V
+2
+Charger rectifier High Side switch ON resistance
+VBAT = 2.1 V
+5
+Ω
+VBAT = 4.2 V
+5
+fSW_BST
+Boost converter mode switching frequency
+1
+MHz
+BATTERY MANAGEMENT
+IVBAT
+Leakage on VBAT pin
+VBAT = 2.1 V; VBAT_UV = 2.3 V, TJ = 25°C 
+VSTOR = 0 V
+1
+5
+nA
+VBAT = 2.1 V; VBAT_UV = 2.3 V,
+–40°C < TJ < 65°C, VSTOR = 0 V
+80
+nA
+IVSTOR
+VSTOR Quiescent current Charger Shutdown in UV 
+Condition
+VIN_DC = 0V;
+VBAT < VBAT_UV = 2.4V;
+VSTOR = 2.2V, No load on VBAT
+330
+750
+nA
+VSTOR Quiescent current Charger Shutdown in OV 
+Condition
+VIN_DC = 0V,
+VBAT > VBAT_OV, VSTOR = 4.25,
+No load on VBAT
+570
+1400
+nA
+VBAT_OV
+Programmable voltage range for overvoltage threshold 
+(Battery voltage is rising)
+VSTOR increasing
+2.5
+5.25
+V
+VBAT_OV_HYST
+Battery voltage overvoltage hysteresis threshold (Battery 
+voltage is falling), internal threshold
+VSTOR decreasing
+18
+35
+89
+mV
+VBAT_UV
+Programmable voltage range for under voltage threshold 
+(Battery voltage is falling)
+VSTOR decreasing; VBAT_UV > VBias
+2.2
+VBAT_OV
+V
+VBAT_UV_HYST
+Battery under voltage threshold hysteresis, internal 
+thershold
+VSTOR increasing
+40
+80
+125
+mV
+VBAT_OK
+Programmable voltage range for threshold voltage for 
+high to low transition of digital signal indicating battery is 
+OK,
+VSTOR decreasing
+VBAT_UV
+VBAT_OV
+V
+VBAT_OK_HYST
+Programmable voltage range for threshold voltage for low 
+to high transition of digital signal indicating battery is OK,
+VSTOR increasing
+50
+VBAT_OV-
+VBAT_UV
+mV
+VBAT_ACCURACY
+Overall Accuracy for threshold values, UV, OV, VBAT_OK
+Selected resistors are 0.1% tolerance
+–5%
+5%
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+7
+Product Folder Links: BQ25504
+
+===PAGE 8===
+7.5 Electrical Characteristics (continued)
+Over recommended temperature range, typical values are at TA = 25°C. Unless otherwise noted, specifications apply for 
+conditions of VIN_DC = 1.2V, VBAT = VSTOR = 3V. External components LBST = 22 µH, CHVR = 4.7 µF CSTOR= 4.7 µF.
+PARAMETER
+TEST CONDITIONS
+MIN
+TYP
+MAX
+UNIT
+VBAT_OKH
+VBAT OK (High) threshold voltage
+Load = 10 µA
+VSTOR-200m
+V
+V
+VBAT_OKL
+VBAT OK (Low) threshold voltage
+Load = 10 µA
+100
+mV
+TSD_PROTL
+The temperature at which the boost converter is 
+disabled and the switch between VBAT and VSTOR is 
+disconnected to protect the battery
+OT_Prog = LO
+65
+°C
+TSD_PROTH
+OT_Prog = HI
+120
+OT_Prog
+Voltage for OT_PROG High setting
+2
+V
+Voltage for OT_PROG Low setting
+0.3
+V
+BIAS and MPPT CONTROL STAGE
+VOC_sample
+Sampling period of VIN_DC open circuit voltage
+16
+s
+VOC_Settling
+Sampling period of VIN_DC open circuit voltage
+256
+ms
+VIN_Reg
+Regulation of VIN_DC during charging
+0.5 V <VIN < 3 V; IIN (DC) = 10 mA
+–10%
+10%
+VIN_shutoff
+DC input voltage into VIN_DC when charger is turned off
+40
+80
+130
+mV
+MPPT_Disable
+Threshold on VOC_SAMP to disable MPPT functionality
+VSTOR-15 
+mV
+V
+VBIAS
+Voltage node which is used as reference for the 
+programmable voltage thresholds
+VIN_DC ≥ 0.5V; VSTOR ≥ 1.8 V
+1.21
+1.25
+1.27
+V
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+8
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 9===
+7.6 Typical Characteristics
+VSTOR = Keithley Sourcemeter configured to measure current and voltage source set to hold the VSTOR voltage = 1.8 V, 
+3.0 V or 5.5 V; VBAT_OV = 5.5 V and measurement taken between MPPT measurements.
+−10
+0
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0 0.2 0.4 0.6 0.8 1 1.2 1.4 1.6 1.8 2 2.2 2.4 2.6 2.8 3
+Input Voltage (V)
+Efficiency (%)
+VSTOR = 1.8V
+VSTOR = 3V
+VSTOR = 5.5V
+IIN = 10µA
+G001 
+VIN_DC = Keithley Source Meter configured with ICOMP = 10 µA and 
+outputing 0 to 3.0 V
+Figure 7-1. Efficiency vs Input Voltage
+0
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0 0.2 0.4 0.6 0.8 1 1.2 1.4 1.6 1.8 2 2.2 2.4 2.6 2.8 3
+Input Voltage (V)
+Efficiency (%)
+VSTOR = 3.3 V
+VSTOR = 1.8 V
+VSTOR = 5.5 V
+IIN = 100µA
+G002 
+VIN_DC = Keithley Source Meter configured with ICOMP = 100 µA and 
+voltage source varied from 0.1 V to 3.0 V
+Figure 7-2. Efficiency vs Input Voltage
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0 0.2 0.4 0.6 0.8 1 1.2 1.4 1.6 1.8 2 2.2 2.4 2.6 2.8 3
+Input Voltage (V)
+Efficiency (%)
+VSTOR = 3V
+VSTOR = 1.8V
+VSTOR = 5.5V
+IIN = 10mA
+G003 
+VIN_DC = Keithley Source Meter configured with ICOMP = 10 mA and 
+voltage source varied from 0.1 V to 3.0 V
+Figure 7-3. Efficiency vs Input Voltage
+40
+50
+60
+70
+80
+90
+100
+0.01
+0.1
+1
+10
+100
+Input Current (mA)
+Efficiency (%)
+VSTOR = 3V
+VSTOR = 1.8V
+VSTOR = 5.5V
+VIN = 2V
+G004 
+VIN_DC = Keithley Source Meter configured with voltage source = 2.0 
+V and ICOMP varied from 0.01 mA to 100 mA
+Figure 7-4. Efficiency vs Input Current
+40
+50
+60
+70
+80
+90
+0.01
+0.1
+1
+10
+100
+Input Current (mA)
+Efficiency (%)
+VSTOR = 3V
+VSTOR = 1.8V
+VSTOR = 5.5V
+VIN = 1V
+G005 
+VIN_DC = Keithley Source Meter configured with voltage source = 1.0 
+V and ICOMP varied from 0.01 mA to 100 mA
+Figure 7-5. Efficiency vs Input Current
+20
+30
+40
+50
+60
+70
+80
+90
+0.01
+0.1
+1
+10
+100
+Input Current (mA)
+Efficiency (%)
+VSTOR = 3V
+VSTOR = 1.8V
+VSTOR = 5.5V
+VIN = 0.5V
+G006 
+VIN_DC = Keithley Source Meter configured with voltage source = 0.5 
+V and ICOMP varied from 0.01 mA to 100 mA
+Figure 7-6. Efficiency vs Input Current
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+9
+Product Folder Links: BQ25504
+
+===PAGE 10===
+7.6 Typical Characteristics (continued)
+VSTOR = Keithley Sourcemeter configured to measure current and voltage source set to hold the VSTOR voltage = 1.8 V, 
+3.0 V or 5.5 V; VBAT_OV = 5.5 V and measurement taken between MPPT measurements.
+20
+30
+40
+50
+60
+70
+80
+0.01
+0.1
+1
+10
+100
+Input Current (mA)
+Efficiency (%)
+VSTOR = 3V
+VSTOR = 1.8V
+VSTOR = 5.5V
+VIN = 0.2V
+G007 
+VIN_DC = Keithley Source Meter configured with voltage source = 0.2 
+V and ICOMP varied from 0.01 mA to 100 mA
+VSTOR = Keithley Source Meter configured to measure current and 
+voltage source set to hold the VSTOR voltage = 2.0 V, 3.0 V or 5.5 V
+Figure 7-7. Efficiency vs Input Current
+0
+100
+200
+300
+400
+500
+600
+700
+800
+900
+1000
+−60
+−40
+−20
+0
+20
+40
+60
+80
+100
+120
+Temperature (°C)
+VSTOR Current (nA)
+VSTOR = 1.8V
+VSTOR = 3V
+VSTOR = 4V
+G008 
+VIN_DC = floating
+VBAT = Keithley Sourcemeter configured to measure current and 
+voltage source varied from 1.8 V, 3 V, or 4 V
+Figure 7-8. VSTOR Quiescent Current vs Temperature
+10
+12
+14
+16
+18
+20
+22
+24
+−50−40−30−20−10 0
+10 20 30 40 50 60 70 80 90 100
+Temperature (°C)
+Time (s)
+G009 
+Figure 7-9. Sample Period vs Temperature
+150
+200
+250
+300
+350
+400
+−50−40−30−20−10 0
+10 20 30 40 50 60 70 80 90 100
+Temperature (°C)
+Time (ms)
+G010 
+Figure 7-10. Settling Period vs Temperature
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+10
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 11===
+8 Detailed Description
+8.1 Overview
+The BQ25504 is the first of a new family of intelligent integrated energy harvesting Nano-Power management 
+solutions that are well suited for meeting the special needs of ultra low power applications. The product 
+is specifically designed to efficiently acquire and manage the microwatts (µW) to miliwatts (mW) of power 
+generated from a variety of DC sources like photovoltaic (solar) or thermal electric generators (TEGs). The 
+BQ25504 is a highly efficient boost charger targeted toward products and systems, such as wireless sensor 
+networks (WSN) which have stringent power and operational demands. The design of the BQ25504 starts with a 
+DCDC boost charger that requires only microwatts of power to begin operating.
+Once the VSTOR voltage is above VSTOR_CHGEN (1.8 V typical), for example, after a partially discharged 
+battery is attached to VBAT, the boost charger can effectively extract power from low voltage output harvesters 
+such as TEGs or single or dual cell solar panels outputting voltages down to VIN(DC) (130 mV minimum). When 
+starting from VSTOR = VBAT < 100 mV, the cold start circuit needs at least VIN(CS), 600 mV typical, to charge 
+VSTOR up to 1.8 V.
+The BQ25504 implements a programmable maximum power point tracking (MPPT) sampling network to 
+optimize the transfer of power into the device. Sampling of the VIN_DC open circuit voltage is programmed using 
+external resistors, and that sample voltage is held with an external capacitor connected to the VREF_SAMP pin.
+For example solar cells that operate at maximum power point (MPP) of 80% of their open circuit voltage, the 
+resistor divider can be set to 80% of the VIN_DC voltage and the network will control the VIN_DC to operate 
+near that sampled reference voltage. Alternatively, an external reference voltage can be applied directly to the 
+VREF_SAMP pin by a MCU to implement a more complex MPPT algorithm.
+The BQ25504 was designed with the flexibility to support a variety of energy storage elements. The availability 
+of the sources from which harvesters extract their energy can often be sporadic or time-varying. Systems 
+will typically need some type of energy storage element, such as a re-chargeable battery, super capacitor, or 
+conventional capacitor. The storage element will make certain constant power is available when needed for the 
+systems. The storage element also allows the system to handle any peak currents that can not directly come 
+from the input source. To prevent damage to the storage element, both maximum and minimum voltages are 
+monitored against the user programmable undervoltage (VBAT_UV) and overvoltage (VBAT_OV) levels.
+To further assist users in the strict management of their energy budgets, the BQ25504 toggles the battery good 
+flag to signal an attached microprocessor when the voltage on an energy storage battery or capacitor has 
+dropped below a pre-set critical level. This should trigger the shedding of load currents to prevent the system 
+from entering an undervoltage condition. The OV and battery good (VBAT_OK) thresholds are programmed 
+independently.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+11
+Product Folder Links: BQ25504
+
+===PAGE 12===
+8.2 Functional Block Diagram
+VSS
+VIN_DC
+VOC_SAMP
+VREF_SAMP
+VBAT
+LBST
+VSTOR
+VSS
+OK_HYST
+OK_PROG
+AVSS
+VBAT_OK
+VRDIV
+OT_PROG
+VBAT_OV
+VBAT_UV
+Enable
+BAT_SAVE
+Boost Charge
+Controller
+Enable
+Vref
+Interrupt
+Bias Reference
+and Oscillator
+Battery Threshold
+Control
+Cold-Start
+Unit
+MPPT
+Controller
+Temperature
+Sensing
+Element
+Vref
+Vref
+UV
+OT
+OK
+OV
+8.3 Feature Description
+8.3.1 Maximum Power Point Tracking
+Maximum power point tracking (MPPT) is implemented in order to maximize the power extracted from an energy 
+harvester source. The boost converter indirectly modulates the input impedance of the main boost charger by 
+regulating the charger's input voltage, as sensed by the VIN_DC pin, to the sampled reference voltage stored 
+on the VREF_SAMP pin. The MPPT circuit obtains a new reference voltage every 16 s (typical) by periodically 
+disabling the charger for 256 ms (typical) and sampling a fraction of the harvester's open-circuit voltage (VOC). 
+For solar harvesters, the maximum power point is typically 70%-80% of VOC and for thermoelectric harvesters, 
+the MPPT is typically 50%. The exact ratio for MPPT can be optimized to meet the needs of the input source 
+being used by connecting external resistors ROC1 and ROC2 between VIN_DC and GND with mid-point at 
+VOC_SAMP.
+æ
+ö
+ç
+÷
+è
+ø
+OC1
+OC1
+OC2
+R
+VREF_SAMP = VIN_DC(OpenCircuit)
+R
++ R
+(1)
+Spreadsheet SLUC484 provides help on sizing and selecting the resistors.
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+12
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 13===
+The internal MPPT circuitry and the periodic sampling of VIN_DC can be disabled by tying the VOC_SAMP pin 
+to VSTOR. An external reference voltage can be fed to the VREF_SAMP pin. The boost converter will then 
+regulate VIN_DC to the externally provided reference. If input regulation is not desired (i.e. the input source 
+is a low-impedance output battery or power supply instead of a high impedance output energy harvester), 
+VREF_SAMP can be tied to GND.
+8.3.2 Battery Undervoltage Protection
+To prevent rechargeable batteries from being deeply discharged and damaged, and to prevent completely 
+depleting charge from a capacitive storage element, the undervoltage (VBAT_UV) threshold must be set using 
+external resistors. The VBAT_UV threshold voltage when the battery voltage is decreasing is given by Equation 
+2:
+1
+æ
+ö
+ç
+÷
+è
+ø
+UV2
+UV1
+R
+VBAT_UV = VBIAS
++
+R
+(2)
+The sum of the resistors is recommended to be no higher than 10 MΩ that is, RUV1 + RUV2 = 10 MΩ. 
+Spreadsheet SLURAQ1 provides help on sizing and selecting the resistors.
+The undervoltage threshold when the battery voltage is increasing is VBAT_UV plus an internal hysteresis 
+voltage denoted by VBAT_UV_HYST. For the VBAT_UV feature to function properly, the load must be connected 
+to the VSTOR pin while the storage element should be connected to the VBAT pin. Once the VSTOR pin voltage 
+goes above VBAT_UV plus VBAT_UV_HYST threshold, the VSTOR pin and the VBAT pins are effectively 
+shorted through an internal PMOS FET. The switch remains closed until the VSTOR pin voltage falls below the 
+VBAT_UV threshold. The VBAT_UV threshold should be considered a fail safe to the system. The system load 
+should be removed or reduced based on the VBAT_OK threshold which should be set above the VBAT_UV 
+threshold.
+8.3.3 Battery Overvoltage Protection
+To prevent rechargeable batteries from being exposed to excessive charging voltages and to prevent over 
+charging a capacitive storage element, the over-voltage (VBAT_OV) threshold level must be set using external 
+resistors. This is also the voltage value to which the charger will regulate the VSTOR/VBAT pin when the input 
+has sufficient power. The VBAT_OV threshold when the battery voltage is rising is given by Equation 3:
+3
+1
+2
+æ
+ö
+ç
+÷
+è
+ø
+OV2
+OV1
+R
+VBAT_OV =
+VBIAS
++
+R
+(3)
+The sum of the resistors is recommended to be no higher 10 MΩ that is, ROV1 + ROV2 = 10 MΩ. Spreadsheet 
+SLURAQ1 provides help with sizing and selecting the resistors.
+The overvoltage threshold when the battery voltage is decreasing is given by VBAT_OV - VBAT_OV_HYST. 
+Once the voltage at the battery reaches the VBAT_OV threshold, the boost converter is disabled. The charger 
+will start again once the battery voltage drop by VBAT_OV_HYST. When there is excessive input energy, the 
+VBAT pin voltage will ripple between the VBAT_OV and the VBAT_OV - VBAT_OV_HYST levels.
+CAUTION
+If VIN_DC is higher than VSTOR and VSTOR is higher than VBAT_OV, the input VIN_DC is pulled 
+to ground through a small resistance to stop further charging of the attached battery or capacitor. It is 
+critical that if this case is expected, the impedance of the source attached to VIN_DC be higher than 
+20 Ω and not a low impedance source.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+13
+Product Folder Links: BQ25504
+
+===PAGE 14===
+8.3.4 Battery Voltage in Operating Range (VBAT_OK Output)
+The IC allows the user to set a programmable voltage independent of the overvoltage and undervoltage settings 
+to indicate whether the VSTOR voltage (and therefore the VBAT voltage when the PFET between the two pins is 
+turned on) is at an acceptable level. When the battery voltage is decreasing the threshold is set by Equation 4:
+1
+æ
+ö
+ç
+÷
+è
+ø
+OK2
+OK1
+R
+VBAT_OK_PROG = VBIAS
++
+R
+(4)
+When the battery voltage is increasing, the threshold is set by Equation 5:
+1
+æ
+ö
+ç
+÷
+è
+ø
+OK2
+OK3
+OK1
+R
++ R
+VBAT_OK_HYST = VBIAS
++
+R
+(5)
+The sum of the resistors are recommended to be approximately 10 MΩ i.e., ROK1 + ROK2 + ROK3= 10 MΩ. 
+Spreadsheet SLURAQ1 provides help on sizing and selecting the resistors.
+The logic high level of this signal is equal to the VSTOR voltage and the logic low level is ground. The logic 
+high level has ~20 KΩ internally in series to limit the available current to prevent MCU damage until it is fully 
+powered. The VBAT_OK_PROG threshold must be greater than or equal to the UV threshold. Figure 8-1 shows 
+the relative position of the various threshold voltages.
+VSTOR(ABS MAX) = 5.5 V
+VSTOR_CHGEN = 1.8 V typical
+VBAT_UV = resistor programmable
+VBAT_UV + internal VBAT_UV_HYST 
+VBAT_OK = resistor programmable
+VBAT_OK_HYST = resistor programmable 
+VBAT_OV + internal VBAT_OV_HYST 
+VBAT_OV = resistor programmable
+Increasing 
+VSTOR voltage
+Decreasing 
+VSTOR voltage
+GND
+VBAT connected 
+to VSTOR to 
+allow charging
+Signal to turn on 
+system load on 
+VSTOR
+Charging stops to 
+prevent 
+overcharge
+Signal to turn off 
+system load on 
+VSTOR
+VBAT disconnected 
+from VSTOR to 
+prevent overdischarge
+Main Boost Charger on
+(if VIN_DC > 130 mV)
+Cold Start Circuit on 
+(if VIN_DC > 600 mV)
+P(harvester) x Kbq255xx > P(load)
+P(harvester) x Kbq255xx  < P(load)
+Charger resumes 
+charging
+Figure 8-1. Summary of VSTOR Threshold Voltages
+8.3.5 Nano-Power Management and Efficiency
+The high efficiency of the BQ25504 charger is achieved via the proprietary Nano-Power management circuitry 
+and algorithm. This feature essentially samples and holds the VSTOR voltage in order to reduce the average 
+quiescent current.  That is, the internal circuitry is only active for a short period of time and then off for 
+the remaining period of time at the lowest feasible duty cycle.  A portion of this feature can be observed in 
+Figure 9-6 where the VRDIV node is monitored. Here the VRDIV node provides a connection to the VSTOR 
+voltage (first pulse) and then generates the reference levels for the VBAT_OV and VBAT_OK resistor dividers 
+for a short period of time. The divided down values at each pin arecompared against VBIAS as part of the 
+hysteretic control. Since this biases a resistor string, the current through these resistors is only active when the 
+Nano-Power management circuitry makes the connection—hence reducing the overall quiescent current due to 
+the resistors.  This process repeats every 64 ms.
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+14
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 15===
+The BQ25504 boost charger efficiency is shown for various input power levels in Figure 7-1 through Figure 
+7-7.  All data points were captured by averaging the overall input current. This must be done due to the 
+periodic biasing scheme implemented via the Nano-Power management circuitry.  In order to properly measure 
+the resulting input current when calculating the output to input efficiency, the input current efficiency data was 
+gathered using a source meter set to average over at least 50 samples. Quiescent current curves into VSTOR 
+over temperature and voltage is shown at Figure 7-8.
+8.4 Device Functional Modes
+The BQ25504 has three functional modes: cold-start operation, main boost charger enabled and thermal 
+shutdown. The cold start circuitry is powered from VIN_DC. The main boost charger circuitry is powered from 
+VSTOR while the boost power stage is powered from VIN_DC. Details of entering and exiting each mode are 
+explained below.
+8.4.1 Cold-Start Operation (VSTOR < VSTOR_CHGEN, VIN_DC > VIN(CS) and PIN > PIN(CS))
+Whenever VSTOR < VSTOR_CHGEN, VIN_DC ≥ VIN(CS) and PIN > PIN(CS), the cold-start circuit is on. This 
+could happen when there is not input power at VIN_DC to prevent the load from discharging the battery or during 
+a large load transient on VSTOR. During cold start, the voltage at VIN_DC is clamped to VIN(CS) so the energy 
+harvester's output current is critical to providing sufficient cold start input power, PIN(CS) = VIN(CS) X IIN(CS). 
+The cold-start circuit is essentially an unregulated, hysteretic boost converter with lower efficiency compared to 
+the main boost charger. None of the other features function during cold start operation. The cold start circuit's 
+goal is to charge VSTOR higher than VSTOR_CHGEN so that the main boost charger can operate. When a 
+depleted storage element is initially attached to VBAT, as shown in Figure 8-2 and the harvester can provide a 
+voltage > VIN(CS) and total power at least > PIN(CS), assuming minimal system load or leakage at VSTOR and 
+VBAT, the cold start circuit can charge VSTOR above VSTOR_CHGEN. Once the VSTOR voltage reaches the 
+VSTOR_CHGEN threshold, the IC
+1.
+first performs an initialization pulse on VRDIV to reset the feedback voltages,
+2.
+then disables the charger for 32 ms (typical) to allow the VIN_DC voltage to rise to the harvester's open-
+circuit voltage which will be used as the input voltage regulation reference voltage until the next MPPT 
+sampling cycle and
+3.
+lastly performs its first feedback sampling using VRDIV, approximately 64 ms after the initialization pulse.
+Figure 8-2. Charger Operation After a Depleted Storage Element is Attached and Harvester is Available
+The energy harvester must supply sufficient power for the IC to exit cold start. Due to the body diode of the 
+PFET connecting VSTOR and VBAT, the cold start circuit must charge both the capacitor on CSTOR up to the 
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+15
+Product Folder Links: BQ25504
+
+===PAGE 16===
+VSTOR_CHGEN and the storage element connected to VBAT up to VSTOR_CHGEN less a diode drop. When 
+a rechargeable battery with an open protector is attached, the intial charge time is typically short due to the 
+minimum charge needed to close the battery's protector FETs. When large, discharged super capacitors with 
+high DC leakage currents are attached, the intial charge time can be signficant.
+When the VSTOR voltage reaches VSTOR_CHGEN, the main boost charger starts up. When the VSTOR 
+voltage rises to the VBAT_UV threshold, the PMOS switch between VSTOR and VBAT turns on, which provides 
+additional loading on VSTOR and could result in the VSTOR voltage dropping below both the VBAT_UV 
+threshold and the VSTOR_CHGEN voltage, especially if system loads on VSTOR or VBAT are active during 
+this time. Therefore, it is not uncommon for the VSTOR voltage waveform to have incremental pulses (i.e. 
+stair steps) as the IC cycles between cold-start and main boost charger operation before eventually maintaing 
+VSTOR above VSTOR_CHGEN.
+The cold start circuit initially clamps VIN_DC to VIN(CS) = 600 mV typical. If sufficient input power (i.e.,output 
+current from the harvester clamped to VIN(CS)) is not available, it is possible that the cold start circuit cannot 
+raise the VSTOR voltage above VSTOR_CHGEN in order for the main boost conveter to start up. It is highly 
+recommended to add an external PFET between the system load and VSTOR. An inverted VBAT_OK signal can 
+be used to drive the gate of this system-isolating, external PFET. See the Section 10 section for guidance on 
+minimum input power requirements.
+8.4.2 Main Boost Charger Enabled (VSTOR > VSTOR_CHGEN, VIN_DC > VIN(DC) and EN = LOW )
+One way to avoid cold start is to attach a partially charged storage element as shown in Figure 8-3.
+Figure 8-3. Charger Operation after a Partially Charged Storage Element is Attached and Harvester 
+Power is Available
+When no input source is attached, the VSTOR node should be discharged to ground before attaching a storage 
+element. Hot-plugging a storage element that is charged (e.g., the battery protector PFET is closed) and with the 
+VSTOR node more than 100 mV above ground results in the PFET between VSTOR and VBAT remaining off 
+until an input source is attached.
+Assuming the voltages on VSTOR and VBAT are both below 100mV, when a charged storage element is 
+attached (i.e. hot-plugged) to VBAT, the IC.
+1.
+first turns on the internal PFET between the VSTOR and VBAT pins for tBAT_HOT_PLUG (45ms) in order to 
+charge VSTOR to VSTOR_CHGEN then turns off the PFET to prevent the battery from overdischarge,
+2.
+then performs an initialization pulse on VRDIV to reset the feedback voltages,
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+16
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 17===
+3.
+then disables the charger for 32 ms (typical) to allow the VIN_DC voltage to rise to the harvester's open-
+circuit voltage which will be used as the input voltage regulation reference voltage until the next MPPT 
+sampling cycle and
+4.
+lastly performs its first feedback sampling using VRDIV, approximately 64 ms after the initialization pulse.
+If the VSTOR pin voltage remains above the internal under voltage threshold (VBAT_UV) for the additional 64 
+ms after the VRDIV initialization pulse (following the 45-ms PFET on time), the internal PFET turns back on and 
+the main boost charger begins to charge the storage element assuming there is sufficient power available from 
+the harvester at the VIN_DC pin. If VSTOR does not reach the VBAT_UV threshold, then the PFET remains 
+off until the main boost charger can raise the VSTOR voltage to VBAT_UV. If a system load tied to VSTOR 
+discharges VSTOR below VSTOR_GEN or below VBAT_UV during the 32 ms initial MPPT reference voltage 
+measurement or within 110 ms after hot plug, it is recommended to add an external PFET between the system 
+load and VSTOR. An inverted VBAT_OK signal can be used to drive the gate of this system-isolating, external 
+PFET. Otherwise, the VSTOR voltage waveform will have incremental pulses as the IC turns on and off the 
+internal PFET controlled by VBAT_UV or cycles between cold-start and main boost charger operation.
+Once VSTOR is above VSTOR_CHGEN, the main boost charger employs pulse frequency modulation (PFM) 
+mode of control to regulate the voltage at VIN_DC close to the desired reference voltage. The reference voltage 
+is set by the MPPT control scheme as described in the features section. Input voltage regulation is obtained 
+by transferring charge from the input to VSTOR only when the input voltage is higher than the voltage on 
+pin VREF_SAMP. The current through the inductor is controlled through internal current sense circuitry. The 
+peak current in the inductor is dithered internally to up to three pre-determined levels in order to maintain high 
+efficiency of the charger across a wide input current range. The charger transfers up to a maximum of 100 mA 
+average input current (230mA typical peak inductor current). The boost charger is disabled when the voltage on 
+VSTOR reaches the user set VBAT_OV threshold to protect the battery connected at VBAT from overcharging. 
+In order for the battery to charge to VBAT_OV, the input power must exceed the power needed for the load on 
+VSTOR. See the Section 10 section for guidance on minimum input power requirements.
+Steady state operation for the boost charger is shown in Figure 9-3. These plots highlight the inductor current, 
+the VSTOR voltage ripple, input voltage regulation and the LBOOST switching node. The cycle-by-cycle minor 
+switching frequency is a function of the boost converter's inductor value, peak current limit and voltage levels on 
+each side of each inductor. Once the VSTOR capacitor, CSTOR, droops below a minimum value, the hysteretic 
+switching repeats.
+CAUTION
+If VIN_DC is higher than VSTOR and VSTOR is higher than VBAT_OV, the input VIN_DC is pulled 
+to ground through a small resistance to stop further charging of the attached battery or capacitor. It is 
+critical that if this case is expected, the impedance of the source attached to VIN_DC be higher than 
+20 Ω and not a low impedance source.
+8.4.3 Thermal Shutdown
+Rechargeable Li-ion batteries need protection from damage due to operation at elevated temperatures. The 
+application should provide this battery protection and ensure that the ambient temperature is never elevated 
+greater than the expected operational range of 85°C.
+The BQ25504 uses an integrated temperature sensor to monitor the junction temperature of the device. If the 
+OT_PROG pin is tied low, then the temperature threshold for thermal protection is set to TSD_ProtL which is 
+65°C typically. If the OT_PROG is tied high, then the temperature is set to TSD_ProtH which is 120°C typically. 
+Once the temperature threshold is exceeded, the boost converter/charger is disabled and charging ceases. 
+Once the temperature of the device drops below this threshold, the boost converter and or charger can resume 
+operation. To avoid unstable operation near the overtemp threshold, a built-in hysteresis of approximately 5°C 
+has been implemented. Care should be taken to not over discharge the battery in this condition since the boost 
+converter/charger is disabled. However, if the supply voltage drops to the VBAT_UV setting, then the switch 
+between VBAT and VSTOR will open and protect the battery even if the device is in thermal shutdown.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+17
+Product Folder Links: BQ25504
+
+===PAGE 18===
+9 Application and Implementation
+Note
+Information in the following applications sections is not part of the TI component specification, 
+and TI does not warrant its accuracy or completeness. TI’s customers are responsible for 
+determining suitability of components for their purposes, as well as validating and testing their design 
+implementation to confirm system functionality.
+9.1 Application Information
+9.1.1 Storage Element Selection
+In order for the charge management circuitry to protect the storage element from over-charging or discharging, 
+the storage element must be connected to VBAT pin and the system load tied to the VSTOR pin. Many types of 
+elements can be used, such as capacitors, super capacitors or various battery chemistries. A storage element 
+with 100 uF equivalent capacitance is required to filter the pulse currents of the PFM switching charger. The 
+equivalent capacitance of a battery can be computed as computed as:
+CEQ = 2 x mAHrBAT(CHRGD) x 3600 s/Hr / VBAT(CHRGD)
+(6)
+In order for the storage element to be able to charge VSTOR capacitor (CSTOR) within the tVB_HOT_PLUG (50 ms 
+typical) window at hot-plug; therefore preventing the IC from entering cold start, the time constant created by the 
+storage element's series resistance (plus the resistance of the internal PFET switch) and equivalent capacitance 
+must be less than tVB_HOT_PLUG . For example, a battery's resistance can be computed as:
+RBAT = VBAT / IBAT(CONTINUOUS) from the battery specifications.
+(7)
+The storage element must be sized large enough to provide all of the system load during periods when the 
+harvester is no longer providing power. The harvester is expected to provide at least enough power to fully 
+charge the storage element while the system is in low power or sleep mode. Assuming no load on VSTOR (i.e., 
+the system is in low power or sleep mode), the following equation estimates charge time from voltage VBAT1 to 
+VBAT2 for given input power is:
+Refer to SLUC462 for a design example that sizes the storage element.
+PIN × ηEST × tCHRG = 1/2 × CEQ X (VBAT22 - VBAT12)
+(8)
+Note that if there are large load transients or the storage element has significant impedance then it may be 
+necessary to increase the CSTOR capacitor from the 4.7uF minimum or add additional capacitance to VBAT in 
+order to prevent a droop in the VSTOR voltage. See below for guidance on sizing capacitors.
+9.1.2 Inductor Selection
+The boost charger needs an appropriately sized inductor for proper operation. The inductor's saturation current 
+should be at least 25% higher than the expected peak inductor currents recommended below if system load 
+transients on VSTOR are expected.  Since this device uses hysteretic control, the boost charger is considered 
+naturally stable systems (single order transfer function). 
+For the boost charger to operate properly, an inductor of appropriate value must be connected between 
+LBOOST, pin 20, and VIN_DC, pin 2. The boost charger internal control circuitry is designed to control the 
+switching behavior with a nominal inductance of 22 µH ± 20%. The inductor must have a peak current capability 
+of > 300 mA with a low series resistance (DCR) to maintain high efficiency.
+A list of inductors recommended for this device is shown in Table 9-1.
+Table 9-1. Recommended Inductors
+INDUCTANCE (µH)
+DIMENSIONS (mm)
+PART NUMBER
+MANUFACTURER(1)
+22
+4.0x4.0x1.7
+LPS4018-223M
+Coilcraft
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+18
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 19===
+Table 9-1. Recommended Inductors (continued)
+INDUCTANCE (µH)
+DIMENSIONS (mm)
+PART NUMBER
+MANUFACTURER(1)
+22
+3.8x3.8x1.65
+744031220
+Wurth
+22
+2.8x2.8x2.8
+744025220
+Wurth
+(1)
+See WHAT? concerning recommended third-party products.
+9.1.3 Capacitor Selection
+In general, all the capacitors need to be low leakage. Any leakage the capacitors have will reduce efficiency, 
+increase the quiescent current and diminish the effectiveness of the IC for energy harvesting.
+9.1.3.1 VREF_SAMP Capacitance
+The MPPT operation depends on the sampled value of the open circuit voltage and the input regulation follows 
+the voltage stored on the CREF capacitor. This capacitor is sensitive to leakage since the holding period 
+is around 16 seconds. As the capacitor voltage drops due to any leakage, the input regulation voltage also 
+drops preventing proper operation from extraction the maximum power from the input source. Therefore, it is 
+recommended that the capacitor be an X7R or COG low leakage capacitor.
+9.1.3.2 VIN_DC Capacitance
+Energy from the energy harvester input source is initially stored on a capacitor, CIN, connected to VIN_DC, pin 
+2, and VSS, pin 1. For energy harvesters which have a source impedance which is dominated by a capacitive 
+behavior, the value of the harvester capacitor should scaled according to the value of the output capacitance of 
+the energy source, but a minimum value of 4.7 µF is recommended.
+9.1.3.3 VSTOR Capacitance
+Operation of the BQ25504 requires two capacitors to be connected between VSTOR, pin 15, and VSS, pin 1. A 
+high frequency bypass capacitor of at 0.1 µF should be placed as close as possible between VSTOR and VSS. 
+In addition, a low ESR capacitor of at least 4.7 µF should be connected in parallel.
+9.1.3.4 Additional Capacitance on VSTOR or VBAT
+If there are large, fast system load transients and/or the storage element has high resistance, then the CSTOR 
+capacitors may momentarily discharge below the VBAT_UV threshold in response to the transient. This causes 
+the BQ25504 to turn off the PFET switch between VSTOR and VBAT and turn on the boost charger. The CSTOR 
+capacitors may further discharge below the VSTOR_CHGEN threshold and cause the BQ25504 to enter Cold 
+Start. For instance, some Li-ion batteries or thin-film batteries may not have the current capacity to meet the 
+surge current requirements of an attached low power radio. To prevent VSTOR from drooping, either increasing 
+the CSTOR capacitance or adding additional capacitance in parallel with the storage element is recommended. 
+For example, if boost charger is configured to charge the storage element to 4.2 V and a 500 mA load transient 
+of 50 µs duration infrequently occurs, then, solving I = C x dv/dt for CSTOR gives:
+500 mA
+50
+s
+CSTOR
+10.5
+F
+(4.2 V
+1.8 V)
+´
+m
+³
+=
+m
+-
+(9)
+Note that increasing CSTOR is the recommended solution but will cause the boost charger to operate in the less 
+efficient cold start mode for a longer period at startup compared to using CSTOR = 4.7 µF. If longer cold start run 
+times are not acceptable, then place the additional capacitance in parallel with the storage element.
+For a recommended list of standard components, see the EVM User’s Guide (SLUUAA8).
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+19
+Product Folder Links: BQ25504
+
+===PAGE 20===
+9.2 Typical Applications
+9.2.1 Solar Application Circuit
+1
+2
+4
+3
+5
+6
+7
+8
+9
+10
+11
+12
+16
+15
+14
+13
+`
+CHVR
+LBST
+CSTOR
+VSTOR
+VBAT_OK
+BQ25504
+Solar
+Cell
++
+-
+ROC1
+ROC2
+CREF
+ROV2
+ROK1
+ROK2
+ROK3
+Battery(>100µF)
+VSS
+VIN_DC
+AVSS
+VOC_SAMP
+VREF_SAMP
+OT_PROG   VBAT_OV  VRDIV  VBAT_UV
+LBST     VSTOR       VBAT        VSS
+OK_HYST
+OK_PROG
+VBAT_OK
+4.42 MΩ
+1.43MΩ
+4.22 MΩ
+4.02MΩ
+4.42 MΩ
+15.62MΩ
+0.01µF
+4.7 µF
+(min)
+22µH
+4.7µF
+RUV2
+4.42 MΩ
+RUV1
+5.60 MΩ
+ROV1
+5.90MΩ
+CBYP
+(1)
+(2)
+A.
+Place close as possible to IC pin 15 (VSTOR) and pin 13 (VSS)
+B.
+See the Capacitor Selection section for guidance on sizing CSTOR
+Figure 9-1. Typical Solar Application Circuit
+9.2.1.1 Design Requirements
+The desired voltage levels are VBAT_OV = 3.15 V, VBAT_UV = 2.20 V, VBAT_OK = 2.44 V, VBAT_OK_HYST = 
+2.80 V and MPP (VOC) = 78% which is typical for solar panels. There are no large load transients expected. The 
+IC must stop charging if its junction temperature is above 65°C. The simulated solar panel open circuit voltage is 
+1.0 V.
+9.2.1.2 Detailed Design Procedure
+The recommended L1 = 22 µH, CBYP = 0.01 µF and low leakage CREF = 10 nF are selected. In order to ensure 
+the fastest recovery of the harvester output voltage to the MPPT level following power extraction, the minimum 
+recommended CIN = 4.7 µF is selected. Because no large system load transients are expected and to ensure 
+fast charge time during cold start, the minimum recommended CSTOR = 4.7 µF. To stop charging when the IC 
+junction temperature is above 65°C, the OT_PROG pin is tied to ground.
+•
+With VBAT_UV < VBAT_OV ≤ 5.5 V, to size the VBAT_OV resistors, first choose RSUMOV = ROV1 + ROV2 = 
+10 MΩ then solve Equation 3 for
+OV
+OV1
+RSUM
+VBIAS
+3
+3 10 M
+1.25 V
+R
+5.95 M
+5.90 M
+closest 1% value then
+2
+VBAT _OV
+2
+3.15 V
+´
+W ´
+=
+´
+´
+=
+W ®
+W
+(10)
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+20
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 21===
+•
+ROV2 = RSUMOV - ROV1 = 10 MΩ - 5.95 MΩ = 4.05 MΩ → 4.02 MΩ resulting in VBAT_OV = 3.15 V
+•
+To size the VBAT_UV resistors, first choose RSUMUV = RUV1 + RUV2 = 10 MΩ then solve Equation 2 for
+UV
+UV1
+UV
+RSUM
+VBIAS
+10 M
+1.25 V
+R
+5.68 M
+5.60 M
+closest 1% value then
+VBAT
+2.2 V
+´
+W ´
+=
+=
+=
+W ®
+W
+(11)
+•
+RUV2 = RSUMUV - RUV1 = 10 MΩ - 5.60 MΩ = 4.4 MΩ → 4.42 MΩ closest 1% resistor resulting in
+VBAT_UV = 2.2 V.
+•
+With VBAT_OV ≥ VBAT_OK_HYST > VBAT_OK ≥ VBAT_UV, to size the VBAT_OK and VBAT_OK_HYST 
+resistors,
+first choose RSUMOK = ROK1 + ROK2 + ROK3 = 10 MΩ then solve Equation 4 and Equation 5 for
+K
+OK1
+O
+1.25 V
+R
+10 M
+4.46
+VBAT _OK _HYST
+2.8
+VBIAS
+RSUM
+M
+4.42 M
+closest 1% resistor then
+V
+æ
+ö
+=
+=
+´
+W =
+ç
+÷
+W
+W
+ø
+®
+è
+´
+(12)
+OK2
+OK1
+2.45 V
+R
+1
+R
+1
+4.24
+VBIAS
+1.2
+VBAT _O
+5 V
+K _PROG
+M
+4.07 M , then
+æ
+ö
+æ
+ö
+=
+-
+´
+=
+-
+´
+ç
+÷
+ç
+÷
+è
+ø
+W =
+W
+è
+ø
+(13)
+•
+ROK3 = RSUMOK - ROK1 - ROK2 = 10 MΩ - 4.42 MΩ - 4.22 MΩ = 1.36 MΩ → 1.43 MΩ to give
+VBAT_OK = 2.44 V and VBAT_OK_HYST = 2.85 V.
+•
+Keeping in mind that VREF_SAMP stores the MPP voltage for the harvester, first choose RSUMOC = ROC1 + 
+ROC2 = 20 MΩ then solve Equation 1 for
+OC1
+OC
+R
+RSUM
+0.78
+20 M
+15.6 M , then
+VIN_DC(OC)
+VREF _SAMP
+æ
+ö
+=
+´
+=
+´
+W =
+W
+ç
+÷
+è
+ø
+(14)
+(
+)
+OC2
+OC
+VREF _SAMP
+R
+RSUM
+1
+20 M
+1 0.78
+4.4 M
+closest 1% resistors
+VIN_DC(OC)
+æ
+ö
+=
+´
+-
+=
+W
+-
+=
+W
+ç
+÷
+è
+ø
+(15)
+•
+SLURAQ1 provides help on sizing and selecting the resistors.
+9.2.1.3 Application Curves
+VINDC = sourcemeter with VSOURCE = 1.0 V and compliance of 2.75 
+mA
+VBAT connected to 0.1 F depleted supercap
+No resistance load on VSTOR
+Figure 9-2. Startup into Depleted Storage Element
+VIN_DC = sourcemeter with VSOURCE = 1 V and compliance of 10.5 
+mA
+VBAT = 0.1 F supercap
+VSTOR = 2 kΩ resistive load
+Figure 9-3. Boost Charger Operational Waveforms
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+21
+Product Folder Links: BQ25504
+
+===PAGE 22===
+VIN_DC = sourcemeter with VSOURCE = 1 V and compliance of 10.5 
+mA
+VBAT = 0.1 F supercap
+VSTOR = open to 500 Ω to open resistive load (IL = load current on 
+VSTOR)
+Figure 9-4. 5 mA Load Transient on VSTOR
+VIN_DC = sourcemeter with VSOURCE = 1 V and compliance of 10.5 
+mA
+VBAT = sourcemeter with VSOURCE = 2.8V and compliance of 1A
+IL = inductor current
+Figure 9-5. MPPT Operation
+VIN_DC = sourcemeter with VSOURCE = 1 V and compliance of 10.5 
+mA
+VBAT = sourcemeter with VSOURCE = 2.8 V and compliance of 1A
+Figure 9-6. VRDIV Operation
+VIN_DC = sourcemeter with VSOURCE = 1 V and compliance of 2.75 
+mA
+No storage element on VBAT
+VSTOR artificially ramped from 0V to 3.15 V to 0 V using a power amp 
+driven by a function generator
+Figure 9-7. VBAT_OK Operation
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+22
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 23===
+9.2.2 TEG Application Circuit
+Thermo electric
+generator
+1
+2
+4
+3
+5
+6
+7
+8
+9
+10
+11
+12
+16
+15
+14
+13
+`
+CHVR
+LBST
+VSTOR
+VBAT_OK
+BQ25504
+ROC1
+ROC2
+CREF
+ROV2
+ROK1
+ROK2
+ROK3
+Battery(>100µF)
+VSS
+VIN_DC
+AVSS
+VOC_SAMP
+VREF _SAMP
+OT_PROG VBAT_OV  VRDIV  VBAT_UV
+LBST
+VSTOR       VBAT
+VSS
+OK_HYST
+OK_PROG
+VBAT_OK
+3.32 MΩ
+542kΩ
+6.12 MΩ
+5.62MΩ
+10 MΩ
+10 MΩ
+0.01µF
+22µH
+4.7µF
+RUV2
+6.12MΩ
+RUV1
+3.83MΩ
+ROV1
+4.42MΩ
+VSTOR
+CSTOR
+4.7 µF
+(min)
+CBYP
+(1)
+(2)
+A.
+Place close as possible to IC pin 15 (VSTOR) and pin 13 (VSS)
+B.
+See the Capacitor Selection section for guidance on sizing CSTOR
+Figure 9-8. Typical TEG Application Circuit
+9.2.2.1 Design Requirements
+The desired voltage levels are VBAT_OV = 4.25 V, VBAT_UV = 3.20 V, VBAT_OK = 3.55 V, VBAT_OK_HYST 
+= 3.76 V and MPP (VOC) = 50% which is typical for TEG harvesters. The IC must stop charging if its junction 
+temperature is above 120°C. The simulated TEG open circuit voltage is 1.0 V.
+9.2.2.2 Detailed Design Procedure
+The recommended L1 = 22 µH, CBYP = 0.01 µF and low leakage CREF = 10 nF are selected. In order to ensure 
+the fastest recovery of the harvester output voltage to the MPPT level following power extraction, the minimum 
+recommended CIN = 4.7 µF is selected. Because no large system load transients are expected and to ensure 
+fast charge time during cold start, the minimum recommended CSTOR = 4.7 µF. To stop charging when the IC 
+junction temperature is above 120°C, the OT_PROG pin is tied to VSTOR.
+Referring back to the procedure in Section 9.2.1.2 or using the spreadsheet calculator at SLURAQ1 gives the 
+following values:
+•
+ROV1 = 4.42 MΩ, ROV2 = 5.49 MΩ resulting in VBAT_OV = 4.26 V due to rounding to the nearest 1% resistor.
+•
+RUV1 = 3.83 MΩ, RUV2 = 6.04 MΩ resulting in VBAT_UV = 3.22 V due to rounding to the nearest 1% resistor
+•
+ROK1 = 3.32 MΩ, ROK2 = 6.04 MΩ, ROK3 = 0.536 MΩ resulting in VBAT_OK = 3.52 V and
+VBAT_OK_HYST = 3.73 V after rounding.
+•
+ROC1 = 10 MΩ and ROC2 = 10 MΩ gives 50% MPP voltage.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+23
+Product Folder Links: BQ25504
+
+===PAGE 24===
+9.2.2.3 Application Curves
+VINDC = sourcemeter with VSOURCE = 2.0 V and compliance 
+of 1 mA
+VBAT connected to LiIon battery
+VSTOR = 50 kΩ resistor
+Figure 9-9. Startup by Attaching Charged Storage 
+Element
+VIN_DC = sourcemeter with VSOURCE = 2.0 V and compliance of 100 
+mA
+VBAT connected to LiIon battery
+VSTOR = 100 kΩ resistive load (IL = inductor current)
+Figure 9-10. Boost Charger Operational 
+Waveforms
+VIN_DC = sourcemeter with VSOURCE = 2.0 V and compliance of 1 mA
+VBAT connected to LiIon battery
+VSTOR = open to 50Ω to open resistive load (IL = load current on 
+VSTOR)
+Figure 9-11. 50 mA Load Transient on VSTOR
+VIN_DC = sourcemeter with VSOURCE = 2.0 V and compliance of 1 mA
+VBAT connected to LiIon battery
+IL = inductor current
+Figure 9-12. MPPT Operation
+VIN_DC = sourcemeter with VSOURCE = 2.0 V and compliance of 1 mA
+VBAT connected to LiIon battery
+Figure 9-13. VRDIV Operation
+VIN_DC = sourcemeter with VSOURCE = 2.0 V and compliance of 1 mA
+No storage element on VBAT
+VSTOR artificially ramped from 0V to 4.25V to 0V using a power amp 
+driven by a function generator
+Figure 9-14. VBAT_OK Operation
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+24
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 25===
+9.2.3 MPPT Disabled, Low Impedance Source Application Circuit
+1
+2
+4
+3
+5
+6
+7
+8
+9
+10
+11
+12
+16
+15
+14
+13
+`
+CHVR
+LBST
+VSTOR
+VBAT_OK
+BQ25504
+VSTOR
+ROV2
+ROK1
+ROK2
+ROK3
+VSS
+VIN_DC
+AVSS
+VOC_SAMP
+VREF _SAMP
+OT_PROG VBAT_OV  VRDIV  VBAT_UV
+LBST
+VSTOR       VBAT
+VSS
+OK_HYST
+OK_PROG
+VBAT_OK
+22µH
+4.7µF
+ROV1
+CSTOR
+CBYP
+(1)
+(2)
+Primary Battery or
+other Low Z source
+VSTOR
+A.
+Place close as possible to IC pin 15 (VSTOR) and pin 13 (VSS)
+B.
+See the Capacitor Selection section for guidance on sizing CSTOR
+Figure 9-15. Typical MPPT Disabled Application Circuit (Low Iq Boost Converter from Low Impedance 
+Source)
+9.2.3.1 Design Requirements
+The input source is a low impedance 1.2 V battery therefore MPPT is not needed. The output will be a low ESR 
+capacitor therefore VSTOR can be tied to VBAT and VBAT_UV is not needed. The desired voltage levels are 
+VBAT_OV = 3.30 V, VBAT_OK = 2.80 V, VBAT_OK_HYST = 3.10 V, and MPPT disabled. The IC must stop 
+charging if its junction temperature is above 65°C. Load transients are expected.
+9.2.3.2 Detailed Design Procedure
+The recommended L1 = 22 µH, CBYP = 0.01 µF and low leakage CREF = 10 nF are selected. The minimum 
+recommended CIN = 4.7 µF is selected. To prevent VSTOR from drooping during system load transients, 
+CSTOR is set to 100 µF. To disable the sampling for MPPT, the VOC_SAMP pin is tied to VSTOR. To disable the 
+input voltage regulation circuit, the VREF_SAMP pin is tied to GND. Since the VBAT_UV function is not needed, 
+the VBAT_UV can be tied to VSTOR. To stop charging when the IC junction temperature is above 65°C, the 
+OT_PROG pin is tied to GND.
+Referring back to the procedure in Section 9.2.1.2 or using the spreadsheet calculator at SLURAQ1 gives the 
+following values:
+•
+ROV1 = 5.62 MΩ, ROV2 = 4.22 MΩ resulting in VBAT_OV = 3.28 V due to rounding to the nearest 1% resistor.
+•
+ROK1 = 4.12 MΩ, ROK2 = 5.11 MΩ, ROK3 = 0.976 MΩ resulting in VBAT_OK = 2.80 V and VBAT_OK_HYST = 
+3.10 V after rounding.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+25
+Product Folder Links: BQ25504
+
+===PAGE 26===
+9.2.3.3 Application Curves
+VIN_DC = low impedance voltage source = 1.5 V
+VBAT = VSTOR = 100 µF
+VSTOR = 500 Ω resistor
+Figure 9-16. Startup
+VIN_DC = low impedance voltage source = 1.5 V
+VBAT = VSTOR = 100 µF
+VSTOR = 330 Ω resistive load (IL = inductor current)
+Figure 9-17. Boost Charger Operational 
+Waveforms
+VIN_DC = low impedance voltage source = 1.5 V )
+VBAT = VSTOR = 100 µF
+VSTOR = open to 75 Ω to open resistive load (IL = load current on 
+VSTOR
+Figure 9-18. 40 mA Load Transient on VSTOR
+VIN_DC = low impedance voltage source = 1.5 V
+VBAT = VSTOR = 100 µF
+Figure 9-19. VRDIV Operation
+VIN_DC = low impedance voltage source = 1.5 V
+VBAT = VSTOR = 100 µF
+VSTOR artificially ramped from 0 V to 3.3 V to 0 V using a power amp driven by a function generator
+Figure 9-20. VBAT_OK Operation
+10 Power Supply Recommendations
+The energy harvesting source (e.g., solar panel, TEG, vibration element) must provide a minimum level of power 
+for the IC to operate as designed. The IC's minimum input power required to exit cold start can be estimated as:
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+26
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 27===
+(
+)
+(
+)
+2
+@1.8V
+1.8V
+I
+STR _ELM_LEAK
+1.8V
+RSTOR(CS)
+PIN
+PIN(CS)
+VIN(CS) IIN(CS)
+0.05
+-
+´
++
+>
+=
+´
+>
+(16)
+where I-STR_ELM_LEAK@1.8V is the storage element leakage current at 1.8V and
+RSTOR(CS) is the equivalent resistive load on VSTOR during cold start and 0.05 is an estimate of the worst 
+case efficiency of the cold start circuit.
+Once the IC is out of cold start and the system load has been activated (e.g., using the VBAT_OK signal), the 
+energy harvesting element must provide the main boost charger with at least enough power to meet the average 
+system load. Assuming RSTOR(AVG) represents the average resistive load on VSTOR, the simplified equation 
+below gives an estimate of the IC's minimum input power needed during system operation:
+(
+)
+2
+EST
+@ VBAT _ OV
+VBAT _OV
+PIN
+PLOAD
+VBAT _OV
+I
+STR _ELM_LEAK
+RSTOR(AVG)
+´ h
+>
+=
++
+´ -
+(17)
+where ηEST can be derived from the datasheet efficiency curves for the given input voltage and current and 
+VBAT_OV. The simplified equation above assumes that, while the harvester is still providing power, the system 
+goes into low power or sleep mode long enough to charge the storage element so that it can power the system 
+when the harvester eventually is down. Refer to spreadsheet SLUC462 for a design example that sizes the 
+energy harvester.
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+27
+Product Folder Links: BQ25504
+
+===PAGE 28===
+11 Layout
+11.1 Layout Guidelines
+As for all switching power supplies, the PCB layout is an important step in the design, especially at high peak 
+currents and high switching frequencies. If the layout is not carefully done, the boost charger could show stability 
+problems as well as EMI problems. Therefore, use wide and short traces for the main current path and for the 
+power ground paths. The input and output capacitors as well as the inductors should be placed as close as 
+possible to the IC. For the boost charger, first priority are the output capacitors, including the 0.1 uF bypass 
+capacitor (CBYP), followed by CSTOR, which should be placed as close as possible between VSTOR, pin 15, 
+and VSS, pin 1 or 13. Next, the input capacitor, CIN, should be placed as close as possible between VIN_DC, 
+pin 2, and VSS, pin 1. Last in priority is the boost charger inductor, L1, which should be placed close to LBOOST, 
+pin 16, and VIN_DC, pin 2 if possible. It is best to use vias and bottom traces for connecting the inductor to its 
+respective pins instead of the capacitors.
+To minimize noise pickup by the high impedance voltage setting nodes (VBAT_OV, VBAT_UV, OK_PROG, 
+OK_HYST), the external resistors should be placed so that the traces connecting the midpoints of each divider 
+to their respective pins are as short as possible. When laying out the non-power ground return paths (e.g. from 
+resistors and CREF), it is recommended to use short traces as well, separated from the power ground traces 
+and connected to AVSS pin 12. This avoids ground shift problems, which can occur due to superimposition of 
+power ground current and control ground current. The PowerPad should not be used as a power ground return 
+path.
+The remaining pins are digital signals with minimal layout restrictions. See Figure 11-1 for an example layout.
+In order to maximize efficiency at light load, the use of voltage level setting resistors > 1 MΩ is recommended. 
+In addition, the sample and hold circuit output capacitor on VREF_SAMP must hold the voltage for 16 s. During 
+board assembly, contaminants such as solder flux and even some board cleaning agents can leave residue 
+that may form parasitic resistors across the physical resistors/capacitors and/or from one end of a resistor/
+capacitor to ground, especially in humid, fast airflow environments. This can result in the voltage regulation 
+and threshold levels changing significantly from those expected per the installed components. Therefore, it is 
+highly recommended that no ground planes be poured near the voltage setting resistors or the sample and hold 
+capacitor. In addition, the boards must be carefully cleaned, possibly rotated at least once during cleaning, and 
+then rinsed with de-ionized water until the ionic contamination of that water is well above 50 Mohm. If this is not 
+feasible, then it is recommended that the sum of the voltage setting resistors be reduced to at least 5X below the 
+measured ionic contamination.
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+28
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 29===
+11.2 Layout Example
+Figure 11-1. Recommended Layout
+11.3 Thermal Considerations
+Implementation of integrated circuits in low-profile and fine-pitch surface-mount packages typically requires 
+special attention to power dissipation. Many system-dependent issues such as thermal coupling, airflow, added 
+heat sinks and convection surfaces, and the presence of other heat-generating components affect the power-
+dissipation limits of a given component.
+Three basic approaches for enhancing thermal performance are listed below.
+•
+Improving the power-dissipation capability of the PCB design
+•
+Improving the thermal coupling of the component to the PCB
+•
+Introducing airflow in the system
+For more details on how to use the thermal parameters in the Thermal Table, check the Thermal Characteristics 
+Application Note (SZZA017) and the IC Package Thermal Metrics Application Note (SPRA953).
+www.ti.com
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+Copyright © 2023 Texas Instruments Incorporated
+Submit Document Feedback
+29
+Product Folder Links: BQ25504
+
+===PAGE 30===
+12 Device and Documentation Support
+12.1 Device Support
+12.1.1 Third-Party Products Disclaimer
+TI'S PUBLICATION OF INFORMATION REGARDING THIRD-PARTY PRODUCTS OR SERVICES DOES NOT 
+CONSTITUTE AN ENDORSEMENT REGARDING THE SUITABILITY OF SUCH PRODUCTS OR SERVICES 
+OR A WARRANTY, REPRESENTATION OR ENDORSEMENT OF SUCH PRODUCTS OR SERVICES, EITHER 
+ALONE OR IN COMBINATION WITH ANY TI PRODUCT OR SERVICE.
+12.1.2 Zip Files
+•
+http://www.ti.com/lit/zip/SLUC484
+•
+http://www.ti.com/lit/zip/SLURAQ1
+•
+http://www.ti.com/lit/zip/SLUC462
+12.2 Documentation Support
+12.2.1 Related Documentation
+For related documentation see the following:
+•
+EVM User’s Guide, SLUUAA8
+•
+Thermal Characteristics Application Note, SZZA017
+•
+IC Package Thermal Metrics Application Note, SPRA953
+12.3 Receiving Notification of Documentation Updates
+To receive notification of documentation updates, navigate to the device product folder on ti.com. Click on 
+Subscribe to updates to register and receive a weekly digest of any product information that has changed. For 
+change details, review the revision history included in any revised document.
+12.4 Support Resources
+TI E2E™ support forums are an engineer's go-to source for fast, verified answers and design help — straight 
+from the experts. Search existing answers or ask your own question to get the quick design help you need.
+Linked content is provided "AS IS" by the respective contributors. They do not constitute TI specifications and do 
+not necessarily reflect TI's views; see TI's Terms of Use.
+12.5 Trademarks
+TI E2E™ is a trademark of Texas Instruments.
+All trademarks are the property of their respective owners.
+12.6 Electrostatic Discharge Caution
+This integrated circuit can be damaged by ESD. Texas Instruments recommends that all integrated circuits be handled 
+with appropriate precautions. Failure to observe proper handling and installation procedures can cause damage.
+ESD damage can range from subtle performance degradation to complete device failure. Precision integrated circuits may 
+be more susceptible to damage because very small parametric changes could cause the device not to meet its published 
+specifications.
+12.7 Glossary
+TI Glossary 
+This glossary lists and explains terms, acronyms, and definitions.
+13 Mechanical, Packaging, and Orderable Information
+The following pages include mechanical, packaging, and orderable information. This information is the most 
+current data available for the designated devices. This data is subject to change without notice and revision of 
+this document. For browser-based versions of this data sheet, refer to the left-hand navigation.
+BQ25504
+SLUSAH0G – OCTOBER 2011 – REVISED AUGUST 2023
+www.ti.com
+30
+Submit Document Feedback
+Copyright © 2023 Texas Instruments Incorporated
+Product Folder Links: BQ25504
+
+===PAGE 31===
+PACKAGE OPTION ADDENDUM
+www.ti.com
+9-Nov-2025
+PACKAGING INFORMATION
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+BQ25504RGTR
+Active
+Production
+VQFN (RGT) | 16
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 85
+B5504
+BQ25504RGTR.B
+Active
+Production
+VQFN (RGT) | 16
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 85
+B5504
+BQ25504RGTT
+Active
+Production
+VQFN (RGT) | 16
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 85
+B5504
+BQ25504RGTT.B
+Active
+Production
+VQFN (RGT) | 16
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 85
+B5504
+ 
+(1) Status:  For more details on status, see our product life cycle.
+ 
+(2) Material type:  When designated, preproduction parts are prototypes/experimental devices, and are not yet approved or released for full production. Testing and final process, including without limitation quality assurance,
+reliability performance testing, and/or process qualification, may not yet be complete, and this item is subject to further changes or possible discontinuation. If available for ordering, purchases will be subject to an additional
+waiver at checkout, and are intended for early internal evaluation purposes only. These items are sold without warranties of any kind.
+ 
+(3) RoHS values:  Yes, No, RoHS Exempt. See the TI RoHS Statement for additional information and value definition.
+ 
+(4) Lead finish/Ball material:  Parts may have multiple material finish options. Finish options are separated by a vertical ruled line. Lead finish/Ball material values may wrap to two lines if the finish value exceeds the maximum
+column width.
+ 
+(5) MSL rating/Peak reflow:  The moisture sensitivity level ratings and peak solder (reflow) temperatures. In the event that a part has multiple moisture sensitivity ratings, only the lowest level per JEDEC standards is shown.
+Refer to the shipping label for the actual reflow temperature that will be used to mount the part to the printed circuit board.
+ 
+(6) Part marking:  There may be an additional marking, which relates to the logo, the lot trace code information, or the environmental category of the part.
+ 
+Multiple part markings will be inside parentheses. Only one part marking contained in parentheses and separated by a "~" will appear on a part. If a line is indented then it is a continuation of the previous line and the two
+combined represent the entire part marking for that device.
+ 
+Important Information and Disclaimer:The information provided on this page represents TI's knowledge and belief as of the date that it is provided. TI bases its knowledge and belief on information provided by third parties, and
+makes no representation or warranty as to the accuracy of such information. Efforts are underway to better integrate information from third parties. TI has taken and continues to take reasonable steps to provide representative
+and accurate information but may not have conducted destructive testing or chemical analysis on incoming materials and chemicals. TI and TI suppliers consider certain information to be proprietary, and thus CAS numbers
+and other limited information may not be available for release.
+ 
+In no event shall TI's liability arising out of such information exceed the total purchase price of the TI part(s) at issue in this document sold by TI to Customer on an annual basis.
+ 
+Addendum-Page 1
+
+===PAGE 32===
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+27-Jul-2023
+TAPE AND REEL INFORMATION
+Reel Width (W1)
+REEL DIMENSIONS
+A0
+B0
+K0
+W
+Dimension designed to accommodate the component length
+Dimension designed to accommodate the component thickness
+Overall width of the carrier tape
+Pitch between successive cavity centers
+Dimension designed to accommodate the component width
+TAPE DIMENSIONS
+K0
+ P1
+B0 W
+A0
+Cavity
+QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+Pocket Quadrants
+Sprocket Holes
+Q1
+Q1
+Q2
+Q2
+Q3
+Q3
+Q4
+Q4
+User Direction of Feed
+P1
+Reel
+Diameter
+ 
+*All dimensions are nominal
+Device
+Package
+Type
+Package
+Drawing
+Pins
+SPQ
+Reel
+Diameter
+(mm)
+Reel
+Width
+W1 (mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+BQ25504RGTR
+VQFN
+RGT
+16
+3000
+330.0
+12.4
+3.3
+3.3
+1.1
+8.0
+12.0
+Q2
+BQ25504RGTT
+VQFN
+RGT
+16
+250
+180.0
+12.4
+3.3
+3.3
+1.1
+8.0
+12.0
+Q2
+Pack Materials-Page 1
+
+===PAGE 33===
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+27-Jul-2023
+TAPE AND REEL BOX DIMENSIONS
+Width (mm)
+W
+L
+H
+ 
+*All dimensions are nominal
+Device
+Package Type
+Package Drawing
+Pins
+SPQ
+Length (mm)
+Width (mm)
+Height (mm)
+BQ25504RGTR
+VQFN
+RGT
+16
+3000
+346.0
+346.0
+33.0
+BQ25504RGTT
+VQFN
+RGT
+16
+250
+210.0
+185.0
+35.0
+Pack Materials-Page 2
+
+===PAGE 34===
+
+===PAGE 35===
+www.ti.com
+PACKAGE OUTLINE
+C
+16X 0.30
+0.18
+1.68
+0.07
+16X 0.5
+0.3
+1.0
+0.8
+(DIM A) TYP
+0.05
+0.00
+12X 0.5
+4X
+1.5
+A
+3.1
+2.9
+B
+3.1
+2.9
+4X (0.45)
+VQFN - 1 mm max height
+RGT0016C
+PLASTIC QUAD FLATPACK - NO LEAD
+4222419/E   07/2025
+SIDE WALL 
+METAL THICKNESS
+DIM A
+OPTION 1
+OPTION 2
+0.1
+0.2
+PIN 1 INDEX AREA
+0.08
+SEATING PLANE
+1
+4
+9
+12
+5
+8
+16
+13
+(OPTIONAL)
+PIN 1 ID
+0.1
+C A B
+0.05
+C
+EXPOSED
+THERMAL PAD
+SYMM
+SYMM
+NOTES:
+ 
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+    per ASME Y14.5M. 
+2. This drawing is subject to change without notice. 
+3. The package thermal pad must be soldered to the printed circuit board for thermal and mechanical performance.
+SCALE  3.600
+
+===PAGE 36===
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.07 MIN
+ALL AROUND
+0.07 MAX
+ALL AROUND
+16X (0.24)
+16X (0.6)
+(
+0.2) TYP
+VIA
+12X (0.5)
+(2.8)
+(2.8)
+(0.58)
+TYP
+(
+1.68)
+(R0.05)
+ALL PAD CORNERS
+(0.58) TYP
+VQFN - 1 mm max height
+RGT0016C
+PLASTIC QUAD FLATPACK - NO LEAD
+4222419/E   07/2025
+SYMM
+1
+4
+5
+8
+9
+12
+13
+16
+SYMM
+LAND PATTERN EXAMPLE
+EXPOSED METAL SHOWN
+SCALE:20X
+NOTES: (continued)
+ 
+4. This package is designed to be soldered to a thermal pad on the board. For more information, see Texas Instruments literature
+    number SLUA271 (www.ti.com/lit/slua271).
+5. Vias are optional depending on application, refer to device data sheet. If any vias are implemented, refer to their locations shown
+    on this view. It is recommended that vias under paste be filled, plugged or tented.
+ 
+ 
+SOLDER MASK
+OPENING
+METAL UNDER
+SOLDER MASK
+SOLDER MASK
+DEFINED
+EXPOSED
+METAL
+METAL
+SOLDER MASK
+OPENING
+SOLDER MASK DETAILS
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+EXPOSED
+METAL
+
+===PAGE 37===
+www.ti.com
+EXAMPLE STENCIL DESIGN
+16X (0.6)
+16X (0.24)
+12X (0.5)
+(2.8)
+(2.8)
+(
+1.55)
+(R0.05) TYP
+VQFN - 1 mm max height
+RGT0016C
+PLASTIC QUAD FLATPACK - NO LEAD
+4222419/E   07/2025
+NOTES: (continued)
+ 
+6. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate
+   design recommendations. 
+ 
+SYMM
+ALL AROUND
+METAL
+SOLDER PASTE EXAMPLE
+BASED ON 0.125 mm THICK STENCIL
+ 
+EXPOSED PAD 17:
+85% PRINTED SOLDER COVERAGE BY AREA UNDER PACKAGE
+SCALE:25X
+SYMM
+1
+4
+5
+8
+9
+12
+13
+16
+17
+
+===PAGE 38===
+IMPORTANT NOTICE AND DISCLAIMER
+TI PROVIDES TECHNICAL AND RELIABILITY DATA (INCLUDING DATASHEETS), DESIGN RESOURCES (INCLUDING REFERENCE 
+DESIGNS), APPLICATION OR OTHER DESIGN ADVICE, WEB TOOLS, SAFETY INFORMATION, AND OTHER RESOURCES “AS IS” 
+AND WITH ALL FAULTS, AND DISCLAIMS ALL WARRANTIES, EXPRESS AND IMPLIED, INCLUDING WITHOUT LIMITATION ANY 
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT OF THIRD 
+PARTY INTELLECTUAL PROPERTY RIGHTS.
+These resources are intended for skilled developers designing with TI products. You are solely responsible for (1) selecting the appropriate 
+TI products for your application, (2) designing, validating and testing your application, and (3) ensuring your application meets applicable 
+standards, and any other safety, security, regulatory or other requirements.
+These resources are subject to change without notice. TI grants you permission to use these resources only for development of an 
+application that uses the TI products described in the resource. Other reproduction and display of these resources is prohibited. No license 
+is granted to any other TI intellectual property right or to any third party intellectual property right. TI disclaims responsibility for, and you fully 
+indemnify TI and its representatives against any claims, damages, costs, losses, and liabilities arising out of your use of these resources.
+TI’s products are provided subject to TI’s Terms of Sale, TI’s General Quality Guidelines, or other applicable terms available either on 
+ti.com or provided in conjunction with such TI products. TI’s provision of these resources does not expand or otherwise alter TI’s applicable 
+warranties or warranty disclaimers for TI products. Unless TI explicitly designates a product as custom or customer-specified, TI products 
+are standard, catalog, general purpose devices.
+TI objects to and rejects any additional or different terms you may propose.
+IMPORTANT NOTICE
+Copyright © 2025, Texas Instruments Incorporated
+Last updated 10/2025

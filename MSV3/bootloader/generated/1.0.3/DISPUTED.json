@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Artifacts in this release directory whose provenance is not fully resolved.",
+    "",
+    "A disputed file is retained as evidence but excluded from automatic rescue-package",
+    "selection and from the release checksum/manifest sync. Never resolve an entry by replacing",
+    "its recorded hash with whichever bytes happen to be present today."
+  ],
+  "disputed": [
+    {
+      "name": "raw-probes-v65556-manifest.json",
+      "class": "integrity-record-mismatch",
+      "reason": "The metadata snapshot was introduced in commit 062d9e1 together with SHA256SUMS.txt and release-manifest.json, but its tracked bytes now hash to 4a979c491f20c1d3307b733c67ea26a2d8ceef2956c0918f41c01c5a6a6d88b0 while both integrity records say 9073af5917e9b5b8ba90e92a32b38b9cf70af83b0fb04bb154bf3bdb890832c6. Git history shows no later edit to the file. It is a non-executable metadata snapshot; the sensor 6 and 7 packages named inside it remain separately archived and individually hashed. Quarantine this snapshot until the exact serialization/provenance cause is reconstructed.",
+      "sha256_on_disk": "4a979c491f20c1d3307b733c67ea26a2d8ceef2956c0918f41c01c5a6a6d88b0",
+      "sha256_in_sha256sums": "9073af5917e9b5b8ba90e92a32b38b9cf70af83b0fb04bb154bf3bdb890832c6",
+      "sha256_in_manifest": "9073af5917e9b5b8ba90e92a32b38b9cf70af83b0fb04bb154bf3bdb890832c6"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+Column,Include,Use as ActiveBOM grouping key,Purpose
+Comment,Yes,Yes,Human-readable spec with ASCII units (10pF; 470 ohm) - never relied on for ordering
+Designator,Yes,No,Reference designators required by assembly BOMs
+Footprint,Yes,Yes,Controlled Treebeard house footprint
+LCSC Part #,Yes,Yes,Blank in the library; MUST be filled for every line before any LCSC/JLC upload (lcsc-bom-order skill; hardware/procurement/lcsc_verified_parts.csv)
+Quantity,Yes,No,Assembly quantity
+Component Type,Yes,Yes,Separates resistor and capacitor rows
+Resistance,Yes,Yes,Editable resistor value
+Capacitance,Yes,Yes,Editable capacitor value
+Tolerance,Yes,Yes,Electrical selection constraint
+Power Rating,Yes,Yes,Resistor selection constraint
+Voltage Rating,Yes,Yes,Electrical selection constraint
+Dielectric,Yes,Yes,Capacitor selection constraint
+TCR,Yes,Yes,Resistor selection constraint
+Technology,Yes,Yes,Selection constraint
+Package,Yes,Yes,Human-readable package
+Manufacturer,Yes,Yes,Blank until exact-part freeze
+Manufacturer Part Number,Yes,Yes,Blank until exact-part freeze; required for deterministic Octopart sourcing
+Supplier,Optional,No,Optional frozen supplier
+Supplier Part Number,Optional,No,Optional frozen supplier SKU
+Procurement Class,Optional,No,Documents generic-versus-exact workflow
+Do Not Substitute,Optional,Yes,Prevents a frozen specialty row being treated as generic

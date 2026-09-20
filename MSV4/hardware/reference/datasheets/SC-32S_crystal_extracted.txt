@@ -1,0 +1,85 @@
+
+===PAGE 1===
+3215 size: 3.2 x 1.5 x 0.85 mm
+・Highly reliable ceramic package
+・Excellent shock and heat resistance.
+・Complies with EU RoHS directive (completely Pb-free)
+・Built-in highly reliable photolithographic crystal Resonator
+・Smart meters
+　　      　
+・Bluetooth modules
+・Smartwatches
+　　　      
+・PCs, tablets
+・Electronic shelf labels
+・ GPS, GNSS modules
+・Microcontroller (MCU) sub-clocks, etc.
+  　　　　　　　　Conditions where not specified (Temperature: 25±2℃, DL;0.1μW)
+Symbol
+ Nominal Frequency
+f_nom
+ Frequency Tolerance
+f_tol
+ Turnover Temperature
+Ti
+ Parabolic Coefficient
+β
+ Load Capacitance
+CL
+ Motional Resistance (ESR)
+R1
+ Absolute Max. Drive Level
+DLmax.
+ Drive Level
+DL
+ Shunt Capacitance
+C0
+Reference value
+ Frequency Ageing
+f_age
+First year
+ Operating Temperature
+T_use
+ Storage Temperature
+T_stg
+Store individually
+-55〜+125℃
+32.768kHz
+±20x10-6
+25±5℃
+(­0.030±10%) x 10-6/℃2
+ 4pF , 6pF, 7pF, 9pF, 12.5pF
+70kΩ Max.
+1.0μW Max.
+0.1μW Typ.
+1.0pF Typ.
+±3×10-6/year
+Please contact us regarding other
+deviations.
+Specifications
+Item
+Conditions / Note
+-40〜+85℃
+For other CLs, please contact us.
+SC-32S
+・Features
+・Applications
+・Specifications
+・Dimensions
+・Internal Lead Connections
+・Recommended Soldering Pattern
+Unit︓mm
+Seiko Instruments Inc.
+Quartz Crystal Division Sales Head Office
+1-8, Nakase, Mihamaku, Chiba-shi, Chiba 261-8507, Japan
+Tel: +81-43-211-1207  Fax: +81-43-211-8030
+http : //www.sii.co.jp/en/quartz/ 
+1UNIT=1mm
+Remark: When designing the circuit board, do not place circuit 
+patterns on the crystal resonator mounting area (bottom 
+surface).
+Unit︓mm
+3215-Size 32 kHz Tuning Fork Crystal 
+Resonator
+#1
+#2

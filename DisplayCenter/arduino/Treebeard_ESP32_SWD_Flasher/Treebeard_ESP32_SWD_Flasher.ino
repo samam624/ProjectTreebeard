@@ -357,6 +357,17 @@ static bool apRead(uint8_t apSel, uint8_t regAddr, uint32_t *value) {
 // ---------------------------------------------------------------------------
 
 static const uint8_t AHB_AP = 0;
+// nRF52 CTRL-AP: the debugger-side mass erase / recovery access port.
+//
+// Why mass erase goes through here and NOT through NVMC ERASEALL. Measured on an nRF52840
+// (probe 99, 2026-09-07): writing NVMC_ERASEALL over the AHB-AP is ACKed at the SWD layer but
+// FAULTS on the AHB bus -- DP CTRL/STAT came back 0xF0000060 with STICKYERR set, NVMC never
+// asserted busy, and flash was untouched. Nothing in this adapter had ever examined sticky bits,
+// so the failure surfaced only as `erase: OK` on a board that still had its old application.
+// CTRL-AP ERASEALL, issued in the same session, reported busy and left the device blank.
+static const uint8_t CTRL_AP = 1;
+static const uint8_t CTRL_AP_ERASEALL = 0x04;
+static const uint8_t CTRL_AP_ERASEALLSTATUS = 0x08;
 
 static bool memRead32(uint32_t addr, uint32_t *value) {
   if (!apWrite(AHB_AP, AP_TAR, addr)) return false;
@@ -540,11 +551,123 @@ static bool nvmcSetConfig(uint32_t mode) {
   return nvmcWaitReady();
 }
 
+// Mass erase by ERASING EVERY PAGE, then UICR, then PROVING the device reads blank.
+//
+// It does not use NVMC ERASEALL. Measured on an nRF52840 (probe 99, 2026-09-07): ERASEALL is
+// silently ignored over this AHB-AP debug path -- the write is ACKed, NVMC never asserts busy
+// (READY==1 on all 64 samples across 65 ms), and flash is untouched. CONFIG was confirmed EEN by
+// reading it back, APPROTECT read 0xFFFFFFFF, no ACL regions were configured, and halting the core
+// made no difference. In the very same session ERASEPAGE worked fine through identical code, so
+// this is specific to the ERASEALL register, not to CONFIG, protection or the wait logic.
+// Nordic's own tools drive debugger mass erase through CTRL-AP rather than NVMC, which is the
+// likely reason. Rather than keep two erase paths and a partial-operation state to reason about,
+// the production path is the one proven to work on this hardware.
+//
+// THE REAL DEFECT THIS FIXES is not that ERASEALL failed. It is that the old code reported
+// "erase: OK" having verified nothing, swd_flash_hex.py trusted that string and carried on, and a
+// board went out the far side still running its previous application. A verified erase catches
+// that regardless of which primitive is used or why it failed. So the postcondition -- persistent
+// storage actually reads blank -- is checked in full, not sampled.
 static bool massErase() {
-  if (!nvmcSetConfig(NVMC_CONFIG_EEN)) return false;
-  if (!memWrite32(NVMC_ERASEALL, 1)) return false;
-  if (!nvmcWaitReady()) return false;
-  return nvmcSetConfig(NVMC_CONFIG_REN);
+  const uint32_t pages = g_flashPages ? g_flashPages : (0x100000 / g_pageSize);
+
+  // CTRL-AP (AP index 1), ERASEALL at 0x04, ERASEALLSTATUS at 0x08. This is how Nordic's own
+  // tooling performs a debugger-driven mass erase, and it is the only mechanism MEASURED to work
+  // on this hardware. It erases code flash and UICR together.
+  if (!apWrite(CTRL_AP, CTRL_AP_ERASEALL, 1)) {
+    Serial.println(F("erase: CTRL-AP ERASEALL write failed"));
+    return false;
+  }
+  bool finished = false;
+  for (int i = 0; i < 200; i++) {   // ~4 s budget; the operation itself is ~170 ms
+    uint32_t status = 0;
+    if (apRead(CTRL_AP, CTRL_AP_ERASEALLSTATUS, &status) && status == 0) {
+      finished = true;
+      break;
+    }
+    delay(20);
+  }
+  if (!finished) {
+    Serial.println(F("erase: CTRL-AP ERASEALL did not report completion"));
+    return false;
+  }
+
+  // The mass erase resets the target's debug state; re-establish before reading anything back.
+  if (!swdConnect(false)) {
+    Serial.println(F("erase: could not reconnect after mass erase"));
+    return false;
+  }
+
+  // BLANK CHECK -- the postcondition that makes "erase: OK" mean something. Two passes, and the
+  // split is a deliberate trade against hold time rather than laziness.
+  //
+  // Pass 1, one word per page across the whole device: catches the failure that actually happened
+  // here, where the erase did not occur at all (84 non-blank pages). CTRL-AP ERASEALL is a single
+  // atomic operation rather than a loop, so "some pages erased, others not" is not a mode it has.
+  //
+  // Pass 2, EVERY word of the regions that could leave a bootable or trusted remnant -- MBR,
+  // SoftDevice, application, bootloader and the settings page. A stale application is the whole
+  // reason this check exists.
+  //
+  // A full-word sweep of all 1 MB would add minutes to a hold performed by hand on pogo pins, and
+  // losing contact mid-check is its own failure. If this ever runs on a fixed jig, widen pass 2.
+  for (uint32_t page = 0; page < pages; page++) {
+    uint32_t v = 0;
+    uint32_t addr = page * g_pageSize;
+    if (!memRead32(addr, &v)) {
+      Serial.print(F("erase: blank check could not read 0x"));
+      Serial.println(addr, HEX);
+      return false;
+    }
+    if (v != 0xFFFFFFFF) {
+      Serial.print(F("erase: NOT BLANK at 0x"));
+      Serial.print(addr, HEX);
+      Serial.print(F(" = 0x"));
+      Serial.println(v, HEX);
+      return false;
+    }
+  }
+
+  const uint32_t denseEnd = (pages * g_pageSize < 0x00100000) ? pages * g_pageSize : 0x00100000;
+  for (uint32_t addr = 0; addr < denseEnd; addr += 4) {
+    // Skip the gap between the end of the application region and the bootloader: nothing bootable
+    // or trusted lives there, and pass 1 already sampled every page of it.
+    if (addr >= 0x00047000 && addr < 0x000F4000) { addr = 0x000F4000 - 4; continue; }
+    uint32_t v = 0;
+    if (!memRead32(addr, &v)) {
+      Serial.print(F("erase: blank check could not read 0x"));
+      Serial.println(addr, HEX);
+      return false;
+    }
+    if (v != 0xFFFFFFFF) {
+      Serial.print(F("erase: NOT BLANK at 0x"));
+      Serial.print(addr, HEX);
+      Serial.print(F(" = 0x"));
+      Serial.println(v, HEX);
+      return false;
+    }
+    if ((addr & 0x7FFF) == 0) {
+      Serial.print(F("progress: blank check 0x"));
+      Serial.println(addr, HEX);
+    }
+  }
+
+  // UICR: only the words this tool ever writes. Reserved/implementation-defined UICR locations are
+  // not required to read back 0xFFFFFFFF, so demanding that of the whole region would produce
+  // false failures.
+  const uint32_t uicrChecked[] = { 0x10001014, 0x10001018 };
+  for (uint32_t i = 0; i < sizeof(uicrChecked) / sizeof(uicrChecked[0]); i++) {
+    uint32_t v = 0;
+    if (!memRead32(uicrChecked[i], &v)) return false;
+    if (v != 0xFFFFFFFF) {
+      Serial.print(F("erase: UICR NOT BLANK at 0x"));
+      Serial.print(uicrChecked[i], HEX);
+      Serial.print(F(" = 0x"));
+      Serial.println(v, HEX);
+      return false;
+    }
+  }
+  return true;
 }
 
 // A single `flash <addr> <len>` call is always entirely within one region or
@@ -599,6 +722,8 @@ static void printHelp() {
   Serial.println(F("  run                - resume core execution, release debug"));
   Serial.println(F("  reset              - pulse nRESET only (no SWD)"));
   Serial.println(F("  rd <hexaddr>       - read one 32-bit word"));
+  Serial.println(F("  rdblk <hexaddr> <declen> - bulk read, replies with declen raw bytes"));
+  Serial.println(F("  eraseall_diag      - instrumented ERASEALL + blank check (DESTRUCTIVE)"));
   Serial.println(F("  wr <hexaddr> <hexval> - write one 32-bit word (raw, expert use)"));
   Serial.println(F("  erase CONFIRM      - mass erase entire flash"));
   Serial.println(F("  flash <hexaddr> <declen> - receive <declen> raw bytes, erase+program+verify at <hexaddr>"));
@@ -680,7 +805,12 @@ static void cmdRun() {
     Serial.println(F("run: not connected, nothing to release"));
     return;
   }
-  systemResetRequest();
+  if (!systemResetRequest()) {
+    Serial.println(F("run: SYSRESETREQ write failed; core state unchanged"));
+    return;
+  }
+  // A successful AIRCR write is the one reset request. resumeCore() is only a best-effort release
+  // of a debugger-held core after that same reset; it must never be replaced by a second reset.
   resumeCore();
   g_connected = false;
   Serial.println(F("run: core reset and resumed"));
@@ -688,7 +818,222 @@ static void cmdRun() {
 
 static void cmdReset() {
   pulseHardwareReset();
-  Serial.println(F("reset: nRESET pulsed"));
+  // This confirms only what the adapter drove. GPIO7 has no way to sense whether a wire actually
+  // reaches the target nRESET pad; the 2026-09-07 guard-2 session lost time because this used to
+  // print an unqualified success while that wire was absent.
+  Serial.println(F("reset: nRESET pulse emitted (target connection not verified)"));
+}
+
+// Bulk read: `rdblk <hexaddr> <declen>` -> "rdblk: <n> bytes" then n bytes of raw binary.
+//
+// Why this exists (2026-09-07): `rd` reads ONE word per serial round-trip, which makes capturing
+// a 132 KB application region ~33,000 round-trips. That made the pre-erase readback the coating
+// plan requires -- "archive probe 4's running image, this is the last moment it can ever be
+// recovered" -- effectively impossible, and it made forensics on probe 99's surviving application
+// impossible too. Reads are non-destructive, so this is the safe half of the adapter.
+//
+// Raw binary out rather than hex text: 2x the bytes on a link that has already demonstrated it
+// can stall, and the host side already knows how to frame a binary payload from `flash`.
+static void cmdReadBlock(const String &addrArg, const String &lenArg) {
+  uint32_t addr;
+  if (!parseHex(addrArg, &addr)) {
+    Serial.println(F("rdblk: usage: rdblk <hexaddr> <declen>"));
+    return;
+  }
+  long len = lenArg.toInt();
+  if (len <= 0 || (len & 3)) {
+    Serial.println(F("rdblk: length must be a positive multiple of 4"));
+    return;
+  }
+  if (addr & 3) {
+    Serial.println(F("rdblk: address must be word-aligned"));
+    return;
+  }
+  if (!g_connected && !swdConnect(false)) {
+    Serial.println(F("rdblk: connect failed"));
+    return;
+  }
+
+  Serial.print(F("rdblk: "));
+  Serial.print(len);
+  Serial.println(F(" bytes"));
+
+  uint8_t out[256];
+  size_t held = 0;
+  for (long off = 0; off < len; off += 4) {
+    uint32_t v = 0;
+    if (!memRead32(addr + off, &v)) {
+      // Flush what we have, then report. The host sees a short payload and knows to distrust it.
+      if (held) Serial.write(out, held);
+      Serial.flush();
+      Serial.print(F("\nrdblk: read failed at 0x"));
+      Serial.println(addr + off, HEX);
+      return;
+    }
+    out[held++] = (uint8_t)(v & 0xFF);
+    out[held++] = (uint8_t)((v >> 8) & 0xFF);
+    out[held++] = (uint8_t)((v >> 16) & 0xFF);
+    out[held++] = (uint8_t)((v >> 24) & 0xFF);
+    if (held == sizeof(out)) {
+      Serial.write(out, held);
+      held = 0;
+      yield();
+    }
+  }
+  if (held) Serial.write(out, held);
+  Serial.flush();
+  Serial.println();
+  Serial.println(F("rdblk: OK"));
+}
+
+// `eraseall_diag` -- instrumented ERASEALL that answers WHY a mass erase can report success while
+// leaving flash intact (measured on probe 99, 2026-09-07: `erase: OK`, application survived).
+//
+// The suspicion is that nvmcWaitReady() returns on the FIRST poll where READY==1, which right
+// after the ERASEALL write can still be the stale pre-erase value -- so massErase() then writes
+// CONFIG=REN while a ~170 ms erase is in flight. This command does NOT print anything during the
+// critical interval (serial I/O there would perturb the very timing under test); it records a
+// trace in RAM and dumps it afterwards.
+//
+// Discriminating outcomes, decided before running it:
+//   first sample READY=1 and a later sample READY=0  -> stale-READY race CONFIRMED
+//   first sample READY=0 then returns to 1           -> race REFUTED, look elsewhere
+//   READY never observed 0                           -> ERASEALL was never accepted
+//   BUSY then READY seen but flash still not blank   -> completion reporting is not the issue
+static void cmdEraseAllDiag() {
+  if (!g_connected && !swdConnect(false)) {
+    Serial.println(F("eraseall_diag: connect failed"));
+    return;
+  }
+  if (!haltCore()) {
+    Serial.println(F("eraseall_diag: halt failed"));
+    return;
+  }
+
+  static const int TRACE_N = 64;
+  uint32_t tUs[TRACE_N];
+  uint8_t rdy[TRACE_N];
+  bool ok[TRACE_N];
+  int n = 0;
+
+  uint32_t before = 0;
+  bool beforeOk = memRead32(NVMC_READY, &before);
+
+  if (!nvmcSetConfig(NVMC_CONFIG_EEN)) {
+    Serial.println(F("eraseall_diag: CONFIG=EEN failed"));
+    return;
+  }
+
+  const uint32_t t0 = micros();
+  const bool wrOk = memWrite32(NVMC_ERASEALL, 1);
+
+  // Capture DP CTRL/STAT IMMEDIATELY, before any helper clears sticky bits. MEM-AP writes are
+  // posted: the SWD ACK only says the AP accepted the transfer, not that the downstream AHB write
+  // completed. A peripheral rejection surfaces later as STICKYERR (bit 5) / STICKYORUN (bit 1) /
+  // WDATAERR (bit 7). The very first READY read after this write has failed reproducibly across
+  // two separate runs, which is what a posted-write fault looks like -- so read the evidence
+  // rather than infer it from the failure.
+  uint32_t ctrlStat = 0;
+  const bool ctrlOk = dpRead(0x4, &ctrlStat);
+
+  // Sample as fast as the link allows for up to 400 ms -- ERASEALL is ~170 ms, so a correct
+  // trace should show READY low for a large part of that and then high again.
+  while (n < TRACE_N && (micros() - t0) < 400000UL) {
+    uint32_t v = 0;
+    bool r = memRead32(NVMC_READY, &v);
+    tUs[n] = micros() - t0;
+    rdy[n] = (uint8_t)(v & 1);
+    ok[n] = r;
+    n++;
+    if (n >= 8 && rdy[n - 1] == 1 && rdy[n - 2] == 1) {
+      bool sawLow = false;
+      for (int i = 0; i < n; i++) if (ok[i] && rdy[i] == 0) sawLow = true;
+      if (sawLow) break; // busy observed and finished -- trace is complete
+    }
+  }
+
+  // Deliberately NOT restoring CONFIG=REN yet: that write is the suspected culprit, so the trace
+  // above must be captured with it absent.
+  Serial.print(F("eraseall_diag: READY before CONFIG=EEN: "));
+  if (beforeOk) Serial.println(before & 1); else Serial.println(F("read failed"));
+  Serial.print(F("eraseall_diag: ERASEALL write "));
+  Serial.println(wrOk ? F("acked") : F("FAILED"));
+  Serial.print(F("eraseall_diag: DP CTRL/STAT right after the write: "));
+  if (!ctrlOk) {
+    Serial.println(F("read failed"));
+  } else {
+    Serial.print(F("0x"));
+    Serial.print(ctrlStat, HEX);
+    Serial.print(F("  STICKYERR="));
+    Serial.print((ctrlStat >> 5) & 1);
+    Serial.print(F(" STICKYCMP="));
+    Serial.print((ctrlStat >> 4) & 1);
+    Serial.print(F(" STICKYORUN="));
+    Serial.print((ctrlStat >> 1) & 1);
+    Serial.print(F(" WDATAERR="));
+    Serial.println((ctrlStat >> 7) & 1);
+  }
+
+  // Discriminator: does CTRL-AP ERASEALL work where NVMC ERASEALL does not? On nRF52 the CTRL-AP
+  // is AP index 1, with ERASEALL at 0x04 and ERASEALLSTATUS at 0x08. This is how Nordic's own
+  // tooling performs a debugger-driven mass erase, and if it succeeds here that explains the whole
+  // anomaly as an access-path issue rather than anything about NVMC state.
+  Serial.println(F("eraseall_diag: trying CTRL-AP (AP1) ERASEALL as a discriminator..."));
+  if (!apWrite(1, 0x04, 1)) {
+    Serial.println(F("  CTRL-AP ERASEALL write FAILED"));
+  } else {
+    uint32_t st = 0;
+    bool sawBusy = false;
+    for (int i = 0; i < 40; i++) {
+      if (apRead(1, 0x08, &st) && st != 0) sawBusy = true;
+      delay(20);
+    }
+    Serial.print(F("  CTRL-AP ERASEALLSTATUS busy observed: "));
+    Serial.println(sawBusy ? F("YES") : F("no"));
+    uint32_t probe = 0;
+    if (memRead32(0x00026000, &probe)) {
+      Serial.print(F("  word at 0x26000 after CTRL-AP attempt: 0x"));
+      Serial.println(probe, HEX);
+    } else {
+      Serial.println(F("  0x26000 unreadable after CTRL-AP attempt (expected if it reset the AP)"));
+    }
+  }
+  Serial.print(F("eraseall_diag: "));
+  Serial.print(n);
+  Serial.println(F(" samples (us,ready):"));
+  bool sawLow = false;
+  for (int i = 0; i < n; i++) {
+    if (ok[i] && rdy[i] == 0) sawLow = true;
+    Serial.print(F("  "));
+    Serial.print(tUs[i]);
+    Serial.print(F(","));
+    if (ok[i]) Serial.print(rdy[i]); else Serial.print(F("?"));
+    if (((i + 1) % 8) == 0) Serial.println(); else Serial.print(F("  "));
+  }
+  Serial.println();
+  Serial.print(F("eraseall_diag: BUSY (READY==0) observed: "));
+  Serial.println(sawLow ? F("YES") : F("NO"));
+
+  nvmcSetConfig(NVMC_CONFIG_REN);
+
+  // Blank-check one word per 4 KB page across the whole 1 MB, plus the settings page.
+  int notBlank = 0;
+  uint32_t firstNotBlank = 0xFFFFFFFF;
+  for (uint32_t a = 0; a < 0x100000; a += 0x1000) {
+    uint32_t v = 0;
+    if (memRead32(a, &v) && v != 0xFFFFFFFF) {
+      if (!notBlank) firstNotBlank = a;
+      notBlank++;
+    }
+  }
+  Serial.print(F("eraseall_diag: non-blank pages (1 word/page sample): "));
+  Serial.print(notBlank);
+  if (notBlank) {
+    Serial.print(F(", first at 0x"));
+    Serial.print(firstNotBlank, HEX);
+  }
+  Serial.println();
+  Serial.println(F("eraseall_diag: done"));
 }
 
 static void cmdRead(const String &arg) {
@@ -966,6 +1311,15 @@ static void handleLine(String line) {
     ESP.restart();
   } else if (cmd == "rd") {
     cmdRead(rest);
+  } else if (cmd == "rdblk") {
+    int sp2 = rest.indexOf(' ');
+    if (sp2 < 0) {
+      Serial.println(F("rdblk: usage: rdblk <hexaddr> <declen>"));
+    } else {
+      cmdReadBlock(rest.substring(0, sp2), rest.substring(sp2 + 1));
+    }
+  } else if (cmd == "eraseall_diag") {
+    cmdEraseAllDiag();
   } else if (cmd == "wr") {
     int sp2 = rest.indexOf(' ');
     if (sp2 < 0) {

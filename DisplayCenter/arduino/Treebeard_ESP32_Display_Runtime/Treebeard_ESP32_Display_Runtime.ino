@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-02 treebeard-rename-v1"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-14 msv3-capless-scale3"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -45,6 +45,7 @@
 
 #include <Arduino.h>
 #include "esp_heap_caps.h"
+#include <math.h>
 
 #if TREEBEARD_ENABLE_WIFI
 #include <FS.h>
@@ -244,9 +245,65 @@ const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
 const char SOUND_SETTINGS_PATH[] = "/sound.json";
 const char AUTOCAL_CACHE_PATH[] = "/autocal-cache-v1.json";
 const char AUTOCAL_CACHE_TEMP_PATH[] = "/autocal-cache-v1.tmp";
+const char TEMPERATURE_COMPENSATION_CACHE_PATH[] = "/temp-comp-v3.json";
+const char TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH[] = "/temp-comp-v3.tmp";
 const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
+
+// MSV3 receiver-side temperature compensation. The probe continues to transmit only raw
+// observables; this model lives here so raw history is never replaced and the correction can
+// be revised/audited without reflashing every probe. It estimates log(Cconnected/Cbare), removes
+// the part that covaries with a 2-hour effective board temperature, and retains a 48-hour
+// moisture baseline.
+//
+// Model v3 (2026-09-14) fixes a defect that made v2 actively harmful on some probes. v2 seeded
+// every probe with a POSITIVE gain and then rejected any fit that came back negative. Probe 8's
+// real coefficient is negative, so all four of its 24-hour fits were rejected, its gain stayed
+// pinned at the seed forever, and it applied a wrong-signed correction that made its daily swing
+// 2.5x WORSE than no compensation at all. Measured against 10 days of real history:
+//
+//   probe 8 daily peak-to-peak   uncorrected 0.907%   v2 2.289%   v3 0.701%
+//   probe 4 daily peak-to-peak   uncorrected 10.385%  v2 9.334%   v3 9.422%
+//
+// The three changes are: seed the gain at zero so an unlearned probe corrects nothing rather
+// than guessing; accept negative gains, because the sign is a physical property that differs
+// between probes; and adopt the first accepted fit outright instead of blending it 3:1 against
+// a seed that carries no information. See
+// MSV3/docs/MSV3_AM_VS_FM_SENSING_THERMAL_SELECTIVITY_2026-09-13.md for why the sign varies:
+// the thermal term is a difference of competing effects whose balance depends on soil wetness.
+const uint8_t TEMPERATURE_COMPENSATION_MODEL_VERSION = 3;
+const float TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C = 22.0f;
+const float TEMPERATURE_COMPENSATION_PROBE_4_REFERENCE_C = 22.34f;
+const float TEMPERATURE_COMPENSATION_TEMP_TAU_SECONDS = 2.0f * 60.0f * 60.0f;
+const float TEMPERATURE_COMPENSATION_MOISTURE_TAU_SECONDS = 48.0f * 60.0f * 60.0f;
+// Zero, deliberately. A probe that has not yet earned a fit must not apply a correction whose
+// sign it cannot know. The gain is a per-probe physical property, not a fleet constant.
+const float TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C = 0.0f;
+const float TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C = 0.0f;
+// Symmetric bound. v2 used 0.0f as the lower limit, which silently discarded every correctly
+// fitted negative gain instead of applying it.
+const float TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C = -0.04f;
+const float TEMPERATURE_COMPENSATION_SEED_PHASE_OFFSET = 0.0000496f;
+const uint32_t TEMPERATURE_COMPENSATION_FIT_BLOCK_MS = 24UL * 60UL * 60UL * 1000UL;
+const uint32_t TEMPERATURE_COMPENSATION_PERSIST_INTERVAL_MS = 15UL * 60UL * 1000UL;
+const uint16_t TEMPERATURE_COMPENSATION_MIN_FIT_SAMPLES = 120;
+const float TEMPERATURE_COMPENSATION_MIN_TEMP_SPAN_C = 2.0f;
+const float TEMPERATURE_COMPENSATION_MIN_FIT_R2 = 0.40f;
+const uint8_t TEMPERATURE_COMPENSATION_REQUIRED_FITS = 2;
+// Consecutive-sample jumps above these bounds are handling/configuration changes, not an
+// ordinary watering. Probe 4's measured watering step was below 1%; its cup-immersion and
+// insertion/removal steps were many percent. Resetting at the latter prevents an EMA or fit
+// from blending two physically incompatible epochs.
+const float TEMPERATURE_COMPENSATION_MAX_CONNECTED_STEP_FRACTION = 0.03f;
+const float TEMPERATURE_COMPENSATION_MAX_BARE_STEP_FRACTION = 0.0035f;
+
+enum TemperatureCompensationMode : uint8_t
+{
+  TEMPERATURE_COMPENSATION_OFF = 0,
+  TEMPERATURE_COMPENSATION_LEARNING = 1,
+  TEMPERATURE_COMPENSATION_ACTIVE = 2,
+};
 // 2026-07-28: probes were reworked to send raw, uncalibrated readings (raw oscillator kHz,
 // raw battery mV, raw charging flag) instead of interpreting them on-device - see
 // MSV2_Moisture_BLE_Sleep.ino and calibrateRawMoisture()/calibrateRawBattery() below. That
@@ -269,7 +326,9 @@ const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
 // 2026-08-25: MSV3_Moisture_BLE_Sleep.ino's software-only board-temperature/bare-tank-reference
 // addition widens the wide packet again, 17 -> 23 bytes (byte 16 gains phase/validity flag bits,
 // bytes 17-18 are signed board temp in quarter-degrees C, bytes 19-22 are the bare-tank FDC
-// count) - see that file's own wire-format comment above startAdv() for the exact layout. A
+// count). The 2026-09-14 capless policy keeps that length, zeros/invalidates the retired bare
+// field, and uses flag bit6 to select the capless scale. See the probe firmware's wire-format
+// comment above startAdv() for the exact layout. A
 // packet is wideRaw at length>=17 same as before (first 17 bytes are unchanged, so an older
 // receiver parses those fields identically); it additionally carries these diagnostics only at
 // length>=23. Named "diagnostic" rather than folded into wideRaw's own meaning because a shorter
@@ -277,11 +336,14 @@ const size_t MSV2_RAW_PACKET_WIDE_LEN = 17;
 // diagnostics, not be misparsed or rejected.
 const size_t MSV3_DIAGNOSTIC_PACKET_LEN = 23;
 // Version the receiver-derived numeric scale written to history. Scale 1 covers the
-// existing legacy/MSV2 mappings. Scale 2 is MSV3's 100-FDC-count high-resolution window
-// introduced below. The cloud uses a version change to start a fresh calibration epoch
-// without deleting older measurements or mixing incompatible numeric ranges.
+// existing legacy/MSV2 mappings. Scale 2 is MSV3 with the original 270pF C17 tank capacitor.
+// Scale 3 is the 2026-09-14 capless/no-bare-reference MSV3 policy. The probe marks scale 3 with
+// flag bit6, allowing old and reworked probes to coexist during rollout. The cloud uses a version
+// change to start a fresh calibration epoch without deleting older measurements or mixing
+// incompatible numeric ranges.
 const uint8_t MSV2_MOISTURE_SCALE_VERSION = 1;
 const uint8_t MSV3_MOISTURE_SCALE_VERSION = 2;
+const uint8_t MSV3_CAPLESS_MOISTURE_SCALE_VERSION = 3;
 // Keep a passive scan session alive long enough that advertisements from several probes do
 // not repeatedly collide with stop/clear/restart gaps. Results are still cleared between
 // sessions, bounding NimBLE's discovered-device storage, but the allocator churn now happens
@@ -343,9 +405,9 @@ const size_t HISTORY_QUEUE_CAPACITY = 8192;
 // load with 4x headroom while retaining stack margin in the 16KB cloud task. Compact uploads
 // are streamed a row at a time after TLS connects, so this no longer creates a 30-40KB String.
 const size_t HISTORY_UPLOAD_BATCH_SIZE = 96;
-// Worst-case current MSV3 row (all diagnostics present and maximum-width integers) is 362
-// bytes. The streaming encoder reuses one allocation above that bound for every row.
-const size_t HISTORY_JSON_BYTES_PER_ROW = 384;
+// Worst-case MSV3 row now includes the separate temperature-compensated shadow channel.
+// The streaming encoder reuses one 480-byte allocation for every row.
+const size_t HISTORY_JSON_BYTES_PER_ROW = 480;
 const char HISTORY_JOURNAL_PATH[] = "/history-outbox-v1.bin";
 const char HISTORY_JOURNAL_COMPACT_PATH[] = "/history-outbox-v1.compact";
 const char HISTORY_STATE_A_PATH[] = "/history-outbox-v1-state-a.bin";
@@ -428,7 +490,7 @@ const uint32_t BLE_SCAN_TASK_STACK_BYTES = 8192;
 // Arduino's loopTask default. It runs the WebServer, display rendering, touch handling and
 // WiFi maintenance, and was the only task with no stack telemetry until 2026-09-02.
 // Briefly raised to 12288 that day on the theory that sensorDataJson()'s
-// StaticJsonDocument<4096> sat on this stack. It does not: ArduinoJson 7 (7.4.3 here)
+// StaticJsonDocument<8192> sat on this stack. It does not: ArduinoJson 7 (7.4.3 here)
 // allocates JsonDocument on the HEAP, and StaticJsonDocument is only a deprecated alias.
 // Measurement then showed loopTask peaking at 3,608 bytes with the default 8192 already
 // giving ~56% headroom, so this was reverted - task stacks come out of the same heap that is
@@ -474,6 +536,15 @@ const BuzzerStep BUZZER_WATER_WARNING[] = {
   { 2400, 48, 72 },
   { 2400, 58, 0 },
 };
+
+// Keep this first helper below BuzzerStep. Arduino inserts generated prototypes immediately
+// before the first .ino function definition; moving a function above this struct makes those
+// prototypes refer to BuzzerStep before the type exists (see the preprocessor warning at EOF).
+static inline uint8_t moistureScaleVersion(bool wideRaw, bool caplessTank)
+{
+  if (!wideRaw) return MSV2_MOISTURE_SCALE_VERSION;
+  return caplessTank ? MSV3_CAPLESS_MOISTURE_SCALE_VERSION : MSV3_MOISTURE_SCALE_VERSION;
+}
 
 uint16_t buzzerDutyRaw()
 {
@@ -540,7 +611,26 @@ struct SensorReading
   int16_t rawBoardTempQuarterC = 0;
   bool bareTankValid = false;
   uint32_t rawBareTankFdcCounts = 0;
+  // Probe flag bit6. C17 is physically absent and firmware never selects mux code 2/3, so the
+  // bare field must be invalid and the capless presentation scale/calibration epoch must be used.
+  bool caplessTank = false;
   uint8_t tankPhase = 0;
+  // Receiver-derived shadow channel. This never overwrites rawFdcCounts or the original
+  // measuredMoisture. In Active mode (and only after two accepted daily fits), the equivalent
+  // corrected count may feed the presentation filter; cloud history still receives both.
+  bool temperatureCompensationValid = false;
+  int32_t temperatureCompensatedLogRatioPpm = 0;
+  uint16_t temperatureCompensatedEquivalentMoisture = 0;
+  uint8_t temperatureCompensationModelVersion = 0;
+  uint8_t temperatureCompensationConfiguredMode = TEMPERATURE_COMPENSATION_LEARNING;
+  uint8_t temperatureCompensationEffectiveMode = TEMPERATURE_COMPENSATION_LEARNING;
+  uint8_t temperatureCompensationConfidencePercent = 0;
+  float temperatureCompensationGainPerC = TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C;
+  float temperatureCompensationReferenceC = TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C;
+  uint32_t temperatureCompensationEpoch = 0;
+  // Set when the probe advertised but reported its FDC read as failed (flag bit5), or when
+  // the count it sent is implausible. The probe is reachable; the number is not a measurement.
+  bool sensorFault = false;
 };
 
 // Immutable copy of one unique probe wake as received by BLE. The live sensors[] array
@@ -580,6 +670,50 @@ struct PendingHistoryReading
   bool bareTankValid = false;
   uint32_t rawBareTankFdcCounts = 0;
   uint8_t tankPhase = 0;
+};
+
+// Per-sensor online learner. The 4-term daily regression is:
+//   logRatio = intercept + dryDownSlope*timeDays + gain*(Eslow*(Teffective-Tref))
+//              + phaseOffset*tankPhase
+// A slow moisture baseline keeps the thermal term proportional to the amount of capacitance
+// actually present in the pot, while the time term prevents ordinary dry-down from being
+// mistaken for temperature response. Two independent 24-hour fits are required before Active
+// mode can influence the user-facing value.
+struct TemperatureCompensationState
+{
+  bool emaReady = false;
+  float effectiveTempC = TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C;
+  float slowLogRatio = 0.0f;
+  float gainPerC = TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C;
+  float referenceTempC = TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C;
+  float phaseOffset = TEMPERATURE_COMPENSATION_SEED_PHASE_OFFSET;
+  uint32_t lastUpdateMs = 0;
+  uint32_t blockStartMs = 0;
+  uint32_t restoredBlockElapsedMs = 0;
+  uint32_t lastConnectedCounts = 0;
+  uint32_t lastBareCounts = 0;
+  uint32_t epoch = 0;
+  uint32_t sampleCount = 0;
+  float minTempC = 1000.0f;
+  float maxTempC = -1000.0f;
+  double normal[4][4] = {};
+  double rhs[4] = {};
+  double sumY = 0.0;
+  double sumYSquared = 0.0;
+  uint8_t acceptedFits = 0;
+};
+
+struct TemperatureCompensationResult
+{
+  bool valid = false;
+  int32_t logRatioPpm = 0;
+  uint16_t equivalentMoisture = 0;
+  uint8_t configuredMode = TEMPERATURE_COMPENSATION_LEARNING;
+  uint8_t effectiveMode = TEMPERATURE_COMPENSATION_LEARNING;
+  uint8_t confidencePercent = 0;
+  float gainPerC = TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C;
+  float referenceTempC = TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C;
+  uint32_t epoch = 0;
 };
 
 // Fixed-version envelope around each append. A checksum lets startup discard only a torn
@@ -645,6 +779,20 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
                                 uint32_t serializedAtMs, bool prependComma);
 String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t historyCount);
 bool copySensorReading(uint8_t sensorId, SensorReading& destination);
+void cacheTemperatureCompensationModes(JsonVariantConst config);
+bool loadTemperatureCompensationModes();
+bool loadTemperatureCompensationModels();
+bool saveTemperatureCompensationModels();
+void serviceTemperatureCompensationPersistence();
+void resetTemperatureCompensationFit(TemperatureCompensationState& state, uint32_t nowMs);
+void resetTemperatureCompensationEpoch(
+    TemperatureCompensationState& state, uint8_t sensorId, uint32_t nowMs,
+    float boardTempC, float logRatio, uint32_t connectedCounts, uint32_t bareCounts,
+    const char* reason);
+TemperatureCompensationResult updateTemperatureCompensation(
+    uint8_t sensorId, uint32_t connectedCounts, uint32_t bareCounts,
+    int16_t boardTempQuarterC, uint8_t tankPhase, uint32_t nowMs,
+    bool probeRestarted);
 
 // Cached result of the periodic /autocal cloud pull (see runCloudAutoCalPull) - a
 // self-learned moisture range per sensor, replacing manually-guessed dry/wet
@@ -797,6 +945,11 @@ bool lastRadioSlotStillScanningAfterSettle = false;
 uint32_t lastRadioSlotStopCallMs = 0;
 #endif
 SensorReading sensors[MAX_SENSOR_ID + 1];
+TemperatureCompensationState temperatureCompensation[MAX_SENSOR_ID + 1];
+uint8_t temperatureCompensationMode[MAX_SENSOR_ID + 1];
+volatile bool temperatureCompensationPersistPending = false;
+volatile bool temperatureCompensationPersistUrgent = false;
+uint32_t lastTemperatureCompensationPersistMs = 0;
 PendingHistoryReading pendingHistory[HISTORY_STAGING_CAPACITY];
 uint8_t pendingHistoryHead = 0;
 uint8_t pendingHistoryCount = 0;
@@ -828,6 +981,9 @@ portMUX_TYPE historyQueueMux = portMUX_INITIALIZER_UNLOCKED;
 // record while holding the same lock. This prevents logical packet tearing without
 // keeping interrupts disabled around slow display/network operations.
 portMUX_TYPE sensorsMux = portMUX_INITIALIZER_UNLOCKED;
+// Model persistence/config changes run on the main/cloud tasks while BLE updates the learner.
+// Copy state under this short lock, do floating-point work outside it, then publish atomically.
+portMUX_TYPE temperatureCompensationMux = portMUX_INITIALIZER_UNLOCKED;
 // runCloudAutoCalPull() writes on the cloud task while rendering, /data serialization,
 // and BLE presentation filtering read on other tasks/cores. Treat each state as one
 // record for the same reason as sensors[].
@@ -1051,6 +1207,558 @@ bool saveAutoCalCache()
   return true;
 }
 
+const char* temperatureCompensationModeName(uint8_t mode)
+{
+  if (mode == TEMPERATURE_COMPENSATION_ACTIVE) return "active";
+  if (mode == TEMPERATURE_COMPENSATION_LEARNING) return "learning";
+  return "off";
+}
+
+uint8_t parseTemperatureCompensationMode(const char* value)
+{
+  if (value != nullptr && strcmp(value, "active") == 0) return TEMPERATURE_COMPENSATION_ACTIVE;
+  if (value != nullptr && strcmp(value, "off") == 0) return TEMPERATURE_COMPENSATION_OFF;
+  return TEMPERATURE_COMPENSATION_LEARNING;
+}
+
+float temperatureCompensationSeedGain(uint8_t sensorId)
+{
+  // Both seeds are zero since v3, so this is currently a no-op kept for shape: a probe with a
+  // genuinely measured per-probe gain could be seeded here. It must never be used to hand a
+  // probe a fleet-average gain, because the sign is not a fleet property. Probe 4 fits about
+  // +0.013 and probe 8 about -0.004 in the same week, and v2 shipping probe 8 a positive seed
+  // it could never fit its way out of is the exact defect v3 exists to fix.
+  return sensorId == 4
+      ? TEMPERATURE_COMPENSATION_PROBE_4_SEED_GAIN_PER_C
+      : TEMPERATURE_COMPENSATION_DEFAULT_SEED_GAIN_PER_C;
+}
+
+float temperatureCompensationSeedReferenceC(uint8_t sensorId)
+{
+  return sensorId == 4
+      ? TEMPERATURE_COMPENSATION_PROBE_4_REFERENCE_C
+      : TEMPERATURE_COMPENSATION_DEFAULT_REFERENCE_C;
+}
+
+void cacheTemperatureCompensationModes(JsonVariantConst config)
+{
+  uint8_t nextModes[MAX_SENSOR_ID + 1];
+  for (uint8_t sensorId = 0; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    // Shadow learning is safe for existing configurations because it never changes the
+    // presentation value. Users must explicitly choose Active before it can do so.
+    nextModes[sensorId] = TEMPERATURE_COMPENSATION_LEARNING;
+  }
+
+  JsonArrayConst cards = config["cards"].as<JsonArrayConst>();
+  for (JsonObjectConst card : cards)
+  {
+    uint8_t sensorId = card["sensor"] | 0;
+    if (sensorId == 0 || sensorId > MAX_SENSOR_ID) continue;
+    JsonObjectConst moisture = card["moisture"].as<JsonObjectConst>();
+    nextModes[sensorId] = parseTemperatureCompensationMode(
+        moisture["temperatureCompensation"] | "learning");
+  }
+
+  portENTER_CRITICAL(&temperatureCompensationMux);
+  memcpy(temperatureCompensationMode, nextModes, sizeof(nextModes));
+  portEXIT_CRITICAL(&temperatureCompensationMux);
+}
+
+bool loadTemperatureCompensationModes()
+{
+  portENTER_CRITICAL(&temperatureCompensationMux);
+  for (uint8_t sensorId = 0; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    temperatureCompensationMode[sensorId] = TEMPERATURE_COMPENSATION_LEARNING;
+  }
+  portEXIT_CRITICAL(&temperatureCompensationMux);
+  File file = LittleFS.open(UI_PATH, FILE_READ);
+  if (!file)
+  {
+    return false;
+  }
+  DynamicJsonDocument doc(12288);
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error) return false;
+  cacheTemperatureCompensationModes(doc.as<JsonVariantConst>());
+  return true;
+}
+
+bool loadTemperatureCompensationModels()
+{
+  File file = LittleFS.open(TEMPERATURE_COMPENSATION_CACHE_PATH, FILE_READ);
+  if (!file) return false;
+  DynamicJsonDocument doc(24576);
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error || (doc["schema"] | 0) != TEMPERATURE_COMPENSATION_MODEL_VERSION) return false;
+
+  size_t restored = 0;
+  JsonArray models = doc["models"].as<JsonArray>();
+  for (JsonObject row : models)
+  {
+    uint8_t sensorId = row["sensor"] | 0;
+    float gain = row["gainPerC"] | temperatureCompensationSeedGain(sensorId);
+    float referenceTempC = row["referenceTempC"] |
+        temperatureCompensationSeedReferenceC(sensorId);
+    float phaseOffset = row["phaseOffset"] | TEMPERATURE_COMPENSATION_SEED_PHASE_OFFSET;
+    float effectiveTempC = row["effectiveTempC"] |
+        temperatureCompensationSeedReferenceC(sensorId);
+    float slowLogRatio = row["slowLogRatio"] | 0.0f;
+    uint8_t acceptedFits = row["acceptedFits"] | 0;
+    bool emaReady = row["emaReady"] | false;
+    uint32_t epoch = row["epoch"] | 0;
+    uint32_t blockElapsedMs = row["blockElapsedMs"] | 0;
+    uint32_t sampleCount = row["sampleCount"] | 0;
+    uint32_t lastConnectedCounts = row["lastConnectedCounts"] | 0;
+    uint32_t lastBareCounts = row["lastBareCounts"] | 0;
+    float minTempC = row["minTempC"] | 1000.0f;
+    float maxTempC = row["maxTempC"] | -1000.0f;
+    double sumY = row["sumY"] | 0.0;
+    double sumYSquared = row["sumYSquared"] | 0.0;
+    if (sensorId == 0 || sensorId > MAX_SENSOR_ID || !isfinite(gain) ||
+        gain < TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C || gain > 0.04f ||
+        !isfinite(referenceTempC) || referenceTempC < -40.0f || referenceTempC > 85.0f ||
+        !isfinite(phaseOffset) || fabsf(phaseOffset) > 0.01f ||
+        !isfinite(effectiveTempC) || effectiveTempC < -40.0f || effectiveTempC > 85.0f ||
+        !isfinite(slowLogRatio) || slowLogRatio < -0.2f || slowLogRatio > 1.0f ||
+        blockElapsedMs > TEMPERATURE_COMPENSATION_FIT_BLOCK_MS ||
+        sampleCount > 100000UL || (sampleCount > 0 && !emaReady) ||
+        (sampleCount > 0 && (lastConnectedCounts == 0 || lastConnectedCounts > 0x0FFFFFFFUL ||
+                             lastBareCounts == 0 || lastBareCounts > 0x0FFFFFFFUL ||
+                             !isfinite(minTempC) || !isfinite(maxTempC) ||
+                             minTempC < -40.0f || maxTempC > 85.0f || minTempC > maxTempC)) ||
+        !isfinite(sumY) || !isfinite(sumYSquared))
+    {
+      continue;
+    }
+    double normal[4][4] = {};
+    double rhs[4] = {};
+    bool partialValid = true;
+    if (sampleCount > 0)
+    {
+      JsonArray normalValues = row["normal"].as<JsonArray>();
+      JsonArray rhsValues = row["rhs"].as<JsonArray>();
+      partialValid = normalValues.size() == 16 && rhsValues.size() == 4;
+      for (uint8_t i = 0; partialValid && i < 16; i++)
+      {
+        const double value = normalValues[i].as<double>();
+        if (!isfinite(value)) partialValid = false;
+        else normal[i / 4][i % 4] = value;
+      }
+      for (uint8_t i = 0; partialValid && i < 4; i++)
+      {
+        const double value = rhsValues[i].as<double>();
+        if (!isfinite(value)) partialValid = false;
+        else rhs[i] = value;
+      }
+    }
+    if (!partialValid) continue;
+
+    portENTER_CRITICAL(&temperatureCompensationMux);
+    TemperatureCompensationState& state = temperatureCompensation[sensorId];
+    state.gainPerC = gain;
+    state.referenceTempC = referenceTempC;
+    state.phaseOffset = phaseOffset;
+    state.effectiveTempC = effectiveTempC;
+    state.slowLogRatio = slowLogRatio;
+    state.acceptedFits = acceptedFits;
+    state.emaReady = emaReady;
+    state.epoch = max(1UL, epoch);
+    state.restoredBlockElapsedMs = sampleCount > 0 ? blockElapsedMs : 0;
+    state.sampleCount = sampleCount;
+    state.lastConnectedCounts = lastConnectedCounts;
+    state.lastBareCounts = lastBareCounts;
+    state.minTempC = sampleCount > 0 ? minTempC : 1000.0f;
+    state.maxTempC = sampleCount > 0 ? maxTempC : -1000.0f;
+    memcpy(state.normal, normal, sizeof(normal));
+    memcpy(state.rhs, rhs, sizeof(rhs));
+    state.sumY = sumY;
+    state.sumYSquared = sumYSquared;
+    // millis() starts a new epoch after reset. Re-anchor the saved elapsed duration on the
+    // first new sample; do not count the unobserved outage as training time or EMA input.
+    state.lastUpdateMs = 0;
+    state.blockStartMs = 0;
+    portEXIT_CRITICAL(&temperatureCompensationMux);
+    restored++;
+  }
+  if (restored > 0)
+  {
+    Serial.print("[Treebeard temp-comp] restored models=");
+    Serial.println(restored);
+  }
+  return restored > 0;
+}
+
+bool saveTemperatureCompensationModels()
+{
+  const uint32_t nowMs = millis();
+  DynamicJsonDocument doc(24576);
+  doc["schema"] = TEMPERATURE_COMPENSATION_MODEL_VERSION;
+  JsonArray models = doc.createNestedArray("models");
+  for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
+  {
+    TemperatureCompensationState state;
+    portENTER_CRITICAL(&temperatureCompensationMux);
+    state = temperatureCompensation[sensorId];
+    portEXIT_CRITICAL(&temperatureCompensationMux);
+    if (!state.emaReady && state.acceptedFits == 0) continue;
+    JsonObject row = models.createNestedObject();
+    row["sensor"] = sensorId;
+    row["gainPerC"] = state.gainPerC;
+    row["referenceTempC"] = state.referenceTempC;
+    row["phaseOffset"] = state.phaseOffset;
+    row["effectiveTempC"] = state.effectiveTempC;
+    row["slowLogRatio"] = state.slowLogRatio;
+    row["acceptedFits"] = state.acceptedFits;
+    row["emaReady"] = state.emaReady;
+    row["epoch"] = state.epoch;
+    row["blockElapsedMs"] = state.blockStartMs != 0
+        ? (uint32_t)(nowMs - state.blockStartMs)
+        : state.restoredBlockElapsedMs;
+    row["sampleCount"] = state.sampleCount;
+    row["lastConnectedCounts"] = state.lastConnectedCounts;
+    row["lastBareCounts"] = state.lastBareCounts;
+    row["minTempC"] = state.minTempC;
+    row["maxTempC"] = state.maxTempC;
+    row["sumY"] = state.sumY;
+    row["sumYSquared"] = state.sumYSquared;
+    JsonArray normalValues = row.createNestedArray("normal");
+    JsonArray rhsValues = row.createNestedArray("rhs");
+    for (uint8_t r = 0; r < 4; r++)
+    {
+      for (uint8_t c = 0; c < 4; c++) normalValues.add(state.normal[r][c]);
+      rhsValues.add(state.rhs[r]);
+    }
+  }
+  if (doc.overflowed()) return false;
+
+  File temp = LittleFS.open(TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH, FILE_WRITE);
+  if (!temp) return false;
+  const size_t written = serializeJson(doc, temp);
+  temp.flush();
+  temp.close();
+  if (written == 0)
+  {
+    LittleFS.remove(TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH);
+    return false;
+  }
+  LittleFS.remove(TEMPERATURE_COMPENSATION_CACHE_PATH);
+  if (!LittleFS.rename(TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH,
+                       TEMPERATURE_COMPENSATION_CACHE_PATH))
+  {
+    LittleFS.remove(TEMPERATURE_COMPENSATION_CACHE_TEMP_PATH);
+    return false;
+  }
+  return true;
+}
+
+void serviceTemperatureCompensationPersistence()
+{
+  const uint32_t nowMs = millis();
+  bool shouldSave = false;
+  portENTER_CRITICAL(&temperatureCompensationMux);
+  if (temperatureCompensationPersistPending &&
+      (temperatureCompensationPersistUrgent || lastTemperatureCompensationPersistMs == 0 ||
+       (uint32_t)(nowMs - lastTemperatureCompensationPersistMs) >=
+           TEMPERATURE_COMPENSATION_PERSIST_INTERVAL_MS))
+  {
+    shouldSave = true;
+    temperatureCompensationPersistPending = false;
+    temperatureCompensationPersistUrgent = false;
+  }
+  portEXIT_CRITICAL(&temperatureCompensationMux);
+  if (!shouldSave) return;
+
+  if (saveTemperatureCompensationModels())
+  {
+    lastTemperatureCompensationPersistMs = nowMs;
+  }
+  else
+  {
+    portENTER_CRITICAL(&temperatureCompensationMux);
+    temperatureCompensationPersistPending = true;
+    temperatureCompensationPersistUrgent = true;
+    portEXIT_CRITICAL(&temperatureCompensationMux);
+  }
+}
+
+bool solveTemperatureCompensationNormal(const double normal[4][4], const double rhs[4],
+                                        double solution[4])
+{
+  double augmented[4][5];
+  for (uint8_t row = 0; row < 4; row++)
+  {
+    for (uint8_t column = 0; column < 4; column++) augmented[row][column] = normal[row][column];
+    augmented[row][4] = rhs[row];
+  }
+  for (uint8_t pivot = 0; pivot < 4; pivot++)
+  {
+    uint8_t best = pivot;
+    for (uint8_t row = pivot + 1; row < 4; row++)
+    {
+      if (fabs(augmented[row][pivot]) > fabs(augmented[best][pivot])) best = row;
+    }
+    if (fabs(augmented[best][pivot]) < 1e-10) return false;
+    if (best != pivot)
+    {
+      for (uint8_t column = pivot; column < 5; column++)
+      {
+        double swap = augmented[pivot][column];
+        augmented[pivot][column] = augmented[best][column];
+        augmented[best][column] = swap;
+      }
+    }
+    double divisor = augmented[pivot][pivot];
+    for (uint8_t column = pivot; column < 5; column++) augmented[pivot][column] /= divisor;
+    for (uint8_t row = 0; row < 4; row++)
+    {
+      if (row == pivot) continue;
+      double factor = augmented[row][pivot];
+      for (uint8_t column = pivot; column < 5; column++)
+      {
+        augmented[row][column] -= factor * augmented[pivot][column];
+      }
+    }
+  }
+  for (uint8_t row = 0; row < 4; row++) solution[row] = augmented[row][4];
+  return true;
+}
+
+void resetTemperatureCompensationFit(TemperatureCompensationState& state, uint32_t nowMs)
+{
+  state.blockStartMs = nowMs;
+  state.restoredBlockElapsedMs = 0;
+  state.sampleCount = 0;
+  state.minTempC = 1000.0f;
+  state.maxTempC = -1000.0f;
+  memset(state.normal, 0, sizeof(state.normal));
+  memset(state.rhs, 0, sizeof(state.rhs));
+  state.sumY = 0.0;
+  state.sumYSquared = 0.0;
+}
+
+void resetTemperatureCompensationEpoch(
+    TemperatureCompensationState& state, uint8_t sensorId, uint32_t nowMs,
+    float boardTempC, float logRatio, uint32_t connectedCounts, uint32_t bareCounts,
+    const char* reason)
+{
+  const uint32_t nextEpoch = state.epoch == UINT32_MAX ? 1 : state.epoch + 1;
+  state = TemperatureCompensationState();
+  state.gainPerC = temperatureCompensationSeedGain(sensorId);
+  state.referenceTempC = temperatureCompensationSeedReferenceC(sensorId);
+  state.phaseOffset = TEMPERATURE_COMPENSATION_SEED_PHASE_OFFSET;
+  state.effectiveTempC = boardTempC;
+  state.slowLogRatio = logRatio;
+  state.emaReady = true;
+  state.epoch = max(1UL, nextEpoch);
+  state.lastUpdateMs = nowMs;
+  state.lastConnectedCounts = connectedCounts;
+  state.lastBareCounts = bareCounts;
+  resetTemperatureCompensationFit(state, nowMs);
+  if (reason != nullptr)
+  {
+    Serial.print("[Treebeard temp-comp] sensor=");
+    Serial.print(sensorId);
+    Serial.print(" new epoch=");
+    Serial.print(state.epoch);
+    Serial.print(" reason=");
+    Serial.println(reason);
+  }
+}
+
+TemperatureCompensationResult updateTemperatureCompensation(
+    uint8_t sensorId, uint32_t connectedCounts, uint32_t bareCounts,
+    int16_t boardTempQuarterC, uint8_t tankPhase, uint32_t nowMs,
+    bool probeRestarted)
+{
+  TemperatureCompensationResult result;
+  if (sensorId == 0 || sensorId > MAX_SENSOR_ID) return result;
+
+  TemperatureCompensationState state;
+  uint8_t configuredMode;
+  portENTER_CRITICAL(&temperatureCompensationMux);
+  state = temperatureCompensation[sensorId];
+  configuredMode = temperatureCompensationMode[sensorId];
+  portEXIT_CRITICAL(&temperatureCompensationMux);
+  result.configuredMode = configuredMode;
+  result.effectiveMode = configuredMode;
+  result.gainPerC = state.gainPerC;
+  result.referenceTempC = state.referenceTempC;
+  result.epoch = state.epoch;
+  if (configuredMode == TEMPERATURE_COMPENSATION_OFF) return result;
+
+  const uint32_t maxFdcCount = 0x0FFFFFFFUL;
+  if (connectedCounts == 0 || connectedCounts > maxFdcCount ||
+      bareCounts == 0 || bareCounts > maxFdcCount || tankPhase > 1)
+  {
+    return result;
+  }
+  const float boardTempC = boardTempQuarterC / 4.0f;
+  const float logRatio = 2.0f * (logf((float)bareCounts) - logf((float)connectedCounts));
+  if (!isfinite(logRatio) || logRatio < -0.2f || logRatio > 1.0f) return result;
+
+  const float connectedStep = state.lastConnectedCounts > 0
+      ? fabsf((float)connectedCounts / state.lastConnectedCounts - 1.0f) : 0.0f;
+  const float bareStep = state.lastBareCounts > 0
+      ? fabsf((float)bareCounts / state.lastBareCounts - 1.0f) : 0.0f;
+  const char* resetReason = nullptr;
+  if (probeRestarted) resetReason = "probe-restart";
+  else if (state.emaReady && connectedStep > TEMPERATURE_COMPENSATION_MAX_CONNECTED_STEP_FRACTION)
+    resetReason = "connected-count-step";
+  else if (state.emaReady && bareStep > TEMPERATURE_COMPENSATION_MAX_BARE_STEP_FRACTION)
+    resetReason = "bare-count-step";
+
+  bool epochResetThisUpdate = false;
+  if (!state.emaReady || resetReason != nullptr)
+  {
+    resetTemperatureCompensationEpoch(
+        state, sensorId, nowMs, boardTempC, logRatio, connectedCounts, bareCounts,
+        resetReason);
+    epochResetThisUpdate = resetReason != nullptr;
+  }
+
+  float deltaSeconds = 0.0f;
+  if (state.lastUpdateMs != 0)
+  {
+    deltaSeconds = (uint32_t)(nowMs - state.lastUpdateMs) / 1000.0f;
+    // A receiver that was suspended for days should rewarm gradually instead of treating the
+    // entire outage as one perfectly observed interval.
+    deltaSeconds = min(deltaSeconds, 6.0f * 60.0f * 60.0f);
+  }
+  state.lastUpdateMs = nowMs;
+  if (deltaSeconds > 0.0f)
+  {
+    const float tempAlpha = 1.0f - expf(-deltaSeconds / TEMPERATURE_COMPENSATION_TEMP_TAU_SECONDS);
+    const float moistureAlpha = 1.0f - expf(-deltaSeconds / TEMPERATURE_COMPENSATION_MOISTURE_TAU_SECONDS);
+    state.effectiveTempC += tempAlpha * (boardTempC - state.effectiveTempC);
+    state.slowLogRatio += moistureAlpha * (logRatio - state.slowLogRatio);
+  }
+
+  state.lastConnectedCounts = connectedCounts;
+  state.lastBareCounts = bareCounts;
+  if (state.blockStartMs == 0)
+  {
+    if (state.sampleCount > 0 && state.restoredBlockElapsedMs > 0)
+    {
+      // Unsigned subtraction deliberately re-anchors across millis()'s new boot epoch; the
+      // subsequent unsigned difference recovers exactly the persisted observed duration.
+      state.blockStartMs = nowMs - state.restoredBlockElapsedMs;
+      state.restoredBlockElapsedMs = 0;
+    }
+    else
+    {
+      resetTemperatureCompensationFit(state, nowMs);
+    }
+  }
+  const uint32_t blockElapsedMs = (uint32_t)(nowMs - state.blockStartMs);
+  const double timeDays = blockElapsedMs / (double)TEMPERATURE_COMPENSATION_FIT_BLOCK_MS;
+  const float slowExcess = expf(state.slowLogRatio) - 1.0f;
+  const double feature[4] = {
+    1.0,
+    timeDays,
+    slowExcess * (state.effectiveTempC - state.referenceTempC),
+    (double)tankPhase,
+  };
+  for (uint8_t row = 0; row < 4; row++)
+  {
+    state.rhs[row] += feature[row] * logRatio;
+    for (uint8_t column = 0; column < 4; column++)
+    {
+      state.normal[row][column] += feature[row] * feature[column];
+    }
+  }
+  state.sumY += logRatio;
+  state.sumYSquared += (double)logRatio * logRatio;
+  state.sampleCount++;
+  state.minTempC = min(state.minTempC, state.effectiveTempC);
+  state.maxTempC = max(state.maxTempC, state.effectiveTempC);
+
+  bool fitAcceptedThisUpdate = false;
+  if (blockElapsedMs >= TEMPERATURE_COMPENSATION_FIT_BLOCK_MS)
+  {
+    double coefficients[4];
+    bool accepted = false;
+    if (state.sampleCount >= TEMPERATURE_COMPENSATION_MIN_FIT_SAMPLES &&
+        state.maxTempC - state.minTempC >= TEMPERATURE_COMPENSATION_MIN_TEMP_SPAN_C &&
+        solveTemperatureCompensationNormal(state.normal, state.rhs, coefficients))
+    {
+      double sse = state.sumYSquared;
+      for (uint8_t i = 0; i < 4; i++) sse -= coefficients[i] * state.rhs[i];
+      const double sst = state.sumYSquared - state.sumY * state.sumY / state.sampleCount;
+      const double r2 = sst > 1e-10 ? 1.0 - max(0.0, sse) / sst : -1.0;
+      const float candidateGain = (float)coefficients[2];
+      const float candidatePhase = (float)coefficients[3];
+      if (isfinite(candidateGain) && candidateGain >= TEMPERATURE_COMPENSATION_MIN_GAIN_PER_C &&
+          candidateGain <= 0.04f &&
+          isfinite(candidatePhase) && fabsf(candidatePhase) <= 0.01f &&
+          r2 >= TEMPERATURE_COMPENSATION_MIN_FIT_R2)
+      {
+        // The first accepted fit is taken outright. Blending it 3:1 against the seed only makes
+        // sense if the seed carries information, and since v3 the seed is deliberately zero.
+        // Blending against zero would leave a probe applying a quarter of its own measured gain
+        // for several days, which is a worse error than applying none.
+        if (state.acceptedFits == 0)
+        {
+          state.gainPerC = candidateGain;
+          state.phaseOffset = candidatePhase;
+        }
+        else
+        {
+          state.gainPerC = 0.75f * state.gainPerC + 0.25f * candidateGain;
+          state.phaseOffset = 0.75f * state.phaseOffset + 0.25f * candidatePhase;
+        }
+        if (state.acceptedFits < 0xFF) state.acceptedFits++;
+        accepted = true;
+      }
+      Serial.print("[Treebeard temp-comp] sensor=");
+      Serial.print(sensorId);
+      Serial.print(" fit r2=");
+      Serial.print(r2, 3);
+      Serial.print(" candidateGain=");
+      Serial.print(candidateGain, 6);
+      Serial.print(" accepted=");
+      Serial.println(accepted ? "yes" : "no");
+    }
+    resetTemperatureCompensationFit(state, nowMs);
+    fitAcceptedThisUpdate = accepted;
+  }
+
+  const float correctedLogRatio = logRatio -
+      state.gainPerC * slowExcess * (state.effectiveTempC - state.referenceTempC) -
+      state.phaseOffset * tankPhase;
+  const float equivalentCounts = bareCounts / expf(correctedLogRatio * 0.5f);
+  if (isfinite(correctedLogRatio) && correctedLogRatio >= 0.0f && correctedLogRatio <= 0.65534f &&
+      isfinite(equivalentCounts) && equivalentCounts >= 1.0f && equivalentCounts <= maxFdcCount)
+  {
+    result.valid = true;
+    result.logRatioPpm = (int32_t)lroundf(correctedLogRatio * 1000000.0f);
+    result.equivalentMoisture = calibrateMsv3Moisture((uint32_t)lroundf(equivalentCounts));
+  }
+  const uint32_t progress = min(49UL,
+      (uint32_t)(((uint64_t)(nowMs - state.blockStartMs) * 50ULL) /
+                 TEMPERATURE_COMPENSATION_FIT_BLOCK_MS));
+  result.confidencePercent = (uint8_t)min(100UL,
+      (uint32_t)state.acceptedFits * 50UL + progress);
+  if (configuredMode == TEMPERATURE_COMPENSATION_ACTIVE &&
+      state.acceptedFits < TEMPERATURE_COMPENSATION_REQUIRED_FITS)
+  {
+    result.effectiveMode = TEMPERATURE_COMPENSATION_LEARNING;
+  }
+  result.gainPerC = state.gainPerC;
+  result.referenceTempC = state.referenceTempC;
+  result.epoch = state.epoch;
+
+  portENTER_CRITICAL(&temperatureCompensationMux);
+  temperatureCompensation[sensorId] = state;
+  temperatureCompensationPersistPending = true;
+  if (fitAcceptedThisUpdate || epochResetThisUpdate) temperatureCompensationPersistUrgent = true;
+  portEXIT_CRITICAL(&temperatureCompensationMux);
+  return result;
+}
+
 bool validHistoryJournalRecord(const HistoryJournalRecord& record)
 {
   return record.magic == HISTORY_RECORD_MAGIC &&
@@ -1265,6 +1973,27 @@ uint32_t historyQueueHighWaterMark()
   return mark;
 }
 
+// Preserve the v1 journal record size: rawMoistureKHz is otherwise unused for wide/MSV3 rows,
+// so it carries a compact shadow-channel value while queued. Zero remains the legacy/absent
+// sentinel; one count represents 10 log-ratio ppm, covering the physically useful 0..655,340
+// ppm range without invalidating already-journaled rows after a firmware update.
+uint16_t encodeTemperatureCompensatedLogRatioPpm(int32_t ppm)
+{
+  int32_t quantized = (ppm + 5) / 10;
+  quantized = constrain(quantized, 0L, 65534L);
+  return (uint16_t)(quantized + 1);
+}
+
+bool decodeTemperatureCompensatedLogRatioPpm(uint16_t encoded, int32_t& ppm)
+{
+  if (encoded == 0)
+  {
+    return false;
+  }
+  ppm = (int32_t)(encoded - 1U) * 10;
+  return true;
+}
+
 bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
 {
   PendingHistoryReading pending;
@@ -1284,14 +2013,14 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   pending.rawFdcCounts = reading.rawFdcCounts;
   pending.moisture = reading.moisture;
   pending.measuredMoisture = reading.measuredMoisture;
-  pending.rawMoistureKHz = reading.rawMoistureKHz;
+  pending.rawMoistureKHz = reading.wideRaw && reading.temperatureCompensationValid
+      ? encodeTemperatureCompensatedLogRatioPpm(reading.temperatureCompensatedLogRatioPpm)
+      : reading.rawMoistureKHz;
   pending.rawBatteryMv = reading.rawBatteryMv;
   pending.rawCharging = reading.rawCharging;
   pending.rssi = (int16_t)constrain(reading.rssi, -32768, 32767);
   pending.sensorId = sensorId;
-  pending.moistureScale = reading.wideRaw
-      ? MSV3_MOISTURE_SCALE_VERSION
-      : MSV2_MOISTURE_SCALE_VERSION;
+  pending.moistureScale = moistureScaleVersion(reading.wideRaw, reading.caplessTank);
   pending.batteryPercent = reading.batteryPercent;
   pending.hasRaw = reading.hasRaw;
   pending.wideRaw = reading.wideRaw;
@@ -1950,7 +2679,7 @@ uint32_t pendingRestartMs = 0;
 uint32_t minFreeHeapEverBytes = UINT32_MAX;
 // 2026-09-02: smallest free loopTask stack seen this boot. Tracked rather than only sampled
 // on demand because /device's own handler runs on loopTask at a shallower depth than the
-// paths we actually care about (sensorDataJson()'s 4KB document), so an on-demand read alone
+// paths we actually care about (sensorDataJson()'s 8KB document), so an on-demand read alone
 // would systematically under-report the real peak.
 uint32_t minLoopTaskStackFreeEverBytes = UINT32_MAX;
 uint32_t lastCloudUploadFreeHeapBeforeBytes = 0;
@@ -2226,14 +2955,14 @@ void ensureDefaultUi()
     "\"theme\":{\"background\":\"#0E141B\",\"surface\":\"#17212B\",\"text\":\"#F5F7FA\",\"muted\":\"#8FA3AD\",\"accent\":\"#20C997\",\"warning\":\"#FFB020\",\"danger\":\"#FF5A5F\"},"
     "\"layout\":{\"type\":\"grid\",\"orientation\":\"landscape\",\"columns\":4,\"rows\":2,\"gap\":6,\"padding\":6},"
     "\"cards\":["
-    "{\"sensor\":1,\"plant\":\"Basil\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":2,\"plant\":\"Mint\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":3,\"plant\":\"Thyme\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":4,\"plant\":\"Sage\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":5,\"plant\":\"Rosemary\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":6,\"plant\":\"Oregano\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":7,\"plant\":\"Parsley\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175}},"
-    "{\"sensor\":8,\"plant\":\"Cilantro\",\"art\":\"cactus_cluster\",\"moisture\":{\"dry\":120,\"wet\":175}}"
+    "{\"sensor\":1,\"plant\":\"Basil\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":2,\"plant\":\"Mint\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":3,\"plant\":\"Thyme\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":4,\"plant\":\"Sage\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":5,\"plant\":\"Rosemary\",\"art\":\"wide_planter\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":6,\"plant\":\"Oregano\",\"art\":\"cup_plant\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":7,\"plant\":\"Parsley\",\"art\":\"sprout_pot\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}},"
+    "{\"sensor\":8,\"plant\":\"Cilantro\",\"art\":\"cactus_cluster\",\"moisture\":{\"dry\":120,\"wet\":175,\"temperatureCompensation\":\"learning\"}}"
     "]"
     "}"
   );
@@ -2353,6 +3082,7 @@ bool writeUiJson(const String& body)
   serializeJson(validation, file);
   file.close();
   staleSeconds = validation["staleSeconds"] | DEFAULT_STALE_SECONDS;
+  cacheTemperatureCompensationModes(validation.as<JsonVariantConst>());
   cacheUiMetadata(validation["_meta"]);
   displayDirty = true;
   scheduleCloudSnapshotAfterStateChange();
@@ -6134,7 +6864,7 @@ void renderAnimatedPlantArt()
 
 String sensorDataJson()
 {
-  StaticJsonDocument<4096> doc;
+  StaticJsonDocument<8192> doc;
   JsonArray readings = doc.createNestedArray("sensors");
   for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
   {
@@ -6158,9 +6888,7 @@ String sensorDataJson()
     // unsmoothed receiver-derived reading beside it for diagnostics and cloud history.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = r.wideRaw
-        ? MSV3_MOISTURE_SCALE_VERSION
-        : MSV2_MOISTURE_SCALE_VERSION;
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -6192,6 +6920,7 @@ String sensorDataJson()
         {
           if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
         }
       }
@@ -6201,6 +6930,26 @@ String sensorDataJson()
       }
       rawItem["batteryMv"] = r.rawBatteryMv;
       rawItem["charging"] = r.rawCharging;
+    }
+
+    if (r.wideRaw)
+    {
+      JsonObject compensated = item.createNestedObject("temperatureCompensation");
+      compensated["valid"] = r.temperatureCompensationValid;
+      compensated["mode"] = temperatureCompensationModeName(
+          r.temperatureCompensationConfiguredMode);
+      compensated["effectiveMode"] = temperatureCompensationModeName(
+          r.temperatureCompensationEffectiveMode);
+      compensated["confidencePercent"] = r.temperatureCompensationConfidencePercent;
+      compensated["modelVersion"] = r.temperatureCompensationModelVersion;
+      compensated["gainPerC"] = r.temperatureCompensationGainPerC;
+      compensated["referenceC"] = r.temperatureCompensationReferenceC;
+      compensated["epoch"] = r.temperatureCompensationEpoch;
+      if (r.temperatureCompensationValid)
+      {
+        compensated["logRatioPpm"] = r.temperatureCompensatedLogRatioPpm;
+        compensated["equivalentMoisture"] = r.temperatureCompensatedEquivalentMoisture;
+      }
     }
 
     // Cached result of the periodic cloud auto-calibration pull (see
@@ -6238,7 +6987,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
   // Only the receiver metadata and latest-value cache are retained as one String. History
   // rows are emitted by HistoryOutboxStream below, one bounded row at a time.
   String output;
-  if (!output.reserve(512 + seenSensors * 320))
+  if (!output.reserve(512 + seenSensors * 480))
   {
     Serial.println("[Treebeard cloud] could not reserve compact history prefix");
     return "";
@@ -6272,7 +7021,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
     output += F(",\"measuredMoisture\":");
     output += reading.measuredMoisture;
     output += F(",\"moistureScale\":");
-    output += reading.wideRaw ? MSV3_MOISTURE_SCALE_VERSION : MSV2_MOISTURE_SCALE_VERSION;
+    output += moistureScaleVersion(reading.wideRaw, reading.caplessTank);
     if (reading.batteryPercent != BATTERY_UNKNOWN)
     {
       output += F(",\"batteryPercent\":");
@@ -6282,6 +7031,33 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
     output += reading.rssi;
     output += F(",\"ageMs\":");
     output += (unsigned long)(serializedAtMs - reading.lastSeenMs);
+    if (reading.wideRaw)
+    {
+      output += F(",\"temperatureCompensation\":{\"valid\":");
+      output += reading.temperatureCompensationValid ? F("true") : F("false");
+      output += F(",\"mode\":\"");
+      output += temperatureCompensationModeName(reading.temperatureCompensationConfiguredMode);
+      output += F("\",\"effectiveMode\":\"");
+      output += temperatureCompensationModeName(reading.temperatureCompensationEffectiveMode);
+      output += F("\",\"confidencePercent\":");
+      output += reading.temperatureCompensationConfidencePercent;
+      output += F(",\"modelVersion\":");
+      output += reading.temperatureCompensationModelVersion;
+      output += F(",\"gainPerC\":");
+      output += String(reading.temperatureCompensationGainPerC, 6);
+      output += F(",\"referenceC\":");
+      output += String(reading.temperatureCompensationReferenceC, 2);
+      output += F(",\"epoch\":");
+      output += reading.temperatureCompensationEpoch;
+      if (reading.temperatureCompensationValid)
+      {
+        output += F(",\"logRatioPpm\":");
+        output += reading.temperatureCompensatedLogRatioPpm;
+        output += F(",\"equivalentMoisture\":");
+        output += reading.temperatureCompensatedEquivalentMoisture;
+      }
+      output += '}';
+    }
     if (reading.hasRaw)
     {
       if (reading.wideRaw)
@@ -6300,6 +7076,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
             output += F(",\"bareTankFdcCounts\":");
             output += (unsigned long)reading.rawBareTankFdcCounts;
           }
+          if (reading.caplessTank) output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += reading.tankPhase;
         }
@@ -6361,6 +7138,15 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
   output += F(",\"rssi\":");
   output += pending.rssi;
   output += F(",\"ageMs\":0");
+  int32_t compensatedLogRatioPpm = 0;
+  if (pending.wideRaw &&
+      decodeTemperatureCompensatedLogRatioPpm(pending.rawMoistureKHz, compensatedLogRatioPpm))
+  {
+    output += F(",\"temperatureCompensatedLogRatioPpm\":");
+    output += compensatedLogRatioPpm;
+    output += F(",\"temperatureCompensationModelVersion\":");
+    output += TEMPERATURE_COMPENSATION_MODEL_VERSION;
+  }
   if (pending.hasRaw)
   {
     if (pending.wideRaw)
@@ -6379,6 +7165,8 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
           output += F(",\"bareTankFdcCounts\":");
           output += (unsigned long)pending.rawBareTankFdcCounts;
         }
+        if (pending.moistureScale == MSV3_CAPLESS_MOISTURE_SCALE_VERSION)
+          output += F(",\"caplessTank\":true");
         output += F(",\"tankPhase\":");
         output += pending.tankPhase;
       }
@@ -6633,16 +7421,20 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
           int dry = card["dry"] | 120;
           int wet = card["wet"] | 175;
           bool autoCalEnabled = false;
+          const char* temperatureCompensationSetting = "learning";
           if (!sourceMoisture.isNull())
           {
             dry = sourceMoisture["dry"] | dry;
             wet = sourceMoisture["wet"] | wet;
             autoCalEnabled = sourceMoisture["auto"] | false;
+            temperatureCompensationSetting =
+                sourceMoisture["temperatureCompensation"] | "learning";
           }
           JsonObject moisture = item.createNestedObject("moisture");
           moisture["dry"] = dry;
           moisture["wet"] = wet;
           moisture["auto"] = autoCalEnabled;
+          moisture["temperatureCompensation"] = temperatureCompensationSetting;
         }
       }
     }
@@ -6692,9 +7484,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     // while receiver-snapshot stores measuredMoisture in the original history series.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = r.wideRaw
-        ? MSV3_MOISTURE_SCALE_VERSION
-        : MSV2_MOISTURE_SCALE_VERSION;
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -6717,6 +7507,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
         {
           if (r.boardTempValid) rawItem["boardTempQuarterC"] = r.rawBoardTempQuarterC;
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
+          if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
         }
       }
@@ -6726,6 +7517,26 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
       }
       rawItem["batteryMv"] = r.rawBatteryMv;
       rawItem["charging"] = r.rawCharging;
+    }
+
+    if (r.wideRaw)
+    {
+      JsonObject compensated = item.createNestedObject("temperatureCompensation");
+      compensated["valid"] = r.temperatureCompensationValid;
+      compensated["mode"] = temperatureCompensationModeName(
+          r.temperatureCompensationConfiguredMode);
+      compensated["effectiveMode"] = temperatureCompensationModeName(
+          r.temperatureCompensationEffectiveMode);
+      compensated["confidencePercent"] = r.temperatureCompensationConfidencePercent;
+      compensated["modelVersion"] = r.temperatureCompensationModelVersion;
+      compensated["gainPerC"] = r.temperatureCompensationGainPerC;
+      compensated["referenceC"] = r.temperatureCompensationReferenceC;
+      compensated["epoch"] = r.temperatureCompensationEpoch;
+      if (r.temperatureCompensationValid)
+      {
+        compensated["logRatioPpm"] = r.temperatureCompensatedLogRatioPpm;
+        compensated["equivalentMoisture"] = r.temperatureCompensatedEquivalentMoisture;
+      }
     }
 
     // Same cached auto-calibration snapshot sensorDataJson() sends to the local /data
@@ -6801,6 +7612,16 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     output += F(",\"rssi\":");
     output += pending.rssi;
     output += F(",\"ageMs\":0");
+    int32_t compensatedLogRatioPpm = 0;
+    if (pending.wideRaw &&
+        decodeTemperatureCompensatedLogRatioPpm(pending.rawMoistureKHz,
+                                                 compensatedLogRatioPpm))
+    {
+      output += F(",\"temperatureCompensatedLogRatioPpm\":");
+      output += compensatedLogRatioPpm;
+      output += F(",\"temperatureCompensationModelVersion\":");
+      output += TEMPERATURE_COMPENSATION_MODEL_VERSION;
+    }
     if (pending.hasRaw)
     {
       if (pending.wideRaw)
@@ -6814,11 +7635,13 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
             output += F(",\"boardTempQuarterC\":");
             output += pending.rawBoardTempQuarterC;
           }
-          if (pending.bareTankValid)
-          {
-            output += F(",\"bareTankFdcCounts\":");
-            output += (unsigned long)pending.rawBareTankFdcCounts;
-          }
+        if (pending.bareTankValid)
+        {
+          output += F(",\"bareTankFdcCounts\":");
+          output += (unsigned long)pending.rawBareTankFdcCounts;
+        }
+        if (pending.moistureScale == MSV3_CAPLESS_MOISTURE_SCALE_VERSION)
+          output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += pending.tankPhase;
         }
@@ -6891,6 +7714,7 @@ bool applyCloudUiConfig(JsonVariantConst configValue, uint32_t remoteVersion)
   serializeJson(nextConfig, file);
   file.close();
   staleSeconds = nextConfig["staleSeconds"] | DEFAULT_STALE_SECONDS;
+  cacheTemperatureCompensationModes(nextConfig.as<JsonVariantConst>());
   cacheUiMetadata(nextConfig["_meta"]);
   displayDirty = true;
   scheduleCloudSnapshotAfterStateChange();
@@ -8161,7 +8985,7 @@ String deviceInfoJson()
   health["freeHeapNowBytes"] = ESP.getFreeHeap();
   health["minFreeHeapEverBytes"] = minFreeHeapEverBytes;
   // loopTask (WebServer + display render + touch + WiFi maintenance) was the ONLY task with
-  // no stack telemetry, and it is the one running sensorDataJson()'s StaticJsonDocument<4096>
+  // no stack telemetry, and it is the one running sensorDataJson()'s StaticJsonDocument<8192>
   // - 4KB of stack inside a web handler. Sampled from loop() itself and from the /data
   // handler after that document exists; see minLoopTaskStackFreeEverBytes.
   health["loopTaskStackHighWaterBytes"] = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);
@@ -8299,6 +9123,17 @@ const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
     3300, // sensor 3: AFE bench-test board (Capacitive Soil Moisture Sensor v1.2,
           // MSV2_Moisture_AFE_Test.ino) - raw is millivolts, not kHz. Provisional ceiling
           // (ESP32 ADC's practical max) - tighten once a real dry-air baseline is logged.
+    0,    // sensor 4: MSV3 probe - FDC counts, calibrated by calibrateMsv3Moisture, not this path
+    0,    // sensor 5: MSV3 probe - as sensor 4
+    0,    // sensor 6: MSV3 probe - as sensor 4
+    0,    // sensor 7: MSV3 probe - as sensor 4
+    0,    // sensor 8: MSV3 probe - as sensor 4
+    3300, // sensor 9: hybrid AFE rig - the same v1.2 front end as sensor 3 but with an MSV3 probe
+          // end in place of the module's own pad (2026-09-14). Raw is millivolts on the identical
+          // ESP32 ADC, so it takes sensor 3's ceiling: the two rigs are being compared directly,
+          // and giving them different ceilings would bake a presentation difference into an A/B
+          // whose entire point is that only the probe end differs. Without an entry here it would
+          // fall through to DEFAULT_MOISTURE_INVERT_CEILING (200) and every reading would clamp.
 };
 
 // Map the useful MSV3 FDC window into uint16 without first compressing the absolute
@@ -8314,6 +9149,15 @@ const uint16_t MOISTURE_INVERT_CEILING_BY_SENSOR[MAX_SENSOR_ID + 1] = {
 const uint32_t MSV3_FDC_MOISTURE_REFERENCE_COUNTS = 24000000UL;
 const uint32_t MSV3_FDC_COUNTS_PER_MOISTURE_UNIT = 100UL;
 
+// C17-free tanks run at much higher counts: Probe 8 measured ~39.4M dry and ~27M under a
+// repeatable two-hand load. Map the FDC's useful connected-tank range into approximately the same
+// uint16 presentation neighborhood as scale 2 while preserving a ~12,000-unit span for that test.
+// Raw counts remain untouched in local/cloud history; this is only the receiver presentation
+// transform. 80M also stays above the largest valid count expected from the configured 8.75MHz
+// input band across the internal-reference tolerance, avoiding a dry-end clamp.
+const uint32_t MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS = 80000000UL;
+const uint32_t MSV3_CAPLESS_FDC_COUNTS_PER_MOISTURE_UNIT = 1000UL;
+
 uint16_t calibrateMsv3Moisture(uint32_t rawFdcCounts)
 {
   if (rawFdcCounts >= MSV3_FDC_MOISTURE_REFERENCE_COUNTS)
@@ -8322,6 +9166,17 @@ uint16_t calibrateMsv3Moisture(uint32_t rawFdcCounts)
   }
   uint32_t moisture = (MSV3_FDC_MOISTURE_REFERENCE_COUNTS - rawFdcCounts) /
       MSV3_FDC_COUNTS_PER_MOISTURE_UNIT;
+  return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
+}
+
+uint16_t calibrateMsv3CaplessMoisture(uint32_t rawFdcCounts)
+{
+  if (rawFdcCounts >= MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS)
+  {
+    return 0;
+  }
+  uint32_t moisture = (MSV3_CAPLESS_FDC_MOISTURE_REFERENCE_COUNTS - rawFdcCounts) /
+      MSV3_CAPLESS_FDC_COUNTS_PER_MOISTURE_UNIT;
   return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
 }
 
@@ -8629,10 +9484,15 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     bool rawCharging = false;
     uint32_t rawFdcCounts = 0;
     bool hasMsv3Diagnostics = false;
+    // Defaults to true so every pre-MSV3 packet and every older MSV3 firmware behaves exactly as
+    // before: only a probe that explicitly reports a fault, or reports an implausible count, is
+    // treated as faulted.
+    bool readingValid = true;
     bool boardTempValid = false;
     int16_t rawBoardTempQuarterC = 0;
     bool bareTankValid = false;
     uint32_t rawBareTankFdcCounts = 0;
+    bool caplessTank = false;
     uint8_t tankPhase = 0;
     if (wideRaw)
     {
@@ -8640,7 +9500,6 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                      ((uint32_t)buffer[12] << 16) | ((uint32_t)buffer[13] << 24);
       rawBatteryMv = buffer[14] | (buffer[15] << 8);
       rawCharging = (buffer[16] & 0x01) != 0;
-      moisture = calibrateMsv3Moisture(rawFdcCounts);
 
       // 2026-08-25: board-temp/bare-tank-reference diagnostics extension - see
       // MSV3_DIAGNOSTIC_PACKET_LEN's comment. startAdv() always sends the full 23 bytes once its
@@ -8662,7 +9521,41 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         rawBoardTempQuarterC = boardTempValid ? tempField : 0;
         bareTankValid = (flags & 0x08) != 0;
         rawBareTankFdcCounts = bareTankValid ? bareTankField : 0;
+        caplessTank = (flags & 0x40) != 0;
+        // The capless policy and a valid bare reference are mutually exclusive. Fail closed if a
+        // malformed packet asserts both: retain the capless hardware identity and discard the
+        // impossible reference field rather than feeding it into the retired compensation path.
+        if (caplessTank)
+        {
+          bareTankValid = false;
+          rawBareTankFdcCounts = 0;
+        }
+
+        // 2026-09-04, MSV3 probe flag bit5: the probe advertised but its FDC read failed.
+        //
+        // The probe used to go silent on a sensor fault, which also closed the only channel for
+        // reaching or updating a coated probe over the radio. It now always advertises and marks
+        // the reading instead, so this bit is what stops a sensor fault from being ingested as a
+        // moisture value.
+        //
+        // Same belt-and-braces as the temperature field directly above: do not trust the probe's
+        // bit alone. Legacy C17 tanks sit around 15-23M; Probe 8's capless tank measured 39.4M
+        // dry and 27M under a two-hand load. The probe zeroes the field when it marks the reading
+        // invalid, and anything outside the hardware-specific sane band is not a reading whatever
+        // the flags claim.
+        const uint32_t MSV3_PLAUSIBLE_COUNT_MIN = 5000000UL;
+        const uint32_t MSV3_LEGACY_PLAUSIBLE_COUNT_MAX = 40000000UL;
+        const uint32_t MSV3_CAPLESS_PLAUSIBLE_COUNT_MAX = 80000000UL;
+        const uint32_t plausibleCountMax = caplessTank
+            ? MSV3_CAPLESS_PLAUSIBLE_COUNT_MAX
+            : MSV3_LEGACY_PLAUSIBLE_COUNT_MAX;
+        readingValid = (flags & 0x20) == 0 &&
+                       rawFdcCounts >= MSV3_PLAUSIBLE_COUNT_MIN &&
+                       rawFdcCounts <= plausibleCountMax;
       }
+      moisture = caplessTank
+          ? calibrateMsv3CaplessMoisture(rawFdcCounts)
+          : calibrateMsv3Moisture(rawFdcCounts);
     }
     else if (hasRaw)
     {
@@ -8679,6 +9572,69 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
     const int packetRssi = advertisedDevice.getRSSI();
     const uint32_t receivedAtMs = millis();
+
+    if (!readingValid)
+    {
+      // A faulted probe is ALIVE and must look alive -- it is still reachable, still reporting its
+      // battery, and still updatable over BLE, which is the entire reason it now advertises at all.
+      // What it must not do is contribute a number to this plant's history.
+      //
+      // Deliberately placed before smoothMoistureForDisplay() and before the history enqueue: the
+      // display filter is stateful, so feeding it a fault would corrupt the smoothed value for
+      // several subsequent good readings, and a stored row would be indistinguishable from a real
+      // measurement once it reached the cloud.
+      portENTER_CRITICAL(&sensorsMux);
+      SensorReading& faulted = sensors[sensorId];
+      if (faulted.seen && wake == faulted.wake)
+      {
+        portEXIT_CRITICAL(&sensorsMux);
+        return;
+      }
+      faulted.seen = true;
+      faulted.wake = wake;
+      faulted.received++;
+      faulted.sensorFault = true;
+      faulted.rssi = packetRssi;
+      faulted.lastSeenMs = receivedAtMs;
+      if (hasRaw)
+      {
+        faulted.rawBatteryMv = rawBatteryMv;
+        faulted.rawCharging = rawCharging;
+        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
+      }
+      portEXIT_CRITICAL(&sensorsMux);
+      sensorDataDirty = true;
+
+      Serial.print("[Treebeard] sensor ");
+      Serial.print(sensorId);
+      Serial.print(" reported a FAILED measurement (wake ");
+      Serial.print(wake);
+      Serial.println("); still reachable, reading not stored");
+      return;
+    }
+    // Reject duplicates before advancing either the display filter or the temperature
+    // learner. A second check remains inside the publish transaction below for completeness.
+    portENTER_CRITICAL(&sensorsMux);
+    bool duplicateWake = sensors[sensorId].seen && wake == sensors[sensorId].wake;
+    bool probeRestarted = sensors[sensorId].seen && wake < sensors[sensorId].wake;
+    portEXIT_CRITICAL(&sensorsMux);
+    if (duplicateWake) return;
+
+    TemperatureCompensationResult temperatureCompensationResult;
+    if (caplessTank)
+    {
+      // No reference exists by design. Report the derived channel as off rather than leaving the
+      // UI indefinitely claiming that a model with no possible input is still "learning".
+      temperatureCompensationResult.configuredMode = TEMPERATURE_COMPENSATION_OFF;
+      temperatureCompensationResult.effectiveMode = TEMPERATURE_COMPENSATION_OFF;
+    }
+    else if (wideRaw && hasMsv3Diagnostics && boardTempValid && bareTankValid)
+    {
+      temperatureCompensationResult = updateTemperatureCompensation(
+          sensorId, rawFdcCounts, rawBareTankFdcCounts,
+          rawBoardTempQuarterC, tankPhase, receivedAtMs, probeRestarted);
+    }
+
     // Snapshot calibration before entering sensorsMux so the packet path never nests
     // sensorsMux and autoCalMux. smoothMoistureForDisplay() only touches this sensor's
     // SensorReading and therefore runs under the single lock below.
@@ -8695,8 +9651,18 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
     // A probe generation/packet-format change under the same sensor ID also changes its
     // numeric scale. Do not blend across those incompatible scales.
-    if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw))
+    if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw ||
+                         reading.caplessTank != caplessTank))
     {
+      reading.moistureCenterCount = 0;
+      reading.moistureCenterNext = 0;
+      reading.moistureWateringStreak = 0;
+    }
+    if (reading.seen && wideRaw &&
+        reading.temperatureCompensationEffectiveMode != temperatureCompensationResult.effectiveMode)
+    {
+      // Switching into/out of Active changes the signal feeding the presentation filter.
+      // Reset its short memory so the two channels are never blended together.
       reading.moistureCenterCount = 0;
       reading.moistureCenterNext = 0;
       reading.moistureWateringStreak = 0;
@@ -8708,7 +9674,14 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     {
       batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
     }
-    uint16_t displayMoisture = smoothMoistureForDisplay(sensorId, moisture, presentationSpan);
+    const bool useTemperatureCompensatedPresentation =
+        temperatureCompensationResult.valid &&
+        temperatureCompensationResult.effectiveMode == TEMPERATURE_COMPENSATION_ACTIVE;
+    const uint16_t presentationInput = useTemperatureCompensatedPresentation
+        ? temperatureCompensationResult.equivalentMoisture
+        : moisture;
+    uint16_t displayMoisture = smoothMoistureForDisplay(
+        sensorId, presentationInput, presentationSpan);
 
     // wake going DOWN (rather than up) means the probe rebooted and its wake counter
     // reset to a small value, not that ~16 million packets were dropped - computing
@@ -8727,6 +9700,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.received++;
     reading.seen = true;
     reading.wake = wake;
+    reading.sensorFault = false;
     reading.moisture = displayMoisture;
     reading.measuredMoisture = moisture;
     reading.batteryPercent = batteryPercent;
@@ -8741,7 +9715,19 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.rawBoardTempQuarterC = rawBoardTempQuarterC;
     reading.bareTankValid = bareTankValid;
     reading.rawBareTankFdcCounts = rawBareTankFdcCounts;
+    reading.caplessTank = caplessTank;
     reading.tankPhase = tankPhase;
+    reading.temperatureCompensationValid = temperatureCompensationResult.valid;
+    reading.temperatureCompensatedLogRatioPpm = temperatureCompensationResult.logRatioPpm;
+    reading.temperatureCompensatedEquivalentMoisture = temperatureCompensationResult.equivalentMoisture;
+    reading.temperatureCompensationModelVersion = temperatureCompensationResult.valid
+        ? TEMPERATURE_COMPENSATION_MODEL_VERSION : 0;
+    reading.temperatureCompensationConfiguredMode = temperatureCompensationResult.configuredMode;
+    reading.temperatureCompensationEffectiveMode = temperatureCompensationResult.effectiveMode;
+    reading.temperatureCompensationConfidencePercent = temperatureCompensationResult.confidencePercent;
+    reading.temperatureCompensationGainPerC = temperatureCompensationResult.gainPerC;
+    reading.temperatureCompensationReferenceC = temperatureCompensationResult.referenceTempC;
+    reading.temperatureCompensationEpoch = temperatureCompensationResult.epoch;
     reading.rssi = packetRssi;
     reading.lastSeenMs = receivedAtMs;
     publishedReading = reading;
@@ -8781,6 +9767,19 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     Serial.print(moisture);
     Serial.print(" displayMoisture=");
     Serial.print(displayMoisture);
+    if (temperatureCompensationResult.valid)
+    {
+      Serial.print(" tempCompLogRatioPpm=");
+      Serial.print(temperatureCompensationResult.logRatioPpm);
+      Serial.print(" tempCompMode=");
+      Serial.print(temperatureCompensationModeName(temperatureCompensationResult.effectiveMode));
+      Serial.print(" tempCompConfidence=");
+      Serial.print(temperatureCompensationResult.confidencePercent);
+      Serial.print(" tempCompGain=");
+      Serial.print(temperatureCompensationResult.gainPerC, 6);
+      Serial.print(" tempCompEpoch=");
+      Serial.print(temperatureCompensationResult.epoch);
+    }
     if (hasMsv3Diagnostics)
     {
       Serial.print(" tankPhase=");
@@ -8857,6 +9856,9 @@ void cloudSyncTask(void* parameter)
     // outage is developing. Healthy uploads acknowledge RTC rows directly and never enter
     // this flash-writing path.
     serviceHistoryJournal();
+    // Checkpoint EMA and partial-fit state every 15 minutes, and accepted fits/epoch resets
+    // immediately. Keep all LittleFS work out of the BLE callback.
+    serviceTemperatureCompensationPersistence();
     if (wifiStationConnected && (int32_t)(now - nextCloudNetworkSlotMs) >= 0)
     {
       const auto due = [now](uint32_t deadline) {
@@ -8992,7 +9994,7 @@ void setupServer()
     server.sendHeader("Cache-Control", "no-store");
     server.send(200, "application/json", sensorDataJson());
     // Sampled here, not just in loop(): this is the deepest loopTask call path in the build
-    // (handler frame + sensorDataJson()'s StaticJsonDocument<4096> + the returned String).
+    // (handler frame + sensorDataJson()'s StaticJsonDocument<8192> + the returned String).
     recordLoopTaskStackFree();
   });
 
@@ -9533,11 +10535,13 @@ void setup()
   }
   ensureDefaultUi();
   ensureUiMetadata();
+  loadTemperatureCompensationModes();
   loadDeviceIdentity();
   loadCloudConfig();
   if (littleFsMounted)
   {
     loadAutoCalCache();
+    loadTemperatureCompensationModels();
   }
   loadDisplaySettings();
   loadTouchCalibration();
@@ -9857,7 +10861,7 @@ void loop()
 SET_LOOP_TASK_STACK_SIZE(TREEBEARD_LOOP_TASK_STACK_BYTES);
 
 // Records the smallest free loopTask stack seen this boot. Call from any code that actually
-// runs ON loopTask - loop() itself, and the /data handler after its 4KB document exists.
+// runs ON loopTask - loop() itself, and the /data handler after its 8KB document exists.
 void recordLoopTaskStackFree()
 {
   uint32_t freeBytes = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);

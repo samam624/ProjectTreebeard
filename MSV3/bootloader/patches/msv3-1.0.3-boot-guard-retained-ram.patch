@@ -1,0 +1,26 @@
+diff --git a/linker/nrf52840.ld b/linker/nrf52840.ld
+--- a/linker/nrf52840.ld
++++ b/linker/nrf52840.ld
+@@ -24,7 +24,12 @@ MEMORY
+ 
+   /** RAM Region for bootloader. */
+   /* Avoid conflict with NOINIT for OTA bond sharing */
+-  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x20040000-0x20008000
++  /*
++   * MSV3_BOOT_GUARD_RETAINED is an ABI with the MSV3 application linker script.
++   * Keep the bootloader stack below it so watchdog-reset state reaches the app.
++   */
++  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x2003FFF8-0x20008000
++  MSV3_BOOT_GUARD_RETAINED (rwx) : ORIGIN = 0x2003FFF8, LENGTH = 0x08
+ 
+   /* Location for double reset detection, no init */
+   DBL_RESET (rwx) :  ORIGIN = 0x20007F7C, LENGTH = 0x04
+@@ -88,4 +93,8 @@ SECTIONS
+   /* other placements follow here... */
+ }
+ 
++ASSERT(ORIGIN(RAM) + LENGTH(RAM) == ORIGIN(MSV3_BOOT_GUARD_RETAINED),
++       "MSV3 boot-guard retention must immediately follow bootloader RAM")
++ASSERT(ORIGIN(MSV3_BOOT_GUARD_RETAINED) == 0x2003FFF8,
++       "MSV3 boot-guard retention moved from its application ABI address")
+ INCLUDE "nrf_common.ld"

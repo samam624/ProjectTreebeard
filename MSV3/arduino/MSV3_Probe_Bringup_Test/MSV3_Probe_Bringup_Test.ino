@@ -43,6 +43,17 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <bluefruit.h>
+#include <nrf_nvic.h>
+
+#ifdef MSV3_SENSOR_ID
+// A targeted diagnostic image can outlive USB access once a probe is coated. Reuse the exact
+// reset-safe DFU implementation exercised by production rather than maintaining a third copy of
+// this security-sensitive handoff. The guarded wrapper compiles from
+// MSV3/.arduino-build/msv3-probe/sketch/, so this path deliberately resolves from that generated
+// translation-unit location back to the canonical production source. Raw IDE builds are already
+// forbidden for MSV3 by the LFRC/linker guards above.
+#include "../../../arduino/MSV3_Moisture_BLE_Sleep/ResetSafeBLEDfu.cpp"
+#endif
 
 // This is a compile-time safety property, not merely documentation. Both
 // wiring.c (FreeRTOS/RTC1 boot) and Bluefruit.begin() consume these variant
@@ -175,20 +186,36 @@ bool fdcReadReg(uint8_t reg, uint16_t &val) {
 // 2026-08-30: ported the same three review-driven fixes as the production sketch
 // (MSV3_Moisture_BLE_Sleep.ino), so wakeprofile here actually profiles the config that ships,
 // not the old one. See that file's header comment for the full datasheet backing.
+#ifndef MSV3_FDC_IDRIVE_CODE
+#define MSV3_FDC_IDRIVE_CODE 16
+#endif
+static_assert(MSV3_FDC_IDRIVE_CODE >= 0 && MSV3_FDC_IDRIVE_CODE <= 31,
+              "MSV3_FDC_IDRIVE_CODE must be 0..31");
+
 bool fdcInit() {
   bool ok = true;
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0: was 0x0400 (~14 ENOB); 0xFFFF ~24.2ms, near-max resolution
   ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0: tS0 = 100*16/fREF0 (~37us) -- default 0 is too short, causes amplitude warnings
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01 (divide-by-1, 0.01-8.75MHz range), FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=11001b (code 25, 0.644mA) -- bench-tuned
-                                    // 2026-09-03 against a scope (was 0x8000 / code 25's predecessor code 16,
-                                    // ~0.169mA, which ran at ~0.5Vpk dry: a THIRD of the 1.2Vpk VSENSORMIN).
-                                    // Code 25 measures 1.9Vpk dry / 1.3Vpk under heavy load. Changing this
+  ok &= fdcWriteReg(0x1E, (uint16_t)MSV3_FDC_IDRIVE_CODE << 11);  // DRIVE_CURRENT_CH0
+                                    // Legacy C17 tuning chose code 25: code 16 measured ~0.5Vpk dry,
+                                    // while code 25 measured 1.9Vpk dry / 1.3Vpk under heavy load.
+                                    // After C17 removal, Probe 8 was stable at code 16 both dry and
+                                    // under two-hand load, so capless production returns to code 16.
+                                    // Changing this
                                     // shifts DATA_CH0 by ~0.2%; see MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4.
   // MUX_CONFIG (0x1B) left at its power-on-reset default (0x020F): AUTOSCAN_EN=0
   // (single-channel CH0 mode, correct for this board -- only CH0 is wired to
   // real hardware, CH1-3 are grounded per netlist), DEGLITCH=111 (33MHz, safely
   // above the ~1.3-4.1MHz design target).
+  // ERROR_CONFIG (0x19), added 2026-09-05 alongside the same fix in MSV3_Moisture_BLE_Sleep.ino,
+  // whose fdcInit() carries the full rationale and the Table 7-37 bit map. Short version: this
+  // register resets to zero on every hardware shutdown, and its WD_ERR2INT bit (bit 5) is what
+  // permits STATUS.ERR_WD to be updated at all. Without this write, `fdcstatus` and every
+  // amplitude/oscillation diagnostic in this sketch reports a watchdog-clean part no matter how
+  // dead the tank is -- the flag is switched off, not clear. DRDY_2INT (bit 0) stays 0 on
+  // purpose; see the CH0_UNREADCONV comment below.
+  ok &= fdcWriteReg(0x19, 0x0020);  // ERROR_CONFIG: WD_ERR2INT only
   ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: was 0x1C01 (SENSOR_ACTIVATE_SEL=1, Low Power) --
                                     // now b0, Full Current Activation Mode, TI's recommendation.
                                     // Every other bit already matched its required value.
@@ -200,9 +227,10 @@ bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 // CH0_UNREADCONV, Address 0x18 STATUS bit 3 (Table 7-36): an unread conversion is present for
 // channel 0, and DATA_CH0 should be read to retrieve it. Poll this per-channel flag rather than
 // DRDY: ERROR_CONFIG.DRDY_2INT resets to b0 after every hardware shutdown, and Table 7-37 says
-// that setting prevents STATUS.DRDY from being updated. fdcInit() never writes ERROR_CONFIG
-// (0x19), so STATUS.DRDY is never updated on this board and a DRDY poll times out forever --
-// every fdcread/fdcstream/idrive/muxsweep then prints the shared "I2C read failed" string
+// that setting prevents STATUS.DRDY from being updated. Since 2026-09-05 fdcInit() DOES write
+// ERROR_CONFIG (0x19), but deliberately leaves DRDY_2INT at 0 -- it enables WD_ERR2INT and
+// nothing else. So STATUS.DRDY is still never updated on this board and a DRDY poll still times
+// out forever -- every fdcread/fdcstream/idrive/muxsweep then prints the shared "I2C read failed"
 // despite a perfectly healthy bus. The tell is that `fdcid` still reads 0x7E/0x7F correctly
 // while every conversion read fails.
 // 2026-09-03: ported from MSV3_Moisture_BLE_Sleep.ino, which hit and fixed this exact bug on
@@ -398,8 +426,8 @@ void delayFeedingWatchdog(uint32_t ms) {
 // connections; a scanner (scripts/ble_periodic_reader.py or a receiver)
 // just reads manufacturer-specific data out of the advertisement.
 //
-// Deliberately uses a DIFFERENT magic ("MSV3" not "MSV2") and device name
-// from the real product line. Treebeard_ESP32_Display_Runtime.ino's receiver
+// Deliberately uses a DIFFERENT magic ("MSV3" not "MSV2") from the real
+// product line. Treebeard_ESP32_Display_Runtime.ino's receiver
 // only recognizes packets starting with its own MSV2_MAGIC[]={'M','S','V','2'}
 // before it ever looks at sensorId -- this bring-up firmware physically
 // cannot be mistaken for real plant data even if a production receiver
@@ -410,10 +438,59 @@ void delayFeedingWatchdog(uint32_t ms) {
 // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md) -- bluefruit.cpp's own begin()
 // is `#if defined(USE_LFXO) ... #elif defined(USE_LFRC)`, so it picks up
 // NRF_CLOCK_LF_SRC_RC automatically, no separate clock config needed here.
-const char BLE_DEVICE_NAME[] = "MSV3-PROBE-BRINGUP";
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '3'};
+
+// A fleet diagnostic image needs the same immutable identity contract as the production image:
+// ble_ota_update.py reads the NUL-terminated name directly from the signed application before it
+// will touch a probe. The ordinary untargeted bench build keeps its historical bring-up name and
+// id 99. arduino_msv3_probe.ps1 is the only supported way to provide MSV3_SENSOR_ID/BUILD_TAG.
+#define MSV3_STRINGIFY_(x) #x
+#define MSV3_STRINGIFY(x) MSV3_STRINGIFY_(x)
+
+#ifdef MSV3_SENSOR_ID
+static_assert(MSV3_SENSOR_ID >= 0 && MSV3_SENSOR_ID <= 255,
+              "MSV3_SENSOR_ID must fit in the diagnostic advertisement byte");
+const uint8_t BLE_TEST_SENSOR_ID = MSV3_SENSOR_ID;
+// Keep this as an array initializer rather than a constexpr helper function. Arduino's sketch
+// preprocessor emits function prototypes before local type declarations, which makes a helper
+// returning a sketch-defined struct fail before the real C++ compiler can see the declaration.
+constexpr char BLE_DEVICE_NAME[] = {
+  'M', 'S', 'V', '3', '-', 'M', 'O', 'I', 'S', 'T', 'U', 'R', 'E', '-',
+  static_cast<char>('0' + (BLE_TEST_SENSOR_ID / 100) % 10),
+  static_cast<char>('0' + (BLE_TEST_SENSOR_ID / 10) % 10),
+  static_cast<char>('0' + BLE_TEST_SENSOR_ID % 10), '\0'
+};
+#ifdef MSV3_BUILD_TAG
+#define MSV3_BRINGUP_BUILD_ID "MSV3-BUILD:" MSV3_STRINGIFY(MSV3_BUILD_TAG)
+#else
+#define MSV3_BRINGUP_BUILD_ID "MSV3-BUILD:bringup-diagnostic"
+#endif
+const char FIRMWARE_BUILD_ID[] = MSV3_BRINGUP_BUILD_ID;
+// This image intentionally does not carry production Guard 2. Its recovery invariants are the
+// periodic reset-safe OTA window below and the USB `dfu` command plus resident bootloader; state
+// the Guard-2 fact explicitly so package preflight never has to guess from an old/unmarked image.
+const char FIRMWARE_GUARD2_MARKER[] = "MSV3-GUARD2:0";
+volatile const char* g_firmwareBuildIdAnchor = nullptr;
+volatile const char* g_guard2MarkerAnchor = nullptr;
+#else
+const char BLE_DEVICE_NAME[] = "MSV3-PROBE-BRINGUP";
 const uint8_t BLE_TEST_SENSOR_ID = 99;  // clearly outside MSV2's real 1-16 sensor range
+#endif
+
+// arduino_msv3_probe.ps1 deliberately links every MSV3 sketch with the same RAM contract as
+// bootloader 1.0.3. This diagnostic does not count failed boots, but it must still occupy the
+// eight-byte NOLOAD section so the linker can prove the stack never descends through that shared
+// bootloader/application address. Do not initialize or repurpose this reserved record.
+struct BootGuardRetainedReservation {
+  uint32_t encoded;
+  uint32_t inverse;
+};
+static_assert(sizeof(BootGuardRetainedReservation) == 8,
+              "boot-guard retained reservation must remain exactly eight bytes");
+static volatile BootGuardRetainedReservation g_bootGuardRetainedReservation
+    __attribute__((section(".msv3_boot_guard_retained"), used, aligned(4)));
+
 // Same cadence as MSV2's production wake/advertise/sleep cycle -- this is
 // specifically testing that workflow, not a different one.
 const uint32_t BLE_WAKE_PERIOD_MS = 10000;
@@ -435,13 +512,61 @@ const uint8_t BLE_WAKE_DISCARD_CONVERSIONS = 2;
 
 bool g_bleInited = false;
 uint32_t g_bleWakeCount = 0;
+const uint16_t OTA_MIN_BATTERY_MV = 3800;
+const uint16_t BLE_ADV_FAST_INTERVAL_UNITS = 32;  // 20ms
+
+#ifdef MSV3_SENSOR_ID
+// Targeted diagnostic builds must remain recoverable after USB is removed or coated over. Match
+// production's proven five-second-per-minute discovery opportunity and 30-second connected hold.
+// The window is non-blocking while idle, so the USB console remains responsive throughout it.
+const uint32_t OTA_ADV_INTERVAL_MS = 60000;
+const uint32_t OTA_ADV_LISTEN_MS = 5000;
+const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
+const uint32_t DFU_RESPONSE_SETTLE_MS = 150;
+const uint16_t OTA_ADV_SLOW_INTERVAL_UNITS = 400;  // 250ms for the rest of the window
+const uint16_t OTA_ADV_FAST_TIMEOUT_SECONDS = 1;
+const uint16_t OTA_ADV_HARD_TIMEOUT_SECONDS = OTA_ADV_LISTEN_MS / 1000;
+static_assert(OTA_ADV_LISTEN_MS >= 1000 && OTA_ADV_LISTEN_MS % 1000 == 0,
+              "OTA_ADV_LISTEN_MS must be a whole number of seconds");
+
+ResetSafeBLEDfu bledfu;
+BLEDis bledis;
+bool g_otaServiceReady = false;
+bool g_disReady = false;
+volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+uint32_t g_otaConnectionStartMs = 0;
+uint32_t g_otaWindowStartMs = 0;
+uint32_t g_lastOtaWindowStartMs = 0;
+bool g_otaWindowActive = false;
+bool g_otaWindowEverStarted = false;
+
+void otaConnectCallback(uint16_t connHandle) {
+  g_otaConnectionHandle = connHandle;
+}
+
+void otaDisconnectCallback(uint16_t connHandle, uint8_t reason) {
+  (void)reason;
+  if (g_otaConnectionHandle == connHandle) g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+}
+#endif
 
 void bleInitOnce() {
   if (g_bleInited) return;
   Bluefruit.autoConnLed(false);
-  Bluefruit.begin();
+  if (!Bluefruit.begin()) return;
   Bluefruit.setTxPower(4);
   Bluefruit.setName(BLE_DEVICE_NAME);
+#ifdef MSV3_SENSOR_ID
+  bledis.setManufacturer("Treebeard");
+  bledis.setModel("MSV3-DIAG");
+  bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
+  g_disReady = (bledis.begin() == ERROR_NONE);
+
+  g_otaServiceReady = (bledfu.begin() == ERROR_NONE);
+  Bluefruit.Periph.setConnectCallback(otaConnectCallback);
+  Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
+  Bluefruit.Advertising.setFastTimeout(OTA_ADV_FAST_TIMEOUT_SECONDS);
+#endif
   g_bleInited = true;
 }
 
@@ -450,7 +575,8 @@ void bleInitOnce() {
 // the only change is widening the 2-byte RC-oscillator kHz field to a
 // 4-byte raw FDC2214 DATA_CH0, since that reading is up to 28 bits and
 // doesn't fit in 2 bytes the way MSV2's oscillator count did.
-void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
+void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk,
+                 uint16_t slowIntervalUnits, uint16_t timeoutSeconds) {
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
   uint8_t mfg[17];
   mfg[0] = lowByte(BLE_COMPANY_ID);
@@ -466,7 +592,13 @@ void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
   mfg[13] = (uint8_t)((dataCh0 >> 24) & 0xFF);
   mfg[14] = (uint8_t)(batteryMvRounded & 0xFF);
   mfg[15] = (uint8_t)((batteryMvRounded >> 8) & 0xFF);
-  mfg[16] = isCharging ? 0x01 : 0x00;
+  // bit0 retains the historical charging meaning. bit4 mirrors production's OTA power gate so
+  // the identity-locked updater can distinguish an intentionally shut gate from old firmware.
+  mfg[16] = (isCharging ? 0x01 : 0x00) | (otaPowerOk ? 0x10 : 0x00);
+
+#ifdef MSV3_SENSOR_ID
+  bledfu.setDfuAllowed(otaPowerOk);
+#endif
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
@@ -475,9 +607,84 @@ void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging) {
   Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
   Bluefruit.ScanResponse.addName();
   Bluefruit.Advertising.restartOnDisconnect(false);
-  Bluefruit.Advertising.setInterval(32, 32);  // 20-30 ms while awake, same as MSV2
-  Bluefruit.Advertising.start(0);
+  Bluefruit.Advertising.setInterval(BLE_ADV_FAST_INTERVAL_UNITS, slowIntervalUnits);
+  Bluefruit.Advertising.start(timeoutSeconds);
 }
+
+#ifdef MSV3_SENSOR_ID
+bool readOtaPowerState(float& batteryMv, bool& charging) {
+  batteryMv = readVbatMv(nullptr);
+  bool statHigh = true;
+  bool pgHigh = true;
+  readChargerPins(statHigh, pgHigh);
+  charging = statHigh == LOW;
+  const bool usbPowerGood = pgHigh == LOW;
+  const bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+  return usbPowerGood || (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+}
+
+// Non-blocking OTA maintenance for a targeted/fleet diagnostic image. Untargeted bench builds
+// deliberately keep their old on-demand BLE behavior so low-power experiments are not changed.
+void servicePeriodicOtaWindow() {
+  bleInitOnce();
+  if (!g_bleInited || !g_otaServiceReady) return;
+
+  uint16_t connectionHandle = g_otaConnectionHandle;
+  if (connectionHandle == BLE_CONN_HANDLE_INVALID && Bluefruit.connected()) {
+    connectionHandle = Bluefruit.connHandle();
+    g_otaConnectionHandle = connectionHandle;
+  }
+
+  if (connectionHandle != BLE_CONN_HANDLE_INVALID && Bluefruit.connected(connectionHandle)) {
+    g_otaWindowActive = false;
+    if (g_otaConnectionStartMs == 0) g_otaConnectionStartMs = millis();
+
+    // The authorize callback records the request only. Let its ATT response settle before the
+    // loop performs the reset-safe handoff, exactly as the production application does.
+    if (bledfu.dfuResetPending()) {
+      delayFeedingWatchdog(DFU_RESPONSE_SETTLE_MS);
+      bledfu.completeDfuReset();
+      return;  // reached only if the reset unexpectedly failed
+    }
+
+    if (millis() - g_otaConnectionStartMs >= OTA_CONNECTED_HOLD_MS) {
+      Bluefruit.disconnect(connectionHandle);
+      g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
+      g_otaConnectionStartMs = 0;
+    }
+    return;
+  }
+  g_otaConnectionStartMs = 0;
+
+  if (g_otaWindowActive) {
+    if (millis() - g_otaWindowStartMs >= OTA_ADV_LISTEN_MS) {
+      if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+      g_otaWindowActive = false;
+    }
+    return;
+  }
+
+  // A user-requested `blestart` owns the advertiser until `blestop`; its GATT table still carries
+  // the same DFU service, and the connection/pending-reset path above remains active.
+  if (Bluefruit.Advertising.isRunning()) return;
+
+  const uint32_t nowMs = millis();
+  const bool due = !g_otaWindowEverStarted ||
+                   (nowMs - g_lastOtaWindowStartMs >= OTA_ADV_INTERVAL_MS);
+  if (!due) return;
+
+  float batteryMv = 0;
+  bool charging = false;
+  const bool otaPowerOk = readOtaPowerState(batteryMv, charging);
+  g_bleWakeCount++;
+  bleStartAdv(0, batteryMv, charging, otaPowerOk,
+              OTA_ADV_SLOW_INTERVAL_UNITS, OTA_ADV_HARD_TIMEOUT_SECONDS);
+  g_otaWindowEverStarted = true;
+  g_lastOtaWindowStartMs = nowMs;
+  g_otaWindowStartMs = nowMs;
+  g_otaWindowActive = Bluefruit.Advertising.isRunning();
+}
+#endif
 
 // Reads real sensor data (FDC2214 must already be fdcinit'd) + battery +
 // charger, builds the same manufacturer-data packet shape MSV2 sends, and
@@ -513,7 +720,13 @@ void doBleCycle(int n) {
     // Must go through readChargerPins()' pull-up path -- STAT is open-drain
     // with no board pull-up, so a bare digitalRead() here floats and reported
     // a bogus charging=1 even with no battery attached.
-    bool charging = isBatteryCharging();
+    bool statHigh = true;
+    bool pgHigh = true;
+    readChargerPins(statHigh, pgHigh);
+    bool charging = statHigh == LOW;
+    bool batteryReadingValid = vBatMv >= 2500.0f && vBatMv <= 5000.0f;
+    bool otaPowerOk = pgHigh == LOW ||
+                      (batteryReadingValid && vBatMv >= (float)OTA_MIN_BATTERY_MV);
 
     g_bleWakeCount++;
     char buf[160];
@@ -523,7 +736,7 @@ void doBleCycle(int n) {
              charging ? 1 : 0, (unsigned long)BLE_ADVERTISE_MS);
     printLineResilient(buf);
 
-    bleStartAdv(data, vBatMv, charging);
+    bleStartAdv(data, vBatMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
     delayFeedingWatchdog(BLE_ADVERTISE_MS);
     Bluefruit.Advertising.stop();
 
@@ -541,6 +754,12 @@ void doBleCycle(int n) {
 
 // --------------------------------------------------------------- setup ----
 void setup() {
+#ifdef MSV3_SENSOR_ID
+  // These anchors are load-bearing package metadata. Without a volatile reference, section-GC
+  // can remove a build/guard string that the OTA preflight must inspect before touching Probe 6.
+  g_firmwareBuildIdAnchor = FIRMWARE_BUILD_ID;
+  g_guard2MarkerAnchor = FIRMWARE_GUARD2_MARKER;
+#endif
   initWatchdogSafety();
   g_lastSuccessfulOutputMs = millis();  // baseline the output deadman timer at boot, not epoch-0
 
@@ -585,6 +804,12 @@ void setup() {
 
   Serial.println();
   Serial.println(F("=== MSV3 Probe Bring-up Console ==="));
+#ifdef MSV3_SENSOR_ID
+  Serial.print(F("target: "));
+  Serial.print(BLE_DEVICE_NAME);
+  Serial.print(F("  build: "));
+  Serial.println(FIRMWARE_BUILD_ID);
+#endif
   printResetReason();
   printWatchdogStatus();
   Serial.println(F("type 'help' for commands"));
@@ -663,6 +888,8 @@ void printHelp() {
   Serial.println(F("  addr <hex>               - set FDC2214 I2C address (default 0x2A)"));
   Serial.println(F("  fdcid                    - read MANUFACTURER_ID/DEVICE_ID (works even before fdcinit)"));
   Serial.println(F("  fdcinit                  - configure FDC2214 for CH0 free-running conversion"));
+  Serial.println(F("  errcfg [hex]             - read ERROR_CONFIG (0x19), or override it; 'errcfg 0' restores the"));
+  Serial.println(F("                             reset value that keeps STATUS.ERR_WD permanently dead"));
   Serial.println(F("  idrive <0-31>            - set DRIVE_CURRENT_CH0 (datasheet Table 7-41), reads back DATA_CH0+STATUS"));
   Serial.println(F("  fdcread                  - one-shot STATUS + DATA_CH0 read"));
   Serial.println(F("  fdcstream <n>            - stream n reads, ~150ms apart (touch electrodes live)"));
@@ -679,6 +906,10 @@ void printHelp() {
   Serial.println(F("  divnode                  - analogRead DIV_NODE (EC-check midpoint), P0.03/AIN1 bodge"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
+#ifdef MSV3_SENSOR_ID
+  Serial.println(F("  dfu                      - USB-gated reset into resident BLE recovery bootloader"));
+  Serial.println(F("  OTA recovery             - automatic 5s connectable window every 60s (USB or VBAT >= 3800mV)"));
+#endif
   Serial.println(F("  blestart                 - init BLE, advertise continuously (one-shot reading) until blestop"));
   Serial.println(F("  blestop                  - stop advertising"));
   Serial.println(F("  blecycle <n>             - run n MSV2-style wake/measure/advertise/sleep cycles (~10s each)"));
@@ -731,11 +962,11 @@ const float IDRIVE_MA[32] = {
   0.555, 0.644, 0.747, 0.867, 1.006, 1.167, 1.354, 1.571
 };
 
-// Kept in sync with fdcInit()'s DRIVE_CURRENT_CH0 starting value (0xC800 ->
-// code 25 since the 2026-09-03 bench tuning) so `idrive` reports the true
-// setting even before it's ever been called. fdcInit() rewrites 0x1E, so any
-// hand-set `idrive` is lost across a re-init -- re-issue it after fdcinit.
-uint8_t g_idriveCode = 25;
+// Kept in sync with fdcInit()'s build-selected DRIVE_CURRENT_CH0 starting value so `idrive`
+// reports the true setting even before it is called. Capless production defaults to code 16;
+// a targeted experiment can still override it through the guarded build wrapper. fdcInit()
+// rewrites 0x1E, so any hand-set `idrive` is lost across a re-init.
+uint8_t g_idriveCode = MSV3_FDC_IDRIVE_CODE;
 
 void doIdrive(int code) {
   if (code < 0 || code > 31) {
@@ -1380,6 +1611,36 @@ void handleCommand(String cmd) {
     doFdcId();
   } else if (cmd == "fdcinit") {
     Serial.println(fdcInit() ? F("  fdcinit OK, CH0 free-running") : F("  fdcinit FAILED (I2C write error)"));
+  } else if (cmd == "errcfg" || cmd.startsWith("errcfg ")) {
+    // Read or override ERROR_CONFIG (0x19) at runtime.
+    //
+    // This exists so the "is STATUS.ERR_WD actually alive?" question can be answered on one board
+    // without two flashes. fdcInit() now writes 0x0020 (WD_ERR2INT), and the control arm of that
+    // experiment -- proving the flag really was dead before, rather than that the tank simply
+    // never faults -- needs ERROR_CONFIG back at its reset value of 0x0000 with everything else
+    // identical. `errcfg 0` gives exactly that; `errcfg` alone reads back what is in the part.
+    //
+    // Note the value does NOT survive a shutdown: probeWake()/fdcinit rewrite it. That is the
+    // point of the register, and it is why an override here is a diagnostic and not a setting.
+    if (cmd == "errcfg") {
+      uint16_t value;
+      if (!fdcReadReg(0x19, value)) { Serial.println(F("  I2C read failed")); return; }
+      char buf[120];
+      snprintf(buf, sizeof(buf),
+               "  ERROR_CONFIG=0x%04X  WD_ERR2OUT=%d AH_WARN2OUT=%d AL_WARN2OUT=%d "
+               "WD_ERR2INT=%d DRDY_2INT=%d",
+               value, (value >> 13) & 1, (value >> 12) & 1, (value >> 11) & 1,
+               (value >> 5) & 1, value & 1);
+      printLineResilient(buf);
+      if (!((value >> 5) & 1)) {
+        Serial.println(F("  WD_ERR2INT is 0: STATUS.ERR_WD will NEVER update, so a clean"));
+        Serial.println(F("  ERR_WD proves nothing about oscillation (Table 7-37)."));
+      }
+    } else {
+      uint16_t value = (uint16_t)strtol(cmd.c_str() + 7, nullptr, 16);
+      Serial.println(fdcWriteReg(0x19, value) ? F("  ERROR_CONFIG written")
+                                             : F("  I2C write failed"));
+    }
   } else if (cmd.startsWith("idrive ")) {
     int code = cmd.substring(7).toInt();
     doIdrive(code);
@@ -1497,6 +1758,61 @@ void handleCommand(String cmd) {
              (unsigned long)g_i2cStep, (unsigned long)g_i2cStepMs,
              (unsigned long)g_i2cCallCount, (unsigned long)millis());
     printLineResilient(buf);
+#ifdef MSV3_SENSOR_ID
+  } else if (cmd == "dfu") {
+    // This is the deliberate return path from a coated board's temporary diagnostic image. The
+    // custom bootloader has no usable unsigned UF2/Arduino-upload route; arming GPREGRET 0xA8 and
+    // resetting enters its continuous signed BLE recovery service. Require USB power-good (or a
+    // comfortably charged battery) before entering a flash mode that remains awake continuously.
+    bool statHigh = true;
+    bool pgHigh = true;
+    readChargerPins(statHigh, pgHigh);
+    const float batteryMv = readVbatMv(nullptr);
+    const bool usbPowerGood = (pgHigh == LOW);
+    const bool batteryPowerGood = batteryMv >= 3800.0f && batteryMv <= 5000.0f;
+    if (!usbPowerGood && !batteryPowerGood) {
+      Serial.print(F("  DFU REFUSED -- USB power-good is absent and VBAT is "));
+      Serial.print(batteryMv, 0);
+      Serial.println(F("mV (need at least 3800mV)"));
+      Serial.flush();
+    } else {
+      Serial.print(F("  entering resident BLE recovery bootloader; power="));
+      Serial.print(usbPowerGood ? F("USB") : F("battery"));
+      Serial.print(F(" VBAT="));
+      Serial.print(batteryMv, 0);
+      Serial.println(F("mV"));
+      Serial.flush();
+      delay(150);
+
+      if (g_bleInited) {
+        // Once Bluefruit has enabled the SoftDevice, POWER and reset operations must go through
+        // its SVC APIs. A raw POWER write in that state can fault instead of entering recovery.
+        if (sd_power_gpregret_clr(0, 0xFF) != NRF_SUCCESS ||
+            sd_power_gpregret_set(0, 0xA8) != NRF_SUCCESS) {
+          Serial.println(F("  DFU REFUSED -- SoftDevice could not arm GPREGRET"));
+          Serial.flush();
+          return;
+        }
+        uint32_t gpregret = 0;
+        if (sd_power_gpregret_get(0, &gpregret) != NRF_SUCCESS ||
+            (gpregret & 0xFF) != 0xA8) {
+          sd_power_gpregret_clr(0, 0xFF);
+          Serial.println(F("  DFU REFUSED -- GPREGRET readback did not verify"));
+          Serial.flush();
+          return;
+        }
+        sd_nvic_SystemReset();
+        sd_power_gpregret_clr(0, 0xFF);  // only reached if reset unexpectedly failed
+      } else {
+        NRF_POWER->GPREGRET = 0xA8;
+        __DSB();
+        if ((NRF_POWER->GPREGRET & 0xFF) == 0xA8) NVIC_SystemReset();
+        NRF_POWER->GPREGRET = 0;  // only reached if reset unexpectedly failed
+      }
+      Serial.println(F("  DFU reset failed; bootloader request cleared"));
+      Serial.flush();
+    }
+#endif
   } else if (cmd == "blestart") {
     // Defensive state repair: this used to call fdcReadChannel0() while the
     // FDC could still be in Shutdown and Wire could still be ended after
@@ -1513,8 +1829,22 @@ void handleCommand(String cmd) {
       uint32_t data = 0;
       uint16_t status = 0;
       fdcReadChannel0(data, status);
+      float batteryMv = 0;
+      bool charging = false;
+#ifdef MSV3_SENSOR_ID
+      bool otaPowerOk = readOtaPowerState(batteryMv, charging);
+#else
+      batteryMv = readVbatMv(nullptr);
+      bool statHigh = true;
+      bool pgHigh = true;
+      readChargerPins(statHigh, pgHigh);
+      charging = statHigh == LOW;
+      bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+      bool otaPowerOk = pgHigh == LOW ||
+                        (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+#endif
       g_bleWakeCount++;
-      bleStartAdv(data, 0, false);  // one-shot reading; use blecycle for live battery/charging too
+      bleStartAdv(data, batteryMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
       Serial.print(F("  advertising as \""));
       Serial.print(BLE_DEVICE_NAME);
       Serial.println(F("\" continuously (until blestop)"));
@@ -1616,6 +1946,9 @@ void handleCommand(String cmd) {
 
 void loop() {
   feedWatchdog();
+#ifdef MSV3_SENSOR_ID
+  servicePeriodicOtaWindow();
+#endif
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {

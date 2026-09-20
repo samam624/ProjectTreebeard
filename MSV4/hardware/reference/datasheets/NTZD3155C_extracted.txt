@@ -1,0 +1,1055 @@
+
+===PAGE 1===
+© Semiconductor Components Industries, LLC, 2007
+May, 2007 - Rev. 2
+1
+Publication Order Number:
+NTZD3155C/D
+NTZD3155C
+Small Signal MOSFET
+Complementary 20 V, 540 mA / -430 mA,
+with ESD protection, SOT-563 package.
+Features
+•Leading Trench Technology for Low RDS(on) Performance
+•High Efficiency System Performance
+•Low Threshold Voltage
+•ESD Protected Gate
+•Small Footprint 1.6 x 1.6 mm
+•These are Pb-Free Devices
+Applications
+•DC-DC Conversion Circuits
+•Load/Power Switching with Level Shift
+•Single or Dual Cell Li-Ion Battery Operated Systems
+•High Speed Circuits
+•Cell Phones, MP3s, Digital Cameras, and PDAs
+MAXIMUM RATINGS (TJ = 25°C unless otherwise specified)
+Parameter
+Symbol
+Value
+Unit
+Drain-to-Source Voltage
+VDSS
+20
+V
+Gate-to-Source Voltage
+VGS
+±6
+V
+N-Channel
+Continuous Drain
+Current (Note 1)
+Steady
+State
+TA =  25°C
+ID
+540
+mA
+TA =  85°C
+390
+t  5 s
+TA =  25°C
+570
+P-Channel
+Continuous Drain
+Current (Note 1)
+Steady
+State
+TA =  25°C
+-430
+TA =  85°C
+-310
+t  5 s
+TA =  25°C
+-455
+Power Dissipation 
+(Note 1)
+Steady
+State
+TA =  25°C
+PD
+250
+mW
+t  5 s
+280
+Pulsed Drain Current
+N-Channel
+tp = 10 s
+IDM
+1500
+mA
+P-Channel
+-750
+Operating Junction and Storage Temperature
+TJ,
+TSTG
+-55 to
+150
+°C
+Source Current (Body Diode)
+IS
+350
+mA
+Lead Temperature for Soldering Purposes 
+(1/8” from case for 10 s)
+TL
+260
+°C
+Stresses exceeding Maximum Ratings may damage the device. Maximum
+Ratings are stress ratings only. Functional operation above the Recommended
+Operating Conditions is not implied. Extended exposure to stresses above the
+Recommended Operating Conditions may affect device reliability.
+1. Surface-mounted on FR4 board using 1 in sq. pad size
+(Cu area = 1.127 in sq [1 oz] including traces).
+SOT-563-6
+CASE 463A
+MARKING
+DIAGRAM
+http://onsemi.com
+V(BR)DSS
+RDS(on) Typ
+ID Max
+(Note 1)
+N-Channel
+20 V
+0.4  @ 4.5 V
+0.5  @ 2.5 V
+540 mA
+P-Channel
+-20 V
+0.5  @ -4.5 V
+0.6  @ -2.5 V
+-430 mA
+0.7  @ 1.8 V
+1.0  @ -1.8 V
+1
+6
+TW M
+
+Device
+Package
+Shipping†
+ORDERING INFORMATION
+NTZD3155CT1G
+SOT-563
+(Pb-Free)
+4000 / Tape & Reel
+†For information on tape and reel specifications,
+including part orientation and tape sizes, please
+refer to our Tape and Reel Packaging Specifications
+Brochure, BRD8011/D.
+Top View
+D1
+G2
+S2
+S1
+G1
+6
+5
+4
+1
+2
+3
+D2
+PINOUT: SOT-563
+NTZD3155CT2G
+SOT-563
+(Pb-Free)
+4000 / Tape & Reel
+TW
+= Specific Device Code
+M
+= Date Code
+
+= Pb-Free Package
+(Note: Microdot may be in either location)
+NTZD3155CT5G
+SOT-563
+(Pb-Free)
+8000 / Tape & Reel
+
+===PAGE 2===
+NTZD3155C
+http://onsemi.com
+2
+Thermal Resistance Ratings
+Parameter
+Symbol
+Max
+Unit
+Junction-to-Ambient – Steady State (Note 2)
+RJA
+500
+°C/W
+Junction-to-Ambient – t = 5 s (Note 2)
+447
+2. Surface mounted on FR4 board using 1 in sq pad size (Cu area = 1.127 in sq [1 oz] including traces).
+ELECTRICAL CHARACTERISTICS (TJ = 25°C unless otherwise specified)
+Parameter
+Symbol
+N/P
+Test Condition
+Min
+Typ
+Max
+Unit
+OFF CHARACTERISTICS
+Drain-to-Source Breakdown Voltage
+V(BR)DSS
+N
+VGS  =  0 V
+ID = 250 A
+20
+V
+P
+ID = -250 A
+-20
+Drain-to-Source Breakdown Voltage 
+Temperature Coefficient
+V(BR)DSS/TJ
+18
+mV/°C
+Zero Gate Voltage Drain Current
+IDSS
+N
+VGS = 0 V, VDS = 16 V
+TJ = 25°C
+1.0
+A
+P
+VGS = 0 V, VDS= -16 V
+-1.0
+N
+VGS = 0 V, VDS = 16 V
+TJ = 125°C
+2.0
+A
+P
+VGS = 0 V, VDS= - 16V
+-5.0
+Gate-to-Source Leakage Current
+IGSS
+P
+VDS = 0 V, VGS = ±4.5 V
+2.0
+A
+N
+5.0
+ON CHARACTERISTICS (Note 3)
+Gate Threshold Voltage
+VGS(TH)
+N
+VGS = VDS
+ID = 250 A
+0.45
+1.0
+V
+P
+ID = -250 A
+-0.45
+-1.0
+Gate Threshold 
+Temperature Coefficient
+VGS(TH)/TJ
+-1.9
+-mV/ °C
+Drain-to-Source On Resistance
+RDS(on)
+N
+VGS = 4.5 V, ID =  540 mA
+0.4
+0.55
+
+P
+VGS = -4.5V, ID = -430 mA
+0.5
+0.9
+N
+VGS = 2.5 V, ID = 500 mA
+0.5
+0.7
+P
+VGS = -2.5V, ID = -300 mA
+0.6
+1.2
+N
+VGS = 1.8 V, ID = 350 mA
+0.7
+0.9
+P
+VGS = -1.8V, ID = -150 mA
+1.0
+2.0
+Forward Transconductance
+gFS
+N
+VDS = 10 V, ID = 540 mA
+1.0
+S
+P
+VDS = -10 V, ID = -430 mA
+1.0
+CHARGES, CAPACITANCES AND GATE RESISTANCE
+Input Capacitance
+CISS
+N
+f = 1 MHz, VGS = 0 V
+VDS = 16 V
+80
+150
+pF
+Output Capacitance
+COSS
+13
+25
+Reverse Transfer Capacitance
+CRSS
+10
+20
+Input Capacitance
+CISS
+P
+f = 1 MHz, VGS = 0 V
+VDS = -16 V
+105
+175
+Output Capacitance
+COSS
+15
+30
+Reverse Transfer Capacitance
+CRSS
+10
+20
+3. Pulse Test: pulse width 300 s, duty cycle 2%
+
+===PAGE 3===
+NTZD3155C
+http://onsemi.com
+3
+ELECTRICAL CHARACTERISTICS (TJ = 25°C unless otherwise specified)
+Parameter
+Symbol
+N/P
+Test Condition
+Min
+Typ
+Max
+Unit
+CHARGES, CAPACITANCES AND GATE RESISTANCE
+Total Gate Charge
+QG(TOT)
+N
+VGS = 4.5 V, VDS = -10 V; ID = 540 mA
+1.5
+2.5
+nC
+Threshold Gate Charge
+QG(TH)
+0.1
+Gate-to-Source Charge
+QGS
+0.2
+Gate-to-Drain Charge
+QGD
+0.35
+Total Gate Charge
+QG(TOT)
+P
+VGS = -4.5 V, VDS = 10 V; ID = -380 mA
+1.7
+2.5
+Threshold Gate Charge
+QG(TH)
+0.1
+Gate-to-Source Charge
+QGS
+0.3
+Gate-to-Drain Charge
+QGD
+0.4
+SWITCHING CHARACTERISTICS (VGS =  V) (Note 4) 
+Turn-On Delay Time
+td(ON)
+N
+VGS = 4.5 V, VDD = -10 V, ID = 540 mA,
+RG = 10 
+6.0
+ns
+Rise Time
+tr
+4.0
+Turn-Of f Delay Time
+td(OFF)
+16
+Fall Time
+tf
+8.0
+Turn-On Delay Time
+td(ON)
+P
+VGS = -4.5 V, VDD = 10 V, ID = -215 mA,
+RG = 10 
+10
+Rise Time
+tr
+12
+Turn-Of f Delay Time
+td(OFF)
+35
+Fall Time
+tf
+19
+Drain-Source Diode Characteristics
+Forward Diode Voltage
+VSD
+N
+VGS = 0 V, TJ = 25°C
+IS = 350 mA
+0.7
+1.2
+V
+P
+IS = -350 mA
+-0.8
+-1.2
+Reverse Recovery Time
+tRR
+N
+VGS = 0 V,
+dIS/dt = 100 A/s
+IS = 350 mA
+6.5
+ns
+P
+IS = -350 mA
+13
+4. Switching characteristics are independent of operating junction temperatures
+
+===PAGE 4===
+NTZD3155C
+http://onsemi.com
+4
+N-CHANNEL TYPICAL PERFORMANCE CURVES (TJ = 25°C unless otherwise noted)
+0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+VDS, DRAIN-TO-SOURCE VOLTAGE (V)
+ID, DRAIN CURRENT (A)
+Figure 1. On-Region Characteristics
+1.8 V
+VGS = 1.6 V
+VGS = 1.4 V
+VGS = 1.2 V
+VGS = 1.0 V
+0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+1.8
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+VGS, GATE-T O-SOURCE VOLTAGE (V)
+ID, DRAIN CURRENT (A)
+Figure 2. Transfer Characteristics
+VDS  10 V
+TJ = 25°C
+TJ = 100°C
+TJ = -55°C
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+1
+2
+3
+4
+5
+6
+VGS, GATE-T O-SOURCE VOLTAGE (V)
+RDS(on), DRAIN-TO-SOURCE CURRENT
+RESISTANCE ()
+Figure 3. On-Resistance versus
+Gate-to-Source Voltage
+ID = 0.54 A
+TJ = 25°C
+5.5 V
+VGS = 2.0 V to 2.2 V
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+ID, DRAIN CURRENT (A)
+Figure 4. On-Resistance versus Drain Current
+and Gate Voltage
+RDS(on), DRAIN-TO-SOURCE
+RESISTANCE ()
+TJ = 25°C
+VGS = 1.8 V
+VGS = 2.5 V
+VGS = 4.5 V
+TJ = 25°C
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+2
+-50
+-25
+0
+25
+50
+75
+100
+125
+150
+TJ, JUNCTION TEMPERATURE (°C)
+RDS(on), DRAIN-TO-SOURCE
+RESISTANCE (NORMALIZED)
+Figure 5. On-Resistance Variation with
+Temperature
+ID = 0.54 A
+VGS = 4.5 V
+10
+100
+1000
+2
+4
+6
+8
+10
+12
+14
+16
+18
+20
+VDS, DRAIN-TO-SOURCE VOLTAGE (V)
+IDSS, LEAKAGE (nA)
+Figure 6. Drain-to-Source Leakage Current
+versus Voltage
+TJ = 150°C
+TJ = 100°C
+VGS = 0 V
+
+===PAGE 5===
+NTZD3155C
+http://onsemi.com
+5
+N-CHANNEL TYPICAL PERFORMANCE CURVES (TJ = 25°C unless otherwise noted)
+0
+50
+100
+150
+200
+0
+5
+10
+15
+20
+Figure 7. Capacitance Variation
+C, CAPACITANCE (pF)
+TJ = 25°C
+VGS = 0 V
+CISS
+0
+1
+2
+3
+4
+5
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+0
+4
+8
+12
+16
+20
+VDS, DRAIN-TO-SOURCE VOLTAGE (V)
+VGS, GATE-T O-SOURCE VOLTAGE (V)
+QT
+QGD
+QGS
+Figure 8. Gate-to-Source and
+Drain-to-Source Voltage versus Total Charge
+Qg, TOTAL GATE CHARGE (nC)
+ID = 0.54 A
+TJ = 25°C
+VDS
+VGS
+1
+10
+100
+1
+10
+100
+t, TIME (ns)
+Figure 9. Resistive Switching Time Variation
+versus Gate Resistance
+RG, GATE RESISTANCE ()
+td(OFF)
+tf
+td(ON)
+tr
+VDS = 10 V
+ID = 0.2 A
+VGS = 4.5 V
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+IS, SOURCE CURRENT (A)
+Figure 10. Diode Forward Voltage versus
+Current
+VSD, SOURCE-TO-DRAIN VOLTAGE (V)
+VGS = 0 V
+TJ = 25°C
+COSS
+DRAIN-T O-SOURCE VOLTAGE (V)
+VDS = 0 V
+VDS
+
+===PAGE 6===
+NTZD3155C
+http://onsemi.com
+6
+P-CHANNEL TYPICAL PERFORMANCE CURVES (TJ = 25°C unless otherwise noted)
+-1 V
+100°C
+0
+1
+5
+0.6
+6
+3
+2
+-V DS, DRAIN-TO-SOURCE VOLTAGE (V)
+-I D, DRAIN CURRENT (A)
+0.4
+0.2
+0
+1
+Figure 1. On-Region Characteristics
+0.5
+1
+2
+1.5
+2.5
+0.8
+0.4
+0.2
+1
+0
+0
+Figure 2. Transfer Characteristics
+-V GS, GATE-T O-SOURCE VOLTAGE (V)
+0.5
+3
+5
+0.7
+0.6
+0.4
+Figure 3. On-Resistance vs. Gate-to-Source
+Voltage
+-V GS, GATE-T O-SOURCE VOLTAGE (V)
+RDS(on), DRAIN-T O-SOURCE RESISTANCE ()
+-I D, DRAIN CURRENT (A)
+0.1
+1.0
+0.8
+Figure 4. On-Resistance vs. Drain Current and
+Gate Voltage
+-I D, DRAIN CURRENT (A)
+-50
+0
+-25
+25
+1.4
+1.2
+1
+0.8
+0.6
+50
+125
+100
+Figure 5. On-Resistance Variation with
+Temperature
+TJ, JUNCTION TEMPERATURE (°C)
+TJ = 25°C
+2
+4
+TJ = -55°C
+ID = -0.43 A
+TJ = 25°C
+1.4
+0.5
+75
+150
+TJ = 25°C
+ID = -0.43 A
+VGS = -4.5 V
+RDS(on), DRAIN-T O-SOURCE
+RESISTANCE (NORMALIZED)
+4
+25°C
+RDS(on), DRAIN-T O-SOURCE RESISTANCE ()
+1.6
+VGS = -1.8 V
+-1.2 V
+1
+6
+-1.4 V
+-1.6 V
+1.3
+0.6
+1.1
+VGS = -2.5 V
+7
+10
+VDS ≥ -10 V
+0.8
+0.2
+0.3
+0.4
+0.9
+VGS = -1.8 V
+VGS = -2 V
+Figure 6. Drain-to-Source Leakage Current
+vs. Voltage
+2
+4
+8
+10
+20
+16
+-V DS, DRAIN-TO-SOURCE VOLTAGE (V)
+12
+VGS = 0 V
+-I DSS, LEAKAGE (nA)
+TJ = 150°C
+TJ = 100°C
+100
+1000
+10000
+6
+10
+18
+14
+0.45
+0.65
+0.55
+0.75
+0.7
+1.0
+1.2
+0.5
+0.6
+0.7
+0.8
+0.9
+0.8
+8
+9
+0.6
+
+===PAGE 7===
+NTZD3155C
+http://onsemi.com
+7
+P-CHANNEL TYPICAL PERFORMANCE CURVES (TJ = 25°C unless otherwise noted)
+VGS = 0 V
+-V GS
+5
+10
+150
+100
+50
+0
+20
+DRAIN-T O-SOURCE VOLTAGE (V)
+C, CAPACITANCE (pF)
+0
+2
+1
+4
+1
+0
+QG, TOTAL GATE CHARGE (nC)
+-V GS, GATE-T O-SOURCE VOLTAGE (V)
+TJ = 25°C
+COSS
+CISS
+CRSS
+ID = -0.215 A
+TJ = 25°C
+250
+1.8
+1.6
+2
+3
+-V DS, DRAIN-T O-SOURCE VOLTAGE (VOLTS)
+10
+8
+2
+0
+QGD
+10
+1
+10
+1
+100
+RG, GATE RESISTANCE ()
+t, TIME (ns)
+VDD = -10 V
+ID = -0.215 A
+VGS = -4.5 V
+100
+0
+200
+5
+4
+6
+td(OFF)
+td(ON)
+tf
+tr
+-V DS
+15
+1.4
+0.2
+1.2
+0.9
+0.2
+0
+-V SD, SOURCE-TO-DRAIN VOLTAGE (V)
+-I S, SOURCE CURRENT (AMPS)
+VGS = 0 V
+TJ = 25°C
+0.6
+0.7
+0.5
+0.3
+0.4
+Figure 7. Capacitance Variation
+Figure 8. Gate-to-Source and
+Drain-to-Source Voltage vs. Total Charge
+Figure 9. Resistive Switching Time Variation
+vs. Gate Resistance
+Figure 10. Diode Forward Voltage vs. Current
+0.4
+0.6
+0.8
+QT
+0.8
+0.6
+0.4
+9
+3
+1
+5
+7
+QGS
+
+===PAGE 8===
+NTZD3155C
+http://onsemi.com
+8
+PACKAGE DIMENSIONS
+HE
+DIM
+MIN
+NOM
+MAX
+MILLIMETERS
+A
+0.50
+0.55
+0.60
+b
+0.17
+0.22
+0.27
+C
+D
+1.50
+1.60
+1.70
+E
+1.10
+1.20
+1.30
+e
+0.5 BSC
+L
+0.10
+0.20
+0.30
+1.50
+1.60
+1.70
+0.020
+0.021
+0.023
+0.007
+0.009
+0.011
+0.059
+0.062
+0.066
+0.043
+0.047
+0.051
+0.02 BSC
+0.004
+0.008
+0.012
+0.059
+0.062
+0.066
+MIN
+NOM
+MAX
+INCHES
+SOT-563, 6 LEAD
+CASE 463A-01
+ISSUE F
+e
+M
+0.08 (0.003)
+X
+b 6 
+5 PL
+A
+C
+-X-
+-Y-
+NOTES:
+1. DIMENSIONING AND TOLERANCING PER ANSI
+Y14.5M, 1982.
+2. CONTROLLING DIMENSION: MILLIMETERS
+3. MAXIMUM LEAD THICKNESS INCLUDES LEAD
+FINISH THICKNESS. MINIMUM LEAD THICKNESS
+IS THE MINIMUM THICKNESS OF BASE MATERIAL.
+D
+E
+Y
+1
+2
+3
+4
+5
+L
+6
+1.35
+0.0531
+0.5
+0.0197
+ mm
+inches
+SCALE 20:1
+0.5
+0.0197
+1.0
+0.0394
+0.45
+0.0177
+0.3
+0.0118
+*For additional information on our Pb-Free strategy and soldering
+details, please download the ON Semiconductor Soldering and
+Mounting Techniques Reference Manual, SOLDERRM/D.
+SOLDERING FOOTPRINT*
+HE
+0.08
+0.12
+0.18
+0.003
+0.005
+0.007
+ON Semiconductor and          are registered trademarks of Semiconductor Components Industries, LLC (SCILLC). SCILLC reserves the right to make changes without further notice
+to any products herein. SCILLC makes no warranty, representation or guarantee regarding the suitability of its products for any particular purpose, nor does SCILLC assume any liability
+arising out of the application or use of any product or circuit, and specifically disclaims any and all liability, including without limitation special, consequential or incidental damages.
+“Typical” parameters which may be provided in SCILLC data sheets and/or specifications can and do vary in different applications and actual performance may vary over time. All
+operating parameters, including “Typicals” must be validated for each customer application by customer's technical experts. SCILLC does not convey any license under its patent rights
+nor the rights of others. SCILLC products are not designed, intended, or authorized for use as components in systems intended for surgical implant into the body, or other applications
+intended to support or sustain life, or for any other application in which the failure of the SCILLC product could create a situation where personal injury or death may occur. Should Buyer
+purchase or use SCILLC products for any such unintended or unauthorized application, Buyer shall indemnify and hold SCILLC and its officers, employees, subsidiaries, affiliates,
+and distributors harmless against all claims, costs, damages, and expenses, and reasonable attorney fees arising out of, directly or indirectly, any claim of personal injury or death
+associated with such unintended or unauthorized use, even if such claim alleges that SCILLC was negligent regarding the design or manufacture of the part. SCILLC is an Equal
+Opportunity/Affirmative Action Employer. This literature is subject to all applicable copyright laws and is not for resale in any manner.
+NTZD3155C/D
+PUBLICATION ORDERING INFORMATION
+N. American Technical Support: 800-282-9855 Toll Free
+ USA/Canada
+Europe, Middle East and Africa Technical Support:
+ Phone: 421 33 790 2910
+Japan Customer Focus Center
+ Phone: 81-3-5773-3850
+LITERATURE FULFILLMENT:
+ Literature Distribution Center for ON Semiconductor
+ P.O. Box 5163, Denver, Colorado 80217 USA
+ Phone: 303-675-2175 or 800-344-3860 Toll Free USA/Canada
+ Fax: 303-675-2176 or 800-344-3867 Toll Free USA/Canada
+ Email: orderlit@onsemi.com
+ON Semiconductor Website: www.onsemi.com
+Order Literature: http://www.onsemi.com/orderlit
+For additional information, please contact your local
+Sales Representative

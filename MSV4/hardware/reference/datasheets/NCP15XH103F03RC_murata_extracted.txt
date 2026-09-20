@@ -1,0 +1,7226 @@
+
+===PAGE 1===
+NTC Thermistors
+R44E.pdf
+Oct.6,2016
+
+===PAGE 2===
+EU RoHS Compliant
+F**2&#.0-"3!21',2&'1!2*-%!-+.*7
+5'2&	-@
+F	-'12&#	30-.#,'0#!2'4#
+|z{{GG	-,2&##120'!2'-,-$2&#
+1#-$#02',80"-313 12,!#1',
+	*#!20'!*,"	*#!20-,'!	/3'.+#,2@
+FFor+-0#"#2'*1A.*#1#0#$#r2o-ur
+5# 1'2#'Mur21A..roc&$o0	-'
+H&22.BGG555@+302@!-+G#,-
+#3G13..-02G!-+.*',!#G0-&1J@
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+R44E.pdf
+Oct.6,2016
+
+===PAGE 3===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+Contents
+Please check the MURATA website (http://www.murata.com/) 
+if you cannot ﬁnd a part number in this catalog.
+Product speciﬁcations are as of August 2016.
+Temperature Sensor and Compensation Chip Type 
+Standard Land Pattern Dimensions 
+p13
+Temperature Sensor and Compensation Chip Type 
+Temperature Characteristics (Center Value) 
+p14
+Temperature Sensor and Compensation Chip Type 
+!Caution/Notice 
+p17
+Temperature Sensor and Compensation Chip Type 
+Package 
+p21
+Part Numbering 
+p2
+Basic Characteristics 
+p6
+Temperature Sensor and Compensation 
+0201 (0603) Size 
+p7
+1
+Temperature Sensor and Compensation 
+0402 (1005) Size/NCP Series 
+p8
+Temperature Sensor and Compensation
+0402 (1005) Size/NCU Series 
+p9
+2
+Temperature Sensor and Compensation 
+0603 (1608) Size/NCP Series 
+p10
+Temperature Sensor and Compensation
+0603 (1608) Size/NCU Series 
+p11
+3
+Temperature Sensor and Compensation 
+0805 (2012) Size 
+p12
+4
+Temperature Sensor Thermo String Type 
+p24
+Temperature Sensor Thermo String Type 
+Speciﬁcations and Test Methods 
+p25
+5
+Temperature Sensor Lead Type 
+p27
+Temperature Sensor Lead Type 
+Speciﬁcations and Test Methods 
+p28
+6
+Temperature Sensor Lead Insulation Type 
+p29
+Temperature Sensor Lead Insulation Type 
+Speciﬁcations and Test Methods 
+p30
+7
+Temperature Sensor Thermo String/Lead Type 
+Temperature Characteristics (Center Value) 
+p31
+Temperature Sensor Thermo String/Lead Type 
+!Caution/Notice 
+p32
+Temperature Sensor Thermo String/Lead Type 
+Package 
+p34
+Inrush Current Suppression Lead Type 
+p35
+Current-R Ratio (RT/R25)/
+Current-Temperature Characteristics (Typical) 
+p37
+Inrush Current Suppression Lead Type 
+!Caution/Notice 
+p41
+Inrush Current Suppression Lead Type 
+Package 
+p43
+8
+1
+2
+3
+4
+5
+6
+7
+8
+
+===PAGE 4===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+o Part Numbering
+1Product ID
+2Series
+6Resistance Tolerance
+7Individual Speciﬁcations
+NTC Thermistors for Temp. Sensor and Compensation Chip Type
+NC
+NTC Thermistors Chip Type
+D
+F
+E
+J
+P
+U
+±0.5%
+±1%
+±3%
+±5%
+03/05/10/12/60
+pS
+Individual Speciﬁcations
+Product ID
+Code
+Code
+Series
+Resistance Tolerance
+Code
+(Part Number)
+5Resistance
+Expressed by three-digit alphanumerics. The unit is ohm (Ω). 
+The ﬁrst and second ﬁgures are signiﬁcant digits, and the third 
+ﬁgure expresses the number of zeros that follow the two ﬁgures.
+Structures and other speciﬁcations are expressed by two ﬁgures.
+102
+103
+104
+Ex.
+Ex.
+1kΩ
+10kΩ
+100kΩ
+Code
+Resistance
+Standard Type
+Automotive Type
+8Packaging
+RA
+RB
+RC
+RL
+Plastic Taping 4mm Pitch (4000 pcs.)
+Paper Taping 4mm Pitch (4000 pcs.) 
+Paper Taping 2mm Pitch (10000 pcs.)
+Paper Taping 2mm Pitch (15000 pcs.)
+Code
+Packaging
+Plated Termination Series
+High Reliability Series
+3Dimensions (L x W)
+03
+15
+18
+21
+Code
+Dimensions (L x W)
+0.60 x 0.30mm
+1.00 x 0.50mm
+1.60 x 0.80mm
+2.00 x 1.25mm
+EIA
+0201
+0402
+0603
+0805
+4Temperature Characteristics
+XC
+XF
+XH
+XM
+XQ
+XV
+XW
+WB
+WD
+WF
+WL
+WM
+Code
+Temperature Characteristics
+Nominal B-Constant 3100–3149K
+Nominal B-Constant 3250–3299K
+Nominal B-Constant 3350–3399K
+Nominal B-Constant 3500–3549K
+Nominal B-Constant 3650–3699K
+Nominal B-Constant 3900–3949K
+Nominal B-Constant 3950–3999K
+Nominal B-Constant 4050–4099K
+Nominal B-Constant 4150–4199K
+Nominal B-Constant 4250–4299K
+Nominal B-Constant 4450–4499K
+Nominal B-Constant 4500–4549K
+6
+J
+3
+18
+2
+P
+4
+XH
+5
+103
+7
+03
+8
+RB
+NC
+1
+2
+
+===PAGE 5===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+1Product ID
+2Individual Speciﬁcations
+7Lead Wire Type
+8Shape of the Lead Wire Kink
+NTC Thermistor for Temperature Sensor Thermo String Type
+NXF
+NTC Thermistors Sensor Thermo String Type
+A
+ø0.3mm Copper Lead Wire 
+with Polyurethane Coat
+1
+2
+Shape of the Lead Wire Kink
+Product ID
+Code
+Lead Wire Type
+Code
+(Part Number)
+5Resistance
+Expressed by three ﬁgures. The unit is (Ω). The ﬁrst and second 
+ﬁgures are signiﬁcant digits, and the third ﬁgure expresses the 
+number of zeros that follow the two ﬁgures.
+103
+473
+104
+Ex.
+10kΩ
+47kΩ
+100kΩ
+Code
+Resistance
+Twisted Lead Wire Type
+Standard Type
+T
+Commercial Type
+Code
+6Resistance Tolerance
+F
+±1%
+Code
+Resistance Tolerance
+9Packaging
+B
+Bulk
+Code
+Packaging
+:Dimensions (Full Length)
+025
+030
+040
+050
+060
+070
+080
+090
+100
+110
+120
+130
+140
+150
+25mm
+30mm
+40mm
+50mm
+60mm
+70mm
+80mm
+90mm
+100mm
+110mm
+120mm
+130mm
+140mm
+150mm
+Code
+Dimensions (Full Length)
+Individual Speciﬁcations
+4Temperature Characteristics
+XH
+XV
+WB
+WF
+Nominal B-Constant 3350–3399K
+Nominal B-Constant 3900–3949K
+Nominal B-Constant 4050–4099K
+Nominal B-Constant 4250–4299K
+Code
+Temperature Characteristics
+3Chip Dimensions
+15
+1.00 x 0.50mm
+Code
+Dimensions (L x T)
+0402
+EIA
+5
+103
+2
+T
+3
+15
+4
+XH
+6
+F
+7
+A
+8
+2
+9
+B
+:
+025
+NXF
+1
+3
+
+===PAGE 6===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+1Product ID
+2Individual Speciﬁcations
+7Lead Wire Type
+8Shape of the Lead Wire
+NTC Thermistor for Temperature Sensor/Lead Type 
+NXR
+NTC Thermistor Sensor/Lead Type 
+A
+Lead Type: ø0.4mm Copper-clad Fe Wire, Tinned
+Lead Insulation Type: ø0.46mm Cu Wire with Coat
+1
+3
+5
+Shape of the Lead Wire
+Product ID
+Code
+Lead Wire Type
+Code
+(Part Number)
+5Resistance
+Expressed by three ﬁgures. The unit is (Ω). The ﬁrst and second 
+ﬁgures are signiﬁcant digits, and the third ﬁgure expresses the 
+number of zeros that follow the two ﬁgures.
+202
+103
+104
+Ex.
+2.0kΩ
+10kΩ
+100kΩ
+Code
+Resistance
+Lead Spacing 2.5mm
+Lead Spacing 5.0mm
+Lead Spacing 2.5mm (Insulation Type)
+T
+Commercial Type
+Code
+6Resistance Tolerance
+F
+E
+J
+±1%
+±3%
+±5%
+Code
+Resistance Tolerance
+9Packaging
+A
+B
+Ammo Pack Taping
+Bulk
+Code
+Packaging
+:Dimensions (Full Length)
+010
+020
+025
+030
+035
+040
+016
+–
+–
+25mm
+30mm
+35mm
+–
+–
+Code
+Lead Insulation Type
+10mm
+20mm
+–
+30mm
+–
+40mm
+16mm (Taping Type)
+Lead Type
+Individual Speciﬁcations
+4Temperature Characteristics
+XH
+XM
+XV
+WB
+WF
+Nominal B-Constant 3350–3399K
+Nominal B-Constant 3500–3549K
+Nominal B-Constant 3900–3949K
+Nominal B-Constant 4050–4099K
+Nominal B-Constant 4250–4299K
+Code
+Temperature Characteristics
+3Chip Dimensions
+15
+1.00 x 0.50mm
+Code
+Dimensions (L x T)
+5
+103
+2
+T
+3
+15
+4
+XH
+6
+F
+7
+A
+8
+1
+9
+B
+:
+040
+NXR
+1
+4
+
+===PAGE 7===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+6
+B0
+3
+160
+4
+L
+5
+BM
+NT
+1
+2
+PA7
+1Product ID
+2Series
+4Resistance Tolerance
+5Individual Speciﬁcations
+NTC Thermistors for Inrush Current Suppression Lead Type
+NT
+NTC Thermistors
+L
+PA5
+PA6
+PA7
+PA9
+PAA
+PAD
+PAJ
+PAN
+±15%
+Individual Speciﬁcations
+Product ID
+Code
+Code
+Series
+Resistance Tolerance
+Code
+(Part Number)
+3Resistance
+Expressed by three-digit alphanumerics. The unit is ohm (Ω). 
+The ﬁrst and second ﬁgures are signiﬁcant digits, and the third 
+ﬁgure expresses the number of zeros that follow the two ﬁgures. 
+If there is a decimal point, it is expressed by the capital letter "R." 
+In this case, all ﬁgures are signiﬁcant digits.
+The lead structure and other speciﬁcations are expressed 
+by two-digit alphanumerics.
+3R0
+100
+Ex.
+3Ω
+10Ω
+Code
+Resistance
+Standard (Bulk)
+6Packaging
+A0
+B0
+Ammo Pack Taping
+Bulk
+Code
+Packaging
+Body Diameter
+ø18mm, ø22mm
+Standard (Bulk)
+ø10mm, ø13mm
+Standard Type (Bulk)
+ø7mm, ø9mm
+B1
+BM
+D6
+DK
+DN
+Standard Type (Ammo Pack)
+ø7mm, ø9mm
+Standard Type (Ammo Pack) ø10mm, ø13mm
+Inrush Current
+Suppression
+Lead Type 
+ø5mm
+ø6mm
+ø7mm
+ø9mm
+ø10mm
+ø13mm
+ø18mm
+ø22mm
+Nominal Body Diameter
+5
+
+===PAGE 8===
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+1. Zero-power Resistance of Thermistor: R
+2. B-Constant
+R=R0 expB (1/T–1/T0) ......................................... (1)
+R: Resistance in ambient temperature T (K)
+(K: absolute temperature)
+R0: Resistance in ambient temperature T0 (K)
+B: B-Constant of Thermistor
+as (1) formula
+B=   n (R/R0) / (1/T–1/T0) ..................................... (2)
+3. Thermal Dissipation Constant
+When electric power P (mW) is spent in ambient 
+temperature T1 and thermistor temperature rises T2,  
+the formula is as follows
+P=C (T2–T1) ........................................................ (3)
+C: Thermal dissipation constant (mW/°C)
+Thermal dissipation constant is varied with dimensions, 
+measurement conditions, etc.
+4. Thermal Time Constant
+Period in which the thermistor's temperature will change 
+63.2% of its temperature difference from ambient 
+temperature T0 (°C) to T1 (°C).
+Resistance vs. Temperature
+Performance
+Thermal Time Constant
+Item
+Resistance
+Condition
+Measured by zero-power in speciﬁed ambient temperature.
+Rated Electric Power
+Shows the required electric power that causes the thermistor's temperature to rise to a speciﬁed temperature by 
+self-heating, at ambient temperature of 25 °C.
+Permissible Operating Current
+It is possible to keep the thermistor's temperature rising max. 1°C.
+Thermal Dissipation
+Constant
+Shows necessary electric power that Thermistor's temperature rises 1°C by self-heating.
+It is calculated by the next formula (mW/°C).
+B-Constant
+Calculated between two speciﬁed ambient temperatures by the next formula.
+T and T0 is absolute temperature (K).
+ 
+    n (R/R0)
+B = 1/T–1/T0
+ 
+P
+C = 
+T–T0
+102
+101
+Resistance vs. Temperature Characteristics, R/R25
+–20
+Temperature (°C)
+0
+20
+40
+60
+80
+120
+100
+10–2
+10–1
+1
+B=3450
+B=3900
+B=4100
+Basic Characteristics
+T1
+T0
+Time
+63.2%
+X
+Temperature
+Please inquire about test conditions and ratings.
+6
+Basic Characteristics
+
+===PAGE 9===
+NTC Thermistors
+Temperature Sensor and Compensation 0201 (0603) Size 
+Electrode
+(Ag System + Ni Plating + Sn Plating)
+0.15±0.05
+0.15±0.05
+0.60±0.03
+(in mm)
+0.30±0.03
+0.30±0.03
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCP03XM102p05RL
+1.0k
+3500 ±1%
+3539
+3545
+3560
+1.00
+100
+1
+NCP03XM152p05RL
+1.5k
+3500 ±1%
+3539
+3545
+3560
+0.81
+100
+1
+NCP03XM222p05RL
+2.2k
+3500 ±1%
+3539
+3545
+3560
+0.67
+100
+1
+NCP03XM332p05RL
+3.3k
+3500 ±1%
+3539
+3545
+3560
+0.55
+100
+1
+NCP03XM472p05RL
+4.7k
+3500 ±1%
+3539
+3545
+3560
+0.46
+100
+1
+NCP03XH682p05RL
+6.8k
+3380 ±1%
+3428
+3434
+3455
+0.38
+100
+1
+NCP03XH103F05RL
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCP03XH103p05RL
+10k
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCP03XV103p05RL
+10k
+3900 ±1%
+3930
+3934
+3944
+0.31
+100
+1
+NCP03XH153p05RL
+15k
+3380 ±1%
+3428
+3434
+3455
+0.25
+100
+1
+NCP03XH223p05RL
+22k
+3380 ±1%
+3428
+3434
+3455
+0.21
+100
+1
+NCP03WF333p05RL
+33k
+4250 ±1%
+4303
+4311
+4334
+0.17
+100
+1
+NCP03WB473p05RL
+47k
+4050 ±3%
+4101
+4108
+4131
+0.14
+100
+1
+NCP03WL473p05RL
+47k
+4485 ±1%
+4537
+4543
+4557
+0.14
+100
+1
+NCP03WF683p05RL
+68k
+4250 ±1%
+4303
+4311
+4334
+0.12
+100
+1
+NCP03WL683p05RL
+68k
+4485 ±1%
+4537
+4543
+4557
+0.12
+100
+1
+NCP03WF104F05RL
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.10
+100
+1
+NCP03WF104p05RL
+100k
+4250 ±1%
+4303
+4311
+4334
+0.10
+100
+1
+NCP03WL104p05RL
+100k
+4485 ±1%
+4537
+4543
+4557
+0.10
+100
+1
+NCP03WL154p05RL
+150k
+4485 ±1%
+4537
+4543
+4557
+0.08
+100
+1
+NCP03WL224p05RL
+220k
+4485 ±1%
+4537
+4543
+4557
+0.06
+100
+1
+p is filled with resistance tolerance codes (E: ±3%, J: ±5%).
+Rated Electric Power shows the required electric power that the thermistor's temperature rise to 125°C by self-heating, at ambient temperature of 25 °C.
+Operating Temperature Range: -40°C to +125°C
+Chip NTC Thermistors' Ni barrier termination provides 
+excellent solderability and their unique construction 
+offers high stability in the application's environment.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment
+2. Excellent long-term stability
+3. High accuracy in resistance and B-Constant
+4. Reflow soldering possible
+5. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188)
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncp
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+7
+1
+
+===PAGE 10===
+NTC Thermistors
+Temperature Sensor and Compensation 0402 (1005) Size/NCP Series
+Electrode
+(Ag System + Ni Plating + Sn Plating)
+0.25±0.10
+0.25±0.10
+1.0±0.05
+(in mm)
+0.5±0.05
+0.5±0.05
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCP15XM221p03RC
+220
+3500 ±3%
+3539
+3545
+3560
+2.10
+100
+1
+NCP15XM331p03RC
+330
+3500 ±3%
+3539
+3545
+3560
+1.70
+100
+1
+NCP15XQ471p03RC
+470
+3650 ±2%
+3688
+3693
+3706
+1.40
+100
+1
+NCP15XQ681p03RC
+680
+3650 ±3%
+3688
+3693
+3706
+1.20
+100
+1
+NCP15XQ102p03RC
+1.0k
+3650 ±2%
+3688
+3693
+3706
+1.00
+100
+1
+NCP15XW152p03RC
+1.5k
+3950 ±3%
+3982
+3987
+3998
+0.81
+100
+1
+NCP15XW222p03RC
+2.2k
+3950 ±3%
+3982
+3987
+3998
+0.67
+100
+1
+NCP15XW332p03RC
+3.3k
+3950 ±3%
+3982
+3987
+3998
+0.55
+100
+1
+NCP15XM472p03RC
+4.7k
+3500 ±2%
+3539
+3545
+3560
+0.46
+100
+1
+NCP15XW472p03RC
+4.7k
+3950 ±3%
+3982
+3987
+3998
+0.46
+100
+1
+NCP15XW682p03RC
+6.8k
+3950 ±3%
+3982
+3987
+3998
+0.38
+100
+1
+NCP15XV103p03RC
+10k
+3900 ±3%
+3930
+3934
+3944
+0.31
+100
+1
+NCP15XW153p03RC
+15k
+3950 ±3%
+3982
+3987
+3998
+0.25
+100
+1
+NCP15XW223p03RC
+22k
+3950 ±3%
+3982
+3987
+3998
+0.21
+100
+1
+NCP15WL223p03RC
+22k
+4485 ±1%
+4537
+4543
+4557
+0.21
+100
+1
+NCP15WB333p03RC
+33k
+4050 ±3%
+4101
+4108
+4131
+0.17
+100
+1
+NCP15WL333p03RC
+33k
+4485 ±1%
+4537
+4543
+4557
+0.17
+100
+1
+NCP15WL473p03RC
+47k
+4485 ±1%
+4537
+4543
+4557
+0.14
+100
+1
+NCP15WD683p03RC
+68k
+4150 ±3%
+4201
+4209
+4232
+0.12
+100
+1
+NCP15WL683p03RC
+68k
+4485 ±1%
+4537
+4543
+4557
+0.12
+100
+1
+NCP15WL104p03RC
+100k
+4485 ±1%
+4537
+4543
+4557
+0.10
+100
+1
+NCP15WL154p03RC
+150k
+4485 ±1%
+4537
+4543
+4557
+0.08
+100
+1
+NCP15WM154p03RC
+150k
+4500 ±3%
+4571
+4582
+4614
+0.08
+100
+1
+NCP15WM224p03RC
+220k
+4500 ±3%
+4571
+4582
+4614
+0.06
+100
+1
+NCP15WM474p03RC
+470k
+4500 ±3%
+4571
+4582
+4614
+0.04
+100
+1
+Chip NTC Thermistors' Ni barrier termination provides 
+excellent solderability and their unique construction 
+offers high stability in the application's environment.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment 
+2. Excellent long-term stability
+3. High accuracy in resistance and B-Constant
+4. Reflow soldering possible
+5. Same B-constant in the same resistance in the three
+    sizes (0805 size/0603 size/0402 size)
+    Downsize is easy for design.
+6. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188) 
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric circuits
+p is filled with resistance tolerance codes (E: ±3%, J: ±5%).
+Rated Electric Power shows the required electric power that the thermistor's temperature rise to 125°C by self-heating, at ambient temperature of 25 °C.
+Operating Temperature Range: -40°C to +125°C
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncp
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+8
+2
+
+===PAGE 11===
+NTC Thermistors
+Temperature Sensor and Compensation 0402 (1005) Size/NCU Series
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCU15XH103D60RC
+10k ±0.5%
+3380 ±0.7%
+3428
+3434
+3455
+0.31
+100
+1
+NCU15XH103F60RC
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCU15XH103p60RC
+10k
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCU15WB473D60RC
+47k ±0.5%
+4050 ±0.5%
+4101
+4108
+4131
+0.14
+100
+1
+NCU15WB473F60RC
+47k ±1%
+4050 ±1%
+4101
+4108
+4131
+0.14
+100
+1
+NCU15WB473p60RC
+47k
+4050 ±1%
+4101
+4108
+4131
+0.14
+100
+1
+NCU15WF104D60RC
+100k ±0.5% 4250 ±0.5%
+4303
+4311
+4334
+0.1
+100
+1
+NCU15WF104F60RC
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.1
+100
+1
+NCU15WF104p60RC
+100k
+4250 ±1%
+4303
+4311
+4334
+0.1
+100
+1
+0402/0603 sized Chip NTC Thermistors have Ni
+barrier termination, provide excellent solderability
+and offer high stability in environment due to unique
+inner construction.
+This is new series, available market where request 
+the high reliability for wide temperature sensing and 
+compensation.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment 
+2. Excellent long-term stability
+3. High accuracy in resistance and B-Constant
+4. Reflow soldering possible
+5. Same B-constant in the same resistance in the three
+    sizes (0805 size/0603 size/0402 size)
+    Downsize is easy for design.
+6. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188) 
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric circuits
+p is filled with resistance tolerance codes (E: ±3%, J: ±5%).
+Rated Electric Power is necessary electric power for Thermistor's temperature to rise 100°C by self heating at 25°C in still air.
+Operating Temperature Range: -40°C to +125°C
+If there is any additionally electrical characteristics, please contact from close sales office or website.
+Electrode
+(Cu System + Ni Plating + Sn Plating)
+0.25±0.10
+0.25±0.10
+1.0±0.05
+(in mm)
+0.5±0.05
+0.5±0.05
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncu
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+9
+2
+
+===PAGE 12===
+NTC Thermistors
+Temperature Sensor and Compensation 0603 (1608) Size/NCP Series
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCP18XM221p03RB
+220
+3500 ±3%
+3539
+3545
+3560
+2.10
+100
+1
+NCP18XM331p03RB
+330
+3500 ±3%
+3539
+3545
+3560
+1.70
+100
+1
+NCP18XQ471p03RB
+470
+3650 ±2%
+3688
+3693
+3706
+1.40
+100
+1
+NCP18XQ681p03RB
+680
+3650 ±3%
+3688
+3693
+3706
+1.20
+100
+1
+NCP18XQ102p03RB
+1.0k
+3650 ±2%
+3688
+3693
+3706
+1.00
+100
+1
+NCP18XW152p03RB
+1.5k
+3950 ±3%
+3982
+3987
+3998
+0.81
+100
+1
+NCP18XW222p03RB
+2.2k
+3950 ±3%
+3982
+3987
+3998
+0.67
+100
+1
+NCP18XW332p03RB
+3.3k
+3950 ±3%
+3982
+3987
+3998
+0.55
+100
+1
+NCP18XM472p03RB
+4.7k
+3500 ±2%
+3539
+3545
+3560
+0.46
+100
+1
+NCP18XW472p03RB
+4.7k
+3950 ±3%
+3982
+3987
+3998
+0.46
+100
+1
+NCP18XW682p03RB
+6.8k
+3950 ±3%
+3982
+3987
+3998
+0.38
+100
+1
+NCP18XV103p03RB
+10k
+3900 ±3%
+3930
+3934
+3944
+0.31
+100
+1
+NCP18XW153p03RB
+15k
+3950 ±3%
+3982
+3987
+3998
+0.25
+100
+1
+NCP18XW223p03RB
+22k
+3950 ±3%
+3982
+3987
+3998
+0.21
+100
+1
+NCP18WB333p03RB
+33k
+4050 ±3%
+4101
+4108
+4131
+0.17
+100
+1
+NCP18WD683p03RB
+68k
+4150 ±3%
+4201
+4209
+4232
+0.12
+100
+1
+NCP18WM154p03RB
+150k
+4500 ±3%
+4571
+4582
+4614
+0.08
+100
+1
+NCP18WM224p03RB
+220k
+4500 ±3%
+4571
+4582
+4614
+0.06
+100
+1
+NCP18WM474p03RB
+470k
+4500 ±3%
+4571
+4582
+4614
+0.04
+100
+1
+p is filled with resistance tolerance codes (E: ±3%, J: ±5%).
+Rated Electric Power shows the required electric power that the thermistor's temperature rise to 125°C by self-heating, at ambient temperature of 25 °C.
+Operating Temperature Range: -40°C to +125°C
+Electrode
+(Ag System + Ni Plating + Sn Plating)
+0.2-0.6
+0.2-0.6
+1.6±0.15
+(in mm)
+0.8±0.15
+0.8±0.15
+Chip NTC Thermistors' Ni barrier termination provides 
+excellent solderability and their unique construction 
+offers high stability in the application's environment.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment
+2. Excellent long-term stability
+3. High accuracy in resistance and B-constant
+4. Flow/Reflow soldering possible
+5. Same B-Constant in the same resistance in the three
+    sizes (0805 size/0603 size/0402 size)
+    Downsize is easy for design.
+6. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188)
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric
+    circuits
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncp
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+10
+3
+
+===PAGE 13===
+NTC Thermistors
+Temperature Sensor and Compensation 0603 (1608) Size/NCU Series
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCU18XH103D60RB
+10k ±0.5%
+3380 ±0.7%
+3428
+3434
+3455
+0.31
+100
+1
+NCU18XH103F60RB
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCU18XH103p60RB
+10k
+3380 ±1%
+3428
+3434
+3455
+0.31
+100
+1
+NCU18WB473D60RB
+47k ±0.5%
+4050 ±0.5%
+4101
+4108
+4131
+0.14
+100
+1
+NCU18WB473F60RB
+47k ±1%
+4050 ±1%
+4101
+4108
+4131
+0.14
+100
+1
+NCU18WB473p60RB
+47k
+4050 ±1%
+4101
+4108
+4131
+0.14
+100
+1
+NCU18WF104D60RB
+100k ±0.5% 4250 ±0.5%
+4303
+4311
+4334
+0.1
+100
+1
+NCU18WF104F60RB
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.1
+100
+1
+NCU18WF104p60RB
+100k
+4250 ±2%
+4303
+4311
+4334
+0.1
+100
+1
+0402/0603 sized Chip NTC Thermistors have Ni
+barrier termination, provide excellent solderability
+and offer high stability in environment due to unique
+inner construction.
+This is new series, available market where request 
+the high reliability for wide temperature sensing and 
+compensation.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment
+2. Excellent long-term stability
+3. High accuracy in resistance and B-constant
+4. Flow/Reflow soldering possible
+5. Same B-Constant in the same resistance in the three
+    sizes (0805 size/0603 size/0402 size)
+    Downsize is easy for design.
+6. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188)
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric
+    circuits
+p is filled with resistance tolerance codes (E: ±3%, J: ±5%).
+Rated Electric Power is necessary electric power for Thermistor's temperature to rise 100°C by self heating at 25°C in still air.
+Operating Temperature Range: -40°C to +125°C
+If there is any additionally electrical characteristics, please contact from close sales office or website.
+Electrode
+(Cu System + Ni Plating + Sn Plating)
+0.2-0.6
+0.2-0.6
+1.6±0.15
+(in mm)
+0.8±0.15
+0.8±0.15
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncu
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+11
+3
+
+===PAGE 14===
+NTC Thermistors
+Temperature Sensor and Compensation 0805 (2012) Size 
+2.0±0.2
+0.2-0.7
+0.2-0.7
+Electrode
+(Ag System + Ni Plating + Sn Plating)
+1.25±0.2
+0.85±0.15
+(in mm)
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Permissible Operating
+Current (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+NCP21XM221J03RA
+220 ±5%
+3500 ±3%
+3539
+3545
+3560
+3.00
+200
+2
+NCP21XQ471J03RA
+470 ±5%
+3650 ±3%
+3688
+3693
+3706
+2.00
+200
+2
+NCP21XQ102J03RA
+1.0k ±5%
+3650 ±3%
+3688
+3693
+3706
+1.40
+200
+2
+NCP21XW222J03RA
+2.2k ±5%
+3950 ±3%
+3982
+3987
+3998
+0.90
+200
+2
+NCP21XM472J03RA
+4.7k ±5%
+3500 ±3%
+3539
+3545
+3560
+0.65
+200
+2
+NCP21XV103J03RA
+10k ±5%
+3900 ±3%
+3930
+3934
+3944
+0.44
+200
+2
+NCP21XW153J03RA
+15k ±5%
+3950 ±3%
+3982
+3987
+3998
+0.36
+200
+2
+NCP21XW223J03RA
+22k ±5%
+3950 ±3%
+3982
+3987
+3998
+0.30
+200
+2
+NCP21WB333J03RA
+33k ±5%
+4050 ±3%
+4101
+4108
+4131
+0.24
+200
+2
+NCP21WB473J03RA
+47k ±5%
+4050 ±3%
+4101
+4108
+4131
+0.20
+200
+2
+NCP21WF104J03RA
+100k ±5%
+4250 ±3%
+4303
+4311
+4334
+0.14
+200
+2
+Rated Electric Power shows the required electric power that the thermistor's temperature rise to 125°C by self-heating, at ambient temperature of 25 °C.
+Operating Temperature Range: -40°C to +125°C
+Chip NTC Thermistors' Ni barrier termination provides 
+excellent solderability and their unique construction 
+offers high stability in the application's environment.
+Features
+1. Excellent solderability and high stability in the 
+    application's environment
+2. Excellent long-term stability
+3. High accuracy in resistance and B-constant
+4. Flow/Reflow soldering possible
+5. Same B-Constant in the same resistance in the three
+    sizes (0805 size/0603 size/0402 size)
+    Downsize is easy for design.
+6. NCP series are recognized by UL/cUL.
+    (UL1434, File No.E137188)
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric
+    circuits
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ncp
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+12
+4
+
+===PAGE 15===
+Temperature Sensor and Compensation Chip Type Standard Land Pattern Dimensions
+Chip
+Land
+Solder Resist
+b
+a
+c
+Part Number
+Soldering
+Methods
+Chip (LxW)
+Dimensions (mm)
+a
+b
+c
+NCP03
+NCP15/NCU15
+NCP18
+NCU18
+NCP21
+Reﬂow Soldering
+Reﬂow Soldering
+Flow Soldering
+Reﬂow Soldering
+Flow Soldering
+Reﬂow Soldering
+Flow Soldering
+Reﬂow Soldering
+0.6x0.3
+1.0x0.5
+1.6x0.8
+1.6x0.8
+2.0x1.25
+0.25
+0.4
+0.6-1.0
+0.6-0.8
+0.6-1.2
+0.6-1.2
+1.0-1.1
+1.0-1.1
+0.3
+0.4-0.5
+0.8-0.9
+0.6-0.7
+0.8-0.9
+0.6-0.7
+0.9-1.0
+0.6-0.7
+0.3
+0.5
+0.6-0.8
+0.6-0.8
+0.6-0.8
+0.6-0.8
+1.0-1.2
+1.0-1.2
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+13
+
+===PAGE 16===
+Temperature Sensor and Compensation Chip Type Temperature Characteristics (Center Value)
+Continued on the following page.
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+4947.904
+3703.755
+2798.873
+2135.887
+1645.037
+1278.034
+1000.620
+789.612
+627.752
+502.474
+405.010
+328.480
+268.044
+220.000
+181.576
+150.668
+125.681
+105.336
+88.717
+75.059
+63.777
+54.415
+46.631
+40.115
+34.637
+30.013
+26.110
+22.790
+19.957
+17.541
+15.453
+13.663
+12.114
+10.778
+NCPppXM221
+220Ω
+3500K
+Resistance (Ω)
+7421.856
+5555.632
+4198.309
+3203.831
+2467.555
+1917.051
+1500.930
+1184.418
+941.628
+753.711
+607.514
+492.720
+402.066
+330.000
+272.365
+226.002
+188.521
+158.004
+133.076
+112.588
+95.666
+81.622
+69.946
+60.172
+51.955
+45.019
+39.165
+34.186
+29.935
+26.312
+23.180
+20.494
+18.171
+16.168
+NCPppXM331
+330Ω
+3500K
+Resistance (Ω)
+11822.473
+8767.745
+6570.224
+4971.784
+3796.933
+2923.400
+2269.599
+1775.225
+1399.050
+1110.220
+887.257
+713.463
+577.375
+470.000
+384.800
+316.757
+262.177
+218.069
+182.297
+153.150
+129.249
+109.551
+93.281
+79.750
+68.446
+58.996
+51.036
+44.332
+38.640
+33.790
+29.664
+26.123
+23.091
+20.472
+NCPppXQ471
+470Ω
+3650K
+Resistance (Ω)
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+46.786
+35.530
+27.162
+20.907
+16.203
+12.644
+9.934
+7.858
+6.257
+5.015
+4.045
+3.283
+2.680
+2.200
+1.816
+1.507
+1.257
+1.053
+0.887
+0.751
+0.638
+0.544
+0.466
+0.401
+0.346
+0.300
+0.261
+0.228
+0.200
+0.175
+0.155
+0.137
+0.121
+0.108
+NCPppXM222
+2.2kΩ
+3500K
+Resistance (kΩ)
+75.961
+54.520
+39.607
+29.103
+21.601
+16.198
+12.264
+9.370
+7.219
+5.609
+4.391
+3.463
+2.751
+2.200
+1.771
+1.434
+1.169
+0.958
+0.789
+0.654
+0.545
+0.456
+0.383
+0.324
+0.275
+0.234
+0.200
+0.172
+0.149
+0.129
+0.112
+0.098
+0.085
+0.075
+NCPppXW222
+2.2kΩ
+3950K
+Resistance (kΩ)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+17104.854
+12685.248
+9505.855
+7193.219
+5493.436
+4229.599
+3283.675
+2568.411
+2024.158
+1606.275
+1283.691
+1032.245
+835.351
+680.000
+556.733
+458.287
+379.320
+315.504
+263.749
+221.579
+186.998
+158.499
+134.960
+115.383
+99.029
+85.356
+73.839
+64.140
+55.905
+48.888
+42.918
+37.795
+33.409
+29.618
+NCPppXQ681
+680Ω
+3650K
+Resistance (Ω)
+21.266
+16.150
+12.347
+9.503
+7.365
+5.747
+4.516
+3.572
+2.844
+2.280
+1.839
+1.492
+1.218
+1.000
+0.825
+0.685
+0.571
+0.479
+0.403
+0.341
+0.290
+0.247
+0.212
+0.182
+0.157
+0.136
+0.119
+0.104
+0.091
+0.080
+0.070
+0.062
+0.055
+0.049
+NCPppXM102
+1.0kΩ
+3500K
+Resistance (kΩ)
+25.154
+18.655
+13.979
+10.578
+8.079
+6.220
+4.829
+3.777
+2.977
+2.362
+1.888
+1.518
+1.229
+1.000
+0.819
+0.674
+0.558
+0.464
+0.388
+0.326
+0.275
+0.233
+0.199
+0.170
+0.146
+0.126
+0.109
+0.094
+0.082
+0.072
+0.063
+0.056
+0.049
+0.044
+NCPppXQ102
+1.0kΩ
+3650K
+Resistance (kΩ)
+31.899
+24.225
+18.520
+14.255
+11.047
+8.621
+6.773
+5.358
+4.266
+3.419
+2.758
+2.238
+1.827
+1.500
+1.238
+1.027
+0.857
+0.718
+0.605
+0.512
+0.435
+0.371
+0.318
+0.274
+0.236
+0.205
+0.178
+0.155
+0.136
+0.120
+0.105
+0.093
+0.083
+0.074
+NCPppXM152
+1.5kΩ
+3500K
+Resistance (kΩ)
+51.791
+37.172
+27.005
+19.843
+14.728
+11.044
+8.362
+6.389
+4.922
+3.825
+2.994
+2.361
+1.876
+1.500
+1.207
+0.978
+0.797
+0.653
+0.538
+0.446
+0.371
+0.311
+0.261
+0.221
+0.187
+0.160
+0.137
+0.117
+0.101
+0.088
+0.076
+0.067
+0.058
+0.051
+NCPppXW152
+1.5kΩ
+3950K
+Resistance (kΩ)
+234.787
+168.515
+122.422
+89.953
+66.766
+50.066
+37.906
+28.963
+22.313
+17.338
+13.571
+10.705
+8.503
+6.800
+5.474
+4.434
+3.613
+2.961
+2.440
+2.022
+1.683
+1.409
+1.185
+1.001
+0.849
+0.724
+0.620
+0.532
+0.459
+0.398
+0.346
+0.302
+0.264
+0.232
+NCPppXW682
+6.8kΩ
+3950K
+Resistance (kΩ)
+113.941
+81.779
+59.411
+43.654
+32.401
+24.297
+18.396
+14.055
+10.829
+8.414
+6.586
+5.195
+4.126
+3.300
+2.656
+2.152
+1.753
+1.437
+1.184
+0.981
+0.817
+0.684
+0.575
+0.486
+0.412
+0.351
+0.301
+0.258
+0.223
+0.193
+0.168
+0.146
+0.128
+0.113
+NCPppXW332
+3.3kΩ
+3950K
+Resistance (kΩ)
+162.279
+116.474
+84.615
+62.173
+46.147
+34.604
+26.200
+20.018
+15.423
+11.984
+9.380
+7.399
+5.877
+4.700
+3.783
+3.064
+2.497
+2.046
+1.686
+1.397
+1.164
+0.974
+0.819
+0.692
+0.587
+0.500
+0.428
+0.368
+0.318
+0.275
+0.239
+0.208
+0.182
+0.160
+NCPppXW472
+4.7kΩ
+3950K
+Resistance (kΩ)
+70.179
+53.295
+40.743
+31.360
+24.304
+18.966
+14.901
+11.787
+9.386
+7.523
+6.067
+4.924
+4.019
+3.300
+2.724
+2.260
+1.885
+1.580
+1.331
+1.126
+0.957
+0.816
+0.700
+0.602
+0.520
+0.450
+0.392
+0.342
+0.299
+0.263
+0.232
+0.205
+0.182
+0.162
+NCPppXM332
+3.3kΩ
+3500K
+Resistance (kΩ)
+105.705
+79.126
+59.794
+45.630
+35.144
+27.303
+21.377
+16.869
+13.411
+10.735
+8.653
+7.018
+5.726
+4.700
+3.879
+3.219
+2.685
+2.250
+1.895
+1.604
+1.363
+1.163
+0.996
+0.857
+0.740
+0.641
+0.558
+0.487
+0.426
+0.375
+0.330
+0.292
+0.259
+0.230
+NCPppXM472
+4.7kΩ
+3500K
+Resistance (kΩ)
+133.043
+100.756
+77.076
+59.540
+46.401
+36.482
+28.904
+23.047
+18.509
+14.974
+12.189
+9.978
+8.215
+6.800
+5.654
+4.725
+3.967
+3.344
+2.829
+2.404
+2.050
+1.759
+1.515
+1.309
+1.135
+0.988
+0.862
+0.755
+0.662
+0.583
+0.515
+0.457
+0.406
+0.361
+NCPppXH682
+6.8kΩ
+3380K
+Resistance (kΩ)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+14
+
+===PAGE 17===
+Temperature Sensor and Compensation Chip Type Temperature Characteristics (Center Value)
+Continued from the preceding page.
+Continued on the following page.
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+293.478
+222.256
+170.021
+131.338
+102.355
+80.474
+63.759
+50.838
+40.828
+33.032
+26.888
+22.010
+18.121
+15.000
+12.472
+10.422
+8.751
+7.375
+6.241
+5.302
+4.521
+3.879
+3.341
+2.887
+2.503
+2.178
+1.902
+1.664
+1.461
+1.287
+1.137
+1.007
+0.895
+0.797
+NCPppXH153
+15kΩ
+3380K
+Resistance (kΩ)
+NCPppWL333
+33kΩ
+4485K
+Resistance (kΩ)
+1610.154
+1130.850
+802.609
+575.385
+416.464
+304.219
+224.193
+166.623
+124.850
+94.287
+71.747
+54.996
+42.455
+33.000
+25.822
+20.335
+16.115
+12.849
+10.306
+8.317
+6.748
+5.504
+4.513
+3.718
+3.078
+2.560
+2.139
+1.794
+1.511
+1.278
+1.085
+0.925
+0.792
+0.681
+2293.249
+1610.605
+1143.110
+819.487
+593.146
+433.281
+319.305
+237.312
+177.816
+134.287
+102.184
+78.327
+60.467
+47.000
+36.776
+28.962
+22.952
+18.301
+14.679
+11.845
+9.610
+7.839
+6.427
+5.296
+4.384
+3.646
+3.046
+2.555
+2.152
+1.820
+1.546
+1.318
+1.128
+0.970
+NCPppWL473
+47kΩ
+4485K
+Resistance (kΩ)
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+328.996
+237.387
+173.185
+127.773
+95.327
+71.746
+54.564
+41.813
+32.330
+25.194
+19.785
+15.651
+12.468
+10.000
+8.072
+6.556
+5.356
+4.401
+3.635
+3.019
+2.521
+2.115
+1.781
+1.509
+1.284
+1.097
+0.941
+0.810
+0.701
+0.608
+0.530
+0.463
+0.406
+0.358
+NCPppXV103
+10kΩ
+3900K
+Resistance (kΩ)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+NCPppXW153
+15kΩ
+3950K
+Resistance (kΩ)
+517.912
+371.724
+270.048
+198.426
+147.278
+110.439
+83.617
+63.888
+49.221
+38.245
+29.936
+23.613
+18.756
+15.000
+12.074
+9.780
+7.969
+6.531
+5.382
+4.459
+3.713
+3.108
+2.613
+2.208
+1.873
+1.597
+1.367
+1.174
+1.013
+0.878
+0.763
+0.665
+0.582
+0.511
+759.605
+545.196
+396.070
+291.025
+216.008
+161.977
+122.638
+93.702
+72.191
+56.093
+43.907
+34.633
+27.509
+22.000
+17.709
+14.344
+11.688
+9.578
+7.894
+6.540
+5.446
+4.559
+3.832
+3.239
+2.748
+2.342
+2.004
+1.722
+1.486
+1.287
+1.119
+0.975
+0.854
+0.750
+NCPppXW223
+22kΩ
+3950K
+Resistance (kΩ)
+1073.436
+753.900
+535.073
+383.590
+277.643
+202.813
+149.462
+111.082
+83.233
+62.858
+47.831
+36.664
+28.304
+22.000
+17.214
+13.557
+10.744
+8.566
+6.871
+5.544
+4.498
+3.669
+3.009
+2.479
+2.052
+1.707
+1.426
+1.196
+1.008
+0.852
+0.724
+0.617
+0.528
+0.454
+NCPppWL223
+22kΩ
+4485K
+Resistance (kΩ)
+1451.049
+1019.238
+725.084
+522.021
+379.842
+279.371
+207.566
+155.639
+117.814
+89.925
+69.204
+53.675
+41.937
+33.000
+26.143
+20.845
+16.723
+13.498
+10.954
+8.940
+7.334
+6.046
+5.011
+4.170
+3.487
+2.928
+2.469
+2.091
+1.777
+1.516
+1.298
+1.116
+0.962
+0.832
+NCPppWF333
+33kΩ
+4250K
+Resistance (kΩ)
+NCPppXH223
+22kΩ
+3380K
+Resistance (kΩ)
+430.434
+325.976
+249.364
+192.629
+150.121
+118.029
+93.514
+74.563
+59.881
+48.446
+39.436
+32.282
+26.577
+22.000
+18.292
+15.285
+12.834
+10.817
+9.154
+7.777
+6.631
+5.690
+4.901
+4.234
+3.671
+3.195
+2.790
+2.441
+2.142
+1.888
+1.668
+1.477
+1.312
+1.169
+1227.263
+874.449
+630.851
+460.457
+339.797
+253.363
+190.766
+144.964
+111.087
+85.842
+66.861
+52.470
+41.471
+33.000
+26.430
+21.298
+17.266
+14.076
+11.538
+9.506
+7.870
+6.549
+5.475
+4.595
+3.874
+3.282
+2.789
+2.379
+2.038
+1.751
+1.509
+1.306
+1.134
+0.987
+NCPppWB333
+33kΩ
+4050K
+Resistance (kΩ)
+NCPppWL683
+68kΩ
+4485K
+Resistance (kΩ)
+3317.893
+2330.237
+1653.862
+1185.641
+858.168
+626.875
+461.974
+343.345
+257.266
+194.287
+147.841
+113.325
+87.484
+68.000
+53.208
+41.903
+33.208
+26.477
+21.237
+17.137
+13.904
+11.342
+9.299
+7.662
+6.343
+5.276
+4.407
+3.697
+3.114
+2.634
+2.236
+1.907
+1.632
+1.403
+4879.254
+3426.818
+2432.149
+1743.590
+1262.012
+921.875
+679.373
+504.919
+378.333
+285.717
+217.414
+166.654
+128.653
+100.000
+78.247
+61.622
+48.835
+38.937
+31.231
+25.202
+20.448
+16.679
+13.675
+11.268
+9.329
+7.758
+6.481
+5.437
+4.580
+3.873
+3.289
+2.804
+2.400
+2.064
+NCPppWL104
+100kΩ
+4485K
+Resistance (kΩ)
+7318.881
+5140.228
+3648.224
+2615.385
+1893.018
+1382.813
+1019.059
+757.379
+567.499
+428.575
+326.121
+249.981
+192.979
+150.000
+117.370
+92.433
+73.252
+58.406
+46.846
+37.803
+30.671
+25.018
+20.513
+16.902
+13.993
+11.638
+9.721
+8.155
+6.869
+5.810
+4.933
+4.206
+3.601
+3.096
+NCPppWL154
+150kΩ
+4485K
+Resistance (kΩ)
+7899.466
+5466.118
+3834.499
+2720.523
+1951.216
+1415.565
+1036.984
+767.079
+572.667
+431.264
+327.405
+250.538
+193.166
+150.000
+117.281
+92.293
+73.090
+58.240
+46.665
+37.605
+30.453
+24.804
+20.293
+16.679
+13.776
+11.428
+9.520
+7.966
+6.688
+5.639
+4.772
+4.052
+3.454
+2.955
+NCPppWM154
+150kΩ
+4500K
+Resistance (kΩ)
+2990.041
+2100.247
+1494.113
+1075.679
+782.705
+575.674
+427.712
+320.710
+242.768
+185.300
+142.603
+110.602
+86.415
+68.000
+53.871
+42.954
+34.460
+27.814
+22.572
+18.422
+15.113
+12.459
+10.325
+8.592
+7.185
+6.033
+5.087
+4.309
+3.661
+3.124
+2.675
+2.299
+1.983
+1.715
+NCPppWF683
+68kΩ
+4250K
+Resistance (kΩ)
+2735.359
+1937.391
+1389.345
+1008.014
+738.978
+547.456
+409.600
+309.217
+235.606
+180.980
+140.139
+109.344
+85.929
+68.000
+54.167
+43.421
+35.016
+28.406
+23.166
+18.997
+15.657
+12.967
+10.794
+9.021
+7.575
+6.387
+5.407
+4.598
+3.922
+3.359
+2.887
+2.489
+2.155
+1.870
+NCPppWD683
+68kΩ
+4150K
+Resistance (kΩ)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+15
+
+===PAGE 18===
+Temperature Sensor and Compensation Chip Type Temperature Characteristics (Center Value)
+Continued from the preceding page.
+Continued on the following page.
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+10734.358
+7539.001
+5350.729
+3835.898
+2776.427
+2028.126
+1494.620
+1110.822
+832.332
+628.577
+478.310
+366.639
+283.036
+220.000
+172.143
+135.569
+107.436
+85.662
+68.708
+55.444
+44.984
+36.694
+30.085
+24.789
+20.523
+17.068
+14.258
+11.961
+10.075
+8.521
+7.236
+6.169
+5.281
+4.540
+NCPppWL224
+220kΩ
+4485K
+Resistance (kΩ)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+NCUppWB473D
+47kΩ±0.5%
+4050K
+Resistance (kΩ)
+1690.586
+1215.318
+882.908
+647.911
+480.069
+359.009
+270.868
+206.113
+158.126
+122.267
+95.256
+74.754
+59.075
+47.000
+37.636
+30.326
+24.583
+20.043
+16.433
+13.545
+11.223
+9.345
+7.818
+6.571
+5.548
+4.704
+4.004
+3.422
+2.936
+2.528
+2.184
+1.893
+1.646
+1.436
+NCUppXH103D
+10kΩ±0.5%
+3380K
+Resistance (kΩ)
+197.390
+149.390
+114.340
+88.381
+68.915
+54.166
+42.889
+34.196
+27.445
+22.165
+18.010
+14.720
+12.099
+10.000
+8.309
+6.939
+5.824
+4.911
+4.160
+3.539
+3.024
+2.593
+2.233
+1.929
+1.673
+1.455
+1.270
+1.112
+0.976
+0.860
+0.759
+0.673
+0.598
+0.532
+24751.661
+17127.169
+12014.762
+8524.305
+6113.811
+4435.437
+3249.216
+2403.515
+1794.358
+1351.294
+1025.870
+785.018
+605.252
+470.000
+367.480
+289.186
+229.014
+182.485
+146.215
+117.828
+95.420
+77.718
+63.584
+52.260
+43.166
+35.808
+29.828
+24.961
+20.955
+17.668
+14.951
+12.695
+10.824
+9.259
+NCPppWM474
+470kΩ
+4500K
+Resistance (kΩ)
+11585.884
+8016.973
+5623.931
+3990.100
+2861.784
+2076.162
+1520.909
+1125.049
+839.912
+632.521
+480.194
+367.455
+283.310
+220.000
+172.012
+135.364
+107.198
+85.419
+68.441
+55.153
+44.665
+36.379
+29.763
+24.462
+20.205
+16.761
+13.962
+11.684
+9.809
+8.270
+6.998
+5.942
+5.067
+4.334
+NCPppWM224
+220kΩ
+4500K
+Resistance (kΩ)
+NCUppXH103
+10kΩ
+3380K
+Resistance (kΩ)
+195.652
+148.171
+113.347
+87.559
+68.237
+53.650
+42.506
+33.892
+27.219
+22.021
+17.926
+14.674
+12.081
+10.000
+8.315
+6.948
+5.834
+4.917
+4.161
+3.535
+3.014
+2.586
+2.228
+1.925
+1.669
+1.452
+1.268
+1.110
+0.974
+0.858
+0.758
+0.672
+0.596
+0.531
+4397.119
+3088.599
+2197.225
+1581.881
+1151.037
+846.579
+628.988
+471.632
+357.012
+272.500
+209.710
+162.651
+127.080
+100.000
+79.222
+63.167
+50.677
+40.904
+33.195
+27.091
+22.224
+18.323
+15.184
+12.635
+10.566
+8.873
+7.481
+6.337
+5.384
+4.594
+3.934
+3.380
+2.916
+2.522
+NCUppWF104
+100kΩ
+4250K
+Resistance (kΩ)
+1747.920
+1245.428
+898.485
+655.802
+483.954
+360.850
+271.697
+206.463
+158.214
+122.259
+95.227
+74.730
+59.065
+47.000
+37.643
+30.334
+24.591
+20.048
+16.433
+13.539
+11.209
+9.328
+7.798
+6.544
+5.518
+4.674
+3.972
+3.388
+2.902
+2.494
+2.150
+1.860
+1.615
+1.406
+NCUppWB473
+47kΩ
+4050K
+Resistance (kΩ)
+4221.283
+2995.044
+2146.996
+1554.599
+1136.690
+839.019
+624.987
+469.678
+355.975
+272.011
+209.489
+162.559
+127.057
+100.000
+79.222
+63.167
+50.677
+40.904
+33.195
+27.091
+22.224
+18.323
+15.184
+12.635
+10.566
+8.873
+7.481
+6.337
+5.384
+4.594
+3.934
+3.380
+2.916
+2.522
+NCUppWF104D
+100kΩ±0.5%
+4250K
+Resistance (kΩ)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+16
+
+===PAGE 19===
+Temperature Sensor and Compensation Chip Type !Caution/Notice
+!Caution (Storage and Operating Conditions)
+This product is designed for application in an  
+ordinary environment (normal room temperature, 
+humidity and atmospheric pressure). 
+Do not use under the following conditions because 
+all of these factors can deteriorate the product 
+characteristics or cause failures and burn-out.
+1. Corrosive gas or deoxidizing gas 
+    (Chlorine gas, Hydrogen sulfide gas, Ammonia gas,
+    Sulfuric acid gas, Nitric oxide gas, etc.)
+2. Volatile or flammable gas
+3. Dusty conditions
+4. Under vacuum, or under high or low pressure
+5. Wet or humid locations
+6. Places with salt water, oils, chemical liquids or 
+    organic solvents
+7. Strong vibrations
+8. Other places where similar hazardous conditions 
+    exist
+!Caution (Others)
+Notice (Storage and Operating Conditions)
+Notice (Rating)
+Use this product within the specified temperature 
+range.
+Higher temperature may cause deterioration of the 
+characteristics or the material quality of this 
+product.
+Notice (Handling)
+Be sure to provide an appropriate fail-safe function 
+on your product to prevent secondary damage that may be 
+caused by the abnormal function or the failure of our 
+product.
+The ceramic of this product is fragile, and care must
+be taken not to load an excessive press-force or to 
+cause a shock at handling. 
+Such forces may cause cracking or chipping.
+To keep the solderability of the product from degrading, 
+the following storage conditions are recommended.
+1. Storage condition:
+    Temperature  -10 to +40°C
+    Humidity less than 75%RH (not dewing condition)
+2. Storage term:
+    Use this product within 6 months after delivery by 
+    first-in and first-out stocking system.
+3. Storage place:
+    Do not store this product in corrosive gas 
+    (Sulfuric acid gas, Chlorine gas, etc.) or in direct 
+    sunlight.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+17
+
+===PAGE 20===
+Temperature Sensor and Compensation Chip Type !Caution/Notice
+Continued on the following page.
+Locate this 
+product 
+horizontal to 
+the direction in 
+which stress 
+acts.
+Keep this product on the PC 
+Board away from the 
+Separation Line. 
+Worst ← A-C-B-D → Better 
+Component Direction
+Mounting Close to Board Separation Line
+A
+B
+D
+C
+Perforation
+Holes
+Slit
+1. Mounting Position
+2. Allowable Soldering Temperature and Time
+Choose a mounting position that minimizes the stress 
+imposed on the chip during ﬂexing or bending of the 
+board.
+(a) Solder within the temperature and time combinations 
+indicated by the slanted lines in the following graphs.
+(b) Excessive soldering conditions may cause dissolution of 
+metallization or deterioration of solder-wetting on the 
+external electrode.
+(c) In case of repeated soldering, the accumulated soldering 
+time should be within the range shown in the ﬁgure 
+below. (For example, Reﬂow peak temperature: 260°C, 
+twice -> The total accumulated soldering time at 260°C 
+is within 30 seconds.)
+     Allowable Reﬂow Soldering Temp. and Time
+     Allowable Reﬂow Soldering Temp. and Time
+Time (sec.)
+Temperature (°C)
+280
+270
+260
+250
+240
+230
+220
+210
+0
+10
+20
+30
+Time (sec.)
+Temperature (°C)
+280
+270
+260
+250
+240
+230
+220
+210
+0
+110
+90
+20 30 40 50 60 70
+100
+80
+10
+Time (sec.)
+Temperature (°C)
+280
+270
+260
+250
+240
+230
+220
+0
+90
+20
+30
+40
+50
+60
+70
+80
+10
+     NCP03/15 Series, NCU15 Series
+     Allowable Flow Soldering Temp. and Time
+     NCP18/21 Series, NCU18 Series
+Notice (Soldering and Mounting)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+18
+
+===PAGE 21===
+Temperature Sensor and Compensation Chip Type !Caution/Notice
+For removing the ﬂux after soldering, observe the following 
+points in order to avoid deterioration of the characteristics 
+or any change of the external electrodes' quality.
+ a Please keep mounted parts and a substrate from an 
+occurrence of resonance in ultrasonic cleaning.
+ a Please do not clean the products in the case of using a 
+non-wash-type ﬂux.
+(1) Solder and Paste
+(a) Reﬂow Soldering: NCP03/15/18/21 Series, NCU15/18 Series
+Use RA/RMA type or equivalent type of solder paste. For 
+your reference, we use the solder paste below for any 
+internal tests of this product.
+aRMA9086 90-4-M20 (Sn:Pb=63wt%:37wt%)
+(Manufactured by Alpha Metals Japan Ltd.)
+aM705-221BM5-42-11 (Sn:Ag:Cu=96.5wt%:3.0wt%:0.5wt%)
+(Manufactured by Senju Metal Industry Co., Ltd.)
+(b) Flow Soldering: NCP18/21 Series, NCU18 Series
+We use the solder paste below for any internal tests of 
+this product.
+aSn:Pb=63wt%:37wt%
+aSn:Ag:Cu=96.5wt%:3.0wt%:0.5wt%
+(2) Flux
+Use rosin type ﬂux in the soldering process.
+If the ﬂux listed below is used, some problems might be 
+caused in the product characteristics and reliability.
+Please do not use the following ﬂux. 
+a Strong acidic ﬂux (with halide content exceeding 
+0.1wt%).
+a Water-soluble ﬂux
+(*Water-soluble ﬂux can be deﬁned as non-rosin type 
+ﬂux including wash-type ﬂux and non-wash-type ﬂux.)
+NCP03/15, NCU15
+NCP18/21, NCU18
+4. Solder and Flux
+5. Cleaning Conditions
+After cleaning, promptly dry this product.
+6. Drying
+Isopropyl Alcohol
+Less than 5 minutes at 
+room temp. or less than 
+2 minutes at 40°C max.
+Less than 5 minutes and 
+20W/ 
+Frequency of 28kHz to 
+40kHz
+Isopropyl Alcohol
+Less than 5 minutes at 
+room temp. or less than 
+2 minutes at 40°C max.
+Less than 1 minute and 
+20W/ 
+Frequency of several 
+10kHz to 100kHz
+Solvent
+Dipping Cleaning
+Ultrasonic
+Cleaning
+3. Recommended Temperature Proﬁle for Soldering
+(a) Insufficient preheating may cause a crack on the ceramic 
+body. The difference between preheating temperature 
+and maximum temperature in the proﬁle shall be 100 °C.
+(b) Rapid cooling by dipping in solvent or by other means is 
+not recommended.
+* In case of repeated soldering, the accumulated soldering 
+time should be within the range shown in the ﬁgure of 
+section 2.
+     Reﬂow Soldering Conditions
+     Reﬂow Soldering Conditions
+Temperature (°C)
+Preheating (in air)
+Soldering Gradual Cooling
+(in air)
+300
+200
+100
+0
+1-2 min.
+*10sec.
+Preheating: 160±10°C, 1-2 min.
+Soldering: 230-260°C, 10sec.
+Temperature (°C)
+Preheating (in air)
+Soldering Gradual Cooling
+(in air)
+300
+200
+100
+0
+1-2 min.
+*20sec.
+Preheating: 160±10°C, 1-2 min.
+Soldering: 230-270°C, 20sec.
+Temperature (°C)
+Preheating (in air)
+Soldering Gradual Cooling
+(in air)
+300
+200
+100
+0
+1-2 min.
+*20sec.
+Preheating: 160±10°C, 1-2 min.
+Soldering: 240-270°C, 20sec.
+     NCP03/15 Series, NCU15 Series
+     Flow Soldering Conditions
+     NCP18/21 Series, NCU18 Series
+Continued from the preceding page.
+Continued on the following page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+19
+
+===PAGE 22===
+Temperature Sensor and Compensation Chip Type !Caution/Notice
+Continued from the preceding page.
+o Thin or insufficient adhesive may result in loose 
+component contact with land during ﬂow soldering.
+o Low viscosity adhesive causes chips to slip after 
+mounting.
+NCP03
+NCP15, NCU15
+NCP18/NCP21, NCU18
+100μm
+150μm
+200μm
+1/3E<
+=T<
+=E
+1/3E<
+=T<
+=E
+0.2mm<
+=T<
+=E
+Part Number
+Solder Paste Thickness
+T
+Reference: Optimum Solder Amount
+T
+E
+Electrode
+Solder
+Solder
+o The amount of solder is critical. Standard height of ﬁllet is 
+shown in the table below.
+o Too much solder may cause mechanical stress, resulting 
+in cracking, mechanical and/or electronic damage.
+7. Printing Conditions of Solder Paste
+8. Adhesive Application and Curing
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+20
+
+===PAGE 23===
+Temperature Sensor and Compensation Chip Type Package
+NCP03
+NCP15, NCU15
+NCP18, NCU18
+NCP21
+15000
+10000
+4000
+-
+-
+4000
+Part Number
+Paper Tape
+Quantity (pcs.)
+Embossed Tape
+(1) A tape in a reel contains Leader unit and Trailer unit where 
+products are not packed. (Please refer to the ﬁgure at the 
+right.)
+(2) The top and base tapes or plastic and cover tape are not 
+stuck at the ﬁrst ﬁve pitches minimum.
+(3) A label should be attached on the reel. (MURATA's part 
+number, inspection number and quantity should be marked 
+on the label.)
+(4) Taping reels are packed in a package.
+1. Dimensions of Reel
+2. Taping Method
+Tape Carrier Packaging
+Minimum Quantity Guide
+Continued on the following page.
+(in mm)
+ø180
+ø21.0±0.8
+ø13.0±0.2
+ø60
+2.0±0.5
+9.0
++0
+–1.5
++1.0
+–0
++1.0
+–0
+(in mm)
+40 min.
+190-250
+Vacant Section
+210-250
+Top Tape alone
+Cover Tape alone
+Leader Unit
+Trailer Unit
+Chip-mounting Unit
+Direction of Feed
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+21
+
+===PAGE 24===
+Temperature Sensor and Compensation Chip Type Package
+(1) Other Conditions
+(a) Packaging
+Products are packaged in the cavity of the base tape and 
+sealed by a top tape and bottom tape.
+(b) Tape
+The top tape and bottom tape have no joints and 
+products are packaged and sealed in the cavity of the 
+base tape, continuously.
+(2) Peeling Force of Top Tape
+(3) Pull Strength
+Pull strength of top tape is speciﬁed at 10N minimum.
+Pull strength of bottom tape should be speciﬁed 5N 
+minimum.
+3. Paper Tape (NCP03/15/18 Series, NCU15/18 Series)
+NCP15, NCU15 Series
+NCP18, NCU18 Series
+1.1 max.
+4.0±0.1
+4.0±0.1
+2.0±0.05
+ø1.5+0.1/–0
+1.75±0.1
+3.5±0.05
+8.0±0.3
+Direction of Feed
+1.05*
+0.8 max.
+4.0±0.1
+2.0±0.05
+ø1.5+0.1/–0
+1.75±0.1
+3.5±0.05
+1.15*
+8.0±0.3
+Direction of Feed
+0.65*
+(in mm)
+* Reference Value
+* Reference Value
+165-180°
+F
+* 1 Peeling angle: 165 to 180° against the ﬁxed surface of tape.
+* 2 Peeling speed: 300mm/min.
+* 3 Peeling force: 0.1 - 0.6N
+1.85*
+* Reference Value
+NCP03 Series
+0.5 max.
+4.0±0.1
+2.0±0.05
+ø1.5+0.1/–0
+1.75±0.1
+3.5±0.05
+0.68*
+8.0±0.3
+Direction of Feed
+0.38*
+Continued from the preceding page.
+Continued on the following page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+22
+
+===PAGE 25===
+Temperature Sensor and Compensation Chip Type Package
+* 1 Peeling angle: 165 to 180° against the ﬁxed surface of tape.
+* 2 Peeling speed: 300mm/min.
+* 3 Peeling force: 0.1 - 0.7N
+F
+165-180°
+(2) Peeling Force of Cover Tape
+(3) Tape Strength
+Pull strength of Embossed tape and Cover tape should be 
+speciﬁed 10N minimum.
+(1) Other Conditions
+(a) Packaging
+Products are packaged in the each cavity of Embossed 
+tape and sealed by Cover tape.
+(b) Tape
+Cover tape has no joints.
+4. Embossed Tape (NCP21 Series)
+1.05
+0.2
+4.0±0.1
+2.0±0.05
+4.0±0.1
+ø1.5
+1.75±0.1
+ø1.0
+1.45*
+* Reference Value
+3.5±0.05
+8.0±0.3
+Direction of Feed
+2.25*
+(in mm)
++0.3
+-0
++0.1
+-1
+Continued from the preceding page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+23
+
+===PAGE 26===
+NTC Thermistors
+Temperature Sensor Thermo String Type
+This product is a small flexible lead type NTC Thermistor 
+with a small head and a thin lead wire.
+Features
+1. This small and highly accurate NTC Thermistor 
+    provides extremely precise temperature sensing.
+2. The small sensing head and thin lead wire deliver 
+    temperature sensing in a narrow space.
+3. Flexibility and a wide variety of lengths (25mm to 
+150mm) 
+    enable the design of flexible temperature sensing
+    architectures. 
+4. This product is compatible with our 0402 (EIA) size
+    chip Thermistor.
+5. Excellent long-term stability
+6. This is a halogen free product. *
+    * Cl= max.900ppm, Br=max.900ppm and 
+      Cl+Br=max.1500ppm
+7. NXFT series are recognized by UL/cUL. 
+    (UL1434, File No.E137188).
+Applications
+1. Temperature compensation for transistors, ICs, and 
+    crystal oscillators in mobile communications
+2. Temperature sensor for rechargeable batteries
+3. Temperature compensation of LCD
+4. Temperature compensation in general use of electric
+    circuits
+1.2±0.4
+25 to 100±2
+110 to 150±3
+3+2/-1
+1.2±0.4
+ø0.30±0.05
+The full length 25mm, 30 to 150mm interval 10mm.
+(in mm)
+1.2±0.4
+25 to 100±2
+110 to 150±3
+3+2/-1
+1.2±0.4
+ø0.30±0.05
+The full length 25mm, 30 to 150mm interval 10mm.
+(in mm)
+p is filled with lead shape (1: twist, 2: without twist).
+ppp is filled with Total-length codes. (25mm, 30 to 150mm interval 10mm, ex. 050=50mm)
+Operating Current for Sensor rises Thermistor's temperature by 0.1°C
+Rated Electric Power shows the required electric power that the thermistor's temperature rise to 30°C by self-heating, at ambient temperature of 25 °C.
+Operating Temperature Range: -40°C to +125°C
+NXFT15_1B Type (twist)
+NXFT15_2B Type (without twist)
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Operating Current
+for Sensor (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+Thermal Time
+Constant
+(25°C) (s)
+NXFT15XH103FApBppp
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.12
+7.5
+1.5
+4
+NXFT15XV103FApBppp
+10k ±1%
+3936 ±1%
+3971
+3977
+3988
+0.12
+7.5
+1.5
+4
+NXFT15WB473FApBppp
+47k ±1%
+4050 ±1%
+4101
+4108
+4131
+0.06
+7.5
+1.5
+4
+NXFT15WF104FApBppp
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.04
+7.5
+1.5
+4
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/nxf
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+24
+5
+
+===PAGE 27===
+Temperature Sensor Thermo String Type Specifications and Test Methods
+Hold the lead wires as in Fig-3. Bend by 90 degrees and again 
+bend back to the initial position. Then bend to the other side by 
+90 degrees and again bend back to the initial position. After 
+bending process, 10N force for 3 seconds shall be applied to 
+the lead wire.
+Fig-3
+10
+Lead Wire
+Bending Strength
+· Lead wire does not break.
+The lead wire shall be inserted in a ø1.0mm hole until resin part 
+contacts with a substrate as shown in ﬁg.-2, and 1N force for 
+10 seconds shall be applied to the lead wire.
+Fig-2
+9
+Lead Wire
+Pull Strength
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+Both lead wires are dipped into ﬂux (25wt% colophony <JIS K 
+5902> isopropyl alcohol <JIS K 8839>) for 5 to 10 seconds. 
+Then both lead wires are dipped into 245±5°C solder 
+<JIS Z 3282 SnAgCu> for 2±0.5 seconds according to Fig-1.
+8
+Solderability
+More than 90% of lead wire surface shall be covered by solder.
+Both lead wires are dipped into 350±10°C solder for 3.5±0.5 
+seconds, or 260±5°C solder for 10±1 seconds according to 
+Fig-1 (solder <JIS Z 3282 SnAgCu>).
+Fig-1
+7
+Resistance to
+Soldering Heat
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+2mm length of coating resin from the top of Thermistor is to be 
+dipped into beads of lead (Pb), and DC100V 1 minute is applied 
+to circuit between beads of lead (Pb) and lead wire.
+6
+Insulation Break -
+down Voltage
+· No damage electrical characteristics at DC100 V, 1 min.
+85±2°C in air, with 'Operating Current for Sensor' for 1000 
++48/-0 hrs.
+5
+High Temperature
+Load
+-40 +0/-3°C, 30 minutes in air
++25±2°C, 10 to 15 minutes in air
++125±2°C, 30 minutes in air  
++25 +2/-0°C, 10 to 15 minutes in air (1 cycle)
+Continuous 100 cycles, without loading.
+4
+Temperature 
+Cycle
+60±2°C, 90 to 95%RH in air, for 1000 +48/-0 hours without 
+loading.
+3
+Humidity
+Storage Test
+· Resistance (R25°C) ﬂuctuation rate: less than ±2%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+-40 +0/-3°C in air, for 1000 +48/-0 hours without loading.
+2
+Low Temperature
+Storage Test
+125±2°C in air, for 1000 +48/-0 hours without loading.
+1
+High Temperature
+Storage Test
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+No.
+Test Methods
+Speciﬁcations
+Item
+* ·  R25 is zero-power resistance at 25°C.
+ ·  B25/50 is calculated by zero-power resistance of Thermistor in 25°C-50°C.
+ ·  After each test, NTC Thermistor should be kept for 1 hour at room temperature (normal humidity and normal atmospheric pressure).
+Continued on the following page.
+Solder
+1 to 2mm
+1N (10 sec.)
+10N (3 sec.)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+25
+5
+
+===PAGE 28===
+Temperature Sensor Thermo String Type Specifications and Test Methods
+NTC Thermistor shall be ﬁxed to the vibration test equipment. 
+Vibration of total 1.5 mm amplitude, Frequency sequence of 
+10Hz - 55Hz - 10Hz in 1 minute shall be applied for right 
+angled 3 directions for 2 hours duration each.
+12
+Vibration
+NTC Thermistor shall be dropped without any force onto 
+concrete ﬂoor from 1 meter height one time.
+11
+Free Fall
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+· No visible damage at resin part.
+* ·  R25 is zero-power resistance at 25°C.
+ ·  B25/50 is calculated by zero-power resistance of Thermistor in 25°C-50°C.
+ ·  After each test, NTC Thermistor should be kept for 1 hour at room temperature (normal humidity and normal atmospheric pressure).
+No.
+Test Methods
+Speciﬁcations
+Item
+Continued from the preceding page.
+Mount
+Solder is attached 
+from the reverse side.
+Oscillating
+Direction Z
+Oscillating 
+Direction X
+Oscillating
+Direction Y
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+26
+5
+
+===PAGE 29===
+NTC Thermistors
+Temperature Sensor Lead Type
+(in mm)
+10.0 to 40.0±1.0
+4.0 max.
+2.5±1
+The full length 10.0 to 40.0mm interval 10.0mm
+2.0 max.
+ø0.40±0.05
+This thermistor is for normal temperature level sensors 
+having self-subsistence due to strong lead strength 
+based on chip NTC.
+Features
+1. This highly accurate NTC Thermistor provides extremely 
+    precise temperature sensing.
+2. This product is compatible with 1005 (1.0mm x 0.5mm) 
+    size NTC Thermistor.
+3. The variation per hour of this product is highly stable.
+4. This product is produced with an automation line that 
+    was consistent from lead to packaging so that a product 
+    of uniform quality may be obtained at low cost in large 
+    quantities.
+5. Since this product has strong lead intensity with original
+    lead mounting technique, it is bent at the time of use and
+    can withstand processing, etc., readily. 
+    Taping package can be supported.
+Applications
+1. For temperature detection of a rechargeable battery pack
+2. For temperature detection of a charge circuit
+3. For temperature detection of a printer head
+4. For temperature detection of a DC fan motor
+5. For temperature detection of home electronics
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Operating Current
+for Sensor (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+Thermal Time
+Constant
+(25°C) (s)
+NXRT15XM202EA1Bppp
+2k ±3%
+3500 ±1.5%
+3539
+3545
+3560
+0.27
+7.5
+1.5
+4
+NXRT15XV502FA1Bppp
+5k ±1%
+3936 ±1%
+3972
+3977
+3989
+0.17
+7.5
+1.5
+4
+NXRT15XH103FA1Bppp
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.12
+7.5
+1.5
+4
+NXRT15XV103FA1Bppp
+10k ±1%
+3936 ±1%
+3971
+3977
+3988
+0.12
+7.5
+1.5
+4
+NXRT15WB333JA1Bppp
+33k ±5%
+4050 ±3%
+4101
+4108
+4131
+0.07
+7.5
+1.5
+4
+NXRT15WB473FA1Bppp
+47k ±1%
+4050 ±1%
+4101
+4108
+4131
+0.06
+7.5
+1.5
+4
+NXRT15WF104FA1Bppp
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.04
+7.5
+1.5
+4
+ppp is filled with Total-length codes. (10 to 40mm interval 10mm, ex. 040=40mm)
+Operating Current for Sensor rises Thermistor's temperature by 0.1°C.
+Rated Electric Power is necessary electric power that thermistor's temperature rises 5°C by self-heating at 25°C in still air.
+Taping type of part numbers with "3A016" is available (Lead Spacing=5mm).
+Operating Temperature Range: -40°C to +125°C
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/nxr
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+27
+6
+
+===PAGE 30===
+Temperature Sensor Lead Type Specifications and Test Methods
+NTC thermistor shall be ﬁxed to the vibration test Equipment. 
+Vibration of total 1.5mm amplitude, Frequency sequence of 
+10Hz – 55Hz – 10Hz in 1 minute, shall be applied for right 
+angled 3 directions for 2 hours duration each.
+12
+Vibration
+NTC thermistor shall be dropped without any force onto 
+concrete ﬂoor from 1 meter height one time.
+11
+Free Fall
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+· No visible damage at resin part.
+* ·  R25 is zero-power resistance at 25°C.
+ ·  B25/50 is calculated by zero-power resistance of Thermistor in 25°C-50°C.
+ ·  After each test, NTC Thermistor should be kept for 1 hour at room temperature (normal humidity and normal atmospheric pressure).
+One lead wire is held and 2.5N force is applied. Then the body 
+of NTC thermistor is bent by 90° and again bent back to the 
+initial position. This sequence shall be completed twice. See 
+Fig-3.
+Fig-3
+10
+Lead Wire Bending 
+Strength
+· Lead wire does not break.
+One end of a lead wire shall be ﬁxed and 2.5N force for 10 
+seconds shall be applied to the other lead wire as shown in 
+Fig-2.
+Fig-2
+9
+Lead Wire Pull 
+Strength
+· Resistance(R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant(B25/50°C) ﬂuctuation rate: less than ±1%.
+· No visible damage at resin part.
+Both lead wires are dipped into ﬂux (25wt% colophony 
+<JIS K 5902> isopropyl alcohol <JIS K 8839>) for 5 to 10 
+seconds. Then both lead wires are dipped into 245±5°C solder 
+<Sn-3Ag-0.5Cu> for 2±0.5 seconds according to Fig-1.
+8
+Solderability
+· More than 90% of lead wire surface shall be covered by 
+solder.
+Both lead wires are dipped into 350±10°C solder for 3.5±0.5 
+seconds, or 260±5°C solder for 10±1 seconds according to 
+Fig-1. (solder <Sn-3Ag-0.5Cu>)
+Fig-1
+7
+Resistance to 
+Soldering Heat
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+2mm length of coating resin from the top of thermistor is to be 
+dipped into beads of lead (Pb), and DC100V 1 minute is applied 
+to circuit between beads of lead (Pb) and lead wire.
+6
+Insulation Break - 
+down Voltage
+· No damage electrical characteristics on D.C.100 V, 1 min.
+-40°C +0/-3°C, 30 minutes in air
++25°C±2°C, 10 to 15 minutes in air
++125°C +3/-0°C, 30 minutes in air
++25°C +2/-0°C, 10 to 15 minutes in air (1 cycle)
+Continuous 100 cycles, without loading.
+5
+Temperature 
+Cycle
+60±2°C, 90 to 95%RH in air, for 1000 +48/-0 hours without 
+loading.
+4
+Humidity Storage 
+Test
+85±2°C in air, with ‘Operating Current for Sensor’ for 
+1000 +48/-0 hrs.
+3
+High Temperature 
+Load
+· Resistance (R25°C) ﬂuctuation rate: less than ±2%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+125±2°C in air, for 1000 +48/-0 hours without loading.
+2
+High Temperature 
+Storage Test
+-40 +0/-3°C in air, for 1000 +48/-0 hours without loading.
+1
+Low Temperature 
+Storage Test
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+No.
+Test Methods
+Speciﬁcations
+Item
+Solder
+2.5N (10sec.)
+2.5N
+90°
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+28
+6
+
+===PAGE 31===
+NTC Thermistors
+Temperature Sensor Lead Insulation Type
+This thermistor is for normal temperature level sensors 
+having self-subsistence due to strong lead strength 
+based on chip NTC.
+Features
+1. NXR series can accurately detect temperature with 
+    NCP15 series on the head of parts. 
+2. The insulation coat with polyulethane on the surface of
+    lead wire : 100VDC.
+3. You can choose NTC characteristics from NCP15 series.
+4. The resistance drift is low in the reliability test.
+5. The production capacity is bigger and NXR is produced
+    almost entirely in an automation line. 
+6. Adopt to Sb regulation
+Applications
+1. Secondary battery
+2. Temperature detection for charging
+3. Temperature detection for DC fan motor
+4. Temperature sensing for appliance
+5. Self-standing temperature sensing for fire detector
+(in mm)
+25.0 to 35.0±1.0
+(5.0mm)
+4.0 max.
+The full length 25.0 to 45.0mm interval 5.0mm
+A: Epoxy Resin
+B: Copper Lead Wire with Polyurethane Coat
+2.5±1.0
+0.46±0.05
+2.0 max.
+A
+B
+Part Number
+Resistance
+(25°C)
+(ohm)
+B-Constant
+(25-50°C)
+(K)
+B-Constant
+(25-80°C)
+(Reference Value) (K)
+B-Constant
+(25-85°C)
+(Reference Value) (K)
+B-Constant
+(25-100°C)
+(Reference Value) (K)
+Operating Current
+for Sensor (25°C)
+(mA)
+Rated Electric
+Power (25°C)
+(mW)
+Typical Dissipation
+Constant (25°C)
+(mW/°C)
+Thermal Time
+Constant
+(25°C) (s)
+NXRT15XM202EA5Bppp
+2k ±3%
+3500 ±1.5%
+3539
+3545
+3560
+0.36
+13
+2.6
+4
+NXRT15XV502FA5Bppp
+5k ±1%
+3936 ±1%
+3972
+3977
+3989
+0.22
+13
+2.6
+4
+NXRT15XH103FA5Bppp
+10k ±1%
+3380 ±1%
+3428
+3434
+3455
+0.16
+13
+2.6
+4
+NXRT15XV103FA5Bppp
+10k ±1%
+3936 ±1%
+3971
+3977
+3988
+0.16
+13
+2.6
+4
+NXRT15WB333JA5Bppp
+33k ±5%
+4050 ±3%
+4101
+4108
+4131
+0.08
+13
+2.6
+4
+NXRT15WB473FA5Bppp
+47k ±1%
+4050 ±1%
+4101
+4108
+4131
+0.07
+13
+2.6
+4
+NXRT15WF104FA5Bppp
+100k ±1%
+4250 ±1%
+4303
+4311
+4334
+0.05
+13
+2.6
+4
+ppp is fulled with Total-length codes. (25 to 35mm interval 5mm, ex. 030=30mm)
+Operating Current for Sensor rises Thermistor's temperature by 0.1°C.
+Rated Electric Power is necessary electric power that thermistor's temperature rises 5°C by self-heating at 25°C in still air.
+Operating Temperature Range: -40°C to +125°C
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/nxr
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+29
+7
+
+===PAGE 32===
+Temperature Sensor Lead Insulation Type Specifications and Test Methods
+2mm length of coating resin from the top of thermistor is to be 
+dipped into beads of lead (Pb), and DC100V 1 minute is applied 
+to circuit between beads of lead (Pb) and lead wire.
+12
+Dielectric 
+Breakdown 
+Voltage
+· No damage electrical characteristics on D.C.100V, 1 min.
+-40°C +0/-3°C, 30 minutes in air
++25°C±2°C, 10 to 15 minutes in air
++125°C +3/-0°C, 30 minutes in air
++25°C +2/-0°C, 10 to 15 minutes in air (1 cycle)
+Continuous 100 +4/-0 cycles, without loading.
+11
+Change of 
+Temperature
+60±2°C, 90 to 95%RH in air, for 1000 +48/-0 hours without 
+loading.
+10
+Damp Heat
+85±2°C in air, with ‘Operating Current for Sensor’ 
+for 1000 +48/-0 hrs.
+9
+High Temperature 
+with Continuous 
+Load
+· Resistance (R25°C) ﬂuctuation rate: less than ±2%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+125±2°C in air, for 1000 +48/-0 hours without loading.
+8
+Dry Heat
+-40 +0/-3°C in air, for 1000 +48/-0 hours without loading.
+7
+Cold
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+NTC thermistor shall be ﬁxed to the vibration test equipment.  
+Vibration of total 1.5 mm amplitude, frequency sequence of 
+10Hz - 55Hz - 10Hz in 1 minute, shall be applied for right 
+angled 3 directions for 2 hours duration each.
+6
+Vibration
+NTC thermistor shall be dropped without any force onto 
+concrete ﬂoor from 1 meter height one time.
+5
+Free Fall
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+· No visible damage at resin part.
+One lead wire is held and 2.5N force is applied. Then the body 
+of NTC thermistor is bent by 90° and again bent back to the 
+initial position. This sequence shall be completed twice. See 
+Fig-3.
+Fig-3
+4
+Lead Wire Bending 
+Strength
+· Lead wire does not break.
+One end of a lead wire shall be ﬁxed and 2.5N force for 10 
+seconds shall be applied to the other lead wire as shown in 
+Fig-2.
+Fig-2
+3
+Lead Wire 
+Breaking Strength
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+Both lead wires are dipped into ﬂux (25wt% colophony 
+<JIS K 5902> isopropyl alcohol <JIS K 8839>) for 5 to 10 
+seconds. Then both lead wire are dipped into 245±5°C solder 
+<SnAgCu> for 2±0.5 seconds according to Fig-1.
+2
+Solderability 
+(Flow)
+· More than 90% of lead wsire surface shall be covered by 
+solder.
+Both lead wires are dipped into 350±10°C solder for 3.5±0.5 
+seconds, or 260 ±5°C solder for 10±1 seconds according to 
+Fig-1. (solder <SnAgCu>)
+Fig-1
+1
+Resistance to 
+Soldering Heat 
+(Flow)
+· Resistance (R25°C) ﬂuctuation rate: less than ±1%.
+· B-Constant (B25/50°C) ﬂuctuation rate: less than ±1%.
+No.
+Test Methods
+Speciﬁcations
+Item
+2.5N
+90°
+2.5N (10sec.)
+Solder
+1 to 2mm
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+30
+7
+
+===PAGE 33===
+Temperature Sensor Thermo String/Lead Type Temperature Characteristics (Center Value)
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+44.981
+33.671
+25.444
+19.417
+14.955
+11.619
+9.097
+7.178
+5.707
+4.568
+3.682
+2.986
+2.437
+2.000
+1.651
+1.370
+1.143
+0.958
+0.807
+0.682
+0.580
+0.495
+0.424
+0.365
+0.315
+0.273
+0.237
+0.207
+0.181
+0.160
+0.141
+0.124
+0.110
+0.098
+NXRT15XM202
+2.0kΩ
+3500K
+Resistance (kΩ)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+195.652
+148.171
+113.347
+87.559
+68.237
+53.650
+42.506
+33.892
+27.219
+22.021
+17.926
+14.674
+12.081
+10.000
+8.315
+6.948
+5.834
+4.917
+4.161
+3.535
+3.014
+2.586
+2.228
+1.925
+1.669
+1.452
+1.268
+1.110
+0.974
+0.858
+0.758
+0.672
+0.596
+0.531
+NXRT15XH103
+10kΩ
+3380K
+Resistance (kΩ)
+337.503
+243.332
+177.496
+130.859
+97.428
+73.230
+55.529
+42.467
+32.747
+25.450
+19.932
+15.727
+12.498
+10.000
+8.054
+6.529
+5.324
+4.366
+3.601
+2.985
+2.488
+2.083
+1.752
+1.480
+1.256
+1.070
+0.916
+0.787
+0.679
+0.588
+0.512
+0.446
+0.391
+0.343
+NXRT15XV103
+10kΩ
+3936K
+Resistance (kΩ)
+168.752
+121.666
+88.748
+65.430
+48.714
+36.615
+27.764
+21.233
+16.374
+12.725
+9.966
+7.864
+6.249
+5.000
+4.027
+3.264
+2.662
+2.183
+1.801
+1.493
+1.244
+1.041
+0.876
+0.740
+0.628
+0.535
+0.458
+0.394
+0.340
+0.294
+0.256
+0.223
+0.195
+0.172
+NXRT15XV502
+5.0kΩ
+3936K
+Resistance (kΩ)
+4397.119
+3088.599
+2197.225
+1581.881
+1151.037
+846.579
+628.988
+471.632
+357.012
+272.500
+209.710
+162.651
+127.080
+100.000
+79.222
+63.167
+50.677
+40.904
+33.195
+27.091
+22.224
+18.323
+15.184
+12.635
+10.566
+8.873
+7.481
+6.337
+5.384
+4.594
+3.934
+3.380
+2.916
+2.522
+NXRT15WF104
+100kΩ
+4250K
+Resistance (kΩ)
+1227.263
+874.449
+630.851
+460.457
+339.797
+253.363
+190.766
+144.964
+111.087
+85.842
+66.861
+52.470
+41.471
+33.000
+26.430
+21.298
+17.266
+14.076
+11.538
+9.506
+7.870
+6.549
+5.475
+4.595
+3.874
+3.282
+2.789
+2.379
+2.038
+1.751
+1.509
+1.306
+1.134
+0.987
+NXRT15WB333
+33kΩ
+4050K
+Resistance (kΩ)
+1747.920
+1245.428
+898.485
+655.802
+483.954
+360.850
+271.697
+206.463
+158.214
+122.259
+95.227
+74.730
+59.065
+47.000
+37.643
+30.334
+24.591
+20.048
+16.433
+13.539
+11.209
+9.328
+7.798
+6.544
+5.518
+4.674
+3.972
+3.388
+2.902
+2.494
+2.150
+1.860
+1.615
+1.406
+NXRT15WB473
+47kΩ
+4050K
+Resistance (kΩ)
+–40
+–35
+–30
+–25
+–20
+–15
+–10
+–5
+0
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+60
+65
+70
+75
+80
+85
+90
+95
+100
+105
+110
+115
+120
+125
+197.388
+149.395
+114.345
+88.381
+68.915
+54.166
+42.889
+34.196
+27.445
+22.165
+18.010
+14.720
+12.099
+10.000
+8.309
+6.939
+5.824
+4.911
+4.160
+3.539
+3.024
+2.593
+2.233
+1.929
+1.673
+1.455
+1.270
+1.112
+0.976
+0.860
+0.759
+0.673
+0.598
+0.532
+NXFT15XH103
+Resistance (kΩ)
+Part Number
+Resistance
+B-Constant
+Temp. (°C)
+4221.280
+2995.040
+2147.000
+1554.600
+1136.690
+839.019
+624.987
+469.678
+355.975
+272.011
+209.489
+162.559
+127.057
+100.000
+79.222
+63.167
+50.677
+40.904
+33.195
+27.091
+22.224
+18.323
+15.184
+12.635
+10.566
+8.873
+7.481
+6.337
+5.384
+4.594
+3.934
+3.380
+2.916
+2.522
+NXFT15WF104
+Resistance (kΩ)
+3380K
+4250K
+10kΩ
+337.503
+243.332
+177.496
+130.859
+97.428
+73.230
+55.529
+42.467
+32.747
+25.450
+19.932
+15.727
+12.498
+10.000
+8.054
+6.529
+5.324
+4.366
+3.601
+2.985
+2.488
+2.083
+1.752
+1.480
+1.256
+1.070
+0.916
+0.787
+0.679
+0.588
+0.512
+0.446
+0.391
+0.343
+NXFT15XV103
+Resistance (kΩ)
+3936K
+10kΩ
+100kΩ
+1690.590
+1215.320
+882.908
+647.911
+480.069
+359.009
+270.868
+206.113
+158.126
+122.267
+95.256
+74.754
+59.075
+47.000
+37.636
+30.326
+24.583
+20.043
+16.433
+13.545
+11.223
+9.345
+7.818
+6.571
+5.548
+4.704
+4.004
+3.422
+2.936
+2.528
+2.184
+1.893
+1.646
+1.436
+NXFT15WB473
+Resistance (kΩ)
+4050K
+47kΩ
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+31
+
+===PAGE 34===
+Temperature Sensor Thermo String/Lead Type !Caution/Notice
+!Caution (Storage and Operating Conditions)
+This product is designed for application in an  
+ordinary environment (normal room temperature, 
+humidity and atmospheric pressure). 
+Do not use under the following conditions because 
+all of these factors can deteriorate the product 
+characteristics or cause failures and burn-out.
+1. Corrosive gas or deoxidizing gas 
+    (Chlorine gas, Hydrogen sulfide gas, Ammonia gas,
+    Sulfuric acid gas, Nitric oxide gas, etc.)
+2. Volatile or flammable gas
+3. Dusty conditions
+4. Under vacuum, or under high or low pressure
+5. Wet or humid locations
+6. Places with salt water, oils, chemical liquids or 
+    organic solvents
+7. Strong vibrations
+8. Other places where similar hazardous conditions 
+    exist
+!Caution (Others)
+Notice (Storage and Operating Conditions)
+Notice (Rating)
+Use this product within the specified temperature 
+range.
+Higher temperature may cause deterioration of the 
+characteristics or the material quality of this 
+product.
+Notice (Soldering and Mounting) NXF Series
+Continued on the following page.
+Be sure to provide an appropriate fail-safe function 
+on your product to prevent secondary damage that may be 
+caused by the abnormal function or the failure of our 
+product.
+To keep the solderability of the product from degrading, 
+the following storage condition is recommended.
+1. Storage condition:
+   Temperature  -10 to +40°C
+   Humidity less than 75%RH (not dewing condition)
+2. Storage term:
+   Use this product within 6 months after delivery by 
+   first-in and first-out stocking system.
+3. Handling after unpacking:
+   After unpacking, reseal product promptly or 
+   store it in a sealed container with a drying agent.
+4. Storage place:
+   Do not store this product in corrosive gas 
+   (Sulfuric acid gas, Chlorine gas, etc.) or in direct 
+   sunlight.
+Please note as shown below when you mount this product.
+1. Do not melt the solder in the resin head when you solder
+    this product. If you do so, there is a possibility of wire 
+    breakage, electric short mode failure and wire coating 
+    breakage. If you cut the lead wire of this product less 
+    than 20mm from the resin head, the heat of the melted 
+    solder at the lead wire edge is propagated easily to the 
+    resin head along the lead wire.
+2. Do not touch the resin head directly with the soldering 
+    iron. It may cause the melting of solder in the resin head.
+3. Do not separate the parallel lead wires 10mm or less
+    from the resin.
+4. If you mold this product with resin, please evaluate
+    the quality of this product before you use it.
+5. Do not bend the lead wire radius 1mm or more.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+32
+
+===PAGE 35===
+Temperature Sensor Thermo String/Lead Type !Caution/Notice
+Continued from the preceding page.
+Notice (Soldering and Mounting) NXR Series
+Notice (Soldering and Mounting) NXR Series (Insulation Type)
+Notice (Handling) NXF/NXR Series
+1. The ceramic element of this product is fragile, and
+    care must be taken not to load an excessive 
+    press-force or not to cause a shock at handling.
+    Such forces may cause cracking or chipping.
+2. Do not apply excessive force to the lead.
+    Otherwise, it may cause the junction between lead and 
+    element to break or crack. Holding the element by the 
+    side lead wire is recommended when lead wire is bent 
+    or cut.
+Notice (Handling) NXR Series (Insulation Type)
+1. The ceramic element of this product is fragile, and
+    care must be taken not to load an excessive 
+    press-force or not to cause a shock at handling.
+    Such forces may cause cracking or chipping.
+    Especially under high-temperature environment, 
+    there is a possibility that epoxy resin will become soft.
+    When you set up the processing environment, please 
+    examine the processing method after evaluating the 
+    quality of this product.
+2. Do not apply excessive force to the lead.
+    Otherwise, it may cause the junction between lead and 
+    element to break or crack.
+    Holding the element by the side lead wire is recommended
+    when lead wire is bent or cut.
+    Handle the lead with care; there is a possibility
+    that a crack may go into the polyurethane
+    insulated coat when bending the lead.
+Please note as shown below when you mount this product.
+1. Do not melt the solder in the resin head, when you solder
+    this product. If you melt the solder in resin the head, 
+    the wire could break and short.
+    If you cut the lead wire of this product less than 8mm 
+    from the resin head, the heat of the melted solder at the 
+    lead wire edge is propagated easily to the resin head 
+    along the lead wire. Please do not cut this product below 
+    9mm.
+2. Do not touch the resin head directly with the solder iron. 
+    It may cause the melting of solder in the resin head.
+3. If you mold this product with resin, please evaluate
+    the quality of this product before you use it.
+Please note as shown below when you mount this product.
+1. Do not melt the solder in the resin head when you solder 
+    this product. (more than 25mm in full length of the 
+    product). 
+    If you melt the solder in the resin head, it has posibility
+    that the wire could break and short.
+2. Do not touch the resin head directly with the solder iron. 
+    It may cause the melting of solder in the resin head.
+3. When additonal processing is carried out on this product
+    (such as bonding, resin molding, and resin coating, etc.), 
+    please perform an audit of quality level on an automated 
+    machine and only use the product after confirming its 
+    reliability.
+    Please talk to us if you have concern matter, like 
+    process it under the high temperature and the high
+    pressure.
+    (For example, exposed to high-temperature and 
+    high-pressure environment as mold sealing with
+    injection molding.)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+33
+
+===PAGE 36===
+Temperature Sensor Thermo String/Lead Type Package
+Minimum Order Quantity
+Part Number
+Bulk
+Minimum Quantity (pcs.)
+-
+1000
+2500
+500
+Part Number
+Ammo Pack Taping
+Minimum Quantity (pcs.)
+NXF
+NXR
+-
+NXRT_3A016
+P
+L3
+W3
+W1
+W0
+W2
+H0
+H3
+D
+ød
+ΔS
+T
+Δh2
+Δh1
+I
+t1
+P1
+P2
+F
+øD0
+P0
+t2
+Item
+Pitch of Component
+Pitch of Sprocket Hole
+Lead Spacing
+Length from Hole Center to Component Center
+Length from Hole Center to Lead
+Body Diameter
+Deviation Along Tape, Left or Right
+Carrier Tape Width
+Position of Sprocket Hole
+Lead Distance between Reference and Bottom Planes
+Height of Component
+Protrusion Length
+Diameter of Sprocket Hole
+Lead Diameter
+Total Tape Thickness
+Total Thickness, Tape and Lead Wire
+Deviation Across Tape
+Portion to Cut in Case of Defect
+Hold down Tape Width
+Hold down Tape Position
+Thickness
+P
+P0
+F
+P2
+P1
+D
+ΔS
+W3
+W1
+H0
+H3
+I
+øD0
+ød
+t1
+t2
+Δh1, Δh2
+L3
+W0
+W2
+T
+12.7±1.0
+12.7±0.3
+5.0±1.0
+6.35±1.3
+3.85±0.7
+4.0 max.
+0±2.0
+18.0±0.5
+9.0±0.5
+16.0±1.0
+7.5±1.0
++0.5 to −1.0
+4.0±0.1
+0.40±0.05
+0.6±0.3
+1.6 max.
+1.0 max.
+11.0        
+9.5 min.
+1.5±1.5
+2.0 max.
+Dimensions (mm)
+Code
++0
+–2.0
+Taping Dimensions (NXRT_3A016 Series)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+34
+
+===PAGE 37===
+NTC Thermistors
+Inrush Current Suppression Lead Type
+Coating Extension
+on Lead : to line A
+10.0 max.
+3.5±1.0
+NTPAN : 23.0 max.
+NTPAJ : 20.0 max.
+5.5 max.
+10.0±1.5
+ø0.8±0.05
+Sn plated Cu wire
+A
+(in mm)
+NTPAN/NTPAJ Series
+Coating Extension
+on Lead : to line A
+10.0 max.
+3.5±1.0
+NTPAD : 16.0 max.
+NTPAA : 12.0 max.
+5.5 max.
+5.0 max.
+7.5±1.5
+ø0.8±0.05
+Sn plated Cu wire
+A
+(in mm)
+NTPAD/NTPAA Series
+Coating Extension
+on Lead: to line A
+6.0 max.
+3.5±1.0
+NTPA9: 11.0 max.
+NTPA7:  9.0 max.
+NTPA5: 6.0 max.
+5.0 max.
+5.0±1.5
+ø0.6±0.05
+Sn plated Cu wire
+A
+(in mm)
+NTPA5/NTPA7/NTPA9 
+Series
+Part Number
+Resistance
+(25°C)
+(ohm)
+Permissible Max.
+Current (25°C)
+(A)
+Permissible Max.
+Current (55°C)
+(A)
+Thermal Time
+Constant (25°C)
+(s)
+Thermal Dissipation
+Constant (25°C)
+(mW/°C)
+NTPAN3R0LDKB0
+3.0 ±15%
+5.4
+4.7
+135
+26.8
+NTPAN4R0LDKB0
+4.0 ±15%
+4.7
+4.1
+130
+26.8
+NTPAN6R0LDKB0
+6.0 ±15%
+3.9
+3.4
+130
+26.8
+NTPAJ4R0LDKB0
+4.0 ±15%
+4.0
+3.5
+125
+21.8
+NTPAJ6R0LDKB0
+6.0 ±15%
+3.4
+2.9
+125
+21.8
+NTPAJ8R0LDKB0
+8.0 ±15%
+3.0
+2.6
+130
+21.8
+NTPAJ100LDKB0
+10.0 ±15%
+2.6
+2.2
+130
+21.8
+Continued on the following page.
+This product effectively supresses surge currents 
+that are generated when switching power regulators 
+are turned on.
+Features
+1. Lead is not contained in the ceramic element, the
+    terminations, the solder for inner connection and
+    the coating resin.
+2. Most suitable for power supplies of less than 100W
+3. Excellent recovery characteristics due to resin
+    coating with excellent heat characteristics
+4. Highly reliable
+Applications
+1. Switching power supplies
+2. CRT monitors 
+3. Color televisions
+4. VCR power supplies 
+5. Other power circuits
+Detailed are accessable from the following URL.
+http://www.murata.com/en-global/products/thermistor/ntc/ntp
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+35
+8
+
+===PAGE 38===
+Continued from the preceding page.
+Part Number
+Resistance
+(25°C)
+(ohm)
+Permissible Max.
+Current (25°C)
+(A)
+Permissible Max.
+Current (55°C)
+(A)
+Thermal Time
+Constant (25°C)
+(s)
+Thermal Dissipation
+Constant (25°C)
+(mW/°C)
+NTPAD3R9LDNB0
+3.9 ±15%
+3.3
+2.9
+65
+18.2
+NTPAD5R1LDNB0
+5.1 ±15%
+3.0
+2.6
+85
+18.8
+NTPAD8R0LDNB0
+8.0 ±15%
+2.7
+2.3
+65
+18.7
+NTPAD160LDNB0
+16.0 ±15%
+2.0
+1.7
+100
+19.1
+NTPAA2R2LDNB0
+2.2 ±15%
+3.7
+3.2
+70
+13.5
+NTPAA3R9LDNB0
+3.9 ±15%
+2.7
+2.3
+70
+13.5
+NTPAA5R1LDNB0
+5.1 ±15%
+2.5
+2.2
+70
+13.5
+NTPAA8R2LDNB0
+8.2 ±15%
+2.0
+1.7
+70
+13.5
+NTPAA100LDNB0
+10.0 ±15%
+1.7
+1.5
+70
+13.5
+NTPA9160LBMB0
+16.0 ±15%
+1.4
+1.2
+65
+11.6
+NTPA74R0LBMB0
+4.0 ±15%
+2.3
+2.0
+40
+9.4
+NTPA75R0LBMB0
+5.0 ±15%
+1.9
+1.6
+40
+9.4
+NTPA78R0LBMB0
+8.0 ±15%
+1.7
+1.5
+40
+9.5
+NTPA7100LBMB0
+10.0 ±15%
+1.4
+1.2
+40
+9.5
+NTPA7160LBMB0
+16.0 ±15%
+1.2
+1.0
+40
+9.9
+NTPA7220LBMB0
+22.0 ±15%
+1.0
+0.88
+40
+9.1
+NTPA55R0LBMB0
+5.0 ±15%
+1.7
+1.5
+20
+5.6
+NTPA5100LBMB0
+10.0 ±15%
+1.2
+1.1
+20
+5.6
+NTPAD/NTPAA/NTPA9/NTPA7 series are also available on tape. The final alphabet of the part number should be "DNB0=>D6A0", "BNB0 =>B1A0".
+Operating Temperature Range: -20°C to +160°C
+Part Number
+Voltage (AC)
+NTPAN
+8600μF
+NTPAJ
+5000μF
+NTPAD
+2700μF
+NTPAA
+1400μF
+NTPA9
+800μF
+NTPA74R0
+700μF
+NTPA78R0
+NTPA75R0
+NTPA7100
+570μF
+NTPA7160
+400μF
+NTPA7220
+5972μF
+3472μF
+1875μF
+972μF
+556μF
+486μF
+396μF
+278μF
+4936μF
+2870μF
+1550μF
+803μF
+459μF
+402μF
+327μF
+230μF
+1777μF
+1033μF
+558μF
+289μF
+165μF
+145μF
+118μF
+83μF
+1493μF
+868μF
+469μF
+243μF
+139μF
+122μF
+99μF
+69μF
+1234μF
+717μF
+387μF
+201μF
+115μF
+NTPA5
+346μF
+240μF
+198μF
+71μF
+60μF
+50μF
+100μF
+82μF
+57μF
+100Vrms
+120Vrms
+132Vrms
+220Vrms
+240Vrms
+264Vrms
+Permissible Electrolytic Capacitor
+NTC
+–t°
+–
++
+Application Circuit
+Max. Current Ratio
+1.0
+0
+0.5
+Ambient Temperature (°C)
+20
+40
+60
+80
+100
+120
+140
+160
+Determination of Allowable Current
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+36
+8
+
+===PAGE 39===
+Current-R Ratio (RT/R25)/Current-Temperature Characteristics (Typical)
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAN3R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAN4R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAN6R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAJ4R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAJ6R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAJ8R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAJ100L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAD3R9L Type
+Continued on the following page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+37
+8
+
+===PAGE 40===
+Current-R Ratio (RT/R25)/Current-Temperature Characteristics (Typical)
+Continued from the preceding page.
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAD5R1L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAD8R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAD160L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAA2R2L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAA3R9L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAA5R1L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPAA8R2L Type
+0.01
+0.1
+1
+10
+0.01
+0.1
+1
+10
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+1
+10
+100
+1000
+Ta=25°C
+Current (A)
+Resistance Ratio
+Thermistor's Temperature (°C)
+NTPAA100L Type
+Continued on the following page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+38
+8
+
+===PAGE 41===
+Current-R Ratio (RT/R25)/Current-Temperature Characteristics (Typical)
+Continued from the preceding page.
+0.01
+0.1
+1
+10
+0.01
+0.1
+1
+10
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+1
+10
+100
+1000
+Ta=25°C
+Current (A)
+Resistance Ratio
+Thermistor's Temperature (°C)
+NTPA9160L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA74R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA75R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA78R0L Type
+Continued on the following page.
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA55R0L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA7100L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA7160L Type
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA7220L Type
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+39
+8
+
+===PAGE 42===
+Current-R Ratio (RT/R25)/Current-Temperature Characteristics (Typical)
+Continued from the preceding page.
+0.01
+0.1
+Current (A)
+Ta=25°C
+1
+10
+Resistance Ratio
+Thermistor's Temperature (°C)
+10
+1
+0.1
+0.01
+1000
+100
+10
+1
+Resistance Ratio (Rt/R25)
+Thermistor's Temperature (°C)
+NTPA5100L Type
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+40
+8
+
+===PAGE 43===
+Inrush Current Suppression Lead Type !Caution/Notice
+!Caution (Storage and Operating Conditions)
+!Caution (Others)
+Notice (Storage and Operating Conditions)
+Notice (Rating)
+Use this product within the specified temperature 
+range.
+Higher temperature may cause deterioration of the 
+characteristics or the material quality of this 
+product.
+Notice (Soldering and Mounting)
+Be sure to provide an appropriate fail-safe function 
+on your product to prevent secondary damage that may be 
+caused by the abnormal function or the failure of our 
+product.
+To keep the solderability of the product from degrading, 
+the following storage condition is recommended.
+1. Storage condition:
+   Temperature  -10 to +40°C
+   Humidity less than 75%RH (not dewing condition)
+2. Storage term:
+   Use this product within 6 months after delivery by 
+   first-in and first-out stocking system.
+3. Handling after unpacking:
+   After unpacking, reseal product promptly or 
+   store it in a sealed container with a drying agent.
+4. Storage place:
+   Do not store this product in corrosive gas 
+   (Sulfuric acid gas, Chlorine gas, etc.) or in direct 
+   sunlight.
+1. Be sure that the preheat-up does not melt the 
+    soldering of this product. Excessive heat may 
+    cause failure to open, short or insulation break 
+    down.
+2. Do not touch the body with the soldering iron.
+    The soldering point should be min. 5mm away from 
+    the root of the lead wire.
+1. This product is designed for Switching Power Supplies 
+    with smoothing capacitors.
+    Other applications of this product may result in fire.
+2. Use this product within the specified maximum current. 
+    Otherwise it may catch fire in the worst case.
+3. Use this product with smoothing capacitors within 
+    the specified maximum capacitance value. Otherwise 
+    it may catch fire in the worst case.
+4. This product is designed for application in an 
+    ordinary environment
+    (normal room temperature, humidity and atmospheric 
+    pressure). 
+    Do not use under the following conditions because 
+    all these factors can deteriorate the 
+    product characteristics cause failure and burn-out.
+   (1) Corrosive gas or deoxidizing gas.
+       (Chlorine gas, Hydrogen sulfide gas, Ammonia 
+        gas, Sulfuric acid gas, Nitric oxide gas, etc.)
+   (2) Volatile or flammable gas
+   (3) Dusty conditions
+   (4) Under high or low pressure
+   (5) Wet or humid conditions
+   (6) Near with salt water, oils, chemical liquids or 
+       organic solvents
+   (7) Strong vibrations
+   (8) Other places where similar hazardous conditions 
+       exist.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+41
+8
+
+===PAGE 44===
+Inrush Current Suppression Lead Type !Caution/Notice
+Notice (Handling)
+Notice (Others)
+1. This product may allow the passing of higher current 
+    than its initial value if it receives inrush current again 
+    before it cools down enough to recover its original 
+    resistance.
+    Be sure to consider the highest current under actual 
+    operating conditions operating temperature.
+2. The resin coating of this product does not 
+    guarantee insulating. Keep an adequate insulating 
+    distance from surrounding parts. 
+1. When this product is operated, the temperature of 
+    some areas may be about 160°C. 
+    Use proper surrounding parts and material that 
+    withstand such temperature. If they are inadequate
+    and kept at high temperature for a long time, they 
+    may be deteriorated or may produce harmful gas. 
+    Such harmful gas may deteriorate the element of 
+    this product.
+2. This product does not have waterproof construction.
+    Splashed water may cause failure mode such as 
+    deterioration of characteristics or current leak.
+    Therefore, do not apply clean by immersing it into 
+    water or any solvent.
+3. The ceramic element of this product is fragile, and
+    care must be taken not to load an excessive 
+    press-force or not to cause a shock at handling.
+    Such forces may cause cracking or chipping to the 
+    element.
+4. Do not apply excessive force to the lead wire.
+    Otherwise, it may cause the junction between lead 
+    wire and element to break or crack, or may crack the 
+    element.
+    Therefore, fix the lead wire of the element side when 
+    the lead wire is bent or cut.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+42
+8
+
+===PAGE 45===
+Inrush Current Suppression Lead Type Package
+Part Number
+Bulk
+Minimum Quantity (pcs.)
+-
+-
+400
+750
+1000
+1000
+1500
+50
+100
+150
+300
+300
+500
+500
+Part Number
+Ammo Pack Taping
+Minimum Quantity (pcs.)
+NTPAN_DKB0
+NTPAJ_DKB0
+NTPAD_DNB0
+NTPAA_DNB0
+NTPA9_BMB0
+NTPA7_BMB0
+NTPA5_BMB0
+-
+-
+NTPAD_D6A0
+NTPAA_D6A0
+NTPA9_B1A0
+NTPA7_B1A0
+NTPA5_B1A0
+Minimum Order Quantity
+Taping Dimensions (NTPAD/A_D6A0 Series)
+Pitch of Component
+Pitch of Sprocket Hole
+Lead Spacing
+Length from Hole Center to Lead
+Length from Hole Center to Component Center
+Body Diameter
+Deviation Along Tape, Left or Right
+Carrier Tape Width
+Position of Sprocket Hole
+Lead Distance between Reference and Bottom Plane
+Height of Component
+Protrusion Length
+Diameter of Sprocket Hole
+Lead Diameter
+Total Tape Thickness
+Total Thickness, Tape and Lead Wire
+Deviation Across Tape
+Portion to Cut in Case of Defect
+Hold down Tape Width
+Hold down Tape Position
+Coating Extension on Lead
+P
+P0
+F
+P1
+P2
+D
+ΔS
+W
+W1
+H0
+H2
+I
+D0
+d
+t1
+t2
+Δh1, Δh2
+L
+W0
+W2
+e
+30.0
+15.0±0.3
+7.5±0.5
+7.5±1.5
+3.75±1.0
+(refer to the table below)
+Body Thickness
+T
+(refer to the table below)
+±2.0
+18.0±0.5
+16.0±0.5
+10.0 max.
++0.5 to -6.0
+4.0±0.1
+0.8±0.05
+0.6±0.3
+2.0 max.
+2.0 max.
+11.5 min.
+4.0 max.
+to line A
+Code
+Item
+Dimensions (mm)
+9.0±0.5
+11.0+0
+–2.0
+NTPAD
+NTPAA
+Type
+D (mm)
+T (mm)
+16.0 max.
+5.5 max.
+12.0 max.
+5.0 max.
+W0
+W2
+W
+W1
+H0
+H2
+Δh2
+Δh1
+e
+ΔS
+P2
+P
+D
+P1
+P0
+F
+d
+l
+øD0
+L
+t2
+t1
+T
+A
+Continued on the following page.
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+43
+8
+
+===PAGE 46===
+Inrush Current Suppression Lead Type Package
+Continued from the preceding page.
+Pitch of Component
+Pitch of Sprocket Hole
+Lead Spacing
+Length from Hole Center to Lead
+Length from Hole Center to Component Center
+Body Diameter
+Deviation Along Tape, Left or Right
+Carrier Tape Width
+Position of Sprocket Hole
+Lead Distance between Reference and Bottom Planes
+Height of Component
+Protrusion Length
+Diameter of Sprocket Hole
+Lead Diameter
+Total Tape Thickness
+Total Thickness, Tape and Lead Wire
+Deviation Across Tape
+Portion to Cut in Case of Defect
+Hold down Tape Width
+Hold down Tape Position
+Coating Extension on Lead
+P
+P0
+F
+P1
+P2
+D
+ΔS
+W
+W1
+H0
+H2
+I
+D0
+d
+t1
+t2
+Δh1, Δh2
+L
+W0
+W2
+e
+12.7
+12.7±0.3
+5.0        
+6.35±1.3
+3.85±0.8
+(refer to the table below)
+Body Thickness
+T
+5.0 max.
+±1.5
+18.0±0.5
+16.0±1.0
+6.0 max.
++0.5 to -4.0
+4.0±0.3
+0.6±0.05
+0.6±0.3
+2.0 max.
+1.5 max.
+11.0 min.
+4.0 max.
+to line A
+Code
+Item
+Dimensions (mm)
+9.0        
+11.0 +0
+–2.0
++0.8
+–0.3
++0.5
+–0.75
+W0
+W2
+W
+W1
+H0
+H2
+Δh2
+Δh1
+e
+ΔS
+P2
+P
+D
+A
+P1
+P0
+F
+d
+l
+øD0
+L
+t2
+t1
+T
+Type
+D (mm)
+11.0 max.
+9.0 max.
+6.0 max.
+NTPA9
+NTPA7
+NTPA5
+Taping Dimensions (NTPA9/7/5_B1A0 Series)
+R44E.pdf
+Oct.6,2016
+!Note
+• Please read rating and !CAUTION (for storage, operating, rating, soldering, mounting and handling) in this catalog to prevent smoking and/or burning, etc.
+• This catalog has only typical specifications. Therefore, please approve our product specifications or transact the approval sheet for product specifications before ordering.
+44
+8
+
+===PAGE 47===
+Murata Manufacturing Co., Ltd.
+www.murata.com
+Note
+1 Export Control
+ 
+For customers outside Japan:
+ 
+No Murata products should be used or 
+sold, through any channels, for use in the 
+design, development, production, utilization, 
+maintenance or operation of, or otherwise 
+contribution to (1) any weapons (Weapons of 
+Mass Destruction [nuclear, chemical or biological 
+weapons or missiles] or conventional weapons) 
+or (2) goods or systems specially designed or 
+intended for military end-use or utilization by 
+military end-users.
+ 
+For customers in Japan:
+ 
+For products which are controlled items subject 
+to the “Foreign Exchange and Foreign Trade Law” 
+of Japan, the export license speciﬁ ed by the law 
+is required for export.
+2 Please contact our sales representatives or 
+product engineers before using the products in 
+this catalog for the applications listed below, 
+which require especially high reliability for the 
+prevention of defects which might directly 
+damage a third party’s life, body or property, or 
+when one of our products is intended for use 
+in applications other than those specified in 
+this catalog.
+1   Aircraft  equipment
+2   Aerospace equipment
+3   Undersea equipment
+4   Power plant equipment
+5   Medical equipment
+6   Transportation equipment (vehicles, trains, 
+ships, etc.)
+7   Traffi  c signal equipment
+8   Disaster prevention / crime prevention 
+equipment
+9   Data-processing equipment
+10   Application of similar complexity and/or 
+reliability requirements to the applications 
+listed above
+3 Product speciﬁ cations in this catalog are as of 
+August 2016. They are subject to change or 
+our products in it may be discontinued without 
+advance notice. Please check with our sales 
+representatives or product engineers before 
+ordering. If there are any questions, please contact 
+our sales representatives or product engineers.
+4 Please read rating and 
+CAUTION (for storage, 
+operating, rating, soldering, mounting and 
+handling) in this catalog to prevent smoking 
+and/or burning, etc.
+5 This catalog has only typical speciﬁ cations. 
+Therefore, please approve our product 
+speciﬁ cations or transact the approval sheet 
+for product speciﬁ cations before ordering.
+6 Please note that unless otherwise speciﬁ ed, we 
+shall assume no responsibility whatsoever for any 
+conﬂ ict or dispute that may occur in connection 
+with the eff ect of our and/or a third party’s 
+intellectual property rights and other related 
+rights in consideration of your use of our products 
+and/or information described or contained in our 
+catalogs. In this connection, no representation 
+shall be made to the eff ect that any third parties 
+are authorized to use the rights mentioned above 
+under licenses without our consent.
+7 No ozone depleting substances (ODS) under the 
+Montreal Protocol are used in our manufacturing 
+process.
+Global Locations
+For details please visit www.murata.com
+Cat. No. R44E-17
+R44E.pdf
+Oct.6,2016
+
+===PAGE 48===
+Mouser Electronics
+  
+Authorized Distributor
+ 
+  
+Click to View Pricing, Inventory, Delivery & Lifecycle Information:
+ 
+ 
+ 
+ Murata:  
+ 
+  NCP21XV103J03RA  NCP18XW682K03RB  NCP18XW472J03RB  NCP18XW222J03RB  NCP18XW152J03RB 
+NCP18XW332J03RB  NCP21XW223J03RA  NCP21XW153J03RA  NCP15WB333K03RC  NCP15WB473K03RC 
+NCP15WB473K0SRC  NCP18XQ102J03RB  NCP18XM472J03RB  NCP18WF104K0SRB  NCP18WF104K03RB 
+NCP15WM224E03RC  NCP15WM474E03RC  NCP15WB473J0SRC  NCP15WB473J03RC  NCP15WB333J03RC 
+NCP15XC470J03RC  NCP15XC220J03RC  NCP15XC330J03RC  NCP18XQ471E03RB  NCP18XM221E03RB 
+NCP15XC680K03RC  NCP03XH103J05RD  NCP15XM221E03RC  NCP15XQ471E03RC  NCP18WB473K0SRB 
+NCP18WB333K03RB  NCP18WB473K03RB  NCP21XQ471K03RA  NCP21XM221K03RA  NCP18XW153K03RB 
+NCP18XW223K03RB  NCP18WB473E0SRB  NCP18XQ681J03RB  NCP18WB473E03RB  NCP18XH103K0SRB 
+NCP18XH103K03RB  NCP18XV103K03RB  NCP21XV103J0SRA  NCP18XW153J03RB  NCP18XV103J03RB 
+NCP15WM154K03RC  NCP15WM224K03RC  NCP15WM474K03RC  NCP18XH103J03RB  NCP18XH103J0SRB 
+NCP18WD683E03RB  NCP21XM472K03RA  NCP18XW682J03RB  NCP21XQ102K03RA  NCP21XW222K03RA 
+NCP21XW472K03RA  NCP18WF104E03RB  NCP18WF104E0SRB  NCP15WD683K03RC  NCP18WM224E03RB 
+NCP18WM474E03RB  NCP15XC330K03RC  NCP15XC470K03RC  NCP15XC220K03RC  NCP15WD683J03RC 
+NCP21XW472J03RA  NCP21XW222J03RA  NCP21XM472J03RA  NCP21XQ102J03RA  NCP18XQ471J03RB 
+NCP18WB473J0SRB  NCP15XH103F03RC  NCP15XQ681K03RC  NCP15XH103F0SRC  NCP18WB473J03RB 
+NCP18WB333J03RB  NCP18XW222E03RB  NCP18XW472E03RB  NCP15XF151J03RC  NCP15XF101J03RC 
+NCP18XQ681K03RB  NCP03XH103K05RL  NCP18XF101J03RB  NCP18XF151J03RB  NCP18XQ102E03RB 
+NCP15XW222E03RC  NCP18XQ102K03RB  NCP18XM472K03RB  NCP21X103K03RA  NCP18XM472J0SRB 
+NCP15WF104J0SRC  NCP15WB473F03RC  NCP15WF104J03RC  NCP21WF104J03RA  NCP21XV103K03RA 
+NCP03WB473K05RL  NCP15WM154J03RC  NCP15WM224J03RC  NCP15WM474J03RC  NCP21XW153K03RA

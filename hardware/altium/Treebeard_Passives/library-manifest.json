@@ -1,0 +1,50 @@
+{
+  "library": "Treebeard_Passives",
+  "scope": "Commodity 0805 resistors and MLCC capacitors only",
+  "schematic_symbols": [
+    {
+      "name": "R_0805_1PCT_0P125W_150V",
+      "editable_parameter": "Resistance",
+      "default_value": "10k",
+      "footprint": "TB_R_0805_2012M"
+    },
+    {
+      "name": "C_0805_X5R_16V_10PCT",
+      "editable_parameter": "Capacitance",
+      "default_value": "10uF",
+      "footprint": "TB_C_0805_2012M"
+    },
+    {
+      "name": "C_0805_X5R_25V_10PCT",
+      "editable_parameter": "Capacitance",
+      "default_value": "4.7uF",
+      "footprint": "TB_C_0805_2012M"
+    },
+    {
+      "name": "C_0805_X7R_50V_10PCT",
+      "editable_parameter": "Capacitance",
+      "default_value": "100nF",
+      "footprint": "TB_C_0805_2012M"
+    },
+    {
+      "name": "C_0805_C0G_50V_5PCT",
+      "editable_parameter": "Capacitance",
+      "default_value": "10nF",
+      "footprint": "TB_C_0805_2012M"
+    }
+  ],
+  "pcb_footprints": [
+    {
+      "name": "TB_R_0805_2012M",
+      "pad_centers_mm": [-0.9125, 0.9125],
+      "pad_size_mm": [1.025, 1.4],
+      "courtyard_mm": [3.36, 1.9]
+    },
+    {
+      "name": "TB_C_0805_2012M",
+      "pad_centers_mm": [-0.95, 0.95],
+      "pad_size_mm": [1.0, 1.45],
+      "courtyard_mm": [3.4, 1.96]
+    }
+  ]
+}

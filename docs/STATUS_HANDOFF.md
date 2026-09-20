@@ -1,6 +1,604 @@
 # MSV2 Status Handoff
 
-Date: 2026-09-01 (the section immediately below is current; older deployment-status notes are historical)
+Date: 2026-09-19 (the section immediately below is current; older deployment-status notes are historical)
+
+## 2026-09-19 (evening) Probe 5 fixed, probe 4 history corrected, thermal attribution disputed
+
+New docs: `MSV3/docs/MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md`,
+`MSV3/docs/MSV3_SOLAR_CHARGING_STATE_2026-09-19.md`,
+`MSV3/docs/MSV3_PROBE5_CAPLESS_FIX_2026-09-19.md`.
+
+- **Probe 5 is in the shared Alocasia pot and was broken; now fixed.** It was placed there as the
+  MSV3-blade + FDC arm (mistaken for probe 8 — probe 8 is still `deployed: false` and unseen). It
+  returned after six days dark still on pre-capless **v65555**, computing `moisture = 0` with
+  `bare_tank_fdc_counts` at 65.5M — **the same out-of-range failure as probe 4's deleted v65566
+  block**, because a pre-capless image measures a bare tank that C17-removed hardware no longer has.
+  Signed capless **v65564** (`2026-09-14-capless-prod5`) installed over BLE in 32 s; DIS proven via
+  the already-running-build refusal; flags now `0x54`, `moisture_scale` 2→3, bare→NULL,
+  moisture→~44,500. `fleet.json` updated to 65564. **Its alarming 116M phase gap was insertion
+  transients** — 47,934 after settling. Do not scan a probe while handling it.
+  **OPEN: it is on USB** in the pot whose AM rig had mains-coupling noise bands; move it to battery
+  before its data counts.
+- **All four electrode/readout corners are live for the first time** (s9 MSV3+AM, s3 v1.2+AM,
+  probe 4 v1.2+FDC, probe 5 MSV3+FDC). **But the comparison is blocked**: AM reports detector mV and
+  the FDC reports counts, and no AM-vs-FDC `%/C` ratio in this repo is meaningful until the AM
+  detector's **mV-per-pF slope is measured on the bench**. `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+  is now marked DISPUTED where it concludes "the readout was never the variable". **V4's decision to
+  drop the FDC is unaffected**; the claim that the electrode redesign *fixes the wobble* is not.
+- **Two rig labels were wrong.** Sensor 2 carries the **MSV2 interdigitated** electrode, not v1.2.
+  And **sensor 2 is quantization-dead** — 3 LSB of daily swing, 4 distinct values. Drop it from every
+  comparison; the MSV2-electrode column is unmeasured, not measured-as-quiet.
+- **Probe 4's cloud history was cleaned and its split point corrected.** 18 out-of-range v65566 rows
+  deleted from `msv2_sensor_history`, backed up to
+  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv` (all 21 columns, re-insertable).
+  **Split at 20:53:20, not 16:38.** Also: the rig was **physically disturbed at 15:17 on 09-19**
+  (+82,831 counts, two dropped wakes, RSSI shift) — do not pool data across that step.
+- **Probe 4's solar charging ramp is gone** in the most sun it has ever seen: eight days of +25 to
+  +90 mV ramps through 09-13, then **−6 mV on 09-19 at the highest insolation of the series**, wake
+  cadence unchanged. Cause **not yet proven** — a working 3.887 V `VBAT_OV` and a dead harvester look
+  identical at 3.99 V. **CORRECTED: the test is not a "3.89 V crossing".** The harvester restart band
+  is `VBAT_OV` corner (3.857-3.937 V) minus `VBAT_OV_HYST` (18/35/89 mV) = **~3.77-3.92 V, 151 mV
+  wide**, so the window is **~2026-09-20 to 09-24**; watch for the daytime ramp *returning*, not a
+  voltage. Probe 4 currently reads above its own ceiling because the rework left the BQ25170 **USB**
+  path at 4.20 V and it was on USB while off-air 09-14..09-18.
+- **Probe 4's rework is a documented record, not an inference.**
+  `MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` has a per-board table: *all field probes except
+  probe 7 were swapped on 2026-09-14*. **That doc is on `main` (`edc9705`) and NOT on this branch** --
+  which is exactly why this session inferred it instead of reading it.
+- **Probe 6 is indoors on a desk** since ~09-16 and its battery trace proves nothing about clamps.
+  Any such analysis is void. It is now useful as a clean indoor temperature reference (2.50 C swing
+  vs 9.00 C for a sun-exposed board).
+- **Probe 7 is charging well**: +40.6 mV/day net, 4002 → 4121 mV over 09-16..09-19. The 09-16
+  reassessment's "0.7-1.2 mAh/day, nearly flat" estimate is withdrawn; the part is still the wrong
+  part. Reaches its as-built ceiling ~2026-09-23, which is the real clamp test.
+- **Probe 4 is no longer a same-divider peer for probe 7** — its 4309 mV cap predates the 09-14
+  rework. Corrected in `fleet.json` and below.
+- **Probe 4's die temperature is a poor pot reference**: it tracks room air overnight, then steps
+  **+3.75 C in one 30-minute bin at noon** and swings 3.6x the indoor board. It is substantially an
+  insolation sensor. An **overcast day** is needed to separate room/sun/soil.
+
+## 2026-09-18/19 MSV4 bring-up firmware, layout audits, electrode physics, orders placed
+
+**Ordered 2026-09-19: MSV4 x5 (JLCPCB PCBs + LCSC parts; E73 modules from Ebyte), plus DisplayCenter #2 parts.**
+Upload file: `MSV4/procurement/MSV4_LCSC_order_5boards_2026-09-19.csv`. The parts to pull from MSV3
+and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards_2026-09-19.md`.
+**Physically count** the scarce leftovers before assembly: 1x BQ25504RGTT, 5x 4.7 uF, 5x 1 uF.
+
+- **MSV4 BLE bring-up firmware** (`MSV4/arduino/MSV4_Probe_Bringup_BLE`, tracked LFXO variant, build
+  script, `MSV4/scripts/msv4_ble_console.py`). It has console commands, a dead-crystal escape to DFU,
+  and a `spectrum` command: a 250 kHz-4 MHz sweep with a model fit. **Not yet run on hardware.**
+  Workflow and first-board checklist: `MSV4/docs/MSV4_BLE_BRINGUP_FIRMWARE_2026-09-18.md`.
+  The ADC pins were re-pinned to the final layout (TEMP P0.03, SENSE_OUT P0.30, DRV_OUT P0.31).
+- **Layout audited from IPC-2581 exports** (`MSV4/hardware/reference/PIN_NET_REFERENCE.md` findings
+  8-13). The final netlist `MSV4_sch_2026-09-18_final.NET` matches the layout pin for pin. The
+  `R24` pulldown was added on the Q1 gate. Open label items: the DNP cap is designated `DNP`, and
+  the BQ25504 is designated `U`.
+- **Electrode physics** (`MSV4/docs/MSV4_ELECTRODE_FIELD_SOLVE_2026-09-19.md`, solver
+  `MSV4/scripts/msv4_electrode_fieldsolve.py`):
+  - The geometry is correct; no respin.
+  - At 1-4 MHz in moist soil the reading is conductance- and interface-dominated (Maxwell-Wagner
+    through the mask).
+  - Use Rsoil (temperature-corrected with the tip NTC) as the moisture proxy.
+  - The fitted mask/interface capacitance Cm is a contact-quality channel. Soil permittivity is
+    not identifiable below 4 MHz.
+- **Polarity chain** (appended to `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`): every
+  shared-pot rig reads drier when warm. On the same days, the MSV3 electrode's temperature
+  coefficient is 5.9-8.5x the v1.2 electrode's. Physical attribution is still open.
+- **Probe 4 is the inverted-hybrid rig** (v65567 `hybridv12-airpad`, `-HybridV12Tank
+  -HybridMuxCode 0`, default-off build flag, default build byte-identical to HEAD). A v1.2 sensor is
+  jumpered across the tank, and the MSV3 blade must be held in air. **Split probe 4's history at
+  2026-09-18 20:53:20 PDT, not 16:38** (corrected 2026-09-19). The wake-counter resets give the real
+  boundaries: v65566 ran 16:39:31–16:59:21 on mux code 2 and was out of FDC range; v65567 `airpad`
+  started 17:00:10 but ran **on the bench** until the probe went into the pot at 20:53:20. A 16:38
+  split pulls both of those into the series and yields nonsense (+9.0 %/C, r²=0.21). The 18
+  out-of-range v65566 rows were deleted from `msv2_sensor_history` on 2026-09-19 and backed up to
+  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv`. Plan: position swap with
+  sensor 3 after 3-4 clean days. To return it to production, build a new capless image **above
+  65567**.
+- **The shared Alocasia pot had no temperature channel from 09-14 to 09-18** (probe 8 went to the
+  C17 diagnostic image). **Restored 2026-09-18 evening:** probe 4 now sits in that pot, and its board
+  die temperature (valid in the capless packet) is the reference again. Like probe 8's, it is a
+  board-head temperature in air beside the pot, not soil depth. Only the 09-15 to 09-18 slopes rely
+  on the probe 6/7 room proxies. Probe 8's return to production (capless v65564 prepared) is optional.
+- **Procurement process:**
+  - New skill `lcsc-bom-order` (repo `.claude/skills/` and `~/.codex/skills/`).
+  - New verified-part table `hardware/procurement/lcsc_verified_parts.csv`.
+  - The Codex `altium-generic-passives` and `altium-component-generator` skills were corrected.
+  - `Treebeard_Passives` was regenerated through Altium: resistor Comment now carries ` ohm `, and
+    `Procurement Class` says to freeze the LCSC number. Run *Tools -> Update From Libraries* in
+    existing schematics before their next BOM export.
+- **Nothing from this session is committed.** It is mixed with earlier uncommitted maintainer edits.
+
+## 2026-09-17 V4 power decisions and LCSC stock check
+
+- **Decided (revised later on 09-17): 3.3 V rail (TPS7A0233PDBVR, C2887324)** — the MSV3 part, kept
+  because the architecture was validated at 3.3 V. Also the maintainer's stock of 60 mAh cells,
+  `VBAT_OV` 3.889 V (ROV1 4.99 MΩ bottom / ROV2 5.36 MΩ top), `VBAT_UV` 3.04 V, and
+  `VBAT_OK` 3.369 V off / 3.728 V on (ROK1 3.48 / ROK2 5.90 / ROK3 1.00 MΩ). Usable window
+  3.37–3.89 V, about 30 mAh of the 60 mAh cell, roughly 10 no-sun days.
+- **Battery divider reworked:** high-side switched from VBAT by one NTZD3155C N+P dual (C2940634)
+  plus a 1 MΩ gate pull-up, replacing MSV3's low-side enable. Now **active-high**, so
+  `readVbatMv()`'s drive-LOW logic must be flipped. This removes the idle ADC pin sitting above
+  VDD and the ~27 µA back-powering path that V4's Q1 load switch would otherwise have created.
+- **Panel:** one 2 V / 60 mA / 36 x 30 mm panel ordered on Amazon; replaces the two-panel 1.5 V
+  array and keeps the V3 envelope. Qualify `V_OC` ≤ 2.8 V and `I_SC` in sun before fitting.
+- **Stock (LCSC API, 09-17):** everything is in stock except that LCSC has **no record for the
+  E73-2G4M08S1C** (JLCPCB mirror still shows 1,431) — confirm before ordering, and do not swap in
+  the `-CX` IPEX-antenna variant. BQ25504 is thin at 319. The DNP clamp is now ATL431BIDBZR, not a
+  zener. Table and C-numbers: `MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md`.
+- **Still open before ordering:** battery connector/polarity and max charge current, E73 source,
+  panel qualification, Rs at commissioning.
+
+## 2026-09-16 Probe 7 live; zener charging reassessed
+
+- **Probe 7 is online and healthy.** A 150 s guarded scan at about 18:54 PDT saw 32 packets at mean
+  -73 dBm, two wakes advancing +1 to 104, 4011 mV, valid capless flags `0x56`, 22.75 C and an open
+  OTA gate. The linked cloud history has 56 rows from 17:51-18:55 PDT, 4022 -> 4018 mV with
+  4000-4022 mV sample spread. That one hour around sunset proves operation and ingest, not charge.
+- **The temporary 1N4728A likely did not hard-short the panel, but it did erase most charging
+  margin.** Its 3.3 V rating is specified at 76 mA; the panel is only 30 mA in direct sun. The
+  measured steady `SP+ < 2.2 V`, divided by the 77.9% MPPT ratio, implies a plausible 2.82 V sampled
+  soft-knee clamp. Scaling Probe 4's measured harvest puts Probe 7 near only 0.7-1.2 mAh/day net,
+  with the deployment-window current still unmeasured.
+- **Correction to the 09-15 root-cause note:** TI explicitly documents an internal `VIN_DC`
+  pull-down when `VIN_DC > VSTOR > VBAT_OV`; the claim that the body diode makes `VBAT_OV`
+  structurally inoperative was too strong. **But the coated Probe 6 was reworked to a 3.887 V
+  nominal threshold and then measured 5.01 V at loaded `SP+` outdoors while its battery remained
+  near 4.30 V.** That satisfies the exact pull-down condition, so protection was ineffective on the
+  measured board unless the single DMM update happened to catch the 256 ms MPPT sample. A 20 s
+  scope capture distinguishes those cases. The 6 V panel still violates the 3.0 V recommended and
+  5.5 V absolute input limits, so it must still be replaced or clamped.
+- **Recommendation:** lower-voltage/higher-current panel first. If keeping the 6 V panel, bench an
+  ATL431B precision shunt near 2.80-2.85 V and pair it with a characterized MPPT ratio; do not fit
+  another ordinary 3.3 V zener or blindly apply the old 90% divider suggestion. Full calculations,
+  exact resistor candidates, primary sources and the required I-V/scope/daylight test are in
+  `MSV3/docs/MSV3_PROBE7_ZENER_CHARGING_REASSESSMENT_2026-09-16.md`.
+
+## 2026-09-16 V4 solar decision from probe 4's measured recharge
+
+- Probe 4's clean post-08-30 deployment cycles, excluding the labelled USB interventions, imply
+  about **8-9 mAh/day gross harvest** and **5-6 mAh/day net cell gain** after the measured
+  **3.03 mAh/day** probe load. That agrees with the observed two-to-three-week recharge of the
+  150 mAh pack.
+- The existing 6 V / 30 mA panel behind a 2.75 V clamp retains only about 45-55% of the old harvest:
+  roughly 3.6-4.8 mAh/day gross and only 0.6-1.8 mAh/day net. It is safe and usually energy-positive,
+  but weak days are flat or negative. Reducing the cell to 60 mAh shortens the buffer; it does not
+  repair the energy margin.
+- **V4 small-batch choice: two commodity 1.5 V / 60 mA / 30 x 30 mm panels in parallel.** Ten-packs
+  cost $6.37-$9.79 on 2026-09-16, or $1.27-$1.96 per two-panel probe. The 30 x 60 mm array needs a
+  carrier only 6 mm taller than V3. It stays safely below the BQ25504 input limit; the BQ's 100 mA
+  average-input ceiling clips only strongest sun and leaves about 140 mW useful peak input.
+- Production target: consolidate the array into one approximately **2.5 V / 60 mA / 150 mW** panel
+  no larger than 30 x 55 mm, with `V_OC` ≤ 2.7 V over the specified cold range. Full arithmetic,
+  sourcing links, cost comparison and acceptance test:
+  `MSV4/docs/MSV4_SOLAR_PANEL_SELECTION_2026-09-16.md`.
+
+## 2026-09-16 Probe 7 on capless production, potted as the zener-clamp trial
+
+- **Probe 7 now runs signed capless production v65565** (`2026-09-14-capless-prod7-restore`),
+  installed over BLE in 49 s, replacing the `2026-09-14-probe7-mux-diag` bring-up image. DIS
+  confirmed the build. A 300 s scan saw wake +3, flags `0x56` (capless set, invalid clear),
+  4021 mV, and phase 0/1 means 1,180 counts apart, so the repaired TMUX shows no phase asymmetry.
+  Evidence: `dumps/probe7-prod65565-postrestore.json`. `MSV3/fleet.json` now has it
+  `deployed: true`, `swd_accessible: false` (potted, not coated).
+- **Purpose: the first test of the `SP+` shunt-zener clamp** against the body-diode overcharge in
+  `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`. **The fitted part is a temporary
+  1N4728A** (3.3 V, soft knee, the only zener on hand). The maintainer measured it holding `SP+`
+  **below 2.2 V in direct sun**, which is below any cell voltage, so the diode path is off. The data
+  will be in the maintainer's own doc. A better part is on order, and data from before and after
+  the swap is not directly comparable. Watch the window-light harvest: that soft knee is exactly the
+  leakage case the root-cause doc warns can eat a few-hundred-µA window current.
+- **Probe 7 still has the as-built OV divider** (R11 5.62 MΩ / R14 4.42 MΩ). The maintainer skipped
+  the 2026-09-14 storage rework before fitting its battery and panel and accepts the shorter cell
+  life. **Its harvester ceiling is therefore about 4.26 V, not 3.89 V.** Pass: the cell stops near
+  probe 4's as-built cap of **4309 mV** telemetry — but note (corrected 2026-09-19) that this is a
+  **historical** figure from 2026-09-13, the day before the rework; probe 4 is no longer on the
+  as-built divider, so probe 7 has no contemporaneous same-divider peer. Fail: it keeps following
+  the sun toward probe 6's
+  unclamped **~4.44-4.49 V**. That margin is only about 150 mV, so also take the free
+  discriminator: a DMM on `SP+` at the same moment as `raw_battery_mv`. With a working clamp, `SP+`
+  sits below the cell, so the diode path cannot conduct.
+- **The fleet scanner now reads bring-up heartbeats** (`MSV3` magic) as DIAGNOSTIC rather than
+  NOT SEEN, decodes production flag bits 5 (reading invalid) and 6 (capless), flags pre-capless
+  images, and compares phase 0/1 means against the firmware's 1,200,000-count swing threshold.
+  `ble_ota_update.py` now uses the same shared decoder.
+- `main` and this branch have diverged: `main` has `edc9705` (the R11/R14 rework), and this branch
+  has the fleet tooling and the VIN_DC root cause. Neither contains the other.
+
+## 2026-09-14 Bootloader 1.0.4 built (NOT installed), and evidence on the 1.0.3 archive dispute
+
+- **Bootloader 1.0.4 exists as a built, verified artifact and is installed on nothing.** No probe
+  runs it and none may until the acceptance list in the requirement document passes on probe 99.
+  `MSV3/bootloader/generated/1.0.4/msv3-e73-recovery-signed-s140-6.1.1.hex`, sha256
+  `47cf4e9b0a1412261efc71b42eec9b0579471921fe75a53283b52f8aee11330c`.
+- **USB is a normal transport now, not a window.** Whenever the bootloader is in DFU mode and
+  VBUSDETECT shows a cable, USB CDC serial DFU is up for as long as the cable is there -- no timer,
+  nothing to miss -- and BLE OTA runs on top of it at the same time. No cable means usb_init() is
+  never called and behavior is byte-for-byte 1.0.3, so a battery/solar probe pays nothing.
+- **The blocker was never "can both stacks run".** usb_init() already supports a running SoftDevice,
+  wait_for_events() already calls tud_task() whenever tusb_inited() regardless of DFU mode, and
+  serial DFU *is* USB CDC -- the SLIP layer's tud_cdc_rx_cb() reads straight from
+  tud_cdc_read_char(). The real blocker was one level down: dfu_register_callback() holds a single
+  m_data_pkt_cb, and single-bank DFU erases the application before Init authentication, so two
+  transports feeding one bank would destroy the image with no recoverable copy on either side.
+- **`dfu_transport_claim()` is what makes it safe** and is the piece to understand before touching
+  any of this. First transport to present traffic while the state machine is idle owns the session;
+  the other is refused until dfu_init() resets ownership. Serial silently consumes and drops so the
+  host retries; BLE answers NRF_ERROR_INVALID_STATE. Do not add a third caller of the DFU packet
+  handlers without going through it.
+- **An earlier draft of 1.0.4 was sequential** -- a bounded 10 s wired window, then BLE -- and is
+  recorded in the design doc as the safe retreat if both stacks live together destabilize BLE DFU on
+  real hardware. It costs a delay before BLE appears.
+- **Verification lesson worth keeping.** The link-map check fired on the first build: the USB helper
+  was absent from the map because it had been inlined, exactly as check_dfu_mode() already is. It is
+  now noinline, and the release build checks for both msv3_usb_attach_if_vbus and
+  dfu_transport_claim. A source sentinel proves a patch applied, not that the code reached the
+  binary -- different questions for a bootloader that cannot be re-flashed on a coated probe.
+- Cost: FLASH 84.52% -> 85.34% (+320 bytes), about 5.7 KB left in the 38 KB region. 1.0.3 was
+  rebuilt after the change and still reproduces byte-identically (`a6e0ac08...`), so nothing the
+  fleet currently runs moved.
+
+### Evidence on `1.0.3/raw-probes-v65556-manifest.json` (dispute NOT resolved)
+
+`verify_msv3_release_archive.py` currently fails on this one pre-existing entry. Measured
+2026-09-14, recorded as evidence only -- no hash in `DISPUTED.json` was edited, per its own rule:
+
+- The path has exactly **one** commit in history (`062d9e1`), blob `2dbae5ef...`. It has never been
+  edited since it was introduced.
+- `core.autocrlf` is `true` and there is no `.gitattributes`, so it checks out as CRLF. The CRLF
+  form hashes to `9073af59...`, which is **exactly** what both `SHA256SUMS.txt` and
+  `release-manifest.json` record. On this checkout the artifact matches its integrity records.
+- `DISPUTED.json`'s recorded `sha256_on_disk` is `4a979c49...`, and that matches **none** of the
+  serializations of the committed content: not LF (`2dbae5ef`), not CRLF (`9073af59`), not either
+  without a trailing newline (`a5a166c3` / `9073af59`).
+- So line-ending normalization explains why the file agrees with its integrity records, but it does
+  **not** explain `4a979c49`. That hash came from content that was in some working tree and was
+  never committed. Resolving this is a maintainer judgement call, not a mechanical fix, and the
+  verifier should keep failing until someone makes it.
+
+## 2026-09-14 Maintainer decisions: C17 fleet-wide, coating test started, USB/BLE design scoped
+
+- **C17 is physically removed from every probe.** The hardware half of the capless rollout is done
+  fleet-wide. This makes probe 6 a matched pair (capless hardware + capless firmware) and makes
+  probes 4, 5, 7 and 8 a *mismatched* pair: capless hardware still running images that select mux
+  2/3. Finishing those installs is now remediation rather than routine sequencing. A 200 s scan at
+  18:41 found none of probes 4, 5, 7 or 8 advertising, so the risk is latent rather than active --
+  the rule is to install the capless image on each **before** it is powered back into service.
+  Probe 6 was the only MSV3 on the air and is a matched pair: flags `0x56`, wake 50 advancing +2,
+  `DATA_CH0` 37,522,374, bare invalid, die 20.50 C, 4263 mV. See `docs/KNOWN_ISSUES.md`.
+- **Battery percentage rescale is deliberately deferred.** Confirm the capless system works against
+  raw millivolts first. `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is in both copies
+  (`Treebeard_ESP32_Display_Runtime.ino`, `MobileAppPage.h`), so a reworked ~3.90 V pack reporting
+  about 63% is expected behavior for now and must not be "fixed" as a bug in the meantime.
+- **Blade coating validation is running**, on the specimen tracked as "MSV3 Coated Test". First real
+  run of the air -> soil -> watering -> return-to-air gate. Not validated until the cycle completes;
+  do not coat further production units on a partial result.
+- **USB + BLE OTA coexistence: design started and explicitly scoped.** The USB recovery path is
+  **MSV3-only** remediation for the resident 1.0.3 bootloader; the signed BLE OTA architecture
+  (device type, signed init, monotonic version floor, boot-guard pairing, fleet registry, fail-closed
+  preflight) is the long-lived envelope and **carries forward to MSV4**. The USB work may not add an
+  MSV3 special case to any of those. Mechanism, risks and bench plan:
+  `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md`.
+- Key design finding: the bootloader's USB/BLE mutual exclusion is a **policy choice in one if/else
+  in `src/main.c`**, not a stack limitation. `usb_init()` already branches on
+  `sd_softdevice_is_enabled()` and routes power events through `sd_power_usbdetected/pwrrdy/removed`,
+  reserves IRQ priorities 0-1 for the SoftDevice, and `proc_soc()` already forwards SD USB power
+  events into TinyUSB. Upstream wrote the coexistence plumbing and simply never calls both
+  init paths in one boot. Proposed approach is therefore BLE unconditionally, plus USB additionally
+  when VBUS is present, with a single-winner rule before any flash write. Nothing is implemented.
+
+## 2026-09-16 MSV4 front end decided: FDC out, software lock-in in
+
+- **The FDC2214 comes out.** Controlled comparison: sensor 9 (MSV3 electrode, uncoated, fixed-frequency
+  AM) is clean; probe 8 (MSV3 electrode, uncoated, FDC resonant) wobbles 1.956%. Same electrode, both
+  uncoated, one variable. The AM/FM bench checklist's decision rule fires.
+- **Correction: only probe 6 is coated.** This session briefly concluded probes 4/5/6 all were, which
+  would have confounded the above. The error was reading `swd_accessible: false` as "coated" — that
+  field means "pads reachable right now," also false for a probe buried in a pot. **Never infer
+  coating status from it.** Consequence: the entire AM-vs-FM thermal dataset is uncoated probes, so
+  none of it needs revisiting.
+- **New experiment (maintainer):** uncoated probe by a window for a day read **flat in pure water,
+  flat in air, and wobbled hugely in moist soil.** Rules out board, clock, inductor, battery and
+  temperature-on-electronics. The wobble needs the soil matrix — i.e. dissolved ions, whose mobility
+  rises ~2 %/C. **Outstanding: the salty-water test**, which separates a conductivity-tempco artefact
+  from genuine thermally-driven moisture migration. Highest-value experiment pending.
+- **Architecture: one chopper switch with phase AND frequency as firmware parameters** — a software
+  lock-in. Sweeping phase on a single switch eliminates I/Q mismatch structurally, and the pedestal
+  falls out of the N-phase fit, so no balanced branch and no calibration reference are needed. One
+  phase = AM detector; four = IQ demodulator; **same board**, so the IQ decision defers to firmware.
+- **Frequency: 1–3 MHz, and do NOT auto-track.** Sweep to characterise, then lock — auto-tuning
+  rebuilds the exact FM failure that killed the FDC. Sweepability replaces the LCR/VNA measurement
+  every analysis has been waiting on.
+- **TS3USB221A is a DPDT**, so one part does the whole A/B swap on one GPIO, with `OE` giving a free
+  OPEN reference. **Its t_ON = 30 ns / t_OFF = 12 ns caps the chopper at 1–2 MHz, not 8** — the 18 ns
+  asymmetry is a temperature-varying duty error. The "900 MHz bandwidth" headline is the *signal* path,
+  not the select path.
+- **R_on and capacitance trade directly**: the 0.3 ohm TS3A24159 carries 224 pF. Buy the higher-R_on,
+  lower-C part and shop USB/HDMI signal switches, not precision muxes.
+- Full write-up, topology diagram, BOM and the datasheet traps:
+  `MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+
+## 2026-09-16 MSV4 BOM drafted for Altium
+
+- `MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md`. Scope per maintainer: nRF module with attached antenna,
+  same BQ25504, the lock-in front end, a soil NTC. No USB, no FDC, no 555.
+- **The cost saving is already banked, and it is not the MCU.** From this project's own LCSC orders:
+  removing the **FDC2214 saves $6.70**, the USB stack (BQ25170 + USBLC6 + PMEG2010 + Type-C) another
+  $1.53, plus the 4052 and the tank inductor — **-$8.37** against ~+$1.5 of new parts. That is ~42 %
+  off a ~$16.5 electronics BOM before any MCU decision.
+- **But two thirds of the ~$50 board is not on the BOM at all** (~$33.5 of fab, assembly, shipping,
+  panel, battery, enclosure). **Asked the maintainer for the real breakdown** — quantity, unique part
+  count and stocked-vs-not are probably bigger levers than any part swap.
+- **Recommendation: stay on nRF52840 / E73-2G4M08S1C ($7.5888 verified) for V4.0.** The nRF52832
+  E73-2G4M04S1B (C411306) would save ~$3 — 6 % of the board — but costs revalidating the entire OTA
+  chain (fleet registry, signed packages, Guard 2 / bootloader 1.0.3 pairing) on a different
+  SoftDevice, and V4 already changes electrode, front end and panel at once. Revisit on V4.1.
+- **LCSC blocks automated fetches** (404 on every product URL this session), so the ~$4.59 figure for
+  the 52832 module is an unverified search summary. Confirm on the page before ordering.
+- **New recommendation: fit a 32.768 kHz crystal and keep `P0.00`/`P0.01` free for it.** ~$0.15
+  retires the entire `MSV3_LFCLK_RTC1_HANG` class of problem *and* saves the LFRC recalibration
+  wakeups against a 10-15 uA sleep budget. This is a layout constraint — decide before routing.
+- Panel is now a **hard electrical spec on the BOM**: `V_OC` <= 2.7 V at 25 C.
+- Also corrected for V4: the BQ25504 OV divider sum must be **9-11 MOhm**; MSV3's reworked 8.54 MOhm
+  is out of spec and must not be carried over.
+
+## 2026-09-16 REVERSAL: sensor 9 shows the thermal swing too — the readout was never the variable
+
+- **The comparison that justified dropping the FDC is void.** `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md`
+  recorded sensor 9 (MSV3 electrode, uncoated, fixed-frequency AM) as **clean** against probe 8's
+  1.956 % wobble, and concluded the modulation scheme was the cause. **Sensor 9 was not clean — it had
+  not run long enough.** Observed 2026-09-16: it shows the same daily swing, with the **same
+  anti-thermal signature seen from MSV3 in this same pot** (warm afternoon reads drier).
+- **Both AM and FM swing, same electrode, same pot.** The FDC, the LC tank, the oscillator and the
+  driving circuit are all exonerated. **The cause is the electrode geometry and the soil-probe
+  interface** — the sensor is accurately reporting something real at 0.48 mm sensing depth.
+- **The FDC still comes out, on different grounds** (maintainer): BOM cost, AM-over-FM for long-term
+  deployment, and firmware-settable frequency/phase. The architectural objection to FM — *"the
+  interrogation frequency IS the output"* — never depended on the thermal data and survives.
+- **What must not be claimed again: removing the FDC does not fix the daily wobble.** The **electrode
+  redesign is the fix**, and is now the load-bearing change in V4 rather than a parallel improvement.
+  0.48 mm -> 2.90 mm averages interface movement over millimetres instead of a fraction of one.
+- **A third mechanism is now on the table and no planned test catches it:** soil-probe *interface
+  movement* (soil shrinking and moving against the blade). A glass of water has no interface to move,
+  so the salty-water test cannot see it. Separating it from moisture migration needs a **mechanical**
+  test, not a chemical one.
+- **The sign argues against conductivity tempco.** Warmer reads drier; rising ion mobility should read
+  *wetter*. Confirm the polarity chain on both rigs — it is nearly free and could retire a candidate.
+
+## 2026-09-16 V4 stays on the nRF52840; excitation and phase come from TIMER/PPI/GPIOTE
+
+- **MCU decided: E73 / nRF52840, not ESP32.** The low-power architecture is why the project is on
+  that part; 10-15 uA sleep and a 528 uW average are not reproducible on an ESP32. Earlier drafts of
+  the front-end doc specified ESP32 `LEDC` with phase via `hpoint` — replaced.
+- **One TIMER at 16 MHz, four compares, two GPIOTE channels through PPI** makes the excitation square
+  wave and the phase-offset chopper select. Both come off the *same counter*, so the phase relation
+  is exact and jitter-free by construction — structurally better than two independent LEDC channels.
+  Four CCs and four PPI channels, so TIMER1/2 suffice; avoid TIMER0 (SoftDevice).
+- **Operating point N = 16, f = 1.000 MHz.** Quadrature lands on ticks 0/4/8/12 exactly, the 16-phase
+  diagnostic sweep is exactly the full grid, and 1 MHz is where the TS3USB221A's 18 ns asymmetry costs
+  least (6.5 deg). Cost is electrode |Z| rising to ~1990 -> 795 ohm dry to wet, which is what sets Rs.
+- **The coarser phase grid is not a coarser measurement.** 16 MHz gives 5x fewer steps than LEDC's
+  80 MHz, but `V(theta)` is *fitted* — recovered phase precision is set by SNR and point count, not
+  step size. Quadrature is exact on any N divisible by 4.
+- **Hard rule: excitation off HFXO, never HFINT.** A shared clock means clock error does not corrupt
+  phase — but it moves the interrogation frequency, and a +/-6 % RC with a tempco against a
+  frequency-dependent soil impedance injects exactly the FM-class thermal artefact V4 exists to kill.
+- SAADC sampled by PPI from the same TIMER, oversampled hard, `CALIBRATEOFFSET` at wake.
+- `MSV4/docs/MSV4_PROBE_BOM_DRAFT.md` (09-02) now carries a banner: its TLC555 sensing block is
+  superseded; its power chain, BQ25504 network and cost model still stand.
+
+## 2026-09-16 VIN_DC measured at the pin: 5.0 V in sun, 4.1 V at the window
+
+- **Root cause confirmed by direct measurement.** Loaded `SP+` (= VIN_DC) reads **5.0 V in direct
+  sun** and **4.1 V indoors against the deployment window** — 1.4x to 1.7x the BQ25504's 3 V
+  recommended input maximum, with the 6 V `V_OC` at each MPPT open-circuit sample above the 5.5 V
+  absolute maximum.
+- **The window figure is the one that matters.** 4.1 V is above any 1S cell state of charge, so the
+  PMOS body-diode path conducts **all day in normal indoor deployment** — this was never an
+  outdoors-only failure, and probe 6 did not need direct sun to reach 4.49 V. It also means the part
+  has been run continuously out of spec, raising the prior on the damaged-BQ25504 branch of the
+  post-clamp verification.
+- **4.1 V was a spot reading; the window peak is 4.7 V — predicted from probe 6's own cell voltage,
+  then measured the same day.** The window runs at ~94 % of the direct-sun condition, not a milder one.
+- **The ceiling is arithmetic: `VBAT = 0.78 x V_OC - 0.3 V`.** MPPT holds VIN at its programmed
+  fraction of `V_OC` (0.78 x 6.0 = 4.68 V, measured 4.70) and the body diode drags the cell to just
+  under it (4.38 V predicted, ~4.44 measured). One expression reproduces every charge observation on
+  file, and `VBAT_OV` appears nowhere in it. It also prices the lower-`V_OC` panel fix exactly.
+- **The clamp interacts with MPPT, and the old power table was optimistic.** A shunt zener clamps the
+  open-circuit excursion too, so the BQ samples `V_OC` = `Vz` and then regulates to 78 % of *that* —
+  a 3.3 V clamp operates the panel at **2.57 V**, not 3.3 V. Harmless in sun (77 mW, 146x) but it
+  makes the window margin the live question: 1 mA at the window is 4.9x the load, 300 uA is 1.5x,
+  which is not a margin. **Re-choose the `RMPPT1/2/3` ratio when fitting the clamp** — once a clamp
+  sets the sampled `V_OC`, MPPT is tracking the zener, not a real MPP, and 78 % is 22 % given away.
+- **Zener dissipation is a non-issue: 99 mW peak, 1.6 mW average, zero harvest cost.** Verified from
+  SLUSAH0G 8.3.1 — the BQ resamples `V_OC` every **16 s** by disabling the charger for **256 ms**.
+  MPPT holds VIN at 2.57 V the rest of the time, below the 3.3 V knee, so the clamp conducts only
+  during that 1.6 % window — while the charger is disconnected and harvesting nothing anyway. Package
+  is not a constraint. **Leakage is the only continuous loss** (daylight-only; budget <20 uA at
+  2.6 V = 51 uW, ~10 % of load). The real cost is the operating point, not the diode.
+- **The clamp cannot affect sleep current — structurally, not marginally.** Netlist confirms
+  `NET SP+ : C4-2, C8-1, L1-1, R9-2, SP+1-1, SP_IC-2` — panel side of the boost only, and **USB is not
+  on it** (`VBUS` enters at `Q1-1 -> VSTOR`). Draining the cell into the zener would mean running
+  backwards through the high-side PMOS body diode, which is blocked; the same diode that causes the
+  overcharge prevents reverse drain. At night VIN_DC ~0 V, so leakage is zero. Leakage is a *daylight
+  harvest tax*, never a sleep-current cost — separate budgets.
+- **The soft knee is mostly a benefit.** Under load the clamp sits above nominal `Vz`, raising the
+  sampled `V_OC` and the operating point, recovering harvest. Safe because the 78 % MPPT ratio is a
+  free safety factor the original tolerance stack never claimed: ceiling is `0.78 x V_clamp - 0.3`,
+  which allows `V_clamp` to ~5.1 V. Still specify 3.3 V (holds even if MPPT is disabled), but do not
+  reject a part that measures 3.8-4.0 V at 30 mA.
+- Window `I_SC` is **no longer a gate** — maintainer can duty-cycle the probe deeper into sleep to meet
+  whatever the panel delivers. Nice to know, not blocking. (No ammeter on hand; the earlier
+  2.7 V / 50 uA figure was indoors under LED light, not the window.)
+- **V4 answer: fix the panel, do not design the clamp in. Target `V_OC` <= 2.7 V at 25 C** — under the
+  3000 mV recommended max *at open circuit*, with headroom for the -0.3 %/C rise as temperature falls
+  (a 3.0 V panel at 25 C is out of spec at 0 C). Fewer cells in series for the same die area is the
+  same power at a legal voltage, so it costs nothing — and MPPT then tracks the real MPP, giving V4
+  **100 % of MPP where a clamped V3 gets 61 %**.
+- **Keep the BQ25504.** 330 nA `I_Q`, operation down to 130 mV, 10 uW minimum input power — the
+  harvester was never at fault, the panel/input mismatch was.
+- **Datasheet correction: `VIN(CS)` is 600 mV typ / 700 mV max, not 330 mV.** TI raised it in a later
+  revision; 330 nA is the *quiescent current*, a different parameter. The bench plan already has this
+  right — do not let the old number back in.
+- Resistor-only fallback if no zener is available: lower the MPPT ratio to ~50 % so VIN never exceeds
+  `VBAT_OV`. **Weaker** — it leaves the 6 V `V_OC` sample violating the 5.5 V absolute maximum every
+  16 s. Only the zener kills that excursion.
+- **Clamp size settled: 3.3 V, 5 %, SOD-123 or larger** (100 mW worst case). The window data breaks
+  the old 3.0-vs-3.3 near-tie — indoors the panel operates at 4.1-4.75 V, so every 100 mV of clamp is
+  harvest given up, and 3.3 V is the highest value the `VBAT_OV` tolerance stack allows.
+- **The clamp analysis now has a hole: every margin figure uses `I_SC` = 30 mA, a direct-sun
+  number.** The only indoor current on record (50 uA) was taken at a deliberately dim spot, not the
+  window. **Measure panel `I_SC` at the window** — it decides both break-even (~160 uA continuous,
+  ~380 uA over 8 h) and whether a cheap zener's soft-knee leakage, invisible against 30 mA, eats a
+  large fraction of a few hundred microamps. Specify reverse leakage near `Vz`, not just `Vz`.
+- Free discriminator still open: read `raw_battery_mv` at the same instant as `SP+`. A 0.3-0.4 V gap
+  proves the diode path is conducting in situ rather than MPPT setting the operating point.
+- Written up in `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`, which also now records
+  that the bench plan's "real deploy condition" panel measurement (2.7 V / 50 uA) is not the
+  deployment condition.
+
+## 2026-09-15 MSV4 electrode architecture decided
+
+- **Penetration depth is set by electrode pitch alone** — `depth = lambda/2pi`, where lambda is twice
+  the electrode centre-to-centre spacing. Finger count, finger length and board area do not appear.
+  MSV3's 1.5 mm pitch means it reads a soil skin **0.48 mm** thick; the v1.2 reaches **2.71 mm**.
+- **This explains the coated-probe failures.** A 75 um soldermask + conformal stack holds **14.5%** of
+  MSV3's field energy versus 2.7% of the v1.2's. The coating absorbs water, its permittivity climbs,
+  then it *saturates* — a large signal that stops responding. It is a geometry problem, not a coating
+  chemistry problem; no change of material fixes a 0.48 mm sensor.
+- **Decided: two symmetric electrodes inside a guard ring, mirrored front and back**, on an
+  18 x 110 mm blade — `guard 1 | clr 1 | A 4.9 | gap 4.2 | B 4.9 | clr 1 | guard 1`. Reaches
+  **2.90 mm**, beats the v1.2, keeps electrode swapping (A and B interchangeable), drops the coating
+  to 2.6%. Mirroring roughly doubles capacitance *and* raises the soil fraction (48% -> 65% dry).
+- **Vias: one pair at the dry end only.** A through-hole in the wet zone is a hole in the coating
+  barrier. At 6 MHz a 110 mm trace is lambda/218, so one connection is electrically identical to
+  fifty.
+- A soil-depth **0402 NTC at the tip costs 0.04 mm of penetration** if its traces are RF-bypassed to
+  the guard net (~1 nF to guard at the top: a short at 6 MHz, open at DC).
+- Rejected: three-prong G-H-G. `lambda = W - W_ground` appears to allow thin grounds, but the ground
+  must still terminate the field — keep `W_ground >= gap` and `W_high/W_ground <= 4.5`, which caps an
+  honest 3-prong at **2.47 mm** at 18 mm width.
+- Full write-up with the termination limits, mirroring analysis and temperature-sensor routing:
+  `MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md`. Scale drawings:
+  <https://claude.ai/artifact/LsGnvQqxJycer2YNNZSL75>
+
+## 2026-09-15 VBAT_OV root cause: the 6 V panel, not the divider
+
+- **The BQ25504's overvoltage protection has never bounded the cell on any probe, and the
+  2026-09-14 resistor rework could not have fixed it.** The panel is `V_OC` = 6 V (this project's
+  own 2026-08-21 measurement), against a BQ25504 input rated **3 V recommended / 5.5 V absolute**.
+  A boost converter cannot output below its input: when VIN_DC exceeds VSTOR the panel charges the
+  cell straight through the high-side PMOS **body diode**, a passive path with no comparator and no
+  enable. `VBAT_OV` is bypassed entirely. Datasheet footnote (2) on page 6 states the requirement
+  directly: *"VBAT_OV setting must be higher than VIN_DC."*
+- Confirmed against telemetry: probe 6 charged 4248 → 4295 mV on 09-15 with a 3.887 V ceiling
+  programmed, tapering with the sun rather than stopping at a threshold. Probe 6's cell reached
+  **4487 mV (~4.44 V)** across 09-08 → 09-14. The battery ADC is good to +1.0 % (DMM 4.25 V vs
+  4293 mV telemetry), so those readings are real.
+- **Fix is a shunt zener on `SP+`, 2.4–3.3 V** (3.3 V best, 3.0 V strictly in spec; **not** 3.6 V or
+  above — it fails the tolerance stack against `VBAT_OV`). Costs nothing: measured average load is
+  **528 µW** against 90–100 mW of clamped panel, a ~180x margin.
+- **New measured power budget** from probe 4's night-only discharge: **126 µA / 528 µW**, 3.03
+  mAh/day, ~50 days from full with no sun. Consumption dropped **5.5x around 2026-08-29**; not yet
+  attributed.
+- Also corrected: the `R_OV1`/`R_OV2` orientation question in `COMPONENT_INDEX.md` is resolved (the
+  documented orientation was right), and the divider-sum rule is 9–11 MΩ **with a minimum**, so the
+  reworked 8.54 MΩ is out of spec. Maintainer has deliberately left it there for now.
+- Full analysis, zener selection table, scrounged-part alternatives, and the marking-code reference:
+  `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`.
+
+## 2026-09-14 Probe 6 capless install, capless receiver live, and the sensor 9 hybrid rig
+
+- **The capless-aware receiver is now actually running**, not just compile-verified. `Treebeard
+  runtime build 2026-09-14 msv3-capless-scale3` was flashed to COM16 (the v1.2 overnight rig that
+  had been occupying the bench was unplugged, which was the only thing blocking it). This had to
+  happen first: the capless policy's rollout order is receiver-first, and installing scale-3
+  firmware against a scale-2 receiver mis-ingests every reading.
+- **Probe 6 is on signed capless production v65564** (`MSV3-BUILD:2026-09-14-capless-prod6`),
+  installed over BLE in 38 s through the resident 1.0.3 bootloader. DIS read back the exact build
+  ID. Verification detail worth reusing: the DIS was proven by re-running the SAME package, which
+  `check_running_build()` refuses *before* the jump opcode is written -- so the build ID is read off
+  the live device without taking it off the air, and without `--reflash-same-build`.
+- Post-install scan: 36 packets, wake advancing, 4264 mV, die 22.75 C, flags `0x54` (capless bit 6
+  SET, bareValid CLEAR), `DATA_CH0` 38,019,830, bare invalid, OTA gate open. `MSV3/fleet.json`
+  updated to 65564 only after all three postconditions passed.
+- **C17 is physically removed from ALL probes** (maintainer, 2026-09-14), so rollout step 3 is done
+  fleet-wide and probe 6 is now capless hardware running capless firmware -- a matched pair. The same
+  fact inverts the risk on the rest of the fleet: probes 4, 5, 7 and 8 are now capless hardware still
+  running images that select mux 2/3, which is the combination
+  `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md` forbids. Finishing those installs is now a fix,
+  not a scheduling item.
+- Probe 6 still has the as-built BQ25504 OV divider and charges to ~4.26 V; it has not had the
+  R11/R14 ~3.90 V storage rework from `edc9705`. **Deliberately deferred** (maintainer): the battery
+  percentage rescale waits until the capless system is confirmed working against raw millivolts, so
+  `BATTERY_CURVE`'s 4200 mV -> 100% mapping stays as-is for now and a reworked pack reading ~63% is
+  expected, not a bug.
+- **New sensor 9: the hybrid AFE rig.** A second ESP32-S3 runs the same v1.2 analog front end with
+  an MSV3 probe end in place of the module's own pad, advertising from `AC:A7:04:31:8A:09` on the
+  identical MSV3 duty cycle as sensor 3. Sensor 3 is untouched as the control, so only the probe end
+  differs, and the pair runs for a couple of days to see whether the MSV3 electrode removes the
+  temperature-shaped artefact rung 1 did not. `MOISTURE_INVERT_CEILING_BY_SENSOR[9]` = 3300, same as
+  sensor 3. AFE sensor identity is now a build parameter (`-SensorId`) with a per-ID build
+  directory, for the reason MSV3 made probe identity one in `ba76e29`.
+- The probe end was attached at `2026-09-15 01:21 UTC` and sensor 9 immediately read **2409-2411
+  mV**, holding within 2 mV across ten advertisements -- a sane dry baseline for this front end. The
+  nine earlier unloaded-input rows were deleted from cloud history (ids 617379-617422), backed up
+  first and scoped by primary key; the board's wake counter reset to 1 at the power-cycle, so the
+  bad and good series are separated by an independent reboot boundary rather than by a judgement
+  about which values looked wrong. Learned range re-read clean afterwards at `890/891` with no false
+  watering rises, and sensor 3's stayed untouched at `850/1130`.
+- Details, plus a serial-monitoring pitfall that can silently leave one of these ESP32-S3 boards in
+  download mode: `MSV3/docs/MSV3_CAPACITIVE_V1_2_AFE_CHECKOUT_2026-09-14.md`.
+
+## 2026-09-14 Probe 7 repair, current image, and USB + OTA follow-up
+
+- **Probe 7's TMUX fault is repaired.** Static codes 2/3 first proved that both select GPIOs and
+  the EC-side routes worked. The targeted `hotcoldstream` diagnostic then isolated the failure to
+  mux code 1: code 0 read about 38.69M while code 1 read about 53.89M, and pressing the TMUX package
+  restored code 1 to the normal region. That pressure sensitivity identified a package solder
+  joint, not an FDC, tank, firmware, or mux-decoder failure.
+- The TMUX was resoldered. A temporary rework bridge stopped CH0 conversions and produced the
+  bring-up console's ambiguous `I2C read failed` message; after cleanup, `i2cscan` found `0x2A`,
+  `fdcid` returned `0x5449/0x3055`, `fdctest` completed 10/10 with zero failures, and repeated
+  flips held both code 0 and code 1 near 36.73M with only normal `STATUS=0x8 CH0_UNREAD`.
+- **Probe 7 currently runs signed targeted bring-up application v65565**, build
+  `2026-09-14-probe7-mux-diag`. Its successful activation raised the on-device rollback floor to
+  65565. A paired capless production v65565 equality-version restore was built and archived before
+  installing the diagnostic; do not try to restore the older v65556 image.
+- **Open requirement from the maintainer:** USB and BLE OTA must coexist in the eventual MSV3
+  recovery design. The present bootloader's `DEFAULT_TO_OTA_DFU` behavior provides automatic BLE
+  recovery when the application is absent but removes bootloader USB CDC/DFU. Do not treat that
+  mutual exclusion as the desired final design. Preserve signed OTA, rollback protection, and
+  invalid-application recovery while restoring a dependable USB firmware path and application USB
+  serial access. Acceptance criteria and the failure mode are recorded in
+  `MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_REQUIREMENT_2026-09-14.md`.
+
+## 2026-09-14 MSV3 capless production / no bare-tank measurement
+
+- **Decision:** C17 is DNP and must be removed from every healthy MSV3 during rollout. Production
+  firmware measures only connected electrode phases (mux 0/1), never selects disconnected mux 2/3,
+  leaves legacy bare bytes 19-22 zero/invalid, and advertises flag bit 6 as the capless identity.
+- **Probe 8 evidence:** removing C17 moved the connected dry count from about 20.49M to 39.41M.
+  Two-hand contact moved it from about 39M to 27M, roughly four times the former raw response.
+  Both phases were stable at IDRIVE 16 with `STATUS=0x8` and no amplitude fault. A deliberate bare
+  test returned exact over-range `0x0FFFFFFF` plus `ERR_WD`, consistent with the calculated 11-12
+  MHz capacitor-free disconnected tank exceeding the FDC2214 limit.
+- **Why the trade is accepted:** the real-pot result showed bare normalization removed only 11.7%
+  of the final day's daily harmonic. The dominant bulk-soil-temperature and probe/soil-interface
+  terms are not observed by the disconnected board tank; the measured approximately 4x useful
+  response is worth retiring that small correction.
+- **Receiver contract:** capless flag bit 6 selects moisture scale 3, a wider raw-count plausibility
+  range, and a separate cloud calibration epoch. Bare/reference temperature compensation is forced
+  off for scale 3; raw connected counts and die temperature remain available for a future physical
+  soil/interface model. Legacy C17/scale-2 packets still parse during rollout.
+- **Prepared, not deployed:** signed application v65564 packages are archived for Probes 4, 5, 6,
+  and 8. Probe 7's mux is now repaired and has its own v65565 production restore package, but it
+  currently remains on the matching v65565 diagnostic image. DisplayCenter has only been
+  compile-verified because COM3 is occupied by the v1.2 overnight test. Probe 8 remains on signed
+  diagnostic v65563; do not install capless production until the capless-aware receiver is actually
+  running.
+- Full measurements, hashes, invariants, and receiver-first rollout order:
+  `MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
 
 ## 2026-09-01 DisplayCenter learned percentages, periodic freeze, and cloud reliability
 
@@ -341,7 +939,7 @@ Date: 2026-09-01 (the section immediately below is current; older deployment-sta
   receivers still consume `ready`, `dryBound`, and `wetBound`. The alert-threshold firmware
   change does require a receiver flash, which the production receiver has now received.
 - Full design and operations reference:
-  `docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md`.
+  `MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md`.
 
 ## 2026-08-17 Netlify Service Worker Stale-Data Bug
 
@@ -1285,76 +1883,177 @@ next session, none chosen:
 
 ## Suggested Next Work
 
-**⚠ OPEN HARDWARE TASK — 2026-09-14: probe 7's VBAT_OV resistor swap is NOT done.**
-Every other field probe got `R11` 5.62MΩ→4.42MΩ and `R14` 4.42MΩ→4.12MΩ today (harvester charge
-ceiling ≈4.26V → ≈3.90V). **`MSV3-MOISTURE-007` was skipped** — it was the board on the bench for
-the TMUX fault — so it is still on the original divider and still charging to ≈4.26V. It measured
-**4513–4529 mV** steady across 13 BLE advertisements over ~10 minutes, above the 4.20V cell spec.
-Do two things when it is next in hand:
-1. Meter the cell directly. It has been sitting over-voltage; confirm before trusting it.
-2. Swap `R11`→4.42MΩ (C332857) and `R14`→4.12MΩ (C367866). **Larger value in `R11`** — markings
-   `4424` vs `4124`, one character apart; reversed gives 3.623V instead of 3.897V.
+**Groomed 2026-09-05.** What stood here was four superseded layers dating back to 2026-07-25, kept
+by ranking rather than by decision, and largely overtaken by the OTA campaign. Every item has now
+been given a verdict instead of a position in a queue. The old text is archived at the bottom of
+this section so nothing is silently lost.
 
-Full derivation, rejected alternatives, and the follow-up `BATTERY_CURVE` rescale:
-`MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`.
+### Do next, in this order
 
-Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
-not by completion):
+1. ~~**Push the branch.**~~ Done 2026-09-05. `msv3-ble-ota` is on origin.
+2. ~~**Make the probe identity a build parameter.**~~ Done 2026-09-05.
+3. ~~**Replay/downgrade test.**~~ Done 2026-09-05: the bootloader **accepts** an older validly
+   signed image. `dfu_init.c`'s version check is an explicit empty template. Mitigated host-side
+   via `installed_application_version` in the registry; a real fix is bootloader-side and needs
+   SWD. See `docs/KNOWN_ISSUES.md`.
+4. **Longer probe-99 soak of the ERROR_CONFIG change**, acceptance defined before the clock starts,
+   then ship it to probe 4 over BLE. Current evidence is 58 healthy bench readings.
+5. **Migrate bench boards 1-3 off the stock bootloader** by USB, canary first. These boards keep
+   USB CDC, so this never needed SWD — it was mis-filed as blocked.
+6. **Thermal falsification tests** (D1 below): dry probe 4's pot and refit; water probe 5; shade
+   probe 4 for a day. Physical actions, then elapsed time and cloud analysis.
 
-1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
-   section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
-   `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
-   (now on `app.v13.js`), flash `Treebeard_ESP32_Display_Runtime` to the physical receiver, and
-   flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
-   the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
-   text switch once a sensor calibrates, and (once enough history exists to actually drift)
-   the dry-bound trend notice. None of this has been deployed or hardware-tested yet -
-   code-complete and compiling only.
+### Superseded 2026-09-06 by the conformal-coating campaign
 
-Superseded by ranking, top of the list as of 2026-08-14 (the 2026-08-09 list below is
-superseded by ranking, not by completion - its battery/hardware items are physical-world tasks
-that session's software review pass didn't touch and are presumably still open):
+Probes 4 and 5 are being conformally coated, which permanently covers their SWD pads and USB
+connectors. That reorders everything above: the only question that now matters for those two boards
+is whether a task becomes *impossible* afterwards. Items 4 and 6 above are unaffected and simply
+wait; item 5 concerns boards that are not being coated.
 
-1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
-   physical boards - explicitly deferred this session ("no lets do that later").
-   Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
-   fix, a real quantization-risk bug on live hardware. Lower priority:
-   `MSV2_BLE_Adv_Receiver.ino`, `Treebeard_ESP32_DeviceIdentity_Dump.ino`,
-   `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
-2. Decide whether the registration-race mitigation in migration 021 (claim-code-
-   required first registration + a global new-receiver rate limit) is sufficient,
-   or whether the residual risk (a determined, physically-proximate attacker can
-   still win the race - see that migration's own SQL comments for why a complete
-   fix needs a manufacturing-time secret) is worth a bigger design change. Not
-   urgent given the actual threat model for a small family/friends deployment.
-3. `claim-receiver` Edge Function still exists but is superseded by the no-login
-   `plant-dashboard` share-claim flow - decide whether to keep it or retire it
-   (open since the 2026-07-07 pass, still undecided).
+**Decided:** coat probes 4 and 5 only. Probe 99 is never coated and remains the permanently
+USB/SWD-recoverable board that every image is bench-proven on. **Build and SWD-install bootloader
+1.0.2** — justified because both probes must be retrieved for coating anyway and probe 5 must be
+re-flashed regardless, so the mass-erase cost the "freeze 1.0.1" recommendation was priced against
+is already sunk.
 
-Superseded by ranking, top of the list as of 2026-08-09 (item 6 below is now DONE -
-see the 2026-08-14 section above):
+**1.0.2 is anti-rollback only.** Erase-after-authenticate was dropped: it needs Start/Init
+reordering and an async-erase wait in the completion handler, which is the state-machine
+restructuring implicated in the completion-gate defect. RESETREAS was dropped from the bootloader
+scope entirely — it was an application bug, see `docs/KNOWN_ISSUES.md`.
 
-1. Check the overnight battery test: has Alocasia's battery held within ~1-2% (fix working) or dropped ~8-12% (QSPI leak somehow still active)?
-2. Recharge/swap Scindapsus's battery - it's been at/near 0% since ~Aug 7 and is blocking clean data from that probe on every front (moisture *and* the battery-fix test).
-3. Bench-check Scindapsus's BQ25100 `~CHG` pin for noise (leading theory for its erratic battery% readings even before the QSPI fix - see the 2026-08-09 section above).
-4. Continue the FDC2212/MSV3 PCB migration open items (`docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`) - now with concrete field evidence (not just theory) that VDD-coupling is a real, currently-happening problem, both from low battery and from active charging.
-5. Consider a firmware-only mitigation in the meantime: discard/flag moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline.
-6. ~~Revisit the receiver's `DEFAULT_STALE_SECONDS`~~ - **done 2026-08-14**, dropped 3900 -> 180.
+**Done 2026-09-06, no hardware required:**
 
-Superseded, top of the list as of 2026-07-25:
+- `readResetReason()` fix, boot banner decodes the cause by name, and a build check that fails on
+  any direct `NRF_POWER->RESETREAS` access. Negative control confirmed it fires.
+- Bootloader 1.0.2 built from `MSV3/bootloader/patches/msv3-1.0.2-anti-rollback.patch`, applied and
+  sentinel-verified by `build_msv3_release.ps1`. `msv3_pending_app_version_get` and the
+  `0x4d535633` magic are confirmed present in the linked binary at both the check site
+  (`dfu_init_prevalidate`) and the commit site (`bootloader_dfu_update_process`).
+- Seven signed test packages under `MSV3/bootloader/generated/1.0.2/`, N=65550: probe 99 gets
+  N−1/N/N+1, probes 4 and 5 get N−1/N. Every package's embedded identity and version verified
+  against its filename, zero mismatches. Package and migration-package names now carry both.
+- The two pre-guard-1 signed packages moved to `MSV3/bootloader/quarantine/` with hashes and a
+  README; `test_ota_preflight.py` repointed so its assertion still runs.
+- `MSV3/scripts/verify_msv3_signing_key.py` — the key restore drill. Confirms a candidate PEM
+  matches the fingerprint the registry pins AND can still produce a verifying signature. Negative
+  control with a different valid P-256 key (also 227 bytes) is correctly refused.
 
-1. Check tonight's overnight results (via the now-fixed History tab, or `scripts/fetch_supabase_history.py`): are oscillator readings solid/stable in real soil (vs. last night's RC-timing sawtooth-to-saturation), and has auto mode's "ready" gate cleared for any sensor yet.
-2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
-3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
-4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
-5. ~~Update `web/plant-dashboard`'s hardcoded art catalog~~ - **done 2026-08-14**, all 7 `color_*` GIFs and catalog keys added, deployed to production.
-6. ~~Fix the receiver's missed-packet-counter wraparound-on-reboot bug~~ - **done 2026-08-14** for `MSV2_BLE_Adv_Receiver.ino`; the main receiver's own `onResult()` was found already correctly guarding this (undocumented until now).
+**Blocked on the single GP/SWD session**, in order: install 1.0.2 on probe 99; instrument settings
+saves and *callback identity*; power-cut matrix; N−1/N/N+1 matrix; the true-hang guard-2 test. Then
+probes 4 and 5: DMM probe 5's cell first, pre-erase readback, hardware qualification, SWD-install
+1.0.2, seed the floor by installing N **over BLE** so the tested transaction writes it, re-qualify
+under final firmware, then the destructive N−1 rejection and battery-only cold boot before GP comes
+down.
 
-Older, still open from the 2026-07-07 pass:
+**Not yet done and deliberately so:** `installed_application_version` for probes 4 and 5 stays `0`
+until N is actually installed and booted. Writing it at build time would make the registry
+knowingly false.
 
-1. Recover the original 8 plant card names/art from the last cloud snapshot (query in the section above) and push them back with `push_display_ui.py` — the device is currently running the generic `ui/display_default.json` placeholder cards.
-2. Work through the Medium/Low findings from the 2026-07-07 review that were explicitly out of scope for the security pass (see that section for the list).
-3. `claim-receiver` Edge Function still exists but is superseded by the no-login `plant-dashboard` share-claim flow — decide whether to keep it or retire it.
+### Blocked, with the reason named
+
+- **Guard 2's watchdog-hang test** needs SWD attached *and recovery proven first*, because a hang
+  before advertising is the unrecoverable state itself and this bootloader has no USB CDC. The
+  "guard 1 does not cover a hard I2C hang" item is not separate work — it is this test's coverage
+  gap, and should be read as one item.
+- **Probe 5's migration** needs the probe physically retrieved, not SWD.
+- **Probe 5's cell identity** (resting 4280-4441 mV, above a single LiPo's ceiling) needs a DMM at
+  the probe. Treat as a safety check at the next visit: either the divider/calibration is wrong or
+  the cell is genuinely overvoltage.
+- **Blade coating validation** needs a repaired specimen and weeks of air -> soil -> watering ->
+  air cycling.
+- **Fault-reason-on-the-wire** can have its protocol, encoding and decoder written now; hardware
+  verification needs the receiver plugged in.
+
+### Dropped, with the reason
+
+- **Dual-bank DFU forensics.** The remaining question is which of three known activation defects
+  fired historically, answerable by one SWD read of the settings page. Dropped as planned work:
+  SDK11 dual-bank is *staging, not rollback* — it protects the old image during download and then
+  destroys it at activation — so it cannot deliver the post-boot revert that motivated it. Take
+  the settings-page read only if SWD is attached for something else.
+- **Auto-calibration redesign deployment** (top of the 2026-08-17 list). Deferred behind the
+  thermal finding: a daily thermal excursion larger than a watering step means any calibration
+  learned now would be fitting temperature. Revisit after D1.
+- **`--prn 4` at weak RSSI.** Not research. Either a runbook line or, better, tooling that selects
+  it automatically below about -70 dBm.
+
+### Converted from "open question" to "known and decided"
+
+- **The charging flag is not trustworthy** (advertisement bit0). Probe 4 never asserts it while its
+  battery visibly climbs; probe 5 flips it 682 times in 1498 readings at its regulation threshold.
+  This is a measured finding, not an investigation. It *is* consumed: the receiver forwards
+  `rawCharging` into the uploaded payload and the local app, so the remaining work is to stop
+  presenting it as "charging" (or to relabel it raw BQ25170 STAT), not to study it further.
+- **`claim-receiver` Edge Function.** Checked 2026-09-05: no code consumer anywhere in the repo —
+  only `cloud/supabase/config.toml`, the setup doc, and this file reference it; the no-login
+  `plant-dashboard` share-claim flow superseded it. Decision: retire. Left deployed for now because
+  removing a live Edge Function is an outward-facing change that should be done deliberately.
+
+<details>
+<summary>Archived pre-2026-09-05 backlog (superseded; kept for provenance)</summary>
+
+> ## Suggested Next Work
+>
+> Top of the list as of 2026-08-17 (the 2026-08-14 list below is superseded by ranking,
+> not by completion):
+>
+> 1. Deploy and verify the 2026-08-17 auto-calibration redesign implementation (see that
+>    section above): push migration `023_msv2_calibration_reset_and_drift.sql`, redeploy
+>    `receiver-snapshot` and `plant-dashboard` edge functions, redeploy the Netlify site
+>    (now on `app.v13.js`), flash `Treebeard_ESP32_Display_Runtime` to the physical receiver, and
+>    flash/bench-verify `MSV2_Moisture_AFE_Test`'s smoothed-value fix. Then physically test:
+>    the reset-calibration button in the local app's Setup tab, the raw-to-percent moisture
+>    text switch once a sensor calibrates, and (once enough history exists to actually drift)
+>    the dry-bound trend notice. None of this has been deployed or hardware-tested yet -
+>    code-complete and compiling only.
+>
+> Superseded by ranking, top of the list as of 2026-08-14 (the 2026-08-09 list below is
+> superseded by ranking, not by completion - its battery/hardware items are physical-world tasks
+> that session's software review pass didn't touch and are presumably still open):
+>
+> 1. Flash the probe/bench-sketch fixes from the 2026-08-13/14 review to their
+>    physical boards - explicitly deferred this session ("no lets do that later").
+>    Most important: `MSV2_Moisture_BLE_Sleep_Alocasia.ino`'s charge-settle poll-loop
+>    fix, a real quantization-risk bug on live hardware. Lower priority:
+>    `MSV2_BLE_Adv_Receiver.ino`, `Treebeard_ESP32_DeviceIdentity_Dump.ino`,
+>    `MSV2_Moisture_Probe_Test.ino` (bench tools, not continuously deployed).
+> 2. Decide whether the registration-race mitigation in migration 021 (claim-code-
+>    required first registration + a global new-receiver rate limit) is sufficient,
+>    or whether the residual risk (a determined, physically-proximate attacker can
+>    still win the race - see that migration's own SQL comments for why a complete
+>    fix needs a manufacturing-time secret) is worth a bigger design change. Not
+>    urgent given the actual threat model for a small family/friends deployment.
+> 3. `claim-receiver` Edge Function still exists but is superseded by the no-login
+>    `plant-dashboard` share-claim flow - decide whether to keep it or retire it
+>    (open since the 2026-07-07 pass, still undecided).
+>
+> Superseded by ranking, top of the list as of 2026-08-09 (item 6 below is now DONE -
+> see the 2026-08-14 section above):
+>
+> 1. Check the overnight battery test: has Alocasia's battery held within ~1-2% (fix working) or dropped ~8-12% (QSPI leak somehow still active)?
+> 2. Recharge/swap Scindapsus's battery - it's been at/near 0% since ~Aug 7 and is blocking clean data from that probe on every front (moisture *and* the battery-fix test).
+> 3. Bench-check Scindapsus's BQ25100 `~CHG` pin for noise (leading theory for its erratic battery% readings even before the QSPI fix - see the 2026-08-09 section above).
+> 4. Continue the FDC2212/MSV3 PCB migration open items (`docs/MOISTURE_SENSOR_FDC2212_FRONTEND.md`) - now with concrete field evidence (not just theory) that VDD-coupling is a real, currently-happening problem, both from low battery and from active charging.
+> 5. Consider a firmware-only mitigation in the meantime: discard/flag moisture samples taken while charging or below a battery floor, independent of the FDC2212 hardware timeline.
+> 6. ~~Revisit the receiver's `DEFAULT_STALE_SECONDS`~~ - **done 2026-08-14**, dropped 3900 -> 180.
+>
+> Superseded, top of the list as of 2026-07-25:
+>
+> 1. Check tonight's overnight results (via the now-fixed History tab, or `scripts/fetch_supabase_history.py`): are oscillator readings solid/stable in real soil (vs. last night's RC-timing sawtooth-to-saturation), and has auto mode's "ready" gate cleared for any sensor yet.
+> 2. Confirm the 100kΩ pulldown is actually populated on the deployed field probe(s), not just the bench rig — the firmware can't compensate if it isn't there.
+> 3. Tomorrow's solar-panel charging test in direct sunlight — panel only appeared to charge in direct sun, not even slight shade; the battery EMA smoothing landed specifically so this test's charging curve reads cleanly.
+> 4. Once real soil data exists, revisit the provisional dry/wet defaults (currently 120/175, bench-touch-derived) - or just lean on auto mode once enough per-sensor history accumulates, rather than hand-tuning again.
+> 5. ~~Update `web/plant-dashboard`'s hardcoded art catalog~~ - **done 2026-08-14**, all 7 `color_*` GIFs and catalog keys added, deployed to production.
+> 6. ~~Fix the receiver's missed-packet-counter wraparound-on-reboot bug~~ - **done 2026-08-14** for `MSV2_BLE_Adv_Receiver.ino`; the main receiver's own `onResult()` was found already correctly guarding this (undocumented until now).
+>
+> Older, still open from the 2026-07-07 pass:
+>
+> 1. Recover the original 8 plant card names/art from the last cloud snapshot (query in the section above) and push them back with `push_display_ui.py` — the device is currently running the generic `ui/display_default.json` placeholder cards.
+> 2. Work through the Medium/Low findings from the 2026-07-07 review that were explicitly out of scope for the security pass (see that section for the list).
+> 3. `claim-receiver` Edge Function still exists but is superseded by the no-login `plant-dashboard` share-claim flow — decide whether to keep it or retire it.
+>
+
+</details>
 
 ## Quick Test Commands
 
@@ -1794,11 +2493,11 @@ with.
 dry ~50-60pF (matches original ~64-96pF bare-sensor RC estimate), fully wet ~500pF, moist soil
 ~400-500pF, "dried after wet" plateaus ~360pF (residual moisture, not a fault). Both
 `MSV3_PROBE_BOM.md` and `MOISTURE_SENSOR_FDC2212_FRONTEND.md` open items 1 and 7 updated with this
-and the `R17` finding. **Padding cap (`C17`) must stay** — without it, bare dry capacitance
-(~50-60pF) sits 5-6x below TI's 300pF floor for this LC-tank architecture, outside the
-characterized operating range. Good news buried in the miss: the full measured range still fits
-comfortably inside FDC2214's 300pF-2nF window with padding, so this is more real signal for free,
-not a rework trigger.
+and the `R17` finding. **Superseded 2026-09-14:** the earlier conclusion that padding cap C17 had to
+stay relied on treating 300 pF as a hard device floor. Probe 8 subsequently proved the connected
+approximately 88 pF capless tank stable at IDRIVE 16 and measured about four times the prior raw
+response. C17 is now DNP; the resulting disconnected bare tank is over frequency and production
+must never select it. See `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
 
 **Four-board mux/tank triage, same day** (full detail, per-board data, and pass/fail methodology:
 `MSV3_FOUR_BOARD_MUX_TRIAGE_2026-08-31.md`): built to answer "does the mux still switch, and is
@@ -1840,30 +2539,194 @@ reseating, retested clean (11.37% step, matching the other three boards).
   to a simpler/cheaper mux now that EC-check no longer demands the full 4-destination-per-electrode
   shape.
 
+## 2026-09-03: MSV3 24-hour water immersion + air recovery — clean, and the bare-tank reference
+## channel is validated against a forced step
 
-## 2026-09-14: BQ25504 VBAT_OV lowered to a ~3.90V storage ceiling (hardware change, probes reworked)
+Full detail, numbers, and caveats: `MSV3/docs/MSV3_WATER_IMMERSION_RECOVERY_2026-09-03.md`.
 
-Probes were reading **4.27V** on the battery node — above the 4.20V LiPo spec — because the
-as-built BQ25504 OV divider programmed VBAT_OV to ≈4.26V. Swapped `R11` 5.62MΩ→4.42MΩ and `R14`
-4.42MΩ→4.12MΩ, moving the harvester charge ceiling to **≈3.90V** (3.887V at VBIAS 1.25V typ;
-≈3.897V using the 1.2532V backed out of the board's own 4.27V reading). Divider sum 10.04MΩ→8.54MΩ,
-still inside TI's ≤10MΩ rule. Both values were already in stock and already on the board elsewhere
-(`R9`=4.42MΩ, `R15`=4.12MΩ) — no new part number.
+One MSV3 (sensor ID 4, `MSV3-MOISTURE-004` -- corrected 2026-09-03 from an initial misattribution to
+sensor 5; confirmed against `msv2_sensor_history`, where only sensor 4 shows the immersion step, and
+sensor 5 was never immersed. Production `MSV3_Moisture_BLE_Sleep` firmware, cloud
+history at the normal 1/minute cadence) sat fully immersed in a cup of tap water for ~24 hours,
+then was lifted out into open air.
 
-Full record, including the stock enumeration behind the choice and why >10MΩ pairs and a stacked
-10MΩ‖10MΩ bodge for 4.00V were rejected:
-`MSV3/docs/MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md`. Threshold tables updated in
-`MSV3/hardware/MSV3_Probe_PCB/reference/COMPONENT_INDEX.md` and
-`MSV3/docs/MSV3_BENCH_TEST_PLAN_2026-08-21.md`.
+- **Signal magnitude:** normalized capacitance-above-bare went ~23-24% (air) -> ~118% (immersed)
+  -> 23.8% (air again). That is a **4.96x change in electrode-contributed capacitance**, ~94
+  percentage points of swing. Raw connected `DATA_CH0` ~20.35M dry, ~15.33M wet. Latest row checks
+  exactly against `msv3ReferenceExcessPercent()`: `(22632650/20341560)^2 - 1 = 23.795%`.
+- **No recovery tail.** The removal edge is as vertical as the entry edge — baseline within about
+  one sample. Expected for a water cup (no porous medium), but the *absence* of a slow multi-hour
+  decay is the real content: water wicked into the laminate or under soldermask would dry out over
+  hours as an exponential tail on the connected channel, and after 24 hours of immersion there was
+  none. Addresses the ingress worry in `MSV3_SOIL_INGRESS_AND_COATING_REMEDIATION_2026-08-30.md`
+  for the clean-water case only — it does **not** replace that document's scrap-FR-4 coupon soak,
+  which is about long-term wet *ionic soil*.
+- **No conflict with the ~360 pF dried-after-wet plateau** in the 2026-08-31 entry above. That was
+  measured in soil, which holds residual water against the blade; this test has no medium. Full
+  baseline return in water is not evidence the soil plateau was wrong.
+- **Bare-tank reference validated.** It held 22.62-22.64M across the whole three-day window with no
+  step at either edge, while the connected channel moved 4.6M counts — direct evidence the swing
+  was in the electrode path, not a board-wide parasitic/supply/thermal shift. This channel had only
+  ever been checked against ambient drift before; this is the first time it has been held still
+  against a large deliberately-forced step. The normalized trace also stays flat across a ~6 degC
+  diurnal swing in both wet and dry states, which is the thermal cancellation working as designed.
+- **Residual offset is below resolution** — post-soak 23.8% vs a pre-soak baseline reading ~23-24%
+  off the chart. Any residual is under ~1 point against a ~94-point signal.
+- **The jagged board-temperature sawtooth on the final day is room AC cycling** (maintainer
+  confirmed), not a fault. Bare-tank goes jagged in step with it, which is the expected signature,
+  and the band started before the probe came out of the water. Unrelated to the Alocasia GP AFE
+  rig's mains-coupling bands — different node, different mechanism.
+- **Open/unrecorded:** the coating state of this specific board at test time was not written down,
+  which limits how far the ingress result generalizes. Still open elsewhere: the dry-vs-pre-soaked
+  matched-blade A/B (`MSV3_MULTI_DAY_FDC_DRIFT_FOLLOWUP_2026-08-28.md`), ionic/salty media, and the
+  settle-vs-polarization timing window (`MOISTURE_SENSOR_FDC2212_FRONTEND.md` open item 7).
 
-**Unchanged:** VBAT_UV (`R12`/`R15`, ≈3.04V), MPP/VOC (`R9`/`R10`/`R13`, ≈78%), and the BQ25170 USB
-path (`R8`=27kΩ → 4.20V). USB charging still reaches 4.20V, which is in-spec; it was the harvester
-that was over-spec.
+## 2026-09-03/04 (overnight): MSV3 BLE OTA works end to end — jump, transfer, boot, on a deployed
+## probe on battery. Full detail: `MSV3/docs/MSV3_OTA_BOOTLOADER_HANDOFF_2026-09-03.md`.
 
-**Two open follow-ups:**
-- **Probe 7 not swapped** — see the flagged item at the top of "Suggested Next Work".
-- **`BATTERY_CURVE` not rescaled.** It maps 4200 mV → 100%, so on a reworked probe a *full* pack now
-  reports **63%** and floats ~58–63%. Harmless (above the dashboard's <20% low-battery flag) but
-  misleading. Needs rescaling in both deliberately byte-identical copies:
-  `DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime/Treebeard_ESP32_Display_Runtime.ino` and
-  `MobileAppPage.h`.
+**The headline: a conformal-coated probe in soil can now be updated with no cable and no SWD.**
+Proven on probe 4 (sensor 4) sitting in its pot on battery: jump -> bootloader -> signed transfer
+-> application boot, 34 s, and **13 mV of battery** for a complete firmware update (3983 -> 3970 mV).
+
+### Two root causes, both found by device-side instrumentation after three wrong theories
+
+- **Firmware.** A write authorize reply carrying `BLE_GATT_STATUS_SUCCESS` must ALSO set
+  `update = 1` and hand `offset`/`len`/`p_data` back to the SoftDevice. Replying SUCCESS with
+  `update = 0` is rejected with `NRF_ERROR_INVALID_PARAM`, and a rejected reply is never
+  transmitted — so the client's write hung ~28 s until the application's own idle-peer disconnect,
+  and the board never reset. Error statuses need none of this, which is why every rejection path
+  worked and only the success path — the one that mattered — was silently dead. The probe's own
+  log said it in one line: `checkpoint=8 op=1 gattStatus=0x0 replyRc=7`.
+- **Client.** After a buttonless jump the bootloader keeps the APPLICATION's address (the
+  peer-data handoff carries it across the reset). `address + 1` applies only when the bootloader
+  starts with no valid application. The client was scanning an address nothing was on and
+  reporting "the jump did not take effect" for a jump that had worked. Both behaviours were then
+  observed on the same probe within an hour and both are handled.
+
+Also corrected and worth keeping: the reset no longer happens inside the BLE event callback
+(`NRF_SUCCESS` means the SoftDevice accepted the response, not that it was sent), every path out of
+the authorize handler replies exactly once, and the power gate is evaluated before the reply rather
+than after — previously it could never reject anything visibly.
+
+**Method note.** Prepared writes, Bleak version and the Windows GATT cache were each plausible,
+each cost a full test cycle, and each was wrong. One instrumented build answered it. On this board
+a flash is ~30 s: instrument early instead of reasoning further from source.
+
+### Speed measured to its ceiling
+
+`--profile` partitions a transfer's wall clock. Writes are negligible (~0.44 s); packet-receipt
+waits are essentially the whole cost. Per-packet cost is flat at 26-31 ms regardless of PRN, so the
+constraint is packet delivery, not receipt round-trips — PRN 16 is the measured optimum and PRN 32
+is worse. **Practical transfer-phase ceiling ~8-10 kB/s (~16 s for a 131 KB image).** Beating it
+needs shorter connection intervals compiled into the bootloader, which needs SWD; not worth it,
+since the transfer is already the smaller half of the wall clock. Throughput tracks signal, not
+settings: -55 dBm 28 s, -58 dBm 34 s, -65 dBm 32 s, -74 dBm 47 s.
+
+### Probe 4 migrated off the stock bootloader without SWD
+
+USB carried the bootloader, BLE carried the application. The serial DFU step "fails" at the
+application stage having already written SD+BL — expected, because the new bootloader's
+`DEFAULT_TO_OTA_DFU` removes USB CDC and the port disappears. That is the documented migration
+path for the rest of the fleet.
+
+### Tooling
+
+All three flashers moved to the repository root `scripts/` — `ble_ota_update.py` (primary),
+`ble_dfu_recover.py` (recovery), `swd_flash_hex.py` (SWD). MSV3-only release machinery stays under
+`MSV3/scripts/`. The move also repaired eight doc references that had pointed at
+`scripts/swd_flash_hex.py` since before the 2026-08-29 reorg filed it under `MSV3/`.
+`swd_flash_hex.py` gained `--wait-contact` (hold pogo pins without forcing a mass erase) and had
+its stale default hex path fixed.
+
+`ReceiptGuard` in `ble_ota_update.py` closes upstream dfu_lib's "PRN Timeout, continuing anyway",
+which had previously produced a corrupted image that failed Receive Firmware Image with status 6.
+It validates each receipt's reported byte count against what was actually sent, tolerates the
+clear()-after-receipt race, and is armed only between Receive Firmware Image and Validate so
+connection-phase cancellations cannot poison a retry — a false positive that cost one aborted
+attempt on the live probe before it was narrowed. `scripts/test_receipt_guard.py` covers the
+dropped / delayed / early / stale / duplicate / wrong-offset / cancellation cases; 12 tests pass.
+
+### Data integrity
+
+79 polluted rows removed from `msv2_sensor_history` for sensor 5 — the bench board briefly ran as
+sensor 5 and interleaved into the real probe's stream. Identified by value (20.42M vs the real
+probe's 19.42M, an 866k-count gap) inside a 92-minute window, and confirmed to be the only sensor-5
+rows ever above 20M. Pollution stopped by re-IDing the bench board to sensor 99, which is above the
+receiver's `MAX_SENSOR_ID = 16` and therefore dropped before it reaches the cloud.
+
+### Open
+
+- ~~**Mutated-image negative tests not done.**~~ **Done 2026-09-05** — see
+  `MSV3/docs/MSV3_TAMPERED_IMAGE_REJECTION_2026-09-05.md`. Seven mutations were offered to probe
+  99; each one's rejection stage and status byte was predicted from the bootloader source first,
+  and all seven predictions held. Payload and length mutations are refused at Validate with status
+  5 (`CRC_ERROR`), signature mutations at Init Packet with status 6 (`OPER_FAILED`). The corrupted
+  build id was never observed running. The claim is now scoped rather than absolute: replay of an
+  older validly signed release is **untested and expected to be accepted** (the version-check hook
+  in `dfu_init.c` is an unimplemented upstream template), and a validly signed image, key
+  compromise and parser defects remain outside it.
+  - The load-bearing operational finding: **`dfu_start_pkt_handle()` erases the application before
+    the init packet is even received**, so no device-side rejection is free. Even a signature
+    failure, caught before a single image byte is sent, costs the running firmware. That is why the
+    host-side preflight is not redundant with the device's check — on a coated probe it is the only
+    thing protecting availability.
+  - Three harness bugs were found and fixed en route, all of the shape *"concluded rejected from
+    the absence of success"*: a failed BLE scan, a successful install, and a silent (timed-out)
+    device were each scored as a refusal. The second is the dangerous one — a device that
+    **accepted** a tampered image would have been reported as refusing it.
+- ~~The bench board runs `MSV3-MOISTURE-099` built from a local edit.~~ **Resolved 2026-09-05.**
+  Identity, serial logging and the build tag are build parameters
+  (`arduino_msv3_probe.ps1 -SensorId <n> [-SerialLogs] [-BuildTag <tag>]`), and the production
+  sketch `#error`s if `MSV3_SENSOR_ID` is missing. There is no longer a line to edit or to remember
+  to put back, and `(commit, sensor id, build tag)` reproduces an image exactly.
+- Probes 1, 2, 3 and 5 are still on the stock bootloader with pre-OTA firmware. Each needs the same
+  one-time USB migration before it can be updated over BLE.
+
+## 2026-09-05: FDC2214 ERROR_CONFIG was gating the watchdog flag, and the status was being thrown
+## away. Full record: `MSV3/docs/MSV3_FDC_ERROR_CONFIG_2026-09-05.md`.
+
+Closes the `ERROR_CONFIG` item in `docs/KNOWN_ISSUES.md`, and corrects it in two places.
+
+- **`fdcInit()` now writes `ERROR_CONFIG = 0x0020` (`WD_ERR2INT` only)** in both sketches, before
+  the `CONFIG` write that starts conversions. The register resets to zero on every hardware
+  shutdown, which this firmware performs on every wake, so it has to be rewritten every time —
+  verified across six `probeSleep()`/`probeWake()` cycles.
+- **The gate is measured, not inferred.** Same induced fault throughout, register toggled
+  underneath it: after any previously latched status had been cleared, `ERR_WD` was reported on 6 of
+  6 settled reads with the bit set, **was not newly reported with it clear (0 of 6)**, and returned
+  on 6 of 6 when re-set. Healthy tank clean either way. Reproduced on two independent runs with
+  identical raw numbers. That is what turns "switched off, not clear" from a datasheet reading into
+  a result.
+- **Correction to the old wording:** only `ERR_WD` was ever gated. `ERROR_CONFIG` has no
+  `AH_WARN2INT`/`AL_WARN2INT` bit, so `STATUS.ERR_AHW`/`ERR_ALW` are not gated by it — a statement
+  about configuration semantics, not a demonstration, since neither amplitude warning was induced
+  on hardware. The `*2OUT` bits report into `DATA_CHx`, a different destination.
+- **Correction to my own first framing:** `ERR_WD` was never the detector for a permanently dead
+  sensor. A watchdog timeout produces no unread conversion, so `CH0_UNREADCONV` never sets and the
+  read fails on the readiness timeout — which always worked, and which `guard 1` already turns into
+  advertise-but-mark-invalid. Calling the `errWd` branch "dead code guarding the failure it exists
+  to catch" was too strong.
+- **The real defect, now fixed.** `fdcWaitForCh0UnreadConversion()` polled `STATUS` and discarded
+  it on timeout. `STATUS` is read-to-clear, so the polling loop consumes the flags it looks past,
+  and on a dead tank the loop always times out — one poll returned `0x800` (`ERR_WD`) and the code
+  threw it away. It now **OR-accumulates** every flag seen and returns it even on a timeout (OR,
+  not last-value, or an earlier poll's flag is still lost).
+- **That is a behaviour change, not just a diagnostic one, and the docs say so.** On the timeout
+  path nothing moves. But a successful read now returns the union of what was seen while polling,
+  so a watchdog event during the poll reaches the `errWd` branch and that one reading is discarded
+  — measured as `STATUS=0x808` with a valid count on the first conversion after a fault cleared.
+  Conservative, costs at most one sample per fault (read-to-clear), but it changes what gets
+  stored. That same sample is the only evidence in the run that the `errWd` branch is reachable at
+  all, since no `IDRIVE` code flags a completed conversion directly.
+- **A negative result worth keeping:** an `IDRIVE` sweep of codes 0–12 found no marginal setting on
+  this board. Code 0 stops conversions (1 of 6 complete); codes 1–12 complete 6 of 6 with no flag.
+  It is a cliff, not a ramp, so "conversion completes but is flagged" cannot be induced directly —
+  which is why the accumulation fix is what made the gating observable at all.
+- **Staged on probe 99, not probe 4.** No false `ERR_WD` in 58 healthy bench measurements (40 soak
+  + 18 post-wake, six cold wakes). That is a bench sample on one board, not a statement about
+  temperature, supply or long-run behaviour — and a false positive silently takes a *healthy* probe
+  off the air, which is worse than the fault it detects. Probe 4 after a longer probe-99 run.
+- Open follow-up, deliberately not folded in: the accumulated status is available where the probe
+  decides to advertise a fault, but the advertisement still says only "invalid". A reason code
+  would let the receiver separate a dead oscillator from a dead bus, and that changes the
+  probe/receiver contract.

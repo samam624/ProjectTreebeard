@@ -5,6 +5,14 @@
 History trace; production moisture, alerts, smoothing, auto-calibration, probe firmware packets, and
 stored raw fields unchanged.
 
+> **2026-09-07 terminology and validation update:** Probe 4's current connected history is valid
+> real-pot data: a genuine drying signal with thermal loading, not merely a temperature trace. The
+> preferred user-facing name for this observable is **reference-normalized moisture signal
+> (experimental; higher = wetter)**. A causal second-stage model trained on 48 hours reduced the
+> held-out final day's daily component by 74% after this reference normalization while preserving
+> the multi-day dry-down. See
+> [the real-pot compensation result](MSV3_REAL_POT_THERMAL_COMPENSATION_2026-09-07.md).
+
 > **Later same-day physical context:** Water pockets were found underneath the blade's nail-polish
 > coating. Removing the polish caused the earlier long drift to reverse during drying and then settle
 > to a flat air baseline. The reference analysis below remains valid for separating common tank
@@ -17,7 +25,7 @@ For every history row containing a valid moisture-connected count `Dm` and its p
 bare-tank count `Db`, the receiver-served browser computes:
 
 ```text
-reference excess (%) = 100 * ((Db / Dm)^2 - 1)
+reference-normalized moisture signal (%) = 100 * ((Db / Dm)^2 - 1)
 ```
 
 The FDC2214 reports `D = 2^28 * fsensor/fref`, while a resonant tank has

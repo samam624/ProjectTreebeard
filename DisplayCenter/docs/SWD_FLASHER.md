@@ -186,13 +186,29 @@ the region it's about to write, not the rest of the chip.
 #### One-shot install for a batch of fresh boards
 
 For flashing the same bootloader onto several boards back to back (touch the
-pads, run one command, move to the next board), `--bootloader` folds the
-whole sequence above into a single invocation — no separate `erase CONFIRM`,
-no typing the hex path each time:
+pads, run one command, move to the next board), this mode folds the whole
+sequence above into a single invocation — no separate `erase CONFIRM`, no
+typing the hex path each time.
+
+**Pick the image explicitly.** As of 2026-09-06 bare `--bootloader` is an
+error, because there are now two very different right answers and the default
+silently chose the wrong one for a fleet probe:
 
 ```powershell
-python scripts/swd_flash_hex.py --port COM3 --bootloader
+# MSV3 fleet probe -- signed, device type 0x3356, anti-rollback from 1.0.2.
+# Resolves the hex from MSV3/bootloader/generated/<version>/ and VERIFIES its
+# sha256 against that release's manifest before writing anything.
+python scripts/swd_flash_hex.py --port COM3 --msv3 1.0.2
+
+# Generic bring-up of a fresh board -- stock Adafruit image, UNSIGNED, accepts
+# generic device-type 0x0052 packages. --stock-bootloader is the confirmation.
+python scripts/swd_flash_hex.py --port COM3 --bootloader --stock-bootloader
 ```
+
+Running the stock image over an MSV3 probe replaces a signed bootloader, and
+its anti-rollback floor, with one that has neither — recoverable only over SWD,
+which is exactly what conformal coating removes. That is why the choice is no
+longer allowed to have a default.
 
 This drives the adapter's own `probe` command and requires **3 seconds of
 continuous, consistent-DPIDR contact** before doing anything else (`--contact-

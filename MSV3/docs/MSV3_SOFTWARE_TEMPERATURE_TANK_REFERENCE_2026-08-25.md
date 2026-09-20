@@ -1,5 +1,9 @@
 # MSV3 software-only board temperature + bare-tank reference
 
+> **Legacy scale-2 design (superseded 2026-09-14).** Capless production firmware retains the
+> 23-byte packet for compatibility but zeros/invalidates the bare field and never selects mux 2/3.
+> See [MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md](MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md).
+
 **Date:** 2026-08-25
 **Status:** Implemented and originally compile-verified; deployed end to end on 2026-08-30.
 This is the first real implementation to come out of a live two-agent (Claude +

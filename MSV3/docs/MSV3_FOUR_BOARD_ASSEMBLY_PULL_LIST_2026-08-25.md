@@ -1,5 +1,9 @@
 # MSV3 Four-Board Assembly Pull List
 
+> **Historical assembly record.** These four boards were built with C17 populated. C17 became DNP
+> for all future production/rework on 2026-09-14; do not reuse this list as a current population
+> instruction. See `MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md`.
+
 Prepared 2026-08-25 for four copies of the current MSV3 probe PCB.
 
 This is the exact minimum population quantity, with no allowance for dropped or

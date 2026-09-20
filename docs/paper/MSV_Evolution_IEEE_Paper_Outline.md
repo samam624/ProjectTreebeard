@@ -116,13 +116,15 @@ MSV3: comb electrodes <-> TMUX1109 <-> FDC2214 + LC tank (6.8uH / 270pF)
   so every build must select the internal LFRC clock before FreeRTOS/SoftDevice start — a hard,
   build-enforced constraint (`scripts/arduino_msv3_probe.ps1`), not a firmware nicety.
 - Sensing moves off MCU-timed GPIO polling entirely: an FDC2214 capacitance-to-digital converter
-  reads a dedicated LC tank (Coilcraft 6.8 µH inductor + 270 pF C0G/NP0 padding capacitor) at 28-bit
-  resolution, eliminating the RTC-tick quantization and supply-coupling sensitivity that MSV2's
-  software timing approach had.
-- A TMUX1109 analog mux switches the sensing electrodes through **four phases**: phase 0/1
-  alternate which electrode drives vs. senses (the same anti-polarization idea MSV2 pioneered in
-  firmware, now done cleanly in hardware); phase 2/3 disconnect the electrodes entirely for an
-  EC-check / bare-tank reference reading.
+  reads a capless LC tank (Coilcraft 6.8 µH inductor plus the electrode/interface capacitance) at
+  28-bit resolution, eliminating the RTC-tick quantization and supply-coupling sensitivity that
+  MSV2's software timing approach had. The original 270 pF C17 padding capacitor was removed after
+  Probe 8 measured about four times the raw response without it.
+- A TMUX1109 analog mux alternates the sensing electrodes through **two connected phases** (the
+  anti-polarization idea MSV2 pioneered, now done cleanly in hardware). Although the PCB exposes
+  codes 2/3 that disconnect the electrodes, capless production firmware never selects them: the
+  small disconnected tank is above the FDC2214 frequency limit and no bare-reference measurement
+  is part of the production system.
 - Power: BQ25170 handles USB charging; a BQ25504 boost-converter energy harvester plus a
   self-latching VSTOR↔VBAT topology lets a small solar cell recharge the battery; TPS7A0233
   regulates the digital sensing chain (E73, TMUX1109, FDC2214) off a clean 3.3 V rail rather than

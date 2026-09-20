@@ -64,6 +64,16 @@
 // step ~1 moisture point when they take this firmware. Re-baseline rather than treating it as a
 // drop-in. See MSV3_BENCH_TEST_PLAN_2026-08-21.md Test 4 for the full sweep and derivation.
 //
+// 2026-09-14 CAPLESS POLICY: C17 must be removed from every MSV3 probe running this image.
+// Probe 8 measured a
+// 39.4M -> 27M two-hand response without C17, about four times the former raw-count span.
+// The capacitor-free bare tank is only about 25-30pF: a live test returned the exact 28-bit
+// over-range sentinel plus ERR_WD, consistent with its calculated 11-12MHz resonance exceeding
+// the FDC2214's 10MHz ceiling. Production therefore NEVER selects mux code 2/3 or attempts a
+// bare-tank conversion. The packet stays 23 bytes for compatibility, but its bare field is zero,
+// bit3 is clear, and bit6 explicitly identifies the capless scale. IDRIVE returns to code 16;
+// Probe 8 was stable at that setting in both electrode orientations, dry and under two-hand load.
+//
 // 2026-08-30, later same day: removed MUX_SWITCH_SETTLE_MS entirely (was 300ms, added just
 // above on 2026-08-29). Pulled the real TMUX1109 datasheet (SCDS406A) rather than continuing to
 // guess: worst case across -40..125C at VS=3V, tTRAN=19ns, tON(EN)=20ns, tOFF(EN)=9ns -- the
@@ -95,6 +105,10 @@
 
 #if !defined(USE_LFRC) || defined(USE_LFXO)
 #error "MSV3 requires USE_LFRC and no USE_LFXO. Build with scripts/arduino_msv3_probe.ps1; see docs/KNOWN_ISSUES.md."
+#endif
+
+#if !defined(MSV3_BOOT_GUARD_RETAINED_LINKER) || MSV3_BOOT_GUARD_RETAINED_LINKER != 1
+#error "MSV3 requires the tracked boot-guard linker reservation. Build with MSV3/scripts/arduino_msv3_probe.ps1."
 #endif
 
 // ============================================================ Pin map ====
@@ -134,7 +148,17 @@
 #define PIN_CHG_PG   41  // P1.09 -- LOW=input power good
 
 // ======================================================= Configuration ====
-const char DEVICE_NAME[] = "MSV3-MOISTURE-005";
+// 2026-09-03: keep this at the fleet identity. A release is built straight from this source, so
+// leaving a bench identity here makes a version number mean two different binaries. The bench
+// board currently runs 099, built by editing this line locally and NOT committed -- see
+// MSV3_OTA_BOOTLOADER_HANDOFF_2026-09-03.md.
+//
+// 2026-09-04: DEVICE_NAME is derived from SENSOR_ID (see makeDeviceName()) rather than being a
+// second hand-edited constant. A half-finished re-identification used to be able to ship a probe
+// advertising one sensor ID under another probe's name -- silently mixing two plants' data in the
+// receiver, with no build error and no way to notice over the radio. Unrepresentable now.
+// 2026-09-05: SENSOR_ID itself is no longer editable here either. It is a required build
+// parameter; see its definition below.
 const uint16_t BLE_COMPANY_ID = 0xFFFF;
 const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
     // Treebeard_ESP32_Display_Runtime.ino's receiver only looks past this once it
@@ -145,13 +169,109 @@ const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};  // real production magic --
 // to service the same day, health-checked via the bring-up sketch's muxsweep/divnode
 // commands first (real ~20% mux step present, divnode reads LOW at rest - neither of the
 // two hardware fault signatures MSV3_FOUR_BOARD_SWD_BRINGUP_2026-08-28.md documents).
-// This constant and DEVICE_NAME above are edited in place per-board rather than kept as
-// separate per-board sketch files (unlike MSV2's per-plant .ino convention) - deliberate
-// simplicity trade-off. IMPORTANT: this means reflashing the ORIGINAL id=4 field unit
-// (e.g. for a firmware update) requires manually setting this back to 4 and DEVICE_NAME
-// back to "...-004" first - there is currently no per-board source file to prevent
-// accidentally flashing the wrong id onto the wrong physical probe.
-const uint8_t SENSOR_ID = 5;
+// 2026-09-05: this is no longer a constant edited in place. It is a REQUIRED build parameter,
+// supplied as -DMSV3_SENSOR_ID=<n> by MSV3/scripts/arduino_msv3_probe.ps1 -SensorId <n>, and the
+// build FAILS if it is missing.
+//
+// Why it changed. As an in-place literal it was a trap with three separate bites, all of which
+// were taken:
+//   * committed source sat at id 5 -- a probe that cannot even accept an OTA -- so every build
+//     for the deployed id-4 probe began with an uncommitted edit;
+//   * that edit had to be reverted afterwards, and "never leave a bench identity in committed
+//     source" was a rule enforced by memory;
+//   * worst, it made a DEPLOYED IMAGE UNREPRODUCIBLE. Probe 4's running firmware was built from
+//     a working tree that no commit describes, and its package is gone. You could not rebuild
+//     what is flying from anything in this repository.
+// As a build parameter, (commit, sensor id) reproduces an image exactly, and forgetting it is a
+// compile error rather than a wrong probe.
+//
+// What stops the wrong image reaching the wrong probe is not care alone. MSV3/fleet.json binds
+// each sensor ID to its BLE addresses, and scripts/ble_ota_update.py refuses to jump a board
+// whose advertised identity disagrees with the identity compiled into the package.
+#ifndef MSV3_SENSOR_ID
+#error "MSV3_SENSOR_ID is required. Build through MSV3/scripts/arduino_msv3_probe.ps1 -SensorId <n> (99 = bench board). Do not hardcode it -- a deployed image must be reproducible from (commit, sensor id)."
+#endif
+static_assert(MSV3_SENSOR_ID >= 0 && MSV3_SENSOR_ID <= 255,
+              "MSV3_SENSOR_ID must fit the single advertisement byte at mfg[6]");
+const uint8_t SENSOR_ID = MSV3_SENSOR_ID;
+
+// A build identity, so you can tell WHICH image a board is running.
+//
+// Sensor ID and advertised name identify the board, not the firmware on it: two different builds
+// for probe 99 are indistinguishable over the air and over serial. That is fine day to day and
+// useless the moment you interrupt an update and need to know whether the old or the new image
+// came back. 2026-09-04's interrupted-transfer campaign is exactly that situation.
+//
+// The bootloader is no help here: dfu_init.c performs NO application-version check at all (its
+// version block is an unimplemented upstream template), so the DFU package's application_version
+// is never stored on the device and cannot be read back. This string can, in two ways:
+//   * printed in the boot banner over USB CDC, whenever the application is valid;
+//   * left as a literal in the image, so scripts/msv3_fleet.py reads it straight out of a package
+//     and a test can assert that what booted is what it sent.
+// Keep it a plain literal for that second reason -- do not build it at runtime.
+// Overridable as -DMSV3_BUILD_TAG=<tag> (arduino_msv3_probe.ps1 -BuildTag), so a bench image can
+// be told apart from the fleet image it was built beside without editing this file.
+//
+// A TOKEN, stringified here, rather than a quoted string passed on the command line: getting a
+// literal `"` through PowerShell, arduino-cli's --build-property and then the compiler intact is
+// fragile and fails quietly, and a build id that silently reverted to the default would defeat the
+// one thing it exists for. Stringifying keeps the value alphanumeric all the way down, and the
+// result is still a compile-time literal in the image -- which is the property msv3_fleet.py
+// depends on to read the build id straight out of a package.
+#define MSV3_STRINGIFY_(x) #x
+#define MSV3_STRINGIFY(x) MSV3_STRINGIFY_(x)
+#ifdef MSV3_BUILD_TAG
+#define MSV3_BUILD_ID "MSV3-BUILD:" MSV3_STRINGIFY(MSV3_BUILD_TAG)
+#else
+#define MSV3_BUILD_ID "MSV3-BUILD:2026-09-05-guard1"
+#endif
+const char FIRMWARE_BUILD_ID[] = MSV3_BUILD_ID;
+
+// KEEPING THE STRING IN THE IMAGE, which is not automatic and was got wrong once.
+//
+// The first version of this only referenced FIRMWARE_BUILD_ID from the boot banner. That banner
+// lives inside `if (ENABLE_SERIAL_LOGS)`, and ENABLE_SERIAL_LOGS is false in production -- so the
+// reference was dead, the Arduino core builds with -fdata-sections -Wl,--gc-sections, and the
+// linker discarded the string. Two consecutive test images that differed ONLY in this build id
+// came out byte-for-byte identical, which is how it was caught.
+//
+// A volatile pointer written in setup() fixes it: the write cannot be elided, so the pointer is
+// live, so the string it points at is reachable and survives section GC regardless of how the
+// serial flag is set. Do not "tidy" this away -- it is load-bearing, and its absence is silent.
+volatile const char* g_firmwareBuildIdAnchor = nullptr;
+
+// The advertised name, built from SENSOR_ID so the two can never disagree.
+//
+// Held in a struct because a constexpr function cannot return a bare array. The result is a
+// constexpr object in .rodata, so the literal text "MSV3-MOISTURE-NNN" still appears in the
+// compiled image -- scripts/ble_ota_update.py reads it straight out of the signed application
+// binary to confirm a package is for the probe it is about to be sent to. Do not replace this
+// with a runtime snprintf(): that would leave only the format string in the image and blind
+// that check.
+struct Msv3DeviceName { char text[18]; };
+
+constexpr Msv3DeviceName makeDeviceName(uint8_t id)
+{
+  return Msv3DeviceName{{'M', 'S', 'V', '3', '-', 'M', 'O', 'I', 'S', 'T', 'U', 'R', 'E', '-',
+                         static_cast<char>('0' + (id / 100) % 10),
+                         static_cast<char>('0' + (id / 10) % 10),
+                         static_cast<char>('0' + id % 10),
+                         '\0'}};
+}
+
+constexpr Msv3DeviceName DEVICE_NAME_STORAGE = makeDeviceName(SENSOR_ID);
+constexpr const char* DEVICE_NAME = DEVICE_NAME_STORAGE.text;
+
+// SENSOR_ID travels as ONE byte in the advertisement (mfg[6]) while the name shows three decimal
+// digits, so a value above 255 could not survive the wire even though it would render. uint8_t
+// already bounds it; this pins the assumption in place if the type is ever widened.
+static_assert(sizeof(SENSOR_ID) == 1, "SENSOR_ID must stay one byte -- it is mfg[6] on the wire");
+static_assert(sizeof(DEVICE_NAME_STORAGE.text) == 18,
+              "Advertised name must stay MSV3-MOISTURE-NNN plus its NUL");
+static_assert(DEVICE_NAME_STORAGE.text[14] == '0' + (SENSOR_ID / 100) % 10 &&
+              DEVICE_NAME_STORAGE.text[15] == '0' + (SENSOR_ID / 10) % 10 &&
+              DEVICE_NAME_STORAGE.text[16] == '0' + SENSOR_ID % 10,
+              "Advertised name digits must equal SENSOR_ID");
 
 // Same cadence MSV2 ships with: check every 10s, only radio out every 60s
 // unless a real swing is seen. MSV3's own full wake (FDC reconfigure +
@@ -174,7 +294,10 @@ const uint32_t ADVERTISE_INTERVAL_MS = 60000;
 // deliberately NOT trying to catch on its own). Retune once real
 // wet-soil/dry-soil raw values are logged -- same "policy, not calibration"
 // reasoning as MSV2's threshold, so it stays on the probe.
-const uint32_t MOISTURE_SWING_THRESHOLD = 300000UL;
+// C17 removal increased Probe 8's repeatable raw-count response by approximately 4x. Scale the
+// trigger by the same measured factor so the higher sensitivity does not turn ordinary drift into
+// extra off-cadence radio wakes. Retune from real capless soil data, not another hand estimate.
+const uint32_t MOISTURE_SWING_THRESHOLD = 1200000UL;
 const uint32_t MIN_SWING_ADVERTISE_INTERVAL_MS = 30000;
 // A legacy BLE DFU transfer takes several minutes. Permit the app-to-bootloader handoff only
 // while USB input is power-good or a valid LiPo reading is at least 3.80V. This is intentionally
@@ -187,12 +310,23 @@ const uint16_t OTA_MIN_BATTERY_MV = 3800;
 // docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md / msv3_ble_sleep_port notes. Kept
 // as cheap (~4ms) insurance for wet-soil/temperature/low-battery conditions
 // the dry-electrode bench test didn't cover.
-const uint8_t WAKE_DISCARD_CONVERSIONS = 2;
+#ifndef MSV3_WAKE_DISCARD_CONVERSIONS
+#define MSV3_WAKE_DISCARD_CONVERSIONS 2
+#endif
+static_assert(MSV3_WAKE_DISCARD_CONVERSIONS >= 0 && MSV3_WAKE_DISCARD_CONVERSIONS <= 255,
+              "MSV3_WAKE_DISCARD_CONVERSIONS must fit in uint8_t");
+const uint8_t WAKE_DISCARD_CONVERSIONS = MSV3_WAKE_DISCARD_CONVERSIONS;
 
-// Production defaults: no USB-host wait/log traffic and no artificial LED load. A bench
-// build may temporarily flip either flag, but those binaries must not be deployed as the
-// normal solar/battery firmware.
-const bool ENABLE_SERIAL_LOGS = false;
+// Production defaults: no USB-host wait/log traffic and no artificial LED load.
+//
+// 2026-09-05: serial logging is a BUILD FLAG (-DMSV3_ENABLE_SERIAL_LOGS=1, via
+// arduino_msv3_probe.ps1 -SerialLogs) rather than a line to edit and remember to put back. It
+// defaults off, so the committed source always describes a deployable image -- which is the same
+// reproducibility property SENSOR_ID above now has, and for the same reason.
+#ifndef MSV3_ENABLE_SERIAL_LOGS
+#define MSV3_ENABLE_SERIAL_LOGS 0
+#endif
+const bool ENABLE_SERIAL_LOGS = (MSV3_ENABLE_SERIAL_LOGS != 0);
 const bool OVERNIGHT_LED_BURN_TEST = false;
 const uint32_t BOOT_HOST_WAIT_MS = 3000;
 
@@ -218,6 +352,40 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 // not the sole guarantee of a settled conversion.
 #define FDC_ACTIVATION_US 400
 #define MUX_SLEEP_CODE 0        // electrode-swap. NEVER 2 or 3 -- see probeSleep().
+
+// 2026-09-18 INVERTED HYBRID TEST (probe 4 only; build flag, never a fleet default).
+// Probe 4's C17 pads now carry an external v1.2 capacitive sensor, so that sensor sits directly
+// across the FDC tank. With the mux on an electrode-disconnected code the tank is only
+// L + board/TMUX off-capacitance + the v1.2 sensor: this board's electronics, battery and BLE
+// driving someone else's electrode. That separates "the MSV3 electronics swing with temperature"
+// from "the MSV3 electrode/soil interface does".
+// - Every measurement uses code 2 and only code 2. Codes 2 and 3 park the electrodes on different
+//   EC-check throws, so alternating them would put a phase artifact into exactly the signal
+//   under test. Code 2 is also what the pre-capless image used for its phase-0 bare reads.
+// - The mux is on code 2 ONLY while the FDC converts. probeSleep() still parks it on code 0,
+//   because an EC-check code left selected is a continuous 3V3->soil->VDIV leak (~33uA) through
+//   the MSV3 electrodes if they are still in soil.
+// - Code 2 is the configuration the capless policy forbids for production: with no C17 its tank
+//   resonates above the FDC's range. Here the v1.2 sensor is the added capacitance, and whether
+//   the result is in range is a property of that rework, not of this code. The 0x0FFFFFFF
+//   over-range sentinel is therefore rejected as an invalid reading, like ERR_WD.
+#ifndef MSV3_HYBRID_V12_TANK
+#define MSV3_HYBRID_V12_TANK 0
+#endif
+static_assert(MSV3_HYBRID_V12_TANK == 0 || MSV3_HYBRID_V12_TANK == 1,
+              "MSV3_HYBRID_V12_TANK is a 0/1 build flag");
+// Code 2 alone put probe 4's tank at ~10.5 MHz (v1.2 dry is only ~6-10 pF), above the FDC's 10 MHz
+// ceiling. Code 0 adds the MSV3 electrode as fixed padding capacitance, which is only legitimate
+// with that electrode held in AIR: the 2026-09-15 glass-of-water test read an uncoated MSV3 probe
+// flat in air for a full day by a window. In soil it would be the very interface under suspicion.
+// Code 0 is also the sleep code, so on this setting the mux never moves.
+#ifndef MSV3_HYBRID_MUX_CODE
+#define MSV3_HYBRID_MUX_CODE 2
+#endif
+static_assert(MSV3_HYBRID_MUX_CODE == 0 || MSV3_HYBRID_MUX_CODE == 2,
+              "hybrid mux code: 0 = MSV3 electrode (in air) as padding, 2 = electrodes disconnected");
+#define MUX_HYBRID_MEASURE_CODE MSV3_HYBRID_MUX_CODE
+#define FDC_DATA_OVER_RANGE 0x0FFFFFFFUL
 // REMOVED 2026-08-30: MUX_SWITCH_SETTLE_MS (300ms, added 2026-08-29 as a preemptive safety
 // margin -- see the file header comment for that history). Checked the real TMUX1109 datasheet
 // (SCDS406A) against this board's actual load rather than continuing to guess: at VS=3V, worst
@@ -236,9 +404,8 @@ const uint32_t BOOT_HOST_WAIT_MS = 3000;
 // gap between setMux() and the oscillator actually starting (FDC_TSDWAKEUP_US's 2.5ms, plus the
 // I2C transactions inside fdcInit(), plus FDC_ACTIVATION_US's 400us) already leaves the mux
 // microseconds-to-nanoseconds switch several orders of magnitude of margin with zero added
-// delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and ~600ms on
-// every advertising wake (it ran twice there -- once for the electrode-swap phase, once for the
-// bare-tank EC-check mux code).
+// delay. Removing this bought back ~300ms of the ~10s wake period on every wake, and historically
+// ~600ms on advertising wakes when those also performed the now-retired bare-tank conversion.
 #define PIN_CNF_DISCONNECTED 2UL  // nRF52840 reset default: input buffer disconnected, no pull.
 
 #define WDT_TIMEOUT_MS 5000UL
@@ -300,15 +467,94 @@ bool fdcReadReg(uint8_t reg, uint16_t &val)
 //   the Full-Current-mode 16,384-cycle activation figure, which this fix now actually matches).
 //   The power cost of full-current activation only applies to the ~400us activation window
 //   inside a 10s duty-cycled wake, not a continuously-driven load -- immaterial here.
+// ERROR_CONFIG (0x19), added 2026-09-05. Until now this register was never written, and it resets
+// to all zeros after every hardware shutdown -- which this firmware performs on every wake. Table
+// 7-37 (verified against the local datasheet extract, not recalled):
+//
+//   bit 13  WD_ERR2OUT   report watchdog timeouts in DATA_CHx.CHx_ERR_WD
+//   bit 12  AH_WARN2OUT  report amplitude-high warnings in DATA_CHx.CHx_ERR_AW
+//   bit 11  AL_WARN2OUT  report amplitude-low warnings in DATA_CHx.CHx_ERR_AW
+//   bit  5  WD_ERR2INT   report watchdog timeouts by updating STATUS.ERR_WD
+//   bit  0  DRDY_2INT    report data-ready by updating STATUS.DRDY
+//
+// WHY THIS MATTERS: probeAndAdvertise() clears measurementOk on STATUS.ERR_WD (bit 11) -- the
+// "the tank is not oscillating" signal, which is what a shorted, waterlogged or disconnected
+// sensor looks like. With WD_ERR2INT at its reset value of 0 the datasheet says STATUS.ERR_WD is
+// never updated, so that check could not fire and the probe would report a dead sensor's garbage
+// count as a moisture reading. It was dead code guarding the failure it exists to catch.
+//
+// NOT SET: DRDY_2INT (bit 0). It stays 0 deliberately. STATUS.DRDY is a trap this project has
+// fallen into three times (see docs/KNOWN_ISSUES.md); the readiness poll uses the per-channel
+// CH0_UNREADCONV flag, which needs no enable bit. Turning DRDY_2INT on would make a DRDY poll
+// start working on the bench and fail again on any board or path that misses this write. Leave it
+// off so the wrong approach stays visibly broken.
+//
+// ONE CORRECTION TO THE OLD KNOWN_ISSUES WORDING: it grouped ERR_WD, ERR_AHW and ERR_ALW together
+// as "switched off, not clear". Only ERR_WD is gated. ERROR_CONFIG has no AH_WARN2INT/AL_WARN2INT
+// bit at all, so STATUS.ERR_AHW (bit 10) and STATUS.ERR_ALW (bit 9) have no enable and were
+// already live -- the amplitude half of probeAndAdvertise()'s check has been working all along.
+// Only the watchdog half was dead.
+//
+// NOT SET EITHER: the three *2OUT bits (13/12/11). Their destination is DATA_CHx bits 13/12, and
+// everything they would report there is already in STATUS, which this firmware reads first and
+// deliberately (see fdcReadChannel0()). Setting them would be configuration nothing consumes.
+#define FDC_ERROR_CONFIG_VALUE 0x0020
+
+// Diagnostic build parameters. Production defaults preserve the committed configuration, while
+// the guarded build wrapper can make one-at-a-time FDC settling experiments reproducible without
+// editing this file between releases. The build tag records the selected stage in the image/DIS.
+#ifndef MSV3_FDC_SETTLECOUNT_CH0
+#define MSV3_FDC_SETTLECOUNT_CH0 0x0064
+#endif
+#ifndef MSV3_FDC_IDRIVE_CODE
+#define MSV3_FDC_IDRIVE_CODE 16
+#endif
+#ifndef MSV3_FDC_MUX_CONFIG
+#define MSV3_FDC_MUX_CONFIG 0x020D
+#endif
+static_assert(MSV3_FDC_SETTLECOUNT_CH0 >= 1 && MSV3_FDC_SETTLECOUNT_CH0 <= 0xFFFF,
+              "MSV3_FDC_SETTLECOUNT_CH0 must be 1..65535");
+static_assert(MSV3_FDC_IDRIVE_CODE >= 0 && MSV3_FDC_IDRIVE_CODE <= 31,
+              "MSV3_FDC_IDRIVE_CODE must be 0..31");
+static_assert(MSV3_FDC_MUX_CONFIG == 0x020D || MSV3_FDC_MUX_CONFIG == 0x020F,
+              "MSV3_FDC_MUX_CONFIG must select the reviewed 10MHz or 33MHz CH0 configuration");
+
 bool fdcInit()
 {
   bool ok = true;
   ok &= fdcWriteReg(0x08, 0xFFFF);  // RCOUNT_CH0 -- see 2026-08-30 comment above
-  ok &= fdcWriteReg(0x10, 0x0064);  // SETTLECOUNT_CH0
+  ok &= fdcWriteReg(0x10, MSV3_FDC_SETTLECOUNT_CH0);  // SETTLECOUNT_CH0
   ok &= fdcWriteReg(0x14, 0x1001);  // CLOCK_DIVIDERS_CH0: FIN_SEL=01, FREF_DIVIDER=1
-  ok &= fdcWriteReg(0x1E, 0xC800);  // DRIVE_CURRENT_CH0: IDRIVE=25 (0.644mA), bench-tuned 2026-09-03
-  // MUX_CONFIG (0x1B) left at power-on-reset default -- single-channel CH0,
-  // correct for this board (CH1-3 grounded per netlist).
+  ok &= fdcWriteReg(0x1E, (uint16_t)MSV3_FDC_IDRIVE_CODE << 11);  // DRIVE_CURRENT_CH0
+  // MUX_CONFIG (0x1B): AUTOSCAN_EN=0 / RR_SEQUENCE=00 keeps single-channel CH0, which is
+  // correct for this board (CH1-3 grounded per netlist) and is also the POR default. What is
+  // NOT the POR default is DEGLITCH: its reset value is b111 (33MHz), the widest filter.
+  //
+  // 2026-09-09: measured this board's real tank frequency from its own telemetry rather than
+  // the design range. fSENSOR = (DATA / 2^28) * fREF, with CLOCK_DIVIDERS_CH0=0x1001
+  // (CH0_FIN_SEL=1, FREF_DIVIDER=1) and fREF = the ~43.3MHz internal oscillator. Probe 4's
+  // field data gives 19.69M counts connected -> 3.18MHz, and 22.48M counts on the bare-tank
+  // reference -> 3.63MHz. So the tank spans roughly 3.2-3.6MHz depending on electrode loading.
+  //
+  // The datasheet says to select the lowest deglitch setting that EXCEEDS the sensor
+  // oscillation frequency. That remains b101 (10MHz) after C17 removal: Probe 8's capless
+  // connected tank measured 6.499MHz dry, so b100 (3.3MHz) would reject the wanted signal.
+  // The 10MHz setting covers the connected tank while admitting 3.3x less EMI/ringing bandwidth
+  // than the 33MHz default. It does not make the retired 11-12MHz bare tank valid.
+  //
+  // Bits [12:3] are reserved and the datasheet requires them to be written as 00 0100 0001,
+  // so the full word is 0x208 | DEGLITCH -> 0x020D. Do not write a bare 0x0005 here.
+  //
+  // This is a noise-bandwidth change only. It is NOT expected to affect the daily thermal
+  // drift on soil-connected probes -- that separates connected (1.245% 24h p-p) from the
+  // bare-tank reference (0.096%) on the same chip, so it enters through the electrode/soil
+  // path, not through anything this register controls.
+  //
+  // Datasheet trap: Table 7-11 lists 33MHz as b011 while the Address 0x1B field description
+  // lists b111. The field description carries the reset value and is what this follows.
+  ok &= fdcWriteReg(0x1B, MSV3_FDC_MUX_CONFIG);  // MUX_CONFIG: CH0 only, reviewed deglitch setting
+  ok &= fdcWriteReg(0x19, FDC_ERROR_CONFIG_VALUE);  // see FDC_ERROR_CONFIG_VALUE above -- MUST be
+                                                    // written before CONFIG starts conversions
   ok &= fdcWriteReg(0x1A, 0x1401);  // CONFIG: CH0, exit sleep, internal osc, full-current
                                     // sensor activation -- see 2026-08-30 comment above.
                                     // Written last, starts conversions.
@@ -342,15 +588,48 @@ bool fdcReadStatus(uint16_t &status) { return fdcReadReg(0x18, status); }
 //   conversion time. At the new RCOUNT=0xFFFF (~24ms/conversion), a 1ms inter-discard delay is
 //   far shorter than one conversion, so without this unread-conversion wait that loop would now just
 //   re-read the same stale conversion repeatedly instead of ever advancing to a new one.
+// 2026-09-05: statusOut now ACCUMULATES every flag seen while polling, instead of holding only
+// the most recent read, and is returned to the caller even when this times out.
+//
+// Two datasheet facts make the old version lose information exactly when it is most wanted.
+// STATUS is read-to-clear -- Table 7-36: an error "is latched and maintained until either the
+// STATUS register or the DATA_CHx register ... is read" -- so THIS POLLING LOOP consumes the very
+// flags it is looking past. And a watchdog timeout does not produce an unread conversion, so on a
+// tank that has stopped oscillating CH0_UNREADCONV never sets and the loop runs to timeout,
+// throwing away each status word as it goes.
+//
+// That was measured on 2026-09-05 (MSV3_FDC_ERROR_CONFIG_2026-09-05.md): with the tank killed by
+// IDRIVE=0, one poll returned STATUS=0x800 -- ERR_WD, the flag this firmware has an entire branch
+// for -- and the old code discarded it and returned false. Behaviour was unaffected, because
+// measurementOk goes false on the timeout anyway, but the REASON was lost: "the oscillator is
+// dead" became indistinguishable from "the I2C bus is dead" and from "the part is misconfigured".
+//
+// OR-accumulating is what preserves a transient: returning only the final word would still lose a
+// flag that a previous poll had already cleared.
 bool fdcWaitForCh0UnreadConversion(uint16_t &statusOut)
 {
   uint32_t start = millis();
+  uint16_t seen = 0;
+  statusOut = 0;
   do
   {
-    if (!fdcReadStatus(statusOut)) return false;
-    if (statusOut & FDC_STATUS_CH0_UNREADCONV_BIT) return true;
+    uint16_t status;
+    if (!fdcReadStatus(status))
+    {
+      statusOut = seen;  // hand back whatever was observed before the bus failed
+      return false;
+    }
+    seen |= status;
+    if (status & FDC_STATUS_CH0_UNREADCONV_BIT)
+    {
+      statusOut = seen;
+      return true;
+    }
   } while (millis() - start < FDC_CONVERSION_POLL_TIMEOUT_MS);
-  return false;  // timed out waiting for a fresh conversion -- same failure path as an I2C error
+  // Timed out waiting for a fresh conversion. Still the same failure path as an I2C error as far
+  // as measurementOk is concerned -- but the caller can now tell the two apart.
+  statusOut = seen;
+  return false;
 }
 
 bool fdcReadChannel0(uint32_t &data28, uint16_t &statusOut)
@@ -607,16 +886,16 @@ void delayFeedingWatchdog(uint32_t ms)
 // [7-9]   wake, 24-bit LE
 // [10-13] raw FDC2214 DATA_CH0, 32-bit LE
 // [14-15] raw battery mV, 16-bit LE
-// [16]    flags: bit0=charging (existing meaning, unchanged), bit1=moisture/reference phase
-//         used (0/1), bit2=board temp valid, bit3=bare-tank reference valid,
-//         bit4=OTA power gate open (USB PG or VBAT >= OTA_MIN_BATTERY_MV), bits5-7=reserved/0
+// [16]    flags: bit0=charging (existing meaning, unchanged), bit1=electrode-swap phase
+//         used (0/1), bit2=board temp valid, bit3=legacy bare-tank reference valid,
+//         bit4=OTA power gate open (USB PG or VBAT >= OTA_MIN_BATTERY_MV),
+//         bit5=connected reading invalid, bit6=capless tank / bare measurement prohibited,
+//         bit7=reserved/0
 // [17-18] board temperature, signed int16 LE, quarter-degrees C (sd_temp_get() native units;
 //         0/invalid when bit2 is clear) -- see readBoardTempQuarterC(). This is nRF52840 die
 //         temperature, NOT soil or blade temperature.
-// [19-22] bare-tank FDC2214 DATA_CH0, uint32 LE (0/invalid when bit3 is clear) -- reading taken
-//         with the mux on EC-check code 2|phase, disconnecting the electrodes so the FDC is
-//         oscillating on the bare L2/C17 tank alone. Board/tank-adjacent reference, NOT soil
-//         temperature or a moisture reading.
+// [19-22] legacy bare-tank FDC2214 DATA_CH0, uint32 LE. Always zero in capless firmware and bit3
+//         is always clear. Retained solely so the packet remains backward compatible.
 //
 // 23 total bytes. First 17 bytes are byte-for-byte unchanged from the prior wire format --
 // Treebeard_ESP32_Display_Runtime.ino's existing MSV2_RAW_PACKET_WIDE_LEN=17 parse path (including
@@ -625,6 +904,15 @@ void delayFeedingWatchdog(uint32_t ms)
 // legacy advertising-data payload alongside the Flags (3B) and TX Power (3B) AD structures
 // already added below: 3+3+(2+23)=31.
 bool g_bleInited = false;
+
+// NAME IS MISLEADING, KEPT because it is the receiver-visible wire field name. It counts
+// ADVERTISEMENTS, not wakes: the increment sits inside loop()'s `if (shouldAdvertise)` block, so
+// it advances about once per ADVERTISE_INTERVAL_MS (60s), not once per WAKE_PERIOD_MS (10s)
+// check -- plus an extra step whenever a big swing forces an off-cadence advertisement.
+//
+// This matters when reading a counter off the air: multiplying it by 10s understates uptime by
+// roughly 6x. On 2026-09-04 that arithmetic briefly made two healthy probes look as though they
+// had both reset that morning, when in fact they had been running continuously overnight.
 uint32_t wakeCount = 0;
 
 // Electrode-swap phase for the NEXT wake, alternated 0/1 once per completed
@@ -648,6 +936,13 @@ uint8_t currentTankPhase = 0;
 // connection events open. It is deliberately seconds rather than minutes, and loop() now forces
 // that idle peer off when the deadline expires.
 const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
+
+// How long to let the DFU authorize response settle on air before arming GPREGRET and resetting.
+// sd_ble_gatts_rw_authorize_reply() returning NRF_SUCCESS only means the SoftDevice accepted the
+// response for transmission; resetting immediately can tear the radio down before it is actually
+// sent, which leaves the client waiting forever on a write it will never see answered. The reset
+// therefore happens here, out of the BLE event callback, one connection interval or two later.
+const uint32_t DFU_RESPONSE_SETTLE_MS = 150;
 
 // How long to keep advertising and actively watch for an incoming connection.
 //
@@ -685,7 +980,23 @@ static_assert(OTA_ADV_LISTEN_MS >= 1000 && OTA_ADV_LISTEN_MS % 1000 == 0,
 
 ResetSafeBLEDfu bledfu;
 
+// Device Information Service, so a probe can say which firmware it is running.
+//
+// Until 2026-09-04 there was no way to ask. FIRMWARE_BUILD_ID is in the image and in the boot
+// banner, but ENABLE_SERIAL_LOGS is false in production and a coated probe has no cable, so the
+// only remote identity was the sensor ID -- which says which BOARD, never which BUILD. After an
+// interrupted update that is exactly the question you need answered, and the bootloader cannot
+// answer it either: dfu_init.c never implements the application-version check, so the DFU
+// package's version is not persisted anywhere on the device.
+//
+// DIS is the right place for it. It costs ZERO advertising bytes -- startAdv()'s static_assert
+// shows the 31-byte legacy PDU is already exactly full -- because it is read over GATT after a
+// central connects. scripts/ble_ota_update.py already connects to write the DFU jump, so it reads
+// this first and can refuse an update when the probe is not running what the registry expects.
+BLEDis bledis;
+
 bool g_otaServiceReady = false;
+bool g_disReady = false;
 volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
 
 void otaConnectCallback(uint16_t connHandle)
@@ -712,6 +1023,13 @@ void bleInit()
   Bluefruit.setTxPower(8);
   Bluefruit.setName(DEVICE_NAME);
 
+  // Registered in GATT only, like the DFU service, and for the same reason: there is no room in
+  // the advertisement. A central discovers it after connecting.
+  bledis.setManufacturer("Treebeard");
+  bledis.setModel("MSV3");
+  bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
+  g_disReady = (bledis.begin() == ERROR_NONE);
+
   // Registered in GATT only -- deliberately NOT added to the advertising payload. startAdv()'s
   // static_assert shows Flags(3) + TxPower(3) + mfg header(2) + mfg(23) = exactly the 31-byte
   // legacy PDU limit, so there is no room for a service UUID and the manufacturer payload stays
@@ -727,21 +1045,32 @@ void bleInit()
 }
 
 // Flag bits for mfg[16] -- bit0 (charging) is the original, unchanged meaning.
+//
+// bit5 (2026-09-04) is a SAFETY flag, not a data flag. Until today a failed FDC read suppressed
+// the whole advertisement -- see the comment on shouldAdvertise in loop() -- which meant a dead
+// sensor also closed the only way to reach a coated probe over the radio. The probe now always
+// advertises on its interval and marks the reading instead. The count field is zeroed when this
+// bit is set, so a receiver that ignores the bit stores an obviously-wrong 0 rather than a
+// plausible wrong number.
+//
+// RECEIVER COUPLING: Treebeard_ESP32_Display_Runtime must skip ingestion when this bit is set.
+// Until that ships, an un-updated receiver will store calibrateMsv3Moisture(0) for a faulted
+// probe. Do not deploy this to a field probe before the receiver understands bit5.
 #define ADV_FLAG_CHARGING        (1U << 0)
 #define ADV_FLAG_PHASE           (1U << 1)
 #define ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
-#define ADV_FLAG_BARE_TANK_OK    (1U << 3)
 #define ADV_FLAG_OTA_POWER_OK    (1U << 4)
+#define ADV_FLAG_READING_INVALID (1U << 5)
+#define ADV_FLAG_CAPLESS_TANK    (1U << 6)
 
 bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk, uint8_t phaseUsed,
-              bool boardTempValid, int16_t boardTempQuarterC,
-              bool bareTankValid, uint32_t bareTankDataCh0)
+              bool boardTempValid, int16_t boardTempQuarterC, bool readingValid)
 {
   if (!g_bleInited) return false;
 
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
   uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
-  uint32_t bareTankField = bareTankValid ? bareTankDataCh0 : 0;
+  constexpr uint32_t bareTankField = 0;
   uint8_t mfg[23];
   // Enforce the "3+3+(2+23)=31" arithmetic from mfg[]'s own declaration comment at compile
   // time, not just in prose. The runtime addData() failure check a few lines down exists too,
@@ -771,8 +1100,9 @@ bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool ota
   mfg[16] = (isCharging ? ADV_FLAG_CHARGING : 0) |
             (phaseUsed ? ADV_FLAG_PHASE : 0) |
             (boardTempValid ? ADV_FLAG_BOARD_TEMP_OK : 0) |
-            (bareTankValid ? ADV_FLAG_BARE_TANK_OK : 0) |
-            (otaPowerOk ? ADV_FLAG_OTA_POWER_OK : 0);
+            (otaPowerOk ? ADV_FLAG_OTA_POWER_OK : 0) |
+            ADV_FLAG_CAPLESS_TANK |
+            (readingValid ? 0 : ADV_FLAG_READING_INVALID);
   mfg[17] = (uint8_t)(boardTempField & 0xFF);
   mfg[18] = (uint8_t)((boardTempField >> 8) & 0xFF);
   mfg[19] = (uint8_t)(bareTankField & 0xFF);
@@ -810,9 +1140,371 @@ bool startAdv(uint32_t rawDataCh0, float rawBatteryMv, bool isCharging, bool ota
 uint32_t lastAdvertiseMs = 0;
 long lastAdvertisedRaw = -1;
 
+// ===================================================== boot-failure guard ====
+//
+// The problem it solves: a firmware image can be correctly signed, pass the bootloader's CRC,
+// boot -- and then crash or hang before it ever opens a BLE advertising window. The bootloader has
+// already handed over by then, and DEFAULT_TO_OTA_DFU only rescues a board with NO valid
+// application, so such a probe is reachable only over SWD. On a coated probe that means never.
+//
+// The escape: count boots that never reached healthy operation, and after BOOT_GUARD_LIMIT of
+// them, jump into BLE DFU instead of trying the same broken path again. initWatchdogSafety() is
+// already the first statement in setup(), so a HANG becomes a watchdog reset and feeds this
+// counter too -- crashes and hangs are both covered.
+//
+// RETENTION FIX, 2026-09-08. The original counter used GPREGRET2. A self-reset test appeared to
+// prove it, but the only test that mattered -- a real watchdog expiry while the application was
+// hung before advertising -- showed boot attempt 1 forever. SWD saw 0xB1 while each app instance
+// was hung, proving the write happened, while the next app instance still read no prior count.
+// That localizes the loss to the reset/startup path before bootGuardCheck(), NOT to the nRF52840
+// hardware itself: the product specification calls GPREGRET2 retained, the visible Adafruit
+// bootloader source never writes it, and the MBR/SoftDevice path is binary. Do not turn the
+// observation into a claim about which unseen layer clears or overwrites it.
+//
+// The replacement is an eight-byte .noinit record at 0x2003FFF8. It is a LINKER ABI, not merely a
+// section attribute: the application linker excludes that address from its heap/stack, and MSV3
+// bootloader 1.0.3 excludes the same address from its stack. Two inverse 32-bit words reject a
+// torn or random record. Only watchdog, software-reset and lockup causes carry a valid count;
+// power-on/brownout (RESETREAS=0), pin reset and System OFF wake all begin at zero, preserving the
+// original false-positive protection for a solar node.
+//
+// WHAT ENTERING DFU COSTS, because it is not free and this is the guard's real risk. The
+// bootloader advertises CONTINUOUSLY, where the application advertises ~5 s per 70 s, and it does
+// not sense. It also does not time out: main.c only passes a 3 s timeout on the USB/UF2 branch,
+// and a GPREGRET OTA jump takes bootloader_dfu_start(_ota_dfu, 0, false). So a probe that escapes
+// stays in DFU until someone flashes it. A false positive therefore costs that probe's data.
+//
+// LOW BATTERY DEFERS THE ESCAPE, it does not cancel it. The first version escaped unconditionally,
+// on the reasoning that a flat solar probe recovers with sun while an unreachable probe never
+// does. That reasoning had a hole: a marginal supply can reset the MCU by a route that does NOT
+// clear GPREGRET2, so brownout-driven resets can accumulate the counter and dump a probe with
+// perfectly good firmware into DFU. And DFU does not time out on this path -- main.c passes a 3 s
+// timeout only on the USB/UF2 branch, while a GPREGRET jump takes
+// bootloader_dfu_start(_ota_dfu, 0, false) -- so "the sun comes up" does not bring it back. It
+// sits there, not sensing, until someone flashes it.
+//
+// So below BOOT_GUARD_MIN_ESCAPE_MV the counter SATURATES and the boot continues. Two things
+// follow, and both are wanted: if the firmware was fine and the resets were undervoltage, the next
+// healthy day clears probation and no false positive ever happens; if the firmware really is
+// broken, the escape simply waits until there is enough charge to be worth rescuing into.
+//
+// The check is made only at the escape point, not on every boot, so an ordinary boot still reaches
+// the guard with nothing between it and initWatchdogSafety(). It FAILS OPEN: an out-of-range or
+// unavailable reading escapes rather than deferring, because being unable to measure the battery
+// must never be the reason a probe stays unreachable.
+// STAGING FLAG. Guard 2 is bench-proven for the crash-loop (soft-reset) path -- counter
+// accumulation, escape at the limit, landing in BLE DFU, and clean rescue without re-escape were
+// all demonstrated on probe 99. What has NOT been demonstrated is the WATCHDOG-HANG path: the
+// bench crash-loop build self-reset rather than hanging, deliberately, because with no SWD
+// attached and no reset button on this PCB a hang before advertising is the exact unrecoverable
+// state this guard exists to prevent.
+//
+// So the first field image carries guard 1 only, and this stays false until that test has been
+// run with SWD standing by. Set it true for bench builds and for the field once it has.
+// 2026-09-07: now a BUILD FLAG rather than an edited constant, same as SENSOR_ID and
+// ENABLE_SERIAL_LOGS before it, and for the same reason -- committed source must always describe
+// a deployable image, and "flip this line, build, remember to flip it back" is exactly how probe
+// 4's firmware became unreproducible. Pass -BootGuard to arduino_msv3_probe.ps1 to enable it.
+#ifndef MSV3_ENABLE_BOOT_FAILURE_GUARD
+#define MSV3_ENABLE_BOOT_FAILURE_GUARD 0
+#endif
+constexpr bool ENABLE_BOOT_FAILURE_GUARD = (MSV3_ENABLE_BOOT_FAILURE_GUARD != 0);
+
+// THE GUARD-2 / BOOTLOADER RAM PAIRING, STATED IN THE IMAGE SO A HOST CAN CHECK IT.
+//
+// Guard 2's boot counter lives at 0x2003FFF8 and only survives a reset if the BOOTLOADER also
+// excludes those eight bytes from its stack. Measured from vector[0] of each release hex:
+// bootloader 1.0.1 and 1.0.2 both boot with MSP = 0x20040000, so the record is the FIRST thing
+// their stacks descend into; 1.0.3 boots with MSP = 0x2003FFF8 and leaves it alone.
+//
+// So a guard-enabled application on a pre-1.0.3 bootloader gives you a guard that looks armed,
+// never accumulates a count, and never escapes into DFU -- which is precisely the GPREGRET2
+// symptom this whole retained-RAM scheme was built to replace. MSV3/bootloader/README.md already
+// says "Guard 2 must not be enabled with bootloader 1.0.2 or older"; until now nothing enforced
+// it, and probe 4 is deployed, soil-immersed, solar, has no SWD, and runs 1.0.1.
+//
+// Stamping it into the image is what makes the rule enforceable at the only point that matters:
+// ble_ota_update.py reads this marker out of a package and refuses to send a `:1` image to a
+// probe whose fleet.json bootloader predates 1.0.3. `:0` is emitted deliberately rather than
+// nothing, so "guard off" and "image too old to say" stay distinguishable -- every package built
+// before 2026-09-09 has no marker at all, and those are the archived rescue images for probes
+// about to be coated, so absence must not become a refusal.
+#if MSV3_ENABLE_BOOT_FAILURE_GUARD
+#define MSV3_GUARD2_MARKER "MSV3-GUARD2:1"
+#else
+#define MSV3_GUARD2_MARKER "MSV3-GUARD2:0"
+#endif
+const char FIRMWARE_GUARD2_MARKER[] = MSV3_GUARD2_MARKER;
+// Same load-bearing anchor as g_firmwareBuildIdAnchor above, for the same reason: nothing else
+// reads this string, so without a volatile write section GC would discard it and the host check
+// would silently see an unmarked image. Assigned beside the build-id anchor in setup().
+volatile const char* g_guard2MarkerAnchor = nullptr;
+
+// DELIBERATE HANG FOR THE GUARD-2 ACCEPTANCE TEST. -DMSV3_HANG_BEFORE_ADVERTISE=1.
+//
+// This is the state guard 2 exists to rescue: an image that boots, is correctly signed, passes
+// every integrity check, and then never opens a radio window. Every previous guard-2 test used a
+// deliberate SELF-RESET instead, because with no SWD attached and no reset button on this PCB, a
+// board that hangs before advertising is unrecoverable -- so the test that mattered was the one
+// that could not safely be run. It is runnable now only because SWD is attached.
+//
+// The hang is placed after initWatchdogSafety() and bootGuardCheck() so the watchdog is armed and
+// the counter has already been incremented for this boot. It must NOT be fed: the whole point is
+// that the 5 s watchdog fires, resets the MCU, and the boot counter accumulates until
+// BOOT_GUARD_LIMIT sends the board into BLE DFU.
+//
+// NEVER SHIP THIS. The build check in arduino_msv3_probe.ps1 refuses to build it together with a
+// fleet sensor id.
+#ifndef MSV3_HANG_BEFORE_ADVERTISE
+#define MSV3_HANG_BEFORE_ADVERTISE 0
+#endif
+constexpr bool HANG_BEFORE_ADVERTISE = (MSV3_HANG_BEFORE_ADVERTISE != 0);
+
+constexpr uint32_t BOOT_GUARD_RETAINED_ADDRESS = 0x2003FFF8UL;
+constexpr uint32_t BOOT_GUARD_STATE_MAGIC = 0xB0075200UL;
+constexpr uint32_t BOOT_GUARD_STATE_MAGIC_MASK = 0xFFFFFF00UL;
+constexpr uint8_t BOOT_GUARD_COUNT_MASK = 0x0F;
+constexpr uint8_t BOOT_GUARD_LIMIT = 5;
+constexpr uint8_t BOOT_GUARD_PROBATION_ADVERTS = 2;
+// PROVISIONAL. Shares the OTA policy threshold rather than being derived from measurement: the
+// DFU-mode current, and therefore how long a probe can survive unattended in it, has not been
+// measured. Revisit once it has.
+constexpr uint16_t BOOT_GUARD_MIN_ESCAPE_MV = OTA_MIN_BATTERY_MV;
+constexpr uint8_t DFU_MAGIC_OTA_RESET = 0xA8;   // must match the bootloader's own constant
+
+struct BootGuardRetainedState
+{
+  uint32_t encoded;
+  uint32_t inverse;
+};
+static_assert(sizeof(BootGuardRetainedState) == 8,
+              "boot-guard retained state must match the eight-byte linker reservation");
+
+// No initializer: startup must not emit a .data copy or a .bss clear for this object. The custom
+// linker script maps this exact input section to a fixed NOLOAD region and asserts its size.
+static volatile BootGuardRetainedState g_bootGuardRetained
+    __attribute__((section(".msv3_boot_guard_retained"), used, aligned(4)));
+
+static uint8_t g_bootAttempt = 0;
+static uint8_t g_probationAdverts = 0;
+static bool g_bootGuardCleared = false;
+static bool g_bootGuardDeferred = false;
+static float g_bootGuardBatteryMv = 0.0f;
+static uint32_t g_resetReason = 0;
+
+static bool bootGuardReadRetained(uint8_t& count)
+{
+  const uint32_t encoded = g_bootGuardRetained.encoded;
+  const uint32_t inverse = g_bootGuardRetained.inverse;
+  if (inverse != ~encoded ||
+      (encoded & BOOT_GUARD_STATE_MAGIC_MASK) != BOOT_GUARD_STATE_MAGIC)
+  {
+    count = 0;
+    return false;
+  }
+
+  const uint8_t decoded = (uint8_t)(encoded & 0xFF);
+  if (decoded > BOOT_GUARD_COUNT_MASK)
+  {
+    count = 0;
+    return false;
+  }
+  count = decoded;
+  return true;
+}
+
+static void bootGuardWriteRetained(uint8_t count)
+{
+  const uint8_t bounded = count > BOOT_GUARD_COUNT_MASK
+                              ? BOOT_GUARD_COUNT_MASK
+                              : count;
+  const uint32_t encoded = BOOT_GUARD_STATE_MAGIC | bounded;
+
+  // Invalidate first. A reset between either following word write fails open as an invalid record
+  // on the next boot rather than manufacturing a high boot count and falsely entering DFU.
+  g_bootGuardRetained.inverse = 0;
+  __DMB();
+  g_bootGuardRetained.encoded = encoded;
+  __DMB();
+  g_bootGuardRetained.inverse = ~encoded;
+  __DSB();
+}
+
+static bool bootGuardResetCarriesState(uint32_t reason)
+{
+  // RESETREAS has no bit for power-on/brownout, so zero deliberately means a clean slate. Carry
+  // only causes that can represent an application failure loop. SREQ remains included because
+  // both a commanded reset and an app_error/SoftDevice reset can produce it; under-counting the
+  // latter would reopen the exact failure class this guard exists to close.
+  const uint32_t carryMask = POWER_RESETREAS_DOG_Msk |
+                             POWER_RESETREAS_SREQ_Msk |
+                             POWER_RESETREAS_LOCKUP_Msk;
+  return reason != 0 && (reason & carryMask) != 0;
+}
+
+// Prints RESETREAS by name. The guard-2 watchdog-hang test has to SEE "WATCHDOG" on each of the
+// successive resets, not infer it from a hex value -- that reading IS the evidence the test
+// produces, and it was unavailable while the cause always read 0x0. Mirrors the decoder the
+// bring-up sketch has always had.
+static void printResetReasonName(uint32_t r)
+{
+  Serial.print(F(" ("));
+  if (r == 0) Serial.print(F("POWER-ON/BROWNOUT -- no reset bits set"));
+  if (r & POWER_RESETREAS_RESETPIN_Msk) Serial.print(F("RESETPIN "));
+  if (r & POWER_RESETREAS_DOG_Msk)      Serial.print(F("WATCHDOG "));
+  if (r & POWER_RESETREAS_SREQ_Msk)     Serial.print(F("SOFTWARE(NVIC_SystemReset) "));
+  if (r & POWER_RESETREAS_LOCKUP_Msk)   Serial.print(F("CPU-LOCKUP "));
+  if (r & POWER_RESETREAS_OFF_Msk)      Serial.print(F("WAKE-FROM-OFF "));
+  Serial.print(F(")"));
+}
+
+// Cleared once the probe has proven it can actually run: BOOT_GUARD_PROBATION_ADVERTS complete
+// advertising cycles, not merely "advertising was started once". A build that advertises and then
+// dies later in its first duty cycle must NOT be able to clear the guard.
+// The original GPREGRET2 implementation needed SoftDevice SVCs here and its first raw-register
+// version hard-faulted after the second advertisement. The retained-RAM implementation has no
+// POWER-peripheral access at all, so it is legal after Bluefruit.begin(). Do not move the counter
+// back to a protected peripheral just to reuse that old SVC plumbing.
+void bootGuardNoteHealthyAdvert()
+{
+  if (!ENABLE_BOOT_FAILURE_GUARD) return;
+  if (g_bootGuardCleared) return;
+  if (++g_probationAdverts < BOOT_GUARD_PROBATION_ADVERTS) return;
+
+  bootGuardWriteRetained(0);
+  g_bootGuardCleared = true;
+  if (ENABLE_SERIAL_LOGS)
+  {
+    Serial.print(F("[DIAG] boot guard cleared after "));
+    Serial.print(g_probationAdverts);
+    Serial.println(F(" advertising cycles"));
+    Serial.flush();
+  }
+}
+
+// Runs before anything that can fail. The only raw POWER-register access left is GPREGRET at the
+// actual DFU escape, before Bluefruit.begin(); the boot counter itself is ordinary retained RAM.
+static void bootGuardCheck()
+{
+  // Take the reset cause from the CORE, not from the hardware register.
+  //
+  // 2026-09-06, correcting a wrong diagnosis that has been on record since 2026-09-04. This used
+  // to read NRF_POWER->RESETREAS directly and always got 0x0, and that was written up as "the
+  // bootloader runs first and appears to consume it". The bootloader does no such thing --
+  // bootloader src/main.c says so explicitly: "RESETREAS is not clear by bootloader, it should be
+  // cleared by application upon init()".
+  //
+  // The Arduino core consumes it, before setup() ever runs. cores/nRF5/wiring.c init():
+  //     _reset_reason = NRF_POWER->RESETREAS;
+  //     NRF_POWER->RESETREAS |= NRF_POWER->RESETREAS;   // write-1-to-clear
+  // and it saves the value for exactly this purpose, behind readResetReason() (wiring.h, reached
+  // via Arduino.h). So the old direct read was guaranteed to return 0 on every boot, on any board,
+  // with any bootloader. The bring-up sketch already used the core accessor and has always
+  // reported real causes -- RESETPIN on the four-board bring-up, and 0x2 WATCHDOG mid-cycle.
+  //
+  // Same class of bug as the one that made the FIRST version of this guard reset every ~76 s:
+  // reaching for a register directly where the framework has already mediated it. Third instance
+  // in this file's history. Do not "simplify" this back to NRF_POWER->RESETREAS.
+  g_resetReason = readResetReason();
+  if (!ENABLE_BOOT_FAILURE_GUARD)
+  {
+    // Guard-off builds are the field default. Keep the shared word at a known zero so enabling the
+    // guard in a later OTA cannot inherit stale probation from an earlier bench image.
+    bootGuardWriteRetained(0);
+    return;
+  }
+
+  // WHY THE COUNTER STILL COUNTS EVERY BOOT, now that the cause is actually available.
+  //
+  // The obvious next step is to count only DOG/LOCKUP so the return boot after a commanded DFU
+  // jump stops consuming an attempt. Deliberately NOT done, because SREQ is ambiguous in the one
+  // direction that matters: a commanded DFU jump is an SREQ, but so is a crash routed through the
+  // SoftDevice/app_error handler, which resets via NVIC_SystemReset(). Filtering SREQ out would
+  // silently stop counting a whole class of real crash loops -- exactly what this guard exists to
+  // catch -- to save one attempt out of five in a case that is already self-correcting, since
+  // probation clears the counter within ~140 s of healthy running.
+  //
+  // Over-counting is the safe direction here and under-counting is not, so the cause is used for
+  // reporting only. Revisit ONLY with evidence about what this application's fault handlers
+  // actually do on a hard fault; that is a bench question with SWD attached, not an assumption.
+
+  uint8_t retainedCount = 0;
+  const bool retainedValid = bootGuardReadRetained(retainedCount);
+  g_bootAttempt = retainedValid && bootGuardResetCarriesState(g_resetReason)
+                      ? retainedCount
+                      : 0;
+
+  if (g_bootAttempt >= BOOT_GUARD_LIMIT)
+  {
+    // Saturate first, so a deferred decision survives to the next boot instead of being lost.
+    bootGuardWriteRetained(BOOT_GUARD_COUNT_MASK);
+
+    g_bootGuardBatteryMv = readVbatMv();
+    const bool readingUsable =
+        g_bootGuardBatteryMv >= 2500.0f && g_bootGuardBatteryMv <= 5000.0f;
+    if (!readingUsable || g_bootGuardBatteryMv >= (float)BOOT_GUARD_MIN_ESCAPE_MV)
+    {
+      // Reset the counter BEFORE arming DFU. Otherwise a good image flashed afterwards would
+      // boot, read a saturated count, and bounce straight back into DFU -- turning the rescue
+      // into a trap. (Verified on the bench: the rescued build boots once and stays up.)
+      bootGuardWriteRetained(0);
+      NRF_POWER->GPREGRET = DFU_MAGIC_OTA_RESET;
+      __DSB();
+      NVIC_SystemReset();
+      // does not return
+    }
+    g_bootGuardDeferred = true;
+  }
+
+  const uint8_t next = (uint8_t)(g_bootAttempt + 1);
+  bootGuardWriteRetained(next);
+}
+
 void setup()
 {
+  // Anchor before every deliberately failing test path. A hang build never reaches the normal
+  // boot banner below, but its signed package still has to remain uniquely identifiable.
+  g_firmwareBuildIdAnchor = FIRMWARE_BUILD_ID;
+  g_guard2MarkerAnchor = FIRMWARE_GUARD2_MARKER;
+
   initWatchdogSafety();
+  bootGuardCheck();
+
+  if (HANG_BEFORE_ADVERTISE)
+  {
+    // Announce first so the capture shows WHICH boot is hanging and what reset caused it -- the
+    // reset cause is only readable at all since readResetReason() replaced the direct
+    // NRF_POWER->RESETREAS read, which always returned 0. Serial.flush() because the watchdog
+    // fires in 5 s and an unflushed USB CDC buffer would be lost with it.
+    if (ENABLE_SERIAL_LOGS)
+    {
+      Serial.begin(115200);
+      uint32_t w = millis();
+      while (!Serial && millis() - w < BOOT_HOST_WAIT_MS) delay(10);
+      Serial.print(F("[HANGTEST] boot attempt "));
+      Serial.print(g_bootAttempt + 1);
+      Serial.print(F(" of "));
+      Serial.print(BOOT_GUARD_LIMIT);
+      Serial.print(F("; RESETREAS=0x"));
+      Serial.print(g_resetReason, HEX);
+      printResetReasonName(g_resetReason);
+      Serial.print(F(" -- "));
+      Serial.print(DEVICE_NAME);
+      Serial.print(F(" "));
+      Serial.print(FIRMWARE_BUILD_ID);
+      Serial.println(F(" hanging now, NOT feeding the watchdog"));
+      Serial.flush();
+    }
+    // Keep DEVICE_NAME referenced even when serial logging is off. Without this the linker
+    // dead-strips the whole advertising path -- the hang makes it unreachable -- and the
+    // "MSV3-MOISTURE-NNN" literal goes with it. That is not cosmetic: msv3_fleet.py extracts that
+    // string to bind a package to a probe, so a stripped image cannot be identified, the release
+    // build refuses to sign it, and ble_ota_update.py would refuse to send it. Found the hard way
+    // -- the first hang build came out 93 KB instead of 136 KB and its own release script deleted
+    // it. asm volatile with a memory clobber so the reference cannot be optimised away.
+    { const char* keep = DEVICE_NAME; asm volatile("" :: "r"(keep) : "memory"); }
+    for (;;) { /* no feedWatchdog() -- the WDT must fire */ }
+  }
 
   if (ENABLE_SERIAL_LOGS)
   {
@@ -821,6 +1513,24 @@ void setup()
     while (!Serial && millis() - hostWaitStart < BOOT_HOST_WAIT_MS) delay(10);
     delay(300);
     Serial.println(F("[DIAG] MSV3 production probe booting"));
+    Serial.print(F("[DIAG] build: "));
+    Serial.println(FIRMWARE_BUILD_ID);
+    Serial.print(F("[DIAG] boot attempt "));
+    Serial.print(g_bootAttempt + 1);
+    Serial.print(F(" of "));
+    Serial.print(BOOT_GUARD_LIMIT);
+    Serial.print(F(" before forced DFU; RESETREAS=0x"));
+    Serial.print(g_resetReason, HEX);
+    printResetReasonName(g_resetReason);
+    Serial.println();
+    if (g_bootGuardDeferred)
+    {
+      Serial.print(F("[WARN] boot guard reached its limit but DEFERRED the DFU escape: "));
+      Serial.print((int)(g_bootGuardBatteryMv + 0.5f));
+      Serial.print(F(" mV is below "));
+      Serial.print(BOOT_GUARD_MIN_ESCAPE_MV);
+      Serial.println(F(" mV. It will retry every boot until the battery recovers."));
+    }
     Serial.print(F("[DIAG] sensor id: "));
     Serial.println(SENSOR_ID);
     Serial.print(F("[DIAG] LFCLK RC ok / watchdog armed: "));
@@ -854,6 +1564,15 @@ void setup()
 
   bleInit();
 
+  // Reported here rather than in the boot banner above: that runs before bleInit(), so it could
+  // only ever have printed "not ready".
+  if (ENABLE_SERIAL_LOGS)
+  {
+    Serial.print(F("[DIAG] firmware revision readable over BLE (DIS 0x2A26): "));
+    Serial.println(g_disReady ? F("yes") : F("NO -- registration failed"));
+    Serial.flush();
+  }
+
   // Board starts in the sleep state; the first loop() iteration wakes it
   // properly rather than assuming setup()'s pin config alone is sufficient.
   probeSleep();
@@ -886,8 +1605,9 @@ void loop()
   // near MUX_SLEEP_CODE above; the switch is done in tens of nanoseconds and
   // probeWake()'s own tSDWAKEUP/I2C/activation sequence already leaves it
   // orders of magnitude of margin before the oscillator starts.
-  uint8_t phaseUsed = currentTankPhase;
-  setMux(phaseUsed);
+  // Hybrid test: one fixed code, so the reported phase is always 0 and never toggles.
+  uint8_t phaseUsed = MSV3_HYBRID_V12_TANK ? 0 : currentTankPhase;
+  setMux(MSV3_HYBRID_V12_TANK ? MUX_HYBRID_MEASURE_CODE : phaseUsed);
 
   uint32_t rawData = 0;
   uint16_t fdcStatus = 0;
@@ -900,6 +1620,7 @@ void loop()
     bool errWd = (fdcStatus & (1 << 11)) != 0;   // ERR_WD -- watchdog/no-oscillation
     bool errAhw = (fdcStatus & (1 << 10)) != 0;  // ERR_AHW -- amplitude too high
     bool errAlw = (fdcStatus & (1 << 9)) != 0;   // ERR_ALW -- amplitude too low
+    if (MSV3_HYBRID_V12_TANK && rawData >= FDC_DATA_OVER_RANGE) errWd = true;  // see definition
     if (errWd)
     {
       // Not a real reading -- same treatment as an outright I2C failure:
@@ -913,8 +1634,9 @@ void loop()
     }
     else if ((errAhw || errAlw) && ENABLE_SERIAL_LOGS)
     {
-      // Amplitude out of range -- IDRIVE (0x8000 in fdcInit()) is not
-      // bench-tuned for soil yet. Logged, but NOT suppressed: this is
+      // Amplitude out of range -- IDRIVE code 16 was validated on Probe 8 in dry air and under
+      // a two-hand load after C17 removal, but still needs real-soil/cold/saturation coverage.
+      // Logged, but NOT suppressed: this is
       // exactly the condition most likely right after watering, and
       // suppressing it risks losing the overnight test's key data point.
       Serial.print(F("[WARN] FDC status"));
@@ -923,6 +1645,21 @@ void loop()
       Serial.println(F(" -- advertising anyway"));
       Serial.flush();
     }
+  }
+  else if (ENABLE_SERIAL_LOGS)
+  {
+    // The read failed. Since 2026-09-05 fdcWaitForCh0UnreadConversion() hands back every flag it
+    // saw while polling even on a timeout, so this can say WHY rather than just "failed" -- an
+    // ERR_WD here means the oscillator is not running, which a bare timeout could not distinguish
+    // from a dead bus. Diagnostic only: measurementOk is already false either way, and nothing on
+    // the wire changes.
+    Serial.print(F("[WARN] FDC read failed; flags seen while polling: 0x"));
+    Serial.print(fdcStatus, HEX);
+    if (!wakeOk) Serial.print(F(" (wake failed)"));
+    else if (fdcStatus & (1 << 11)) Serial.print(F(" ERR_WD -- oscillator not running"));
+    else if (fdcStatus == 0) Serial.print(F(" (no flags at all -- bus or configuration fault)"));
+    Serial.println();
+    Serial.flush();
   }
 
   // Toggle for the NEXT wake regardless of this wake's outcome, so exposure
@@ -947,51 +1684,26 @@ void loop()
   bool bigSwing = lastAdvertisedRaw >= 0 && (rawDiff > (long)MOISTURE_SWING_THRESHOLD ||
                                               -rawDiff > (long)MOISTURE_SWING_THRESHOLD) &&
                   minSwingIntervalElapsed;
-  bool shouldAdvertise = measurementOk && (intervalElapsed || bigSwing);
+  // 2026-09-04: NO LONGER gated on measurementOk. It used to read
+  //     shouldAdvertise = measurementOk && (intervalElapsed || bigSwing)
+  // which meant a failed FDC wake, a failed I2C read or an ERR_WD status suppressed the whole
+  // advertisement -- so a dead sensor, a stuck bus or water in the connector silently closed the
+  // only channel through which a coated probe can be reached or updated. A sensor fault must not
+  // be able to turn into an unrecoverable probe.
+  //
+  // bigSwing still requires a valid reading: it compares rawData against the last advertised
+  // value, and letting a garbage count trigger an off-cadence advertisement would both waste power
+  // and pollute the swing logic. An invalid reading therefore goes out on the normal interval only.
+  bool shouldAdvertise = intervalElapsed || (measurementOk && bigSwing);
 
   if (shouldAdvertise)
   {
-    // Bare-tank (EC-check) reference reading -- only on advertising wakes, so this stays
-    // temporally paired with every transmitted moisture sample while limiting extra FDC energy
-    // and electrode DC exposure. The FDC is already in shutdown (probeSleep() just ran above)
-    // and the mux at MUX_SLEEP_CODE(0); this switches to the EC-check code for the phase just
-    // used, takes one reading, then unconditionally returns to shutdown/code-0 before doing
-    // anything else -- including on any failure path, so mux code 2/3 is never left selected
-    // across sleep, BLE advertising, or an early return (there is none here; this block always
-    // runs straight through to its own probeSleep() call below).
-    uint8_t bareTankMuxCode = 2 | phaseUsed;  // phase 0 -> code 2, phase 1 -> code 3
-    setMux(bareTankMuxCode);
-    // No settle delay here either -- same removed-MUX_SWITCH_SETTLE_MS reasoning as the
-    // electrode-swap mux switch above.
-    bool bareWakeOk = probeWake(WAKE_DISCARD_CONVERSIONS);
-    uint32_t bareTankData = 0;
-    uint16_t bareTankStatus = 0;
-    bool bareReadOk = bareWakeOk && fdcReadChannel0(bareTankData, bareTankStatus);
-    bool bareErrWd = bareReadOk && (bareTankStatus & (1 << 11)) != 0;
-    bool bareTankValid = bareReadOk && !bareErrWd;
-    if (!bareTankValid) bareTankData = 0;
-
-    if (ENABLE_SERIAL_LOGS && bareReadOk)
-    {
-      bool bareErrAhw = (bareTankStatus & (1 << 10)) != 0;
-      bool bareErrAlw = (bareTankStatus & (1 << 9)) != 0;
-      if (bareErrAhw || bareErrAlw)
-      {
-        // Logged only, per spec: amplitude flags do not invalidate the bare-tank reading --
-        // retained for initial characterization unless bench evidence shows it's unusable.
-        Serial.print(F("[WARN] Bare-tank FDC status"));
-        if (bareErrAhw) Serial.print(F(" ERR_AHW(amplitude-too-high)"));
-        if (bareErrAlw) Serial.print(F(" ERR_ALW(amplitude-too-low)"));
-        Serial.println(F(" -- retaining raw result"));
-        Serial.flush();
-      }
-    }
-
-    // Unconditional, even on failure -- immediately returns the mux to code 0 and shuts the FDC
-    // back down. Reuses the exact same safety-critical sequence probeSleep() already performs
-    // for the normal moisture reading (see its own comment on the ~33uA EC-check-code leak risk
-    // in wet soil).
-    probeSleep();
+    // CAPLESS INVARIANT: the FDC is already shut down and the mux parked at code 0 by
+    // probeSleep(). Do not select mux 2/3 here. Without C17 that disconnects the electrodes and
+    // leaves a roughly 25-30pF, 11-12MHz tank, beyond the FDC2214's 10MHz ceiling. The legacy
+    // packet field remains zero/invalid and bit6 tells an updated receiver to use the capless
+    // presentation scale. Keeping this block free of another probeWake() also removes the old
+    // reference conversion's energy cost.
 
     wakeCount++;
 
@@ -1000,12 +1712,11 @@ void loop()
       char buf[220];
       snprintf(buf, sizeof(buf),
                "[DIAG] wake=%lu%s phase=%d DATA_CH0=%lu status=0x%X "
-               "tempQ4C=%d tempValid=%d bareDATA_CH0=%lu bareStatus=0x%X bareValid=%d "
+               "tempQ4C=%d tempValid=%d bareDisabled=1 "
                "vbat_mV=%d charging=%d",
                (unsigned long)wakeCount, bigSwing ? " (swing)" : "", (int)phaseUsed,
                (unsigned long)rawData, fdcStatus,
                (int)boardTempQuarterC, boardTempValid ? 1 : 0,
-               (unsigned long)bareTankData, bareTankStatus, bareTankValid ? 1 : 0,
                (int)(batteryMv + 0.5f), charging ? 1 : 0);
       Serial.println(buf);
       Serial.flush();
@@ -1015,9 +1726,11 @@ void loop()
     // connection here: every non-DFU connection is now explicitly disconnected below before the
     // probe returns to its sleep cadence.
     g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
-    bool advStarted = startAdv(rawData, batteryMv, charging, otaPowerOk, phaseUsed,
-                               boardTempValid, boardTempQuarterC,
-                               bareTankValid, bareTankData);
+    // Zero the count when the reading is not real, so a receiver that does not yet understand
+    // ADV_FLAG_READING_INVALID stores an obviously-wrong 0 rather than a believable wrong number.
+    bool advStarted = startAdv(measurementOk ? rawData : 0u,
+                               batteryMv, charging, otaPowerOk, phaseUsed,
+                               boardTempValid, boardTempQuarterC, measurementOk);
 
     if (advStarted)
     {
@@ -1074,6 +1787,18 @@ void loop()
                (millis() - holdStart) < OTA_CONNECTED_HOLD_MS)
         {
           feedWatchdog();
+
+          // The authorize callback only records the request; the handoff itself happens here so
+          // the ATT response has time to reach the client first. completeDfuReset() does not
+          // return when it succeeds -- reaching the line after it means the handoff failed and
+          // the normal idle-peer path below should run.
+          if (bledfu.dfuResetPending())
+          {
+            delayFeedingWatchdog(DFU_RESPONSE_SETTLE_MS);
+            bledfu.completeDfuReset();
+            break;
+          }
+
           delay(50);
         }
 
@@ -1094,6 +1819,23 @@ void loop()
           Serial.print(F("[DIAG] OTA hold ended after "));
           Serial.print(millis() - holdStart);
           Serial.println(forcedDisconnect ? F("ms (idle peer disconnected)") : F("ms"));
+
+          // Recorded inside the authorize callback, printed here -- Serial work in a BLE event
+          // handler delays the ATT response and can change the timing being measured.
+          ResetSafeDfuDiag diag;
+          if (bledfu.takeDiag(diag))
+          {
+            Serial.print(F("[DIAG] dfu authorize: checkpoint="));
+            Serial.print(diag.checkpoint);
+            Serial.print(F(" op="));
+            Serial.print(diag.op);
+            Serial.print(F(" conn="));
+            Serial.print(diag.connHandle);
+            Serial.print(F(" gattStatus=0x"));
+            Serial.print(diag.gattStatus, HEX);
+            Serial.print(F(" replyRc="));
+            Serial.println(diag.replyRc);
+          }
           Serial.flush();
         }
       }
@@ -1102,7 +1844,15 @@ void loop()
       // start. The old code silently suppressed retries for a full minute after any payload or
       // start failure even though no packet had gone over the air.
       lastAdvertiseMs = millis();
-      lastAdvertisedRaw = (long)rawData;
+      // Only a real reading may become the swing baseline. Advertising a fault must not silently
+      // re-zero the comparison the next big-swing test is made against.
+      if (measurementOk) lastAdvertisedRaw = (long)rawData;
+
+      // The probe has completed an advertising cycle, which is the milestone the boot-failure
+      // guard treats as evidence of health. Deliberately placed AFTER the OTA window and the
+      // connected hold, not at startAdv(), so an image that advertises and then dies later in the
+      // same cycle cannot clear the guard.
+      bootGuardNoteHealthyAdvert();
     }
     else if (ENABLE_SERIAL_LOGS)
     {

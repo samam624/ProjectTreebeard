@@ -73,6 +73,15 @@ compared across all 4 boards; open item.
 python scripts/swd_flash_hex.py --port COM3 --bootloader
 ```
 
+> **Superseded 2026-09-06.** Bare `--bootloader` is now an error. It defaulted to the STOCK
+> Adafruit image, which on an MSV3 fleet probe would replace a signed bootloader and its
+> anti-rollback floor with one that has neither. The 2026-08-28 run below was correct at the
+> time — these were fresh boards being brought up on the stock loader. Today write either
+> `--msv3 <version>` or `--bootloader --stock-bootloader`.
+
+```powershell
+```
+
 Waits for **3 continuous seconds** of stable SWD contact (drives the adapter's own `probe` command,
 resets the stability window if DPIDR reads inconsistently between checks — real noise-passing-
 parity-check risk, not hypothetical), then always mass-erases (never skippable in this mode — a

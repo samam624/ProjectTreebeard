@@ -35,6 +35,58 @@ The MSV3 E73-2G4M08S1C PCB has no 32.768 kHz crystal. Its `P0.00`/`P0.01` pins a
 
 An edit under `%LOCALAPPDATA%\Arduino15\packages` is not part of this Git repository. Never describe such an edit as durably resolved unless a tracked script reapplies/verifies it and tracked source fails safely when it is absent.
 
+## MSV3 BLE OTA sessions
+
+- Use the repository-root `scripts/ble_ota_update.py` with the portable Python under
+  `MSV3/.arduino-build/python-portable/runtime/python.exe`. Target a fleet probe with `--probe N`;
+  never replace the registry-derived address with a guessed name or generic `AdaDFU` scan.
+- Run `--preflight-only` first. It is safe inside a workspace sandbox and must pass package
+  integrity, signature, identity, device-type, rollback, and boot-guard pairing checks before any
+  live attempt.
+- On Codex or another sandboxed Windows host, run the LIVE updater outside the workspace sandbox
+  (Codex `exec_command` with `sandbox_permissions=require_escalated`). Measured on 2026-09-11:
+  passive WinRT advertisement scans worked inside the sandbox, but every active GATT device open
+  failed with `E_ABORT`/`E_FAIL`; the same checked command connected and completed DFU immediately
+  outside it. This permission changes only host BLE access and does not bypass the updater's
+  firmware or fleet safety checks.
+- After `DFU Complete`, prove the exact DIS build ID and observe at least two advancing wake
+  counters with `scripts/msv3_fleet_scan.py --probe N --require-progress`. Only then update that
+  probe's `installed_application_version` in `MSV3/fleet.json`.
+- Do not use `--allow-identity-mismatch`, `--allow-downgrade`, `--skip-jump`, or
+  `--reflash-same-build` merely to make an ordinary field update proceed. Each is a deliberate
+  exceptional path whose precondition must already be established.
+
+## SWD sessions: never issue a bare serial command to the flasher
+
+The maintainer holds pogo pins against castellated pads BY HAND for the whole of every SWD
+operation. Two failures on 2026-09-07 came from ignoring that:
+
+- A hand contact that passes one instantaneous check can drop mid-write. Every operation that
+  touches a target -- erase, program, AND read -- must first wait for **3 continuous seconds of
+  stable, consistent-DPIDR contact**. `wait_for_contact()` in `scripts/swd_flash_hex.py` is the one
+  implementation; import it, never re-roll it.
+- The gate used to be opt-in (`--bootloader` implied it, plain `--hex --mass-erase` did not), so it
+  was missing exactly when nobody thought to ask. It is now the DEFAULT in every target-touching
+  script, with an explicit `--no-wait-contact` for a fixed jig.
+
+**Do not hand the maintainer a `python -c "...serial.Serial(...)..."` one-liner that talks to the
+flasher.** It has no contact gate, so it is the one shape guaranteed to reintroduce this. If a new
+capability is needed, add it to a script that goes through the gate:
+
+- `scripts/swd_flash_hex.py`  -- erase + program (`--msv3 <version>` verifies the hex against its
+  release manifest before writing, and resets the target afterwards)
+- `scripts/swd_dump.py`       -- bulk read / forensic capture
+- `scripts/swd_nvmc_probe.py` -- NVMC and protection register inspection
+
+Chain steps INSIDE one script invocation rather than across several, so one hold covers the whole
+sequence (`swd_dump.py --eraseall-diag` is the pattern).
+
+**Mass erase goes through CTRL-AP, not NVMC.** Writing `NVMC_ERASEALL` over the AHB-AP is ACKed at
+the SWD layer but faults on the AHB bus -- measured on nRF52840, DP CTRL/STAT `0xF0000060` with
+STICKYERR set, no busy state, flash untouched. `erase: OK` was printed anyway and a board came out
+still running its previous application. Any erase must PROVE its postcondition by blank-checking
+before reporting success; a status string from the adapter is not evidence.
+
 ## Working in this repository as an automated agent
 
 - This is a real, working hardware/firmware/cloud project (MSV1/MSV2/MSV3 plant moisture sensors, a shared DisplayCenter receiver, and a shared cloud backend), not a toy repo -- prefer reading the owning subsystem's `docs/` and existing code over guessing conventions.

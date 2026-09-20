@@ -80,19 +80,21 @@ In Supabase Dashboard:
 37. Paste it into the SQL editor.
 38. Run it.
 39. Apply every remaining file in `supabase/migrations/` from `013` through the
-    highest-numbered migration present (currently `039`) in numerical order. In particular,
+    highest-numbered migration present (currently `040`) in numerical order. In particular,
     024-027 are one staged moisture-calibration rollout;
     030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
     upserts; 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
     extracts the scale-transition-reset logic into a shared helper; 035 adds nullable
-    MSV3 board-temperature/bare-tank-reference history columns (no compensation formula
-    enabled yet - see docs/MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md); 036
+    MSV3 board-temperature/bare-tank-reference history columns (035 alone does not enable a
+    compensation formula; the later receiver model is added by 040); 036
     adds the density probe plus stable sampled reader used to bound large History downloads;
     037 adds `raw_fdc_counts`/`raw_moisture_khz` (present on the table since 029, but never
     returned by any history-reader RPC until now) to `msv2_read_sensor_history`,
     `msv2_read_share_sensor_history`, and `msv2_read_share_sensor_history_sampled`; and 038 adds
     an optional `p_until` upper bound to the density/sampled reader pair so the History tab can
-    query an arbitrary closed date range, not just "since X through whatever's newest now."
+    query an arbitrary closed date range, not just "since X through whatever's newest now";
+    039 fixes concurrent receiver-config upserts; and 040 adds the receiver-derived MSV3
+    temperature-compensated log-ratio and model version to lossless history and all readers.
     Do not skip directly to the latest file because the migration history and rollback trail are
     part of the deployment record.
 
@@ -173,7 +175,7 @@ authenticated receiver. Migrations 024-027 make that result time-weighted and ad
 The RPC itself remains `service_role` only. Do not call it directly from a browser or place
 the service-role key in firmware. Operational behavior, alert thresholds, production
 evidence, and verification commands are documented in
-[Treebeard Adaptive Moisture Calibration](../../MSV2/docs/TREEBEARD_ADAPTIVE_MOISTURE_CALIBRATION.md).
+[Treebeard Adaptive Moisture Calibration](../../MSV2/docs/MSV2_ADAPTIVE_MOISTURE_CALIBRATION.md).
 
 The claim endpoint URL should be:
 

@@ -1,0 +1,26 @@
+{
+  "scanned_at": "2026-09-08T12:31:33",
+  "seconds": 150.0,
+  "probes": [
+    {
+      "sensor_id": 7,
+      "seen": true,
+      "wide": true,
+      "address": "F7:B1:E6:50:EC:B6",
+      "name": [
+        "MSV3-MOISTURE-007"
+      ],
+      "wake": 4,
+      "wake_progress": 2,
+      "battery_mv": 4320,
+      "flags": 31,
+      "ota_gate_open": true,
+      "die_temp_c": 26.0,
+      "data_ch0": 20772948,
+      "bare_ch0": 20773341,
+      "rssi_mean": -70.4,
+      "packets": 51,
+      "raw": "4d5356320704000054f83c01e0101f6800ddf93c01"
+    }
+  ]
+}

@@ -1,0 +1,329 @@
+diff --git a/src/main.c b/src/main.c
+--- a/src/main.c
++++ b/src/main.c
+@@ -238,6 +238,79 @@
+   NVIC_SystemReset();
+ }
+ 
++/*
++ * MSV3 1.0.4: keep a wired way back into a probe whose SWD pads are under conformal coating.
++ *
++ * Stock 0.11.0 brings up one transport -- `if (_ota_dfu) ble_stack_init(); else usb_init();` -- and
++ * DEFAULT_TO_OTA_DFU forces _ota_dfu whenever `!valid_app || dfu_start`. So the USB branch is
++ * unreachable in exactly the case that matters, and a coated MSV3 with a dead application has BLE
++ * as its only route. That is a policy choice in an if/else, not a stack limitation: usb_init()
++ * already supports a running SoftDevice (it branches on sd_softdevice_is_enabled() and routes power
++ * events through sd_power_usbdetected/usbpwrrdy/usbremoved, leaving IRQ priorities 0-1 to the SD),
++ * wait_for_events() already calls tud_task() whenever tusb_inited() regardless of DFU mode, and
++ * serial DFU *is* USB CDC -- hci_slip.c's tud_cdc_rx_cb() feeds the SLIP decoder straight from
++ * tud_cdc_read_char().
++ *
++ * The one real obstacle was that dfu_register_callback() holds a single slot and single-bank DFU
++ * erases the application before Init authentication, so two transports feeding one bank would
++ * destroy the image. dfu_transport_claim() now arbitrates that: both transports are open, the first
++ * to present traffic while the state machine is idle owns the session, and the loser is refused
++ * until dfu_init() resets ownership.
++ *
++ * USB is therefore normal here -- present whenever a cable is, for as long as it is, with no timer
++ * and no window to miss -- and BLE OTA runs on top of it rather than instead of it. With no cable,
++ * VBUSDETECT is clear, USB is never initialized, and a battery/solar probe behaves byte-for-byte as
++ * it does on 1.0.3.
++ *
++ * Design, risks, and the acceptance criteria this must pass on probe 99 before any fleet probe runs
++ * it: MSV3/docs/MSV3_USB_AND_BLE_OTA_COEXISTENCE_DESIGN_2026-09-14.md
++ */
++#define MSV3_USB_BLE_COEXIST 1
++
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++/*
++ * noinline is load-bearing, not style. check_dfu_mode() is static and is inlined into main(), so a
++ * static helper called once from it leaves no symbol in the link map -- and the map is where
++ * build_msv3_release.ps1 proves the wired path actually linked. A source sentinel cannot tell
++ * "compiled in" from "#define still sitting in the file". This was measured, not assumed: the first
++ * 1.0.4 build linked with no such symbol at all because it had been inlined away.
++ */
++__attribute__((noinline, used))
++static bool msv3_usb_attach_if_vbus(void)
++{
++  /*
++   * The SoftDevice is enabled by the time this runs, so USBREGSTATUS is read through the SVC.
++   * usb_init() performs the same check again for its own purposes.
++   */
++  uint32_t usb_reg = 0;
++  uint8_t  sd_en   = false;
++
++  if (is_sd_existed()) {
++    sd_softdevice_is_enabled(&sd_en);
++  }
++
++  if (sd_en) {
++    if (sd_power_usbregstatus_get(&usb_reg) != NRF_SUCCESS) {
++      return false;
++    }
++  } else {
++    usb_reg = NRF_POWER->USBREGSTATUS;
++  }
++
++  if (!(usb_reg & POWER_USBREGSTATUS_VBUSDETECT_Msk)) {
++    return false;
++  }
++
++  /*
++   * CDC only, never UF2. Mass storage writes unsigned images by definition, which would route a
++   * host straight around signed-init verification, the device-type check and the monotonic version
++   * floor -- the three things the fleet's update safety actually rests on.
++   */
++  usb_init(true);
++  return true;
++}
++#endif
++
+ static void check_dfu_mode(void) {
+   uint32_t const gpregret = NRF_POWER->GPREGRET;
+ 
+@@ -323,17 +396,30 @@
+ 
+   // Enter DFU mode accordingly to input
+   if (dfu_start || !valid_app) {
++    bool msv3_usb_up = false;
++
+     if (_ota_dfu) {
+       led_state(STATE_BLE_DISCONNECTED);
+       if (!_sd_inited) mbr_init_sd();
+       _sd_inited = true;
+       ble_stack_init();
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++      msv3_usb_up = msv3_usb_attach_if_vbus();
++#endif
+     } else {
+       led_state(STATE_USB_UNMOUNTED);
+       usb_init(serial_only_dfu);
++      msv3_usb_up = true;
+     }
+ 
+     // Initiate an update of the firmware.
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++    if (_ota_dfu && msv3_usb_up) {
++      // Both transports, arbitrated. No timeout: USB is a normal always-available path here, not a
++      // window, and BLE recovery is live the whole time rather than waiting behind it.
++      bootloader_dfu_start_dual();
++    } else
++#endif
+     if (APP_ASKS_FOR_SINGLE_TAP_RESET() || uf2_dfu || serial_only_dfu) {
+       // If USB is not enumerated in 3s (eg. because we're running on battery), we restart into app.
+       bootloader_dfu_start(_ota_dfu, 3000, true);
+@@ -342,7 +428,16 @@
+       bootloader_dfu_start(_ota_dfu, 0, false);
+     }
+ 
++    /*
++     * Tear down every transport this session actually started, not just the one the entry mode
++     * named. Before 1.0.4 those were the same thing.
++     */
+     if (_ota_dfu) {
++#if defined(NRF_USBD) && MSV3_USB_BLE_COEXIST
++      if (msv3_usb_up) {
++        usb_teardown();
++      }
++#endif
+       disable_softdevice();
+     } else {
+       usb_teardown();
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+@@ -47,6 +47,20 @@
+  */
+ void dfu_register_callback(dfu_callback_t callback_handler);
+ 
++/**@brief MSV3 1.0.4: claim the single-bank DFU session for one transport.
++ *
++ * MSV3 runs USB CDC and BLE DFU at the same time so a probe whose SWD pads are under conformal
++ * coating keeps a wired way back. Single-bank DFU erases the application before Init
++ * authentication, so two transports feeding one bank would destroy the image. This arbitrates:
++ * the first transport to present traffic while the state machine is idle owns the session and its
++ * callback becomes the active one; the other is refused until dfu_init() resets ownership.
++ *
++ * @param[in] callback_handler The calling transport's own dfu callback.
++ * @retval true  if the caller owns the session (already did, or has just claimed it).
++ * @retval false if another transport owns an update that is already in progress.
++ */
++bool dfu_transport_claim(dfu_callback_t callback_handler);
++
+ /**@brief Function for setting the DFU image size. 
+  *
+  * @details Function sets the DFU image size. This function must be called when an update is started 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+@@ -42,6 +42,7 @@
+ static pstorage_handle_t          * mp_storage_handle_active;   /**< Pointer to the pstorage handle for the active bank for receiving of data packets. */
+ 
+ static dfu_callback_t               m_data_pkt_cb;              /**< Callback from DFU Bank module for notification of asynchronous operation such as flash prepare. */
++static dfu_callback_t               m_dfu_owner_cb;             /**< MSV3 1.0.4: transport that owns the live session, or NULL when idle. */
+ static dfu_bank_func_t              m_functions;                /**< Structure holding operations for the selected update process. */
+ 
+ 
+@@ -272,6 +273,28 @@
+ }
+ 
+ 
++bool dfu_transport_claim(dfu_callback_t callback_handler)
++{
++    if (m_dfu_owner_cb == callback_handler)
++    {
++        // Already ours. The common case once a transfer is under way.
++        return true;
++    }
++
++    if ((m_dfu_owner_cb != NULL) && (m_dfu_state != DFU_STATE_IDLE))
++    {
++        // Somebody else is mid-update. Refusing here is the whole point: single-bank DFU has
++        // already erased the application by the time data packets flow, so a second transport
++        // writing into the same bank would leave neither image recoverable.
++        return false;
++    }
++
++    m_dfu_owner_cb = callback_handler;
++    m_data_pkt_cb  = callback_handler;
++    return true;
++}
++
++
+ uint32_t dfu_init(void)
+ {
+     uint32_t                err_code;
+@@ -279,6 +302,8 @@
+ 
+     m_init_packet_length = 0;
+     m_image_crc          = 0;
++    // A fresh session is unowned, so whichever transport speaks first may claim it.
++    m_dfu_owner_cb       = NULL;
+ 
+     err_code = pstorage_register(&storage_module_param, &m_storage_handle_app);
+     if (err_code != NRF_SUCCESS)
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -256,6 +256,22 @@
+ void rpc_transport_event_handler(hci_transport_evt_t event)
+ {
+     uint32_t  retval;
++
++    // MSV3 1.0.4: USB and BLE are both live. Take the session, or drop this packet if BLE already
++    // owns an update in progress. Dropping is correct rather than rude: the wired host sees no
++    // acknowledgement and retries, while the in-flight BLE image stays intact.
++    if (!dfu_transport_claim(dfu_cb_handler))
++    {
++        uint8_t * p_discard_buffer = NULL;
++        uint16_t  discard_length   = 0;
++
++        if (NRF_SUCCESS == hci_transport_rx_pkt_extract(&p_discard_buffer, &discard_length))
++        {
++            (void) hci_transport_rx_pkt_consume(p_discard_buffer);
++        }
++        return;
++    }
++
+     uint16_t  rpc_cmd_length_read = 0;
+     uint8_t * p_rpc_cmd_buffer = NULL;
+     uint8_t   element_index;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -343,6 +343,13 @@
+  */
+ static void start_data_process(ble_dfu_t * p_dfu, ble_dfu_evt_t * p_evt)
+ {
++    // MSV3 1.0.4: refuse a BLE Start while a wired update owns the bank. See dfu_transport_claim().
++    if (!dfu_transport_claim(dfu_cb_handler))
++    {
++        dfu_error_notify(p_dfu, NRF_ERROR_INVALID_STATE);
++        return;
++    }
++
+     uint32_t err_code;
+ 
+     dfu_start_packet_t  start_packet  = {.dfu_update_mode = m_update_mode};
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+@@ -54,6 +54,7 @@
+ static bool m_cancel_timeout_on_usb; /**< If set the timeout is cancelled when USB is enumerated. Otherwise, the timeout is only cancelled when DFU update is started. */
+ static bool m_usb_was_mounted; /**< Tracks whether the USB DFU session was ever enumerated so we can exit when cable is later removed. */
+ static bool m_startup_dfu_has_activity; /**< Tracks whether any valid serial or UF2 update traffic has started. */
++static bool m_dual_transport; /**< MSV3 1.0.4: both USB CDC and BLE DFU transports are open this session. */
+ 
+ APP_TIMER_DEF( _dfu_startup_timer );
+ 
+@@ -387,7 +388,13 @@
+   {
+     // Timeout has occurred. Close the connection with the DFU Controller.
+     uint32_t err_code;
+-    if ( is_ota() )
++    if ( m_dual_transport )
++    {
++      // Both were opened, so both must be closed; the is_ota() global cannot name the owner here.
++      (void) dfu_transport_serial_close();
++      err_code = dfu_transport_ble_close();
++    }
++    else if ( is_ota() )
+     {
+       err_code = dfu_transport_ble_close();
+     }else
+@@ -438,8 +445,35 @@
+ }
+ 
+ 
++uint32_t bootloader_dfu_start_dual(void)
++{
++  uint32_t err_code;
++
++  m_cancel_timeout_on_usb    = false;
++  m_usb_was_mounted          = false;
++  m_startup_dfu_has_activity = false;
++  m_dual_transport           = true;
++
++  // Clear swap if banked update is used. Called once for the whole session: dfu_init() creates and
++  // starts the inactivity timer, so calling it per transport would re-create a live app_timer.
++  err_code = dfu_init();
++  VERIFY_SUCCESS(err_code);
++
++  // Serial first, so the SLIP decoder is armed before a wired host's first frame can arrive.
++  // Registration order does not decide who wins -- dfu_transport_claim() does, at the first packet.
++  (void) dfu_transport_serial_update_start();
++  err_code = dfu_transport_ble_update_start();
++
++  wait_for_events();
++
++  return err_code;
++}
++
++
+ uint32_t bootloader_dfu_start(bool ota, uint32_t timeout_ms, bool cancel_timeout_on_usb)
+ {
++  m_dual_transport = false;
++
+   uint32_t err_code;
+ 
+   m_cancel_timeout_on_usb = cancel_timeout_on_usb && !ota;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.h
+@@ -51,6 +51,16 @@
+  */
+ uint32_t bootloader_dfu_start(bool ota, uint32_t timeout_ms, bool cancel_timeout_on_usb);
+ 
++/**@brief MSV3 1.0.4: run BLE OTA and USB CDC serial DFU in the same session.
++ *
++ * Stock only ever starts one transport, which on a DEFAULT_TO_OTA_DFU build means a probe with a
++ * dead application has BLE as its only way back -- and MSV3's SWD pads are under conformal coating
++ * on exactly those units. This opens both, with dfu_transport_claim() arbitrating so only one can
++ * ever write the bank. The caller must have brought up the SoftDevice and, if a cable is present,
++ * usb_init() beforehand.
++ */
++uint32_t bootloader_dfu_start_dual(void);
++
+ /**@brief Function for exiting bootloader and booting into application.
+  *
+  * @details This function will disable SoftDevice and all interrupts before jumping to application.

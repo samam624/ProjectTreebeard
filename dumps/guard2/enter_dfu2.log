@@ -1,0 +1,19 @@
+
+This does NOT erase anything -- it writes the bootloader's DFU magic and resets.
+Waiting for 3s of continuous solid SWD contact (touch the pads now, up to 180s total)...
+  holding contact (DPIDR=0x2BA01477): 0.0/3.0s  holding contact (DPIDR=0x2BA01477): 1.0/3.0s  holding contact (DPIDR=0x2BA01477): 1.2/3.0s  holding contact (DPIDR=0x2BA01477): 1.5/3.0s
+  holding contact (DPIDR=0x2BA01477): 0.0/3.0s  holding contact (DPIDR=0x2BA01477): 1.0/3.0s  holding contact (DPIDR=0x2BA01477): 2.0/3.0s  holding contact (DPIDR=0x2BA01477): 2.6/3.0s  holding contact (DPIDR=0x2BA01477): 2.6/3.0s  holding contact (DPIDR=0x2BA01477): 3.6/3.0s
+  contact stable for 3s -- proceeding.
+
+halting the core...
+  halt: core halted
+  GPREGRET2 before reset = 0x000000B1  (magic 0xB0|count expected if the boot counter survived)
+
+writing GPREGRET = 0xA8 (bootloader DFU magic)...
+  GPREGRET reads back 0x000000A8 -- magic held
+
+soft-resetting via AIRCR SYSRESETREQ (a pin reset would clear the magic)...
+
+You can let go of the pads now.
+The bootloader should be advertising DFU within a few seconds. Recover with:
+  python scripts/ble_ota_update.py --probe <N> --skip-jump <good package>
