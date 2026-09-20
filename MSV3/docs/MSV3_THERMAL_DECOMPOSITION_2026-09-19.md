@@ -46,16 +46,37 @@ pots behave differently, so a single compensation coefficient cannot cover both.
 
 - **The readout term, -0.041 %/C at r = -0.994.** The bare tank has the electrode physically
   disconnected and touches no soil, so no pot confound can reach it.
-- **The 2.9x within-AM electrode ratio**, sensor 3 against sensor 9 across 2026-09-17..09-19. Both
-  rigs were in the shared pot on the same days in the same soil, so this is a within-pot,
-  contemporaneous comparison. *Subject to confirming when sensor 3 entered the shared pot* -- the
-  repository record says 2026-09-08, which would make this window clean, but that date has not been
-  re-verified with the maintainer.
+- **The 2.9x within-AM electrode ratio**, sensor 3 against sensor 9 across 2026-09-17..09-19.
+  **VERIFIED CLEAN 2026-09-19 (maintainer):** sensor 3 has been in this pot throughout with no pot
+  change, and sensor 9 entered on **2026-09-14 ~18:30**, both well before the analysis window. Same
+  pot, same soil, same days. This is now the only surviving electrode evidence in this document.
 
 **What replaces it: probe 4 vs probe 5, from now on.** Both in the shared Alocasia pot, same soil,
 same FDC readout, same days, differing only in electrode. No units problem, no pot confound, no
-cross-board subtraction. **That is the real electrode measurement** and it starts accumulating as
-soon as probe 5 sees a thermal cycle.
+cross-board subtraction. **That is the real electrode measurement.**
+
+**But neither has settled yet.** Insertion dates, confirmed with the maintainer:
+
+| sensor | entered this pot |
+|---|---|
+| sensor 3 | throughout -- no pot change |
+| sensor 2 | throughout |
+| sensor 9 | 2026-09-14 ~18:30 |
+| probe 4 | 2026-09-18 20:53 |
+| probe 5 | 2026-09-19 ~20:24 |
+
+**This puts a settling caveat on probe 4's own v1.2 figure.** The +0.053 %/C used in the
+decomposition below comes from the clean window 09-18 20:53 to 09-19 15:13 -- the **first ~18 hours
+after insertion**, while soil was still closing around the sensor and moisture equilibrating. It is
+not a steady-state measurement of the v1.2 electrode.
+
+There is precedent: `MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md` recorded that sensor 9 initially
+looked clean and the conclusion had to be reversed once it had run longer -- *"Sensor 9 was not
+clean. It had not run long enough."* Sensor 9 had been inserted on 09-14, two days earlier. Expect
+the same trap here.
+
+**Re-measure probe 4 and probe 5 after several settled days before treating either number as an
+electrode property.**
 
 The decomposition below is kept as the record of what was tried and why it does not hold.
 

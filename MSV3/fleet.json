@@ -282,7 +282,22 @@
         5,
         9
       ],
-      "notes": "The electrode x readout 2x2 lives here: sensor 9 = MSV3 blade + AM, sensor 3 = v1.2 + AM, probe 5 = MSV3 blade + FDC, probe 4 = v1.2 + FDC. Sensor 2 is also here but is quantization-limited."
+      "notes": "The electrode x readout 2x2 lives here: sensor 9 = MSV3 blade + AM, sensor 3 = v1.2 + AM, probe 5 = MSV3 blade + FDC, probe 4 = v1.2 + FDC. Sensor 2 is also here but is quantization-limited.",
+      "insertion_dates": {
+        "_comment": [
+          "When each sensor entered THIS pot. Data before a sensor's own date is a different",
+          "location and must not be pooled with data after it. A freshly inserted probe also",
+          "SETTLES -- soil closes around the blade, moisture equilibrates -- so the first days",
+          "after insertion are not steady state."
+        ],
+        "verified": "2026-09-19",
+        "source": "maintainer, stated directly 2026-09-19",
+        "sensor_3": "in this pot throughout -- no pot change, its history is continuous",
+        "sensor_2": "in this pot throughout (three-generation pot test)",
+        "sensor_9": "2026-09-14 ~18:30 PDT. Data before this is a different location. Front-end doc's 2026-09-16 note that 'sensor 9 was not clean, it had not run long enough' is consistent with post-insertion settling.",
+        "probe_4": "2026-09-18 20:53 PDT, confirmed independently by a 1.6M-count step with no wake reset.",
+        "probe_5": "2026-09-19 ~20:24 PDT."
+      }
     },
     "begonia": {
       "plant": "Begonia",
@@ -392,10 +407,12 @@
       "NEW -- the electrode INVERTS the sign within one readout, it does not merely scale. Any compensation assuming a single signed coefficient per readout will fail."
     ],
     "comparison_rules": [
-      "NEVER compare a probe's data across a pot change. Different pot = different soil, moisture history and contact. Sensor 3 and probe 4 have both moved pots; their pre-move data is not 1:1 with their current data.",
-      "The REAL electrode measurement going forward is probe 4 vs probe 5: both in the shared Alocasia pot, same soil, same FDC readout, same days, differing only in electrode. No units problem, no pot confound, no cross-board subtraction.",
-      "Bare-tank measurements are pot-independent because the electrode is disconnected and touches no soil. They are the only figures safe to carry across pot changes.",
-      "OPEN: the date sensor 3 entered the shared pot has not been re-verified with the maintainer. The repository record says 2026-09-08."
+      "NEVER compare a probe's data across a pot change. See pots.shared-alocasia.insertion_dates for each sensor's entry date.",
+      "VERIFIED 2026-09-19: the within-AM 2.9x (sensors 3 vs 9, 09-17..09-19) IS clean. Sensor 3 has been in this pot throughout and sensor 9 entered 09-14 18:30, both well before that window.",
+      "WITHDRAWN: any ratio built by subtracting probe 4's own-pot blade data from its shared-pot v1.2 data. Different soil on each side.",
+      "SETTLING CAVEAT: probe 4 entered 2026-09-18 20:53 and its +0.053 %/C v1.2 figure comes from the FIRST ~18 HOURS after insertion. Probe 5 entered 2026-09-19 ~20:24. Neither is at steady state yet; re-measure both after several days before treating either number as the electrode's property.",
+      "The REAL electrode measurement is probe 4 vs probe 5 once both have settled: same pot, same soil, same FDC readout, same days, one variable.",
+      "Bare-tank figures are pot-independent (electrode disconnected, no soil contact) and are the only ones safe to carry across pot changes."
     ]
   }
 }
