@@ -119,18 +119,43 @@ changes branch history, may conflict with the 29 branch-only commits, and runs a
 intentionally-uncommitted working tree. It is recorded here with its commit ID so the decision can be
 made explicitly. Until then, cite main-only documents **by commit**, as external evidence.
 
-### 8. A datasheet limit is mis-stated on `main`
+### 8. The 2026-09-14 rework put the VBAT_OV divider BELOW the datasheet minimum
 
-`MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` says *"TI caps the sum at 10 MΩ"* and rejects two divider
-options for "sum > 10 MΩ".
+**Upgraded 2026-09-19 after cherry-picking `edc9705`. This review initially under-called it as a
+wording defect; it is a hardware spec violation, and this branch had already caught it.**
 
-The BQ25504 states both things, and the safest form is the literal one: **the application-section
-prose recommends "no higher than 10 MΩ"; the Recommended Operating Conditions table (§7.3) lists
-9–11 MΩ** (MIN 9 / NOM 10 / MAX 11) for `ROV1+ROV2`, `RUV1+RUV2` and `ROK1+ROK2+ROK3`. Quote both
-rather than synthesising a single cap.
+`MSV3_VBAT_OV_STORAGE_REWORK_2026-09-14.md` reasons from section 8.3.3's body text, which says only
+*"recommended to be no higher than 10 MΩ"*. It concludes: *"Divider sum drops 10.04 MΩ -> 8.54 MΩ,
+still inside TI's <=10 MΩ recommendation."*
 
-**The decision survives** — the rejected candidates were 11.50 and 11.52 MΩ, above the 11 MΩ maximum
-as well. Only the stated reason is wrong. Not fixed here because the document exists only on `main`.
+That is the incomplete rule. The **Recommended Operating Conditions** table (§7.3) gives
+**MIN 9 / NOM 10 / MAX 11 MΩ** for `ROV1+ROV2` — it has a **minimum**:
+
+```text
+reworked sum = R11 + R14 = 4.42 + 4.12 = 8.54 MΩ
+datasheet MIN                          = 9.00 MΩ
+                                         -> 0.46 MΩ BELOW spec
+```
+
+**This affects every reworked field probe, i.e. all of them except probe 7.** TI's stated reason for
+the range is settling: VRDIV biases the divider string only briefly every 64 ms, so the sum is
+bounded above for settling time and below for sampled-reference loading and quiescent draw.
+
+`MSV3/hardware/MSV3_Probe_PCB/reference/COMPONENT_INDEX.md` on this branch **already documented this**
+(dated 2026-09-15/16), naming `edc9705` as having followed the incomplete text. This review
+rediscovered it independently, which is corroboration rather than a new finding — and a reminder that
+the hardware reference index, not just `MSV3/docs/`, carries load-bearing corrections.
+
+On the cherry-pick the conflicting hunks were resolved in favour of this branch, so the corrected
+text stands and `edc9705`'s "still inside TI's <=10 MΩ recommendation" sentence was **not**
+reintroduced. A pointer to the rework doc was added to `COMPONENT_INDEX.md` carrying the correction
+with it, so the derivation and its caveat are never read apart.
+
+**Open question this raises, for the maintainer:** is 8.54 MΩ acceptable in practice, or should the
+OV pair be re-picked inside 9–11 MΩ? From the values the rework doc lists as stocked, and targeting
+the same ≈3.89 V ceiling, this needs a fresh pass — the rework doc's own option enumeration was run
+against the wrong constraint (`<=10 MΩ` with no floor), so its rejections and its choice should both
+be re-derived against MIN 9 / MAX 11.
 
 ## CHECKED AND CLEARED
 
