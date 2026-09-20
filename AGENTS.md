@@ -4,6 +4,36 @@ Codex auto-loads this file from the repository root. Claude Code reads the equiv
 `CLAUDE.md` at the same path instead (its own auto-loaded convention) -- keep the two in sync
 when either changes; they must state the same rules.
 
+## READ THIS FIRST: `MSV3/fleet.json` is the only source of current physical state
+
+**Every dated document in this repository is HISTORY. None of them describes the present.** They
+record what was true on the date in their filename and are never retro-edited when hardware moves.
+Reading them to infer where a probe is, what electrode is in its soil, what it is powered by or what
+has been reworked is the single most repeated failure mode in this project.
+
+**Before any analysis, any recommendation, or any claim about a probe, read
+`MSV3/fleet.json`** and use these sections, which carry a `verified` date and a `source`:
+
+- `probes[].physical_state` -- location, pot, room, power, the electrode ACTUALLY IN THE SOIL,
+  readout, and `mods[]` (divider swap, zener, coating, C17)
+- `non_msv3_nodes` -- sensors 1, 2, 3 and 9 report to the same receiver but are NOT MSV3 probes and
+  have no bootloader/OTA entry. Their electrode and location are what analysis most often gets wrong.
+- `pots` -- which sensors share soil. Two sensors in one pot see the same water; two in different
+  pots do not, and must never be compared as if they did.
+
+Rules:
+
+1. **fleet.json wins over every document, always.** If a dated doc disagrees, the doc is stale.
+   Do not "reconcile" them; correct or annotate the doc.
+2. **If `verified` is older than the work being done, ASK the maintainer rather than assuming.**
+   Hardware moves between sessions and nothing detects that automatically.
+3. **When the maintainer states a physical fact, update `fleet.json` FIRST**, in the same turn,
+   before writing analysis or docs that depend on it.
+4. **Never infer physical state from telemetry alone.** A silent probe may be unplugged; a probe
+   reading high may be on USB; a probe in sun may be a different probe than the notes say.
+5. Field notes carry the same rule: `swd_accessible` and `physical_state` are MUTABLE PHYSICAL
+   STATE, not history.
+
 ## Repository layout (Project Treebeard, reorganized 2026-08-29)
 
 This repo was renamed from `MSV2` to `ProjectTreebeard` and split by subsystem so each hardware
