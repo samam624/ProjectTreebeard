@@ -112,6 +112,10 @@ which made them appear to disagree in sign).
 | sensor 2 | *+0.092 %/C, r = +0.495* | *+0.526 %/C, r = +0.786* | *3 LSB* |
 | probe 4 | **+0.053 %/C, r = +0.676** | **+0.260 %/C, r = +0.924** | 0.95 % of tank C |
 
+**Probe 4's 0.95 % is the quietest number in the table and is also the only battery-isolated rig.**
+Do not attribute that margin to its electrode or readout until the power confound in "Why the
+comparison is not identified", item 4, is addressed.
+
 The AM percentage columns are retained only so nobody re-derives them and believes them; use the
 mV/C table above.
 
@@ -194,11 +198,37 @@ electronics temperature, power source and mains coupling all differ between thes
 moisture itself varies diurnally through evaporation, plant uptake, vertical redistribution and
 conductivity change, so "reads drier when warm" is not automatically an artifact.
 
-### 4. The mains/USB confound is live
+### 4. Power topology is CONFOUNDED WITH THE FACTORIAL
 
-Sensor 3 has a documented history of cyclic noise bands traced to **mains coupling from the receiver
-PSU sharing an outlet**. Sensors 3 and 9 are mains powered and probe 5 is now USB powered in the same
-pot. The quantity being measured is a sub-1 % daily wobble.
+**Confirmed with the maintainer 2026-09-19. This is the most serious limitation in this document.**
+Three of the four corners share one mains outlet. The fourth does not -- and the fourth is the
+outlier:
+
+| corner | rig | power |
+|---|---|---|
+| MSV3 blade + AM | sensor 9 | ESP32, **shared mains outlet** |
+| v1.2 + AM | sensor 3 | ESP32, **same outlet** |
+| MSV3 blade + FDC | probe 5 | USB to the computer, **same outlet** |
+| **v1.2 + FDC** | **probe 4** | **battery only -- galvanically isolated** |
+
+**Probe 4 is the quietest rig by 4-5x and is also the only isolated one.** "Probe 4 is quiet because
+it is battery-isolated" explains the headline result as well as any electrode or readout mechanism
+does, and this data cannot separate them.
+
+This is not speculative. Sensor 3 has a **measured** history of cyclic noise bands on this exact
+setup, traced to the receiver PSU sharing an outlet with the bench rig, and the quantity being
+compared is a sub-1 % daily wobble.
+
+**What survives and what does not:**
+
+- **CLEAN -- the within-AM electrode comparison (sensor 3 vs sensor 9).** Both are ESP32-powered on
+  the *same* outlet, so power topology cancels. This is why it is the load-bearing result here.
+- **CONFOUNDED -- probe 4 against either AM rig.** Three variables differ at once: electrode,
+  readout, and power isolation.
+- **CONFOUNDED -- the FDC pair, probe 4 vs probe 5.** Electrode *and* power differ. **Moving probe 5
+  to battery fixes this one** and makes the FDC row internally clean.
+- **PERMANENT -- AM vs FDC** will always carry a power-topology difference on top of the
+  unit-comparability problem, because the AM rigs cannot run on battery.
 
 ## The clean window, and why it is only 18.3 hours
 
@@ -263,7 +293,9 @@ Split by question, because the two threads compete for the same bench time.
 4. **Electronics-only interventions**: shade the electronics leaving pot illumination unchanged;
    separately heat or cool the electronics with soil roughly stable. Record electronics *and* soil
    temperature. These break the room/sun/soil collinearity that an overcast day alone does not.
-5. **Remove or deliberately toggle the USB/mains coupling.**
+5. **Move probe 5 to battery.** Promoted: the cheapest single improvement available, because it
+   makes the FDC row power-matched and removes one of the three variables separating probe 4 from
+   probe 5. The AM rigs cannot be battery-powered, so this is the only corner that can be fixed.
 6. **Collect multi-day data and analyse days as replicates -- but note what is being replicated.**
    This is **temporal replication of these four particular systems**, not replicated hardware. There
    is still exactly **one physical unit per cell** of the 2x2, so board-specific differences remain
