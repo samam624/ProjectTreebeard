@@ -882,6 +882,110 @@ void printWatchdogStatus() {
   Serial.println(NRF_USBD->LOWPOWER ? "1(low-power)" : "0(normal power)");
 }
 
+// 2026-09-20: the precondition for delivering bootloader 1.0.4 OVER THE AIR, on a board with no
+// SWD underneath it.
+//
+// A bootloader update is not written by the bootloader. dfu_activate_bl() only persists
+// bank_1 = BANK_VALID_BOOT plus bl_image_size into the settings page and resets; the actual
+// overwrite of the bootloader region is done by the MBR, via SD_MBR_COMMAND_COPY_BL, on the next
+// boot (dfu_bl_image_swap(), lib/sdk11/.../dfu_single_bank.c). The MBR lives in the first 4 KB and
+// is never erased, so the copy itself is restartable -- but ONLY if the MBR has a params page to
+// journal its progress into, and it finds that page through UICR.NRFFW[1].
+//
+// bootloader_settings.c writes that UICR word if it reads blank, so on any board that has run an
+// Adafruit-derived bootloader it should already be 0x000FE000 (nRF52840; dfu_types.h picks
+// 0x0007E000 on the 512 KB parts). "Should" is the whole problem: if that word is erased, an
+// interrupted MBR copy has nowhere to resume from and the board is a brick with no SWD to fix it.
+// That is the single fact this command exists to establish, and it cannot be read any other way
+// without SWD.
+//
+// Also dumps the bootloader settings page, because the same read answers the anti-rollback floor
+// question (MSV3 1.0.2+ stores it there) and the floor decides which packages this probe will
+// still accept. Layout is bootloader_types.h as patched by msv3-1.0.2-anti-rollback.patch, whose
+// own _Static_asserts pin msv3_version_floor at offset 32 and its complement at 36.
+//
+// Pure reads. Nothing here writes flash, UICR, or the settings page.
+void printBootloaderProvisioning() {
+  char buf[120];
+
+  // UICR is memory-mapped and readable by the application at any time. Use the literal addresses
+  // the bootloader's own dfu_types.h names (NRF_UICR_BASE + 0x14 / + 0x18) rather than an NRFFW[]
+  // index, so this cannot silently drift if a core header renumbers the array.
+  const uint32_t bootStart = *(volatile uint32_t *)0x10001014UL;
+  const uint32_t mbrParams = *(volatile uint32_t *)0x10001018UL;
+
+  // nRF52840 values from lib/sdk11/components/libraries/bootloader_dfu/dfu_types.h.
+  const uint32_t expectBootStart = 0x000F4000UL;
+  const uint32_t expectMbrParams = 0x000FE000UL;
+
+  Serial.println(F("UICR bootloader provisioning:"));
+  snprintf(buf, sizeof(buf), "  NRFFW[0] @0x10001014 (boot start)   = 0x%08lX  expect 0x%08lX  %s",
+           (unsigned long)bootStart, (unsigned long)expectBootStart,
+           bootStart == expectBootStart ? "OK" : "MISMATCH");
+  Serial.println(buf);
+  snprintf(buf, sizeof(buf), "  NRFFW[1] @0x10001018 (MBR params)   = 0x%08lX  expect 0x%08lX  %s",
+           (unsigned long)mbrParams, (unsigned long)expectMbrParams,
+           mbrParams == expectMbrParams ? "OK" : "MISMATCH");
+  Serial.println(buf);
+
+  Serial.print(F("  VERDICT: "));
+  if (mbrParams == expectMbrParams) {
+    Serial.println(F("MBR params page IS provisioned -- an interrupted SD_MBR_COMMAND_COPY_BL"));
+    Serial.println(F("           can resume on the next boot. OTA bootloader update is recoverable."));
+  } else if (mbrParams == 0xFFFFFFFFUL) {
+    Serial.println(F("UICR.NRFFW[1] IS ERASED. DO NOT ATTEMPT AN OTA BOOTLOADER UPDATE."));
+    Serial.println(F("           An interrupted MBR copy would have nowhere to resume from."));
+  } else {
+    Serial.println(F("UNEXPECTED value -- do not attempt an OTA bootloader update until explained."));
+  }
+
+  // Bootloader settings page. nRF52840: 0x000FF000.
+  const volatile uint8_t *s = (const volatile uint8_t *)0x000FF000UL;
+  const uint16_t bank0     = *(const volatile uint16_t *)(s + 0);
+  const uint16_t bank0Crc  = *(const volatile uint16_t *)(s + 2);
+  const uint16_t bank1     = *(const volatile uint16_t *)(s + 4);
+  const uint32_t bank0Size = *(const volatile uint32_t *)(s + 8);
+  const uint32_t sdSize    = *(const volatile uint32_t *)(s + 12);
+  const uint32_t blSize    = *(const volatile uint32_t *)(s + 16);
+  const uint32_t appSize   = *(const volatile uint32_t *)(s + 20);
+  const uint32_t sdStart   = *(const volatile uint32_t *)(s + 24);
+  const uint32_t vMagic    = *(const volatile uint32_t *)(s + 28);
+  const uint32_t vFloor    = *(const volatile uint32_t *)(s + 32);
+  const uint32_t vFloorCpl = *(const volatile uint32_t *)(s + 36);
+
+  Serial.println(F("bootloader settings page @0x000FF000:"));
+  snprintf(buf, sizeof(buf), "  bank_0=0x%04X bank_0_crc=0x%04X bank_1=0x%04X bank_0_size=%lu",
+           (unsigned)bank0, (unsigned)bank0Crc, (unsigned)bank1, (unsigned long)bank0Size);
+  Serial.println(buf);
+  snprintf(buf, sizeof(buf), "  sd_image_size=%lu bl_image_size=%lu app_image_size=%lu sd_image_start=0x%08lX",
+           (unsigned long)sdSize, (unsigned long)blSize, (unsigned long)appSize,
+           (unsigned long)sdStart);
+  Serial.println(buf);
+
+  // BANK_VALID_BOOT in bank_1 means a bootloader swap is STAGED and the next reset performs it.
+  // Seeing it here on an idle probe would mean a previous update never completed.
+  if (bank1 == 0x0001) {
+    Serial.println(F("  NOTE: bank_1=0x0001 (BANK_VALID_BOOT) -- a bootloader swap is STAGED."));
+  }
+
+  // The floor is meaningful only when the magic matches AND floor ^ complement is all ones; the
+  // patch fails OPEN on anything else, so an unreadable floor accepts any version rather than
+  // refusing the probe's own rescue image.
+  const bool floorValid = (vMagic == 0x4D535633UL) &&
+                          ((vFloor ^ vFloorCpl) == 0xFFFFFFFFUL);
+  snprintf(buf, sizeof(buf), "  msv3_version_magic=0x%08lX floor=%lu complement=0x%08lX",
+           (unsigned long)vMagic, (unsigned long)vFloor, (unsigned long)vFloorCpl);
+  Serial.println(buf);
+  Serial.print(F("  anti-rollback floor: "));
+  if (floorValid) {
+    snprintf(buf, sizeof(buf), "VALID -- this probe refuses any signed application below %lu",
+             (unsigned long)vFloor);
+    Serial.println(buf);
+  } else {
+    Serial.println(F("NOT RECORDED (fails open -- bootloader 1.0.0/1.0.1, or a fresh page)"));
+  }
+}
+
 void printHelp() {
   Serial.println(F("  led on|off|blink        - status LED (P1.10)"));
   Serial.println(F("  i2cscan                 - scan I2C bus 0x08-0x77"));
@@ -905,6 +1009,8 @@ void printHelp() {
   Serial.println(F("  chgstatus                - read BQ25170 STAT/PG charger status pins"));
   Serial.println(F("  divnode                  - analogRead DIV_NODE (EC-check midpoint), P0.03/AIN1 bodge"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
+  Serial.println(F("  uicr                     - UICR boot-start/MBR-params words + bootloader settings page;"));
+  Serial.println(F("                             says whether an OTA BOOTLOADER update could survive a power cut"));
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
 #ifdef MSV3_SENSOR_ID
   Serial.println(F("  dfu                      - USB-gated reset into resident BLE recovery bootloader"));
@@ -1752,6 +1858,8 @@ void handleCommand(String cmd) {
   } else if (cmd == "wdtstatus") {
     printResetReason();
     printWatchdogStatus();
+  } else if (cmd == "uicr") {
+    printBootloaderProvisioning();
   } else if (cmd == "i2cdebug") {
     char buf[100];
     snprintf(buf, sizeof(buf), "  i2cStep=%lu i2cStepMs=%lu i2cCallCount=%lu (now=%lu)",

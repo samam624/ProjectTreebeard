@@ -150,6 +150,22 @@ class Probe:
     # Guard-2 watchdog-loop -> BLE DFU escape. Nothing gates on it; having passed the test once
     # says nothing about whether the probe can be rescued today.
     guard2_validated: bool = False
+    # DURABLE, PER-BOARD FACT: the date UICR.NRFFW[1] was READ on this specific probe and found to
+    # hold the MBR params page address. Empty means never read, which is the safe default.
+    #
+    # This is the precondition for delivering a BOOTLOADER over the air. The bootloader region is
+    # rewritten by the MBR (SD_MBR_COMMAND_COPY_BL), not by the bootloader, and the MBR journals
+    # that copy into the params page so an interrupted one resumes on the next boot. It finds that
+    # page through UICR.NRFFW[1]. If that word is erased, an interrupted copy has nowhere to resume
+    # from and the board is unrecoverable without SWD -- which is exactly the population this
+    # feature exists for.
+    #
+    # bootloader_settings.c writes the word when it reads blank, so it is nearly always set. "Nearly
+    # always" is not a basis for bricking a coated probe, so ble_ota_update.py refuses a
+    # bootloader-bearing package unless this field is populated for the target. Read it with the
+    # `uicr` command in MSV3_Probe_Bringup_Test and record the date here -- per board, never
+    # inferred from a sibling.
+    mbr_params_page_verified: str = ""
     notes: str = ""
 
     @property
@@ -264,6 +280,7 @@ def load_fleet(path: Path | None = None) -> Fleet:
             installed_application_version=int(entry.get("installed_application_version", 0)),
             swd_accessible=bool(entry.get("swd_accessible", False)),
             guard2_validated=bool(entry.get("guard2_validated", False)),
+            mbr_params_page_verified=str(entry.get("mbr_params_page_verified", "") or ""),
             notes=entry.get("notes", ""),
         ))
     return Fleet(probes, source)
@@ -418,34 +435,64 @@ class Package:
     # Tri-state, see GUARD2_RE: True = guard 2 compiled in, False = compiled out, None = the
     # image predates the marker and cannot say.
     boot_guard: bool | None = None
+    # True when the ZIP carries a SoftDevice and/or bootloader alongside the application. Only
+    # reachable through read_package(allow_bootloader=True); see that function.
+    contains_bootloader: bool = False
 
     def describe(self) -> str:
         signature = "signed" if self.signed else "UNSIGNED"
         build = f", build {self.build_id}" if self.build_id else ""
+        payload = " SD+BL+APP" if self.contains_bootloader else ""
         return (f"{self.path.name}: {self.name} (sensor {self.sensor_id}), "
                 f"device_type={self.device_type:#06x}, app_version={self.application_version}, "
-                f"{self.image_length} bytes, {signature}{build}")
+                f"{self.image_length} bytes, {signature}{build}{payload}")
 
 
-def read_package(path: Path) -> Package:
-    """Parse an application-only DFU ZIP and read the identity out of the image itself.
+# Manifest keys a bootloader-bearing package may carry beside its application. nrfutil emits the
+# combined "softdevice_bootloader" entry when --softdevice and --bootloader are given together;
+# the separate spellings are accepted so a future single-component package still parses.
+BOOTLOADER_MANIFEST_KEYS = {"softdevice_bootloader", "bootloader", "softdevice"}
+
+
+def read_package(path: Path, allow_bootloader: bool = False) -> Package:
+    """Parse a DFU ZIP and read the identity out of the application image itself.
 
     Fails closed on zero or multiple identity strings. Zero means the image is not an MSV3
     production application (the LED test is the usual case); multiple means the assumption that
     the firmware carries exactly one advertised name no longer holds, and every check downstream
     of that assumption is unsafe.
+
+    allow_bootloader admits a SoftDevice/bootloader-bearing package. It is OFF by default and no
+    ordinary update path turns it on -- delivering a bootloader rewrites the one component that
+    cannot be re-flashed over the air if it goes wrong, so it must be asked for explicitly.
+
+    An APPLICATION IS STILL REQUIRED even under allow_bootloader, and that is a safety property,
+    not an accident of packaging. Every wrong-target guard in this project binds a package to a
+    probe through the MSV3-MOISTURE-NNN string compiled into the application image; a
+    bootloader-only package carries no identity at all, so nothing downstream could tell which
+    board it was built for. Shipping SD+BL+APP keeps that binding intact.
     """
     path = Path(path)
     with zipfile.ZipFile(path) as archive:
         manifest = json.loads(archive.read("manifest.json"))["manifest"]
         dfu_version = float(manifest["dfu_version"])
         if "application" not in manifest:
-            raise FleetError(f"{path.name}: package has no application")
-        if set(manifest) - {"dfu_version", "application"}:
+            raise FleetError(
+                f"{path.name}: package has no application. Even a bootloader delivery must carry "
+                f"one -- it is the only thing in the package that states which probe it is for.")
+        extra = set(manifest) - {"dfu_version", "application"}
+        contains_bootloader = bool(extra)
+        if extra and not allow_bootloader:
             raise FleetError(
                 f"{path.name}: package contains more than an application "
-                f"({sorted(set(manifest) - {'dfu_version'})}). Refusing -- a bootloader or "
-                f"SoftDevice must never be delivered over BLE.")
+                f"({sorted(extra)}). Refusing -- delivering a bootloader over BLE rewrites the one "
+                f"component that cannot be re-flashed over the air, so it is never the default. "
+                f"Pass --bootloader to ble_ota_update.py if that is genuinely what you intend.")
+        if extra - BOOTLOADER_MANIFEST_KEYS:
+            raise FleetError(
+                f"{path.name}: package contains unrecognised components "
+                f"{sorted(extra - BOOTLOADER_MANIFEST_KEYS)}. Refusing rather than transferring a "
+                f"payload this tool cannot account for.")
         entry = manifest["application"]
         init = entry["init_packet_data"]
         image = archive.read(entry["bin_file"])
@@ -500,6 +547,7 @@ def read_package(path: Path) -> Package:
         signed=(dfu_version == 0.8),
         build_id=build_id,
         boot_guard=boot_guard,
+        contains_bootloader=contains_bootloader,
     )
 
 
