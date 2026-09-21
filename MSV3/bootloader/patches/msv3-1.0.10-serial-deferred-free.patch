@@ -1,0 +1,87 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -262,8 +262,62 @@
+  * @param[in]   result  Operation result code. NRF_SUCCESS when a queued operation was successful.
+  * @param[in]   p_data  Pointer to the data to which the operation is related.
+  */
++/* MSV3_SERIAL_DEFERRED_FREE
++ *
++ * THE FIX. Everything before this was flow control; this is the lifetime bug underneath it.
++ *
++ * dfu_data_pkt_handle() branches on is_ota(), which reports the GLOBAL _ota_dfu -- forced true by
++ * DEFAULT_TO_OTA_DFU throughout any wired update. Stock never noticed because stock ran ONE
++ * transport: with serial up, _ota_dfu was false and flash went through the synchronous
++ * flash_nrf5x_write(). Since 1.0.4 runs both transports at once, a WIRED transfer takes the
++ * ASYNCHRONOUS pstorage_store() branch instead -- and that branch is handed p_data, which on this
++ * transport points INTO THE HCI RECEIVE BUFFER.
++ *
++ * process_dfu_packet() then called data_queue_element_free() as soon as the handler returned,
++ * consuming that buffer and handing it straight back to the pool while the SoftDevice was still
++ * reading from it. The BLE transport is immune because it copies into its own buffer first.
++ *
++ * Observed on probe 8: the COM port DISAPPEARS around frame 13 -- the board resetting through
++ * APP_ERROR_CHECK() on a flash error, not a USB stall.
++ *
++ * Note this is NOT fixable by forcing the synchronous path (1.0.9 tried; it faults at once,
++ * because with the SoftDevice enabled the asynchronous path is mandatory). The buffer simply has
++ * to live until the write completes -- which is exactly what this callback reports. Freeing here
++ * also gives dfu_cb_handler()'s APP_ERROR_CHECK(result) something to mean.
++ *
++ * Both paths converge here: the synchronous branch invokes pstorage_callback_handler() inline, so
++ * this runs before dfu_data_pkt_handle() even returns, and the deferred free below is then simply
++ * a no-op on an element that is already INVALID_PACKET.
++ */
++static uint32_t data_queue_element_free_by_pdata(uint8_t * p_data)
++{
++    uint32_t index;
++
++    if (p_data == NULL) return NRF_ERROR_INVALID_PARAM;
++
++    for (index = 0; index < MAX_BUFFERS; index++)
++    {
++        if ((INVALID_PACKET != DATA_QUEUE_ELEMENT_GET_PTYPE(index)) &&
++            ((uint8_t *)DATA_QUEUE_ELEMENT_GET_PDATA(index) == p_data))
++        {
++            return data_queue_element_free((uint8_t)index);
++        }
++    }
++
++    return NRF_ERROR_NOT_FOUND;
++}
++
++
+ static void dfu_cb_handler(uint32_t packet, uint32_t result, uint8_t * p_data)
+ {
++    /* Release the receive buffer only now that the flash write over it has actually finished.
++     * NOT_FOUND is normal and not an error: the element may already have been freed, and START
++     * completions carry a pointer that was never queued as a data element. */
++    if ((packet == DATA_PACKET) && (result == NRF_SUCCESS))
++    {
++        (void) data_queue_element_free_by_pdata(p_data);
++    }
++
+     APP_ERROR_CHECK(result);
+ }
+ 
+@@ -365,9 +419,17 @@
+                         break;
+                 }
+ 
+-                // Free the processed element.
+-                retval = data_queue_element_free(index);
+-                APP_ERROR_CHECK(retval);
++                /* MSV3 1.0.10: a DATA element is released by dfu_cb_handler() when its flash write
++                 * actually completes -- see MSV3_SERIAL_DEFERRED_FREE. Freeing it here would hand
++                 * the HCI buffer back to the pool while the SoftDevice is still reading from it,
++                 * which is the defect. On the synchronous path the callback has already run and
++                 * this is a no-op; every other packet type is still freed immediately because
++                 * nothing asynchronous holds their buffer. */
++                if (DATA_PACKET != DATA_QUEUE_ELEMENT_GET_PTYPE(index))
++                {
++                    retval = data_queue_element_free(index);
++                    APP_ERROR_CHECK(retval);
++                }
+             }
+         }
+     }

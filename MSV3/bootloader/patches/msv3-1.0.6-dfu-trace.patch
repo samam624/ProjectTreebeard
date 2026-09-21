@@ -1,0 +1,384 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -104,6 +104,90 @@
+ _Static_assert(__builtin_offsetof(bootloader_settings_t, msv3_version_floor) == 32, "layout");
+ _Static_assert(__builtin_offsetof(bootloader_settings_t, msv3_version_floor_cpl) == 36, "layout");
+ 
+-#endif // BOOTLOADER_TYPES_H__ 
++/* MSV3_DFU_TRACE_MAGIC
++ *
++ * 1.0.6 decision record for a DFU session, retained across the reset that ends it.
++ *
++ * Why this exists: stock 0.11.0's serial STOP_DATA handler is
++ *     (void)dfu_image_validate();
++ *     (void)dfu_image_activate();
++ * and the host client's send_validate_firmware()/send_activate_firmware() send nothing at all, so
++ * when a wired update fails NEITHER SIDE CAN SAY WHY. Measured 2026-09-20 on probe 8: six wired
++ * transfers delivered every byte, reported success, and left no valid application, while the same
++ * signed packages over BLE worked every time. Host-side timing, init-packet padding, per-frame
++ * pacing, chunk geometry, a port-open hold before STOP_DATA and (in 1.0.5) quiescing the radio
++ * before activate were each tried and each changed nothing. There is no host experiment left; the
++ * device has to report.
++ *
++ * Lives at a fixed address in MSV3_DFU_TRACE, a 64-byte region the linker EXCLUDES from RAM, so
++ * nothing the bootloader links can reach it. It is NOT cleared at boot -- clearing at boot would
++ * destroy the evidence on the very reset that makes DFU reachable again. It is armed only when a
++ * new START packet is accepted.
++ *
++ * stage is the load-bearing field. ENTER is written before each call and RETURN after it, so a
++ * record stuck at an ENTER value means the device died INSIDE that call -- which a return code
++ * alone can never distinguish from "returned an error".
++ */
++#define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
++#define MSV3_DFU_TRACE_ADDR             0x2003FFB8UL
++
++#define MSV3_DFU_STAGE_ARMED            0x01u
++#define MSV3_DFU_STAGE_VALIDATE_ENTER   0x02u
++#define MSV3_DFU_STAGE_VALIDATE_RETURN  0x03u
++#define MSV3_DFU_STAGE_ACTIVATE_ENTER   0x04u
++#define MSV3_DFU_STAGE_ACTIVATE_RETURN  0x05u
++
++/* transport, so a BLE control run and a wired run are never confused for one another. */
++#define MSV3_DFU_TRANSPORT_NONE         0x00u
++#define MSV3_DFU_TRANSPORT_SERIAL       0x01u
++#define MSV3_DFU_TRANSPORT_BLE          0x02u
++
++typedef struct
++{
++    uint32_t magic;             /**< MSV3_DFU_TRACE_MAGIC once armed. */
++    uint8_t  format;            /**< Layout version. 1 = this. */
++    uint8_t  transport;         /**< MSV3_DFU_TRANSPORT_*. */
++    uint8_t  stage;             /**< MSV3_DFU_STAGE_*, the furthest point reached. */
++    uint8_t  state_before;      /**< m_dfu_state immediately before dfu_image_validate(). */
++    uint8_t  state_after;       /**< m_dfu_state immediately after it returned. */
++    uint8_t  pad0;
++    uint16_t staged_crc16;      /**< CRC16 over the staged image, computed AFTER reception. */
++    uint32_t data_received;     /**< m_data_received at STOP_DATA. */
++    uint32_t image_size;        /**< m_image_size at STOP_DATA. These two differing IS the answer. */
++    uint32_t validate_rc;       /**< Raw dfu_image_validate() return. */
++    uint32_t activate_rc;       /**< Raw dfu_image_activate() return, if it returned at all. */
++    uint32_t frames_queued;     /**< DATA frames accepted into the queue by the transport. */
++    uint32_t frames_dropped;    /**< DATA frames the transport ACKed and then DISCARDED on queue-full. */
++    uint32_t check;             /**< ~magic, written LAST. A torn record fails this. */
++} msv3_dfu_trace_t;
++
++_Static_assert(sizeof(msv3_dfu_trace_t) <= 0x40,
++               "the DFU trace must fit the 64-byte MSV3_DFU_TRACE region the linker reserves");
++_Static_assert(sizeof(msv3_dfu_trace_t) % 4 == 0, "keep the trace word-aligned");
++
++#define MSV3_DFU_TRACE ((volatile msv3_dfu_trace_t *)MSV3_DFU_TRACE_ADDR)
++
++/**@brief Arm a fresh record. Called when a START packet is accepted, never at boot. */
++static inline void msv3_dfu_trace_arm(uint8_t transport)
++{
++    volatile msv3_dfu_trace_t * t = MSV3_DFU_TRACE;
++    t->magic          = MSV3_DFU_TRACE_MAGIC;
++    t->format         = 1;
++    t->transport      = transport;
++    t->stage          = MSV3_DFU_STAGE_ARMED;
++    t->state_before   = 0xFF;
++    t->state_after    = 0xFF;
++    t->pad0           = 0;
++    t->staged_crc16   = 0;
++    t->data_received  = 0;
++    t->image_size     = 0;
++    t->validate_rc    = 0xFFFFFFFFUL;
++    t->activate_rc    = 0xFFFFFFFFUL;
++    t->frames_queued  = 0;
++    t->frames_dropped = 0;
++    t->check          = ~MSV3_DFU_TRACE_MAGIC;
++}
++
++#endif // BOOTLOADER_TYPES_H__
+ 
+ /**@} */
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+@@ -61,6 +61,17 @@
+  */
+ bool dfu_transport_claim(dfu_callback_t callback_handler);
+ 
++/**@brief MSV3 1.0.6: copy DFU state and the staged-image CRC into the retained trace.
++ *
++ * Lives in dfu_single_bank.c because m_dfu_state, m_data_received, m_image_size and
++ * mp_storage_handle_active are static there. Call immediately BEFORE dfu_image_validate(), which
++ * mutates the state being recorded.
++ */
++void msv3_dfu_trace_capture(void);
++
++/**@brief MSV3 1.0.6: record m_dfu_state AFTER dfu_image_validate() returned. */
++void msv3_dfu_trace_state_after(void);
++
+ /**@brief Function for setting the DFU image size. 
+  *
+  * @details Function sets the DFU image size. This function must be called when an update is started 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+@@ -20,6 +20,7 @@
+ #include "app_timer.h"
+ #include "bootloader.h"
+ #include "bootloader_types.h"
++#include "crc16.h"
+ #include "pstorage.h"
+ #include "nrf_mbr.h"
+ #include "dfu_init.h"
+@@ -602,6 +603,41 @@
+ }
+ 
+ 
++/* MSV3 1.0.6: fill the retained trace from state only this file can see.
++ *
++ * m_dfu_state, m_data_received, m_image_size and mp_storage_handle_active are all static here, and
++ * the question that has to be answered is precisely whether m_data_received == m_image_size at
++ * STOP_DATA -- because dfu_image_validate()'s first branch returns NRF_ERROR_INVALID_STATE when
++ * they differ, which is indistinguishable at the call site from the default-branch
++ * NRF_ERROR_INVALID_STATE for a wrong m_dfu_state.
++ *
++ * The CRC is computed over the image AS STAGED IN FLASH, after reception, so it can be compared
++ * against a CRC of the exact bytes the host sent. Equal counts with an unequal CRC would mean the
++ * bytes arrived and landed wrong; unequal counts mean they never all arrived. Deliberately not
++ * per-packet: this must not perturb the receive path it is measuring.
++ */
++void msv3_dfu_trace_capture(void)
++{
++    volatile msv3_dfu_trace_t * t = MSV3_DFU_TRACE;
++
++    t->state_before  = (uint8_t)m_dfu_state;
++    t->data_received = m_data_received;
++    t->image_size    = m_image_size;
++
++    if ((mp_storage_handle_active != NULL) && (m_image_size > 0))
++    {
++        t->staged_crc16 = crc16_compute((uint8_t *)mp_storage_handle_active->block_id,
++                                        m_image_size, NULL);
++    }
++}
++
++
++void msv3_dfu_trace_state_after(void)
++{
++    MSV3_DFU_TRACE->state_after = (uint8_t)m_dfu_state;
++}
++
++
+ uint32_t dfu_image_activate()
+ {
+     uint32_t err_code;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include "dfu_transport.h"
++#include "bootloader_types.h"
+ #include <stddef.h>
+ #include "bootloader.h"
+ #include "dfu.h"
+@@ -224,6 +225,10 @@
+                         break;
+ 
+                     case START_PACKET:
++                        /* MSV3 1.0.6: arm the trace HERE and nowhere else. Arming at boot would
++                         * wipe the record on the very reset that makes DFU reachable again, which
++                         * is exactly when the evidence is needed. */
++                        msv3_dfu_trace_arm(MSV3_DFU_TRANSPORT_SERIAL);
+                         packet->params.start_packet =
+                             (dfu_start_packet_t*)packet->params.data_packet.p_data_packet;
+                         retval = dfu_start_pkt_handle(packet);
+@@ -259,12 +264,30 @@
+                          * open: the device resets out of activate anyway, and dropping the wired
+                          * link early would only hide a failure from the host.
+                          */
++                        /* MSV3 1.0.6: record either side of each call. A record left at an ENTER
++                         * value means the device died INSIDE that call, which no return code can
++                         * tell you. Capture before validate, because validate mutates m_dfu_state
++                         * and consumes the counters this is trying to observe. */
++                        msv3_dfu_trace_capture();
++                        MSV3_DFU_TRACE->stage = MSV3_DFU_STAGE_VALIDATE_ENTER;
++
+                         msv3_serial_validate_rc = dfu_image_validate();
+ 
++                        MSV3_DFU_TRACE->validate_rc = msv3_serial_validate_rc;
++                        msv3_dfu_trace_state_after();
++                        MSV3_DFU_TRACE->stage = MSV3_DFU_STAGE_VALIDATE_RETURN;
++                        MSV3_DFU_TRACE->check = ~MSV3_DFU_TRACE_MAGIC;
++
+                         (void)dfu_transport_ble_close();
+ 
++                        MSV3_DFU_TRACE->stage = MSV3_DFU_STAGE_ACTIVATE_ENTER;
++
+                         msv3_serial_activate_rc = dfu_image_activate();
+ 
++                        MSV3_DFU_TRACE->activate_rc = msv3_serial_activate_rc;
++                        MSV3_DFU_TRACE->stage       = MSV3_DFU_STAGE_ACTIVATE_RETURN;
++                        MSV3_DFU_TRACE->check       = ~MSV3_DFU_TRACE_MAGIC;
++
+                         led_state(STATE_WRITING_FINISHED);
+ 
+                         // Break the loop by returning.
+@@ -323,10 +346,24 @@
+ 
+     if (p_rpc_cmd_buffer != NULL && NRF_SUCCESS != retval)
+     {
++        /* MSV3 1.0.6: THIS is the silent drop. The link layer has already ACKed this frame, so a
++         * host cannot tell that its payload was thrown away -- it sees success and a device with
++         * no valid application. Count it. If frames_dropped comes back non-zero, the wired
++         * failure is queue starvation and the fix belongs in flow control; if it comes back zero
++         * while data_received != image_size, the loss is somewhere else entirely. */
++        if (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC)
++        {
++            MSV3_DFU_TRACE->frames_dropped++;
++        }
++
+         // Free the packet that could not be processed.
+         retval = hci_transport_rx_pkt_consume(p_rpc_cmd_buffer);
+         APP_ERROR_CHECK(retval);
+     }
++    else if (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC)
++    {
++        MSV3_DFU_TRACE->frames_queued++;
++    }
+ }
+ 
+ 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -13,6 +13,7 @@
+ #include <stdio.h>
+ #include "dfu_transport.h"
+ #include "dfu.h"
++#include "bootloader_types.h"
+ #include <dfu_types.h>
+ #include <stddef.h>
+ #include "boards.h"
+@@ -707,6 +708,53 @@
+ }
+ 
+ 
++/**@brief MSV3 1.0.6: publish the retained DFU trace as scan-response manufacturer data.
++ *
++ * The SCAN RESPONSE, deliberately, not the advertisement: the advertisement is already 29 of its
++ * 31 bytes (flags + "AdaDFU" + the 128-bit DFU UUID) and every one of those is load-bearing --
++ * scripts/ble_dfu_recover.py finds a board by that name and msv3_fleet_scan.py by that service.
++ * Nothing here may disturb either. The scan response is otherwise empty.
++ *
++ * Passive by construction: a scan reads it without connecting, without touching the USB CDC
++ * endpoint, and without injecting a single byte into the SLIP stream that is under investigation.
++ * It also does not clear the record -- a missed scan must not destroy the evidence.
++ */
++static void scan_response_init(ble_data_t* scan_data)
++{
++  volatile msv3_dfu_trace_t * t = MSV3_DFU_TRACE;
++
++  if ( (t->magic != MSV3_DFU_TRACE_MAGIC) || (t->check != ~MSV3_DFU_TRACE_MAGIC) ) return;
++
++  /* Company ID first, per the manufacturer-specific data format. 0xFFFF is the reserved
++   * "not assigned" identifier, which is what this project already advertises from the
++   * application, so a scanner sees one consistent vendor across both images. */
++  /* 27 payload bytes -> a 29-byte AD structure, inside the 31-byte scan response with room to
++   * spare. frames_dropped is saturated into 16 bits because its only interesting values are 0 and
++   * "not 0"; a full 32-bit counter would not fit alongside both return codes, and the return codes
++   * are what actually name the failing branch. */
++  uint8_t payload[27];
++  uint8_t i = 0;
++
++  uint16_t dropped = (t->frames_dropped > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_dropped;
++
++  payload[i++] = 0xFF;
++  payload[i++] = 0xFF;
++  payload[i++] = t->format;
++  payload[i++] = t->transport;
++  payload[i++] = t->stage;
++  payload[i++] = t->state_before;
++  payload[i++] = t->state_after;
++  memcpy(&payload[i], (const void *)&t->staged_crc16, 2);   i += 2;
++  memcpy(&payload[i], (const void *)&t->data_received, 4);  i += 4;
++  memcpy(&payload[i], (const void *)&t->image_size, 4);     i += 4;
++  memcpy(&payload[i], (const void *)&t->validate_rc, 4);    i += 4;
++  memcpy(&payload[i], (const void *)&t->activate_rc, 4);    i += 4;
++  memcpy(&payload[i], &dropped, 2);                         i += 2;
++
++  advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, payload, i);
++}
++
++
+ /**@brief Function for starting advertising.
+  */
+ static void advertising_start(void)
+@@ -714,10 +762,14 @@
+   if (!m_is_advertising)
+   {
+     static uint8_t adv_buf[BLE_GAP_ADV_SET_DATA_SIZE_MAX];
++    /* MSV3 1.0.6: the scan response carries the retained DFU trace. Static, like adv_buf, because
++     * the SoftDevice keeps referencing both buffers after sd_ble_gap_adv_set_configure() returns. */
++    static uint8_t scan_buf[BLE_GAP_ADV_SET_DATA_SIZE_MAX];
+     static ble_gap_adv_data_t gap_adv;
+ 
+     varclr(&gap_adv);
+     gap_adv.adv_data.p_data = adv_buf;
++    gap_adv.scan_rsp_data.p_data = scan_buf;
+ 
+     uint8_t  adv_flag = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+     ble_gap_adv_params_t m_adv_params =
+@@ -759,6 +811,16 @@
+     }
+ 
+     advertising_init(&gap_adv.adv_data, adv_flag);
++    scan_response_init(&gap_adv.scan_rsp_data);
++
++    /* A zero-length scan response must be handed to the SoftDevice as a NULL pointer, not as an
++     * empty buffer, or sd_ble_gap_adv_set_configure() rejects the whole configuration -- which
++     * would take DFU advertising down entirely. This is the normal case: there is no trace to
++     * publish until a wired session has actually failed. */
++    if ( gap_adv.scan_rsp_data.len == 0 )
++    {
++      gap_adv.scan_rsp_data.p_data = NULL;
++    }
+ 
+     APP_ERROR_CHECK( sd_ble_gap_adv_set_configure(&_adv_handle, &gap_adv, &m_adv_params) );
+     // maximum power for nrf52832, nrf52840 max power is +8
+diff --git a/linker/nrf52840.ld b/linker/nrf52840.ld
+--- a/linker/nrf52840.ld
++++ b/linker/nrf52840.ld
+@@ -27,7 +27,15 @@
+    * MSV3_BOOT_GUARD_RETAINED is an ABI with the MSV3 application linker script.
+    * Keep the bootloader stack below it so watchdog-reset state reaches the app.
+    */
+-  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x2003FFF8-0x20008000
++  /*
++   * MSV3 1.0.6: MSV3_DFU_TRACE is 64 bytes of retained scratch for the DFU decision record.
++   * It is deliberately EXCLUDED from RAM rather than placed in a section, so no bootloader
++   * stack, heap, .bss or .data can reach it and startup clearing -- which is driven by the
++   * RAM region below -- cannot touch it. Accessed by fixed address, see MSV3_DFU_TRACE_ADDR.
++   * It sits UNDER the boot-guard record, which keeps that application ABI at 0x2003FFF8.
++   */
++  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x2003FFB8-0x20008000
++  MSV3_DFU_TRACE (rwx) : ORIGIN = 0x2003FFB8, LENGTH = 0x40
+   MSV3_BOOT_GUARD_RETAINED (rwx) : ORIGIN = 0x2003FFF8, LENGTH = 0x08
+ 
+   /* Location for double reset detection, no init */
+@@ -95,8 +103,17 @@
+   /* other placements follow here... */
+ }
+ 
+-ASSERT(ORIGIN(RAM) + LENGTH(RAM) == ORIGIN(MSV3_BOOT_GUARD_RETAINED),
+-       "MSV3 boot-guard retention must immediately follow bootloader RAM")
++/* MSV3 1.0.6 widened this from a pair to a chain. RAM, the DFU trace and the boot-guard record
++ * must tile the top of memory with no gap and no overlap: a gap would let a future edit put
++ * something reachable in between, and an overlap would let the bootloader stack eat either
++ * retained region. The third assert pins the application ABI address, which is the one value
++ * here that another linker script also depends on. */
++ASSERT(ORIGIN(RAM) + LENGTH(RAM) == ORIGIN(MSV3_DFU_TRACE),
++       "MSV3 DFU trace must immediately follow bootloader RAM")
++ASSERT(ORIGIN(MSV3_DFU_TRACE) + LENGTH(MSV3_DFU_TRACE) == ORIGIN(MSV3_BOOT_GUARD_RETAINED),
++       "MSV3 boot-guard retention must immediately follow the DFU trace")
+ ASSERT(ORIGIN(MSV3_BOOT_GUARD_RETAINED) == 0x2003FFF8,
+        "MSV3 boot-guard retention moved from its application ABI address")
++ASSERT(ORIGIN(MSV3_DFU_TRACE) == 0x2003FFB8,
++       "MSV3 DFU trace moved from the address its readers hard-code")
+ INCLUDE "nrf_common.ld"

@@ -1,0 +1,120 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_single_bank.c
+@@ -44,6 +44,46 @@
+ 
+ static dfu_callback_t               m_data_pkt_cb;              /**< Callback from DFU Bank module for notification of asynchronous operation such as flash prepare. */
+ static dfu_callback_t               m_dfu_owner_cb;             /**< MSV3 1.0.4: transport that owns the live session, or NULL when idle. */
++
++/* MSV3_SERIAL_SYNC_FLASH
++ *
++ * A REGRESSION INTRODUCED BY 1.0.4, and the reason every wired update failed.
++ *
++ * The flash path below branches on is_ota(), which returns the GLOBAL _ota_dfu. With
++ * DEFAULT_TO_OTA_DFU that global is forced true whenever there is no valid application -- which is
++ * always, during a wired update. Stock never noticed, because stock brought up ONE transport: if
++ * serial was running then _ota_dfu was false and the synchronous flash_nrf5x_write() branch was
++ * taken. 1.0.4 made both transports live, so a WIRED transfer started taking the asynchronous
++ * SoftDevice pstorage_store() branch that only the BLE transport was ever designed for.
++ *
++ * That branch is actively unsafe for this transport. pstorage_store() is handed p_data, which for
++ * the serial path points INTO THE HCI RECEIVE BUFFER, and the write completes asynchronously --
++ * but process_dfu_packet() calls data_queue_element_free() as soon as the handler returns, which
++ * consumes that buffer and returns it to the pool for immediate reuse. The SoftDevice is then
++ * writing flash out of memory the transport has already recycled. The BLE transport is unaffected
++ * because it copies into its own buffer first.
++ *
++ * Observed on probe 8: the wired transfer dies around frame 13 with the COM port DISAPPEARING,
++ * which is this file's APP_ERROR_CHECK() turning a flash error into a reset, not a USB stall.
++ *
++ * So the flash path must follow the transport that OWNS THE SESSION, not a global that describes
++ * how the bootloader was entered. Set when the serial transport claims the session, cleared by
++ * dfu_init() so each session decides afresh.
++ */
++static bool                         m_msv3_serial_session;      /**< MSV3 1.0.9: a wired transfer owns this session. */
++
++
++void msv3_dfu_note_serial_session(void)
++{
++    m_msv3_serial_session = true;
++}
++
++
++/**@brief MSV3 1.0.9: should this session use the synchronous, buffer-safe flash path? */
++static bool msv3_use_sync_flash(void)
++{
++    return m_msv3_serial_session;
++}
+ static dfu_bank_func_t              m_functions;                /**< Structure holding operations for the selected update process. */
+ 
+ 
+@@ -140,7 +180,7 @@
+     // for new SoftDevice.
+     m_dfu_state = DFU_STATE_PREPARING;
+ 
+-    if ( is_ota() )
++    if ( is_ota() && !msv3_use_sync_flash() )
+     {
+         uint32_t err_code;
+         while(1) {
+@@ -303,6 +343,8 @@
+ 
+     m_init_packet_length = 0;
+     m_image_crc          = 0;
++    /* MSV3 1.0.9: each session decides its own flash path afresh. */
++    m_msv3_serial_session = false;
+     // A fresh session is unowned, so whichever transport speaks first may claim it.
+     m_dfu_owner_cb       = NULL;
+ 
+@@ -447,7 +489,7 @@
+ 
+             p_data = (uint32_t *)p_packet->params.data_packet.p_data_packet;
+ 
+-            if ( is_ota() )
++            if ( is_ota() && !msv3_use_sync_flash() )
+             {
+                 while(1) {
+                     err_code = pstorage_store(mp_storage_handle_active, (uint8_t *)p_data, data_length, m_data_received);
+@@ -475,7 +517,7 @@
+             }
+             else
+             {
+-                if ( !is_ota() ) flash_nrf5x_flush(false);
++                if ( !is_ota() || msv3_use_sync_flash() ) flash_nrf5x_flush(false);
+ 
+                 // The entire image has been received. Return NRF_SUCCESS.
+                 err_code = NRF_SUCCESS;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -381,6 +381,10 @@
+     // MSV3 1.0.4: USB and BLE are both live. Take the session, or drop this packet if BLE already
+     // owns an update in progress. Dropping is correct rather than rude: the wired host sees no
+     // acknowledgement and retries, while the in-flight BLE image stays intact.
++    /* MSV3 1.0.9: this session is wired. Tell the DFU bank before any packet is handled, so the
++     * erase and every data write take the synchronous, buffer-safe flash path. */
++    msv3_dfu_note_serial_session();
++
+     if (!dfu_transport_claim(dfu_cb_handler))
+     {
+         uint8_t * p_discard_buffer = NULL;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu.h
+@@ -67,6 +67,16 @@
+  * mp_storage_handle_active are static there. Call immediately BEFORE dfu_image_validate(), which
+  * mutates the state being recorded.
+  */
++/**@brief MSV3 1.0.9: a WIRED transfer owns this session, so use the synchronous flash path.
++ *
++ * is_ota() reports the global _ota_dfu, which DEFAULT_TO_OTA_DFU forces true whenever there is
++ * no valid application -- including during a wired update. Since 1.0.4 runs both transports at
++ * once, that global no longer identifies the transport actually moving the image, and the
++ * asynchronous pstorage path it selects writes flash out of an HCI receive buffer the serial
++ * transport recycles immediately afterwards.
++ */
++void msv3_dfu_note_serial_session(void);
++
+ void msv3_dfu_trace_capture(void);
+ 
+ /**@brief MSV3 1.0.6: record m_dfu_state AFTER dfu_image_validate() returned. */

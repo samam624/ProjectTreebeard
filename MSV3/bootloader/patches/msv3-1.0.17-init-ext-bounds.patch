@@ -1,0 +1,112 @@
+diff --git a/src/dfu_init.c b/src/dfu_init.c
+--- a/src/dfu_init.c
++++ b/src/dfu_init.c
+@@ -70,6 +70,7 @@
+ #include "dfu_init.h"
+ #include <stdint.h>
+ #include <string.h>
++#include <stddef.h>   /* MSV3 1.0.17: offsetof, for checked extended-packet arithmetic */
+ #include <dfu_types.h>
+ #include "nrf_error.h"
+ #include "bootloader_types.h"
+@@ -237,22 +238,67 @@
+ 	// Current template uses clear text data so they can be casted for pre-check.
+ 	dfu_init_packet_t * p_init_packet = (dfu_init_packet_t *)p_init_data;
+ 
+-	m_extended_packet_length = ((uint32_t)p_init_data + init_data_len) -
+-							   (uint32_t)&p_init_packet->softdevice[p_init_packet->softdevice_len];
+-	if (m_extended_packet_length < DFU_INIT_PACKET_EXT_LENGTH_MIN)
++	/* MSV3_INIT_EXT_BOUNDS (1.0.17)
++	 *
++	 * Stock derives the extended-packet length by POINTER SUBTRACTION and then memcpy()s that many
++	 * bytes into m_extended_packet[104] with NO UPPER BOUND, from two host-supplied values
++	 * (init_data_len and softdevice_len). m_extended_packet_length is a uint8_t declared immediately
++	 * after that array, so an over-long copy lands on the length variable itself and then on whatever
++	 * follows it. All of this runs BEFORE any signature has been verified.
++	 *
++	 * It is reached on every ordinary wired update, not only a crafted one: the stock
++	 * adafruit-nrfutil serial transport appends two padding bytes to the init packet --
++	 *     frame += [x for x in int16_to_bytes(0x0000)]   # "Padding required"
++	 * -- which turns this project's 116-byte signed init packet into 118 and the copy into 106. The
++	 * BLE transport writes dat_data verbatim with no padding, which is the other half of why BLE has
++	 * always worked and USB has not. Measured on probe 8, 2026-09-21: as soon as 1.0.16 fixed the
++	 * shared-pool defect so frames actually reached this function, the wired transfer started
++	 * resetting the device DURING the init packet -- one frame earlier than before, and for this
++	 * reason rather than the old one.
++	 *
++	 * The rewrite changes no accepted input and no security property. The signed span is still
++	 * exactly [0, ext_offset + DFU_INIT_PACKET_EXT_LENGTH_SIGNED), the signature is still read from
++	 * extended offsets 40..103, and the only lengths accepted for this build's signed format are the
++	 * exact 104 and the stock client's 104 plus two ZERO pad bytes. Padding is now IGNORED rather
++	 * than trusted, and the copy can no longer leave the array.
++	 */
++	const size_t ext_offset = offsetof(dfu_init_packet_t, softdevice) +
++	                          ((size_t)p_init_packet->softdevice_len * sizeof(uint16_t));
++	if (ext_offset > init_data_len)
+ 	{
+ 		return NRF_ERROR_INVALID_LENGTH;
+ 	}
+ 
+-	if (((uint32_t)p_init_data + init_data_len) < 
+-		(uint32_t)&p_init_packet->softdevice[p_init_packet->softdevice_len])
++	const size_t ext_length = (size_t)init_data_len - ext_offset;
++	if (ext_length < DFU_INIT_PACKET_EXT_LENGTH_MIN)
+ 	{
+ 		return NRF_ERROR_INVALID_LENGTH;
+ 	}
+ 
+-	memcpy(m_extended_packet,
+-		   &p_init_packet->softdevice[p_init_packet->softdevice_len],
+-		   m_extended_packet_length);
++	const uint8_t * p_ext = p_init_data + ext_offset;
++
++#ifdef SIGNED_FW
++	/* Authentication here is a COMPILE-TIME decision, so in this build the extended packet is always
++	 * the 104-byte ECDS form and there is no shorter legitimate encoding to accommodate. Accept the
++	 * exact length, or that length plus the stock client's two zero pad bytes, and nothing else -- so
++	 * there is exactly one wire representation per accepted image. */
++	if (!((ext_length == DFU_INIT_PACKET_EXT_LENGTH_MAX) ||
++	      ((ext_length == (DFU_INIT_PACKET_EXT_LENGTH_MAX + 2)) &&
++	       (p_ext[DFU_INIT_PACKET_EXT_LENGTH_MAX] == 0) &&
++	       (p_ext[DFU_INIT_PACKET_EXT_LENGTH_MAX + 1] == 0))))
++	{
++		return NRF_ERROR_INVALID_LENGTH;
++	}
++	m_extended_packet_length = DFU_INIT_PACKET_EXT_LENGTH_MAX;
++#else
++	if (ext_length > DFU_INIT_PACKET_EXT_LENGTH_MAX)
++	{
++		return NRF_ERROR_INVALID_LENGTH;
++	}
++	m_extended_packet_length = (uint8_t)ext_length;
++#endif
++
++	memcpy(m_extended_packet, p_ext, m_extended_packet_length);
+ 
+ 	/** [DFU init application version] */
+ 	// To support application versioning, this check should be updated.
+@@ -318,7 +364,11 @@
+ 	}
+ 
+ 	uint8_t* msg = p_init_data;
+-	size_t msg_len = (init_data_len - m_extended_packet_length) + DFU_INIT_PACKET_EXT_LENGTH_SIGNED;
++	/* MSV3 1.0.17: derive the signed span from the CHECKED ext_offset. Stock computed it as
++	 * (init_data_len - m_extended_packet_length), which only equalled ext_offset while that
++	 * tail length was the untrusted remainder -- the very value the bounds check above stops
++	 * trusting. Identical span for a well-formed packet, and no longer sensitive to padding. */
++	size_t msg_len = ext_offset + DFU_INIT_PACKET_EXT_LENGTH_SIGNED;
+ 	
+ 	// Create a sha256 digest
+ 	struct tc_sha256_state_struct state = {0};
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x0110U        /* 1.0.16 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x0111U        /* 1.0.17 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u

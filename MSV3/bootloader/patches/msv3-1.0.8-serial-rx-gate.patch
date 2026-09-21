@@ -1,0 +1,155 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -106,6 +106,48 @@
+ 
+ static dfu_data_queue_t      m_data_queue;                                           /**< Received-data packet queue. */
+ 
++/* MSV3_SERIAL_RX_GATE
++ *
++ * THE ACTUAL FLOW CONTROL. Everything else in this file was symptom management.
++ *
++ * The transport's defect is that HCI acknowledges a frame at receive time and this file then
++ * discards it if the queue is full -- so the host is told a frame landed that was thrown away, and
++ * since the drop path ignores packet type, the single STOP_DATA packet is as losable as any data
++ * frame. Raising the queue depth (1.0.7) only moves the threshold; it cannot fix a protocol that
++ * acknowledges before it can accept.
++ *
++ * The fix has to be upstream of the acknowledgement: stop taking BYTES off the USB endpoint while
++ * there is nowhere to put the frames they will decode into. hci_slip.c's tud_cdc_rx_cb() drains
++ * the whole CDC FIFO unconditionally; gated on this, the FIFO fills instead, TinyUSB stops
++ * accepting on the OUT endpoint, and the host sees a bulk NAK. That is real backpressure, it costs
++ * no protocol change, and -- the point of the whole exercise -- it requires nothing of the host,
++ * so the stock Arduino IDE client gets it for free.
++ *
++ * Hysteresis, not a single threshold: gating on "queue is full" would unstick and re-stick once
++ * per frame. HIGH is well below capacity so frames already inside the SLIP decoder still have
++ * somewhere to land when the gate closes.
++ */
++#define MSV3_SERIAL_RX_GATE_HIGH   6u
++#define MSV3_SERIAL_RX_GATE_LOW    2u
++
++static volatile bool m_msv3_rx_gated;
++
++bool msv3_serial_rx_may_drain(void)
++{
++    uint8_t count = m_data_queue.count;
++
++    if (m_msv3_rx_gated)
++    {
++        if (count < MSV3_SERIAL_RX_GATE_LOW) m_msv3_rx_gated = false;
++    }
++    else if (count >= MSV3_SERIAL_RX_GATE_HIGH)
++    {
++        m_msv3_rx_gated = true;
++    }
++
++    return !m_msv3_rx_gated;
++}
++
+ /**@brief Initializes an element of the data buffer queue.
+  *
+  * @param[in] element_index index of the element.
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.c b/lib/sdk/components/libraries/hci/hci_slip.c
+--- a/lib/sdk/components/libraries/hci/hci_slip.c
++++ b/lib/sdk/components/libraries/hci/hci_slip.c
+@@ -358,15 +358,45 @@
+   return NRF_SUCCESS;
+ }
+ 
+-void tud_cdc_rx_cb(uint8_t port)
++/* MSV3 1.0.8: does the DFU transport have room for another decoded frame?
++ *
++ * Weak so a build without the serial DFU transport still links and behaves exactly as stock.
++ * dfu_transport_serial.c provides the real one.
++ */
++__attribute__((weak)) bool msv3_serial_rx_may_drain(void)
++{
++  return true;
++}
++
++
++/* MSV3 1.0.8: the drain, now gated and callable from the main loop.
++ *
++ * Stock drained the CDC FIFO dry on every rx callback, which is what let HCI acknowledge frames
++ * the DFU packet queue could not accept -- and an acknowledged frame that is then discarded is
++ * indistinguishable, from the host, from one that was written to flash. Leaving bytes in the FIFO
++ * instead makes TinyUSB stop accepting on the OUT endpoint, so the host is NAKed at the USB layer
++ * and simply waits. No host change required.
++ *
++ * MUST also be pumped from the event loop: once the gate closes the host is NAKed, so no further
++ * rx callback arrives to reopen it. bootloader.c calls this right after app_sched_execute(), which
++ * is the point at which queue entries have just been freed.
++ */
++void hci_slip_rx_pump(void)
+ {
+-  while ( tud_cdc_available() && !rx_buffer_overflowed() )
++  while ( tud_cdc_available() && !rx_buffer_overflowed() && msv3_serial_rx_may_drain() )
+   {
+     int8_t ch = tud_cdc_read_char();
+     handle_rx_byte((uint8_t) ch);
+   }
+ }
+ 
++
++void tud_cdc_rx_cb(uint8_t port)
++{
++  (void) port;
++  hci_slip_rx_pump();
++}
++
+ #else
+ 
+ /** @brief Function for handling the UART module event. It parses events from the UART when
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.h b/lib/sdk/components/libraries/hci/hci_slip.h
+--- a/lib/sdk/components/libraries/hci/hci_slip.h
++++ b/lib/sdk/components/libraries/hci/hci_slip.h
+@@ -155,6 +155,20 @@
+  */
+ uint32_t hci_slip_rx_buffer_register(uint8_t * p_buffer, uint32_t length);
+ 
++/**@brief MSV3 1.0.8: drain the USB CDC FIFO into the SLIP decoder, subject to DFU queue credit.
++ *
++ * Called from the rx callback and, crucially, from the bootloader's event loop: once the gate
++ * closes the host is being NAKed, so no rx callback will arrive to reopen it.
++ */
++void hci_slip_rx_pump(void);
++
++/**@brief MSV3 1.0.8: may the SLIP layer accept another frame's worth of bytes?
++ *
++ * Weakly defined as always-true in hci_slip.c; dfu_transport_serial.c overrides it with the real
++ * DFU packet-queue credit.
++ */
++bool msv3_serial_rx_may_drain(void);
++
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+@@ -13,6 +13,7 @@
+ #include "sdk_common.h"
+ #include "bootloader.h"
+ #include "bootloader_types.h"
++#include "hci_slip.h"
+ #include "bootloader_util.h"
+ #include "bootloader_settings.h"
+ #include "dfu.h"
+@@ -150,6 +151,16 @@
+     if ( tusb_inited() )
+     {
+       tud_task();
++
++      /* MSV3 1.0.8: reopen the gated SLIP drain.
++       *
++       * hci_slip.c stops taking bytes off the CDC endpoint while the DFU packet queue is near
++       * capacity, which NAKs the host instead of acknowledging frames that would then be
++       * discarded. Once gated, no rx callback can arrive to reopen it -- the host is being NAKed
++       * precisely so that it sends nothing. This is the pump that gets it going again, and it sits
++       * immediately after app_sched_execute() above, which is where queue entries are freed. */
++      hci_slip_rx_pump();
++
+       tud_cdc_write_flush();
+     }
+ 
