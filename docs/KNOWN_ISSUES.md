@@ -138,6 +138,49 @@ remain in the dated root-cause record for history; do not perform that bypass.
 
 ## MSV3 bootloader USB and BLE OTA are mutually exclusive
 
+**Status:** RESOLVED FOR PROBE 8 on 2026-09-21 (bootloader `msv3-1.0.24`); still true for probes
+4, 5, 6 and 7, which are untouched.
+
+Probe 8 now flashes **both ways**. The wired path was proven with the *unmodified* stock client —
+`python -m nordicsemi dfu serial -pkg <signed zip> -p COMx -b 115200 -sb`, which is what the Arduino
+IDE upload button runs — reporting `Device programmed` after a full 259-frame transfer, with the
+probe verified afterwards by scan and by a DIS read of the exact build tag the cable delivered. BLE
+OTA is unaffected and was re-proven on all nine deliveries made during the work.
+
+**The cause was self-inflicted and is worth understanding before touching another probe.** Stock
+0.11.0 brings up exactly one transport — `if (_ota_dfu) { ble_stack_init(); } else { usb_init(...); }`
+— so a stock *wired* session runs with **no SoftDevice**: `is_ota()` is false, flash is synchronous,
+and the application-bank erase completes before `dfu_start_pkt_handle()` returns. Bootloader 1.0.4
+attached USB inside the SoftDevice-enabled branch, which made wired DFU asynchronous and caused
+both confirmed defects. That is exactly why IDE uploads broke *after* OTA started working.
+
+A wired session now restores the stock configuration (close BLE, disable the SoftDevice, clear
+`_ota_dfu`, in that order and only after the disable succeeds) and arms a lease so that losing VBUS
+or going quiet forces a reset — **without that lease a pulled cable strands the board wired-only
+with no SoftDevice and no way back, on hardware with no SWD.** Full account, including the four
+defects and the releases that were withdrawn:
+[the resolution report](../MSV3/docs/MSV3_WIRED_DFU_RESOLVED_2026-09-21.md).
+
+**Do not "simplify" the transport arbitration back out**, and do not move another probe to 1.0.4+
+without reading that report first. `--singlebank` remains required.
+
+### The superseded 2026-09-20 status, retained
+
+Probe 8 runs bootloader **1.0.4**, delivered entirely over BLE with no SWD, and in DFU mode it runs
+USB CDC and BLE DFU **simultaneously** — observed in one 30-second window as `AdaDFU` advertising the
+Nordic DFU service at `DB:AD:4D:9D:21:BB` while USB enumerated `PID_00DA` (the BOOTLOADER pid; the
+application uses `0x80DA`) on a COM port. So the mutual exclusion below is a property of 1.0.3, not
+of the design.
+
+**But the wired update still does not complete** — this was true on 2026-09-20 and was resolved on
+2026-09-21; see above. USB CDC accepted the start of a serial DFU and then failed reproducibly
+~13-14 packets in, with the COM port disappearing mid-transfer. The investigation is in
+[the first-hardware report](../MSV3/docs/MSV3_USB_BLE_COEXISTENCE_FIRST_HARDWARE_2026-09-20.md);
+most of its hypotheses were later disproven, so read
+[the resolution](../MSV3/docs/MSV3_WIRED_DFU_RESOLVED_2026-09-21.md) first.
+
+The text below still describes probes 4-7 exactly.
+
 **Status:** Open design requirement, explicitly retained at the maintainer's request on 2026-09-14.
 
 The installed signed bootloader uses `DEFAULT_TO_OTA_DFU` so a missing or invalid application
@@ -172,6 +215,18 @@ powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 -Ac
 The wrapper finds the active installed Adafruit nRF52 core, repairs/verifies `variants/pca10056/variant.h` as `USE_LFRC`, and forces a clean build so a stale LFXO object cannot survive. The sketch independently uses `#error` when `USE_LFRC` is absent or `USE_LFXO` remains active. Run `-Action doctor` for a fast environment-only check.
 
 Do not rely on an earlier manual edit under Arduino15: Board Manager upgrades and another PC will not inherit it. See [the complete LFCLK/RTC1 investigation](../MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md).
+
+**This extends to the BOOTLOADER, and it is not only about `Bluefruit.begin()`.** Anything that
+reads `NRF_RTC1->COUNTER` as a time source is resting on the LFCLK, and on this module that clock is
+the internal LFRC. Bootloader **1.0.23** timed a serial-session safety timeout from RTC1; when
+`sd_softdevice_disable()` disturbed the clock the counter restarted, the unsigned
+`(now - mark)` subtraction wrapped to an enormous value, and a nominal 10-second lease fired after
+3.4 seconds — killing the wired transfer it had been added to protect. It took three bootloader
+releases to find, on a board whose missing crystal is documented in this very file.
+
+**Do not use RTC1 as a timebase anywhere that a SoftDevice enable/disable can occur.** Count
+main-loop passes, or use a source that does not depend on the LFCLK. See
+[the wired DFU resolution](../MSV3/docs/MSV3_WIRED_DFU_RESOLVED_2026-09-21.md).
 
 ## MSV3: every fleet-targeted application must expose a periodic OTA window
 
