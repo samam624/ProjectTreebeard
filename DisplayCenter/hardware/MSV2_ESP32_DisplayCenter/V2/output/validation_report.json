@@ -32,7 +32,7 @@
     },
     "rearShell": {
       "meshCount": 1,
-      "triangles": 3720,
+      "triangles": 3512,
       "min": [
         -70.39,
         -25.903,
@@ -58,27 +58,13 @@
         -17.30005211028082
       ]
     },
-    "antenna": {
-      "meshCount": 2,
-      "triangles": 5814,
-      "min": [
-        -48.57515932255791,
-        51.397,
-        -43
-      ],
-      "max": [
-        49.214263157877994,
-        60.797000000000004,
-        -18
-      ]
-    },
     "foldedAssembly": {
-      "meshCount": 5,
-      "triangles": 12490,
+      "meshCount": 3,
+      "triangles": 6468,
       "min": [
         -70.39,
         -25.903,
-        -43
+        -25.3
       ],
       "max": [
         51.61,
@@ -87,8 +73,8 @@
       ]
     },
     "deployedAssembly": {
-      "meshCount": 5,
-      "triangles": 12490,
+      "meshCount": 3,
+      "triangles": 6468,
       "min": [
         -70.39,
         -25.903,
@@ -101,12 +87,12 @@
       ]
     },
     "fitCheckAssembly": {
-      "meshCount": 343,
-      "triangles": 102169,
+      "meshCount": 341,
+      "triangles": 96147,
       "min": [
         -70.39,
         -25.903,
-        -43
+        -25.3
       ],
       "max": [
         51.61,
@@ -145,8 +131,8 @@
       ]
     },
     "rearShell": {
-      "triangleCount": 3720,
-      "byteLength": 186084,
+      "triangleCount": 3512,
+      "byteLength": 175684,
       "min": [
         -70.38999938964844,
         1,
@@ -381,52 +367,50 @@
     "deployedPreviewAngle": 30
   },
   "antenna": {
-    "foldedBehindRear": true,
-    "whipBounds": {
-      "min": [
-        -48.57515932255791,
-        51.397,
-        -42.70426315787
-      ],
-      "max": [
-        39.41,
-        60.797000000000004,
-        -33.30426315787
-      ]
-    },
-    "antennaBaseBounds": {
-      "min": [
-        38.914263157878,
-        51.397080896119455,
-        -43
-      ],
-      "max": [
-        49.214263157877994,
-        60.79691910388833,
-        -18
-      ]
-    },
-    "antennaBehindRearClearance": 15.304263157869997,
-    "antennaBaseRegisteredToWall": true,
-    "antennaBoreChecks": {
-      "center": [],
-      "insideXMinus": [],
-      "insideXPlus": [],
-      "insideYMinus": [],
-      "insideYPlus": [],
-      "outsideXMinus": [
-        -18,
-        -15.4
-      ],
-      "outsideXPlus": [
-        -18,
-        -15.4
-      ]
-    },
-    "bulkheadCutout": {
-      "type": "single circular through-bore",
-      "diameter": 10
-    }
+    "externalOpening": false,
+    "formerAntennaBoreIsSolid": true,
+    "formerAntennaBoreChecks": [
+      {
+        "x": 44.11,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 39.31,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 48.91,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 44.11,
+        "y": 51.297000000000004,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 44.11,
+        "y": 60.897,
+        "z": [
+          -18,
+          -15.4
+        ]
+      }
+    ]
   },
   "enclosure": {
     "unifiedRectangle": true,

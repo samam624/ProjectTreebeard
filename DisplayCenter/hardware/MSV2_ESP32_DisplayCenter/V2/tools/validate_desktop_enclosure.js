@@ -6,7 +6,7 @@ const outputDir = path.join(projectDir, 'output');
 const sourcePcb = path.join(projectDir, 'MSV3_desktop_display.step');
 const occtimportjs = require(path.resolve(
   __dirname,
-  '../../../MSV3_Probe_PCB_Enclosure/tools/node/node_modules/occt-import-js',
+  '../../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/occt-import-js',
 ))();
 
 const PCB_TRANSLATION = [0.00, 0.00, 0.00];
@@ -119,12 +119,14 @@ function xIntersectionsAt(mesh, y, z) {
 
 occtimportjs.then((occt) => {
   const errors = [];
+  if (fs.existsSync(path.join(outputDir, 'MSV3_display_antenna_positioned.step'))) {
+    errors.push('The obsolete external antenna reference STEP is still in the output folder.');
+  }
   const stepFiles = {
     originalBezel: 'MSV3_display_front_bezel_reference.step',
     frontCover: 'MSV3_display_front_cover.step',
     rearShell: 'MSV3_display_rear_shell.step',
     kickstand: 'MSV3_display_kickstand.step',
-    antenna: 'MSV3_display_antenna_positioned.step',
     foldedAssembly: 'MSV3_display_enclosure_assembly.step',
     deployedAssembly: 'MSV3_display_enclosure_deployed.step',
     fitCheckAssembly: 'MSV3_display_fit_check_assembly.step',
@@ -147,9 +149,8 @@ occtimportjs.then((occt) => {
     frontCover: 1,
     rearShell: 1,
     kickstand: 1,
-    antenna: 2,
-    foldedAssembly: 5,
-    deployedAssembly: 5,
+    foldedAssembly: 3,
+    deployedAssembly: 3,
     pcbAlignmentCheck: 339,
   };
   for (const [name, expected] of Object.entries(expectedMeshCounts)) {
@@ -239,48 +240,20 @@ occtimportjs.then((occt) => {
     errors.push('Bottom/rear USB cable bay does not surround the connector tunnel.');
   }
 
-  const antennaStep = readStep(occt, path.join(outputDir, stepFiles.antenna));
-  const antennaMeshes = antennaStep.meshes.map((mesh) => ({
-    mesh,
-    bounds: boundsForMeshes([mesh]),
-  })).sort((a, b) => (b.bounds.max[0] - b.bounds.min[0])
-    - (a.bounds.max[0] - a.bounds.min[0]));
-  const whipBounds = antennaMeshes[0].bounds;
-  const antennaBaseBounds = antennaMeshes[1].bounds;
-  const antennaBehindRearClearance = -18.00 - whipBounds.max[2];
-  const antennaBaseRegisteredToWall = approx(antennaBaseBounds.max[2], -18.00, 0.10)
-    && antennaBaseBounds.min[0] <= 44.11 && antennaBaseBounds.max[0] >= 44.11
-    && antennaBaseBounds.min[1] <= 56.097 && antennaBaseBounds.max[1] >= 56.097;
-  if (!antennaBaseRegisteredToWall) {
-    errors.push('Antenna base is not registered to the rear panel opening.');
-  }
-  if (whipBounds.min[0] < -70.39 || whipBounds.max[0] > 51.61
-      || whipBounds.min[1] < 50.99 || whipBounds.max[1] > 61.20
-      || antennaBehindRearClearance < 10.00) {
-    errors.push('Folded antenna is not hidden horizontally behind the upper rear silhouette.');
-  }
-  const antennaBoreCenter = [44.11, 56.097];
+  const formerAntennaBoreCenter = [44.11, 56.097];
   const rearShellMesh = stepResults.rearShell.meshes[0];
-  const antennaBoreChecks = {
-    center: zIntersectionsAt(rearShellMesh, ...antennaBoreCenter),
-    insideXMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] - 4.80, antennaBoreCenter[1]),
-    insideXPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] + 4.80, antennaBoreCenter[1]),
-    insideYMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0], antennaBoreCenter[1] - 4.80),
-    insideYPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0], antennaBoreCenter[1] + 4.80),
-    outsideXMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] - 5.20, antennaBoreCenter[1]),
-    outsideXPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] + 5.20, antennaBoreCenter[1]),
-  };
-  const boreInteriorIsOpen = [
-    antennaBoreChecks.center,
-    antennaBoreChecks.insideXMinus,
-    antennaBoreChecks.insideXPlus,
-    antennaBoreChecks.insideYMinus,
-    antennaBoreChecks.insideYPlus,
-  ].every((hits) => hits.length === 0);
-  const boreExteriorIsSolid = antennaBoreChecks.outsideXMinus.length >= 2
-    && antennaBoreChecks.outsideXPlus.length >= 2;
-  if (!boreInteriorIsOpen || !boreExteriorIsSolid) {
-    errors.push('Antenna mount is not one unobstructed 10.0 mm circular through-bore.');
+  const formerAntennaBoreChecks = [
+    [0, 0], [-4.80, 0], [4.80, 0], [0, -4.80], [0, 4.80],
+  ].map(([dx, dy]) => ({
+    x: formerAntennaBoreCenter[0] + dx,
+    y: formerAntennaBoreCenter[1] + dy,
+    z: zIntersectionsAt(rearShellMesh, formerAntennaBoreCenter[0] + dx,
+      formerAntennaBoreCenter[1] + dy),
+  }));
+  const formerAntennaBoreIsSolid = formerAntennaBoreChecks.every(({ z }) =>
+    z.length >= 2 && approx(z[0], -18.00, 0.05) && approx(z[z.length - 1], -15.40, 0.05));
+  if (!formerAntennaBoreIsSolid) {
+    errors.push('The former antenna opening is not closed by the full 2.6 mm rear wall.');
   }
 
   const reportData = JSON.parse(fs.readFileSync(path.join(outputDir, 'design_report.json'), 'utf8'));
@@ -439,16 +412,9 @@ occtimportjs.then((occt) => {
       deployedPreviewAngle: 30.00,
     },
     antenna: {
-      foldedBehindRear: true,
-      whipBounds,
-      antennaBaseBounds,
-      antennaBehindRearClearance,
-      antennaBaseRegisteredToWall,
-      antennaBoreChecks,
-      bulkheadCutout: {
-        type: 'single circular through-bore',
-        diameter: 10.00,
-      },
+      externalOpening: false,
+      formerAntennaBoreIsSolid,
+      formerAntennaBoreChecks,
     },
     enclosure: {
       unifiedRectangle,

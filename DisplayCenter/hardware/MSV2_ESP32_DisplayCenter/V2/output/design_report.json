@@ -1,5 +1,5 @@
 {
-  "version": "prototype-6-native-clean-front",
+  "version": "prototype-7-internal-antenna",
   "units": "mm",
   "parameters": {
     "pcbTranslation": [
@@ -90,23 +90,6 @@
       "rightXMin": 37,
       "rightXMax": 56
     },
-    "antennaMount": {
-      "x": 50.5,
-      "y": 70,
-      "holeDiameter": 10
-    },
-    "antennaFold": {
-      "hingeX": 40.4,
-      "hingeZ": -2.1,
-      "splitX": 45.4,
-      "localFoldDegrees": 90,
-      "globalRotationY": 90,
-      "translation": [
-        52.9,
-        70,
-        -0.6
-      ]
-    },
     "kickstandPivot": {
       "y": 41,
       "z": -23.8
@@ -144,10 +127,6 @@
         -60.5,
         58.49700000000001
       ]
-    ],
-    "antennaMount": [
-      44.11,
-      56.097
     ],
     "kickstandPivot": [
       27.097,
@@ -234,10 +213,8 @@
     "rearShellIntersectionVolume": 0
   },
   "antenna": {
-    "source": "C:/Users/Public/Documents/Altium/MSV2_ESP32_DisplayCenter/antenna_step.stp",
-    "identifiedStyle": "113 x 10 mm hinged connector-mount whip, shown folded 90 degrees",
-    "placement": "high on the rear wall, folded horizontally inside the front-view silhouette",
-    "attachment": "single 10.0 mm circular through-bore sized around the supplied 9.4 mm hinged antenna base"
+    "placement": "internal antenna; exact location and cable routing to be checked with the ordered part",
+    "externalOpening": false
   },
   "usb": {
     "connectorDirection": "downward",
