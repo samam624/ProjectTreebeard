@@ -34,9 +34,21 @@ NUS_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # PC writes here, nRF rece
 NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # nRF notifies here, PC receives.
 MSV2_COMPANY_ID = 0xFFFF
 MSV2_MAGIC = b"MSV2"
-MSV3_MAGIC = b"MSV3"  # MSV3_Probe_Bringup_Test.ino's blecycle/blestart -- distinct magic so it
-                       # can never be mistaken for real MSV2 plant data (see that sketch's BLE
-                       # section comment). Layout: sensor_id(1) wake24(3) dataCh0_u32(4) battMv(2) charging(1).
+MSV3_MAGIC = b"MSV3"  # MSV3_Probe_Bringup_Test.ino's blecycle/blestart/bench -- distinct magic
+                       # so it can never be mistaken for real MSV2 plant data (see that sketch's
+                       # BLE section comment).
+# Bench packet ABI. The authoritative layout is the comment above bleStartAdv() in
+# MSV3_Probe_Bringup_Test.ino; the other two decoders are that sketch itself and
+# Treebeard_ESP32_Display_Runtime.ino's parseBenchAdvertisement(). Change one, change all three.
+#
+# NOTE ON OFFSETS: bleak strips the 2-byte company ID before handing over manufacturer_data, so
+# every index here is the firmware's mfg[] index MINUS 2. mfg[16] (flags) is payload[14].
+MSV3_BENCH_FORMAT_VERSION_1 = 1
+MSV3_BENCH_FLAG_CHARGING = 1 << 0
+MSV3_BENCH_FLAG_BOARD_TEMP_OK = 1 << 2
+MSV3_BENCH_FLAG_OTA_POWER_OK = 1 << 4
+MSV3_BENCH_FLAG_READING_INVALID = 1 << 5
+MSV3_BENCH_FLAG_LIVE_MODE = 1 << 7
 BATTERY_LEVEL_UUID = "00002a19-0000-1000-8000-00805f9b34fb"
 DIS_MODEL_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
 DIS_MANUFACTURER_UUID = "00002a29-0000-1000-8000-00805f9b34fb"
@@ -109,7 +121,7 @@ def parse_msv2_manufacturer_data(adv: AdvertisementData) -> tuple[int, int, int]
     return sensor_id, wake_low24, moisture
 
 
-def parse_msv3_manufacturer_data(adv: AdvertisementData) -> tuple[int, int, int, int, bool] | None:
+def parse_msv3_manufacturer_data(adv: AdvertisementData) -> dict | None:
     payload = adv.manufacturer_data.get(MSV2_COMPANY_ID)
     if not payload or len(payload) < 15:
         return None
@@ -117,12 +129,40 @@ def parse_msv3_manufacturer_data(adv: AdvertisementData) -> tuple[int, int, int,
     if not payload.startswith(MSV3_MAGIC):
         return None
 
-    sensor_id = payload[4]
-    wake_low24 = payload[5] | (payload[6] << 8) | (payload[7] << 16)
-    data_ch0 = struct.unpack_from("<I", payload, 8)[0]
-    battery_mv = struct.unpack_from("<H", payload, 12)[0]
-    charging = payload[14] != 0
-    return sensor_id, wake_low24, data_ch0, battery_mv, charging
+    flags = payload[14]
+    parsed = {
+        "sensor_id": payload[4],
+        "wake": payload[5] | (payload[6] << 8) | (payload[7] << 16),
+        "data_ch0": struct.unpack_from("<I", payload, 8)[0],
+        "battery_mv": struct.unpack_from("<H", payload, 12)[0],
+        # Masked, not truthiness-tested. The flags byte has carried more than charging since the
+        # OTA power gate was added, so `payload[14] != 0` reported charging for any probe whose
+        # gate was merely open.
+        "charging": bool(flags & MSV3_BENCH_FLAG_CHARGING),
+        "ota_power_ok": bool(flags & MSV3_BENCH_FLAG_OTA_POWER_OK),
+        "reading_valid": not (flags & MSV3_BENCH_FLAG_READING_INVALID),
+        "live_mode": bool(flags & MSV3_BENCH_FLAG_LIVE_MODE),
+        "format_version": 0,
+        "board_temp_c": None,
+        "mux_code": None,
+        "fdc_status": None,
+    }
+
+    # Everything below exists only in the widened (23-byte) bench packet. Gate the v1-only fields
+    # on the VERSION byte, not on length alone: length says the bytes are present, version says
+    # what they mean. CLAUDE.md records four readings mislabelled by decoding a reused byte
+    # against the wrong build -- this is that rule applied here.
+    if len(payload) >= 21:
+        if flags & MSV3_BENCH_FLAG_BOARD_TEMP_OK:
+            temp_q4 = struct.unpack_from("<h", payload, 15)[0]
+            if -160 <= temp_q4 <= 340:
+                parsed["board_temp_c"] = temp_q4 / 4.0
+        if payload[17] >= MSV3_BENCH_FORMAT_VERSION_1:
+            parsed["format_version"] = payload[17]
+            parsed["mux_code"] = payload[18] & 0x03
+            parsed["fdc_status"] = struct.unpack_from("<H", payload, 19)[0]
+
+    return parsed
 
 
 async def monitor_advertisements(
@@ -162,11 +202,13 @@ async def monitor_advertisements(
 
         parsed3 = parse_msv3_manufacturer_data(adv)
         if parsed3 is not None:
-            sensor_id, wake_count, data_ch0, battery_mv, charging = parsed3
+            sensor_id = parsed3["sensor_id"]
+            wake_count = parsed3["wake"]
             key = (device.address, "v3", sensor_id)
-            if seen.get(key) == parsed3:
+            fingerprint = tuple(sorted(parsed3.items(), key=lambda kv: kv[0]))
+            if seen.get(key) == fingerprint:
                 return
-            seen[key] = parsed3
+            seen[key] = fingerprint
             previous_wake = last_wake.get(key)
             last_wake[key] = wake_count
             gap = ""
@@ -174,11 +216,26 @@ async def monitor_advertisements(
                 missed = (wake_count - previous_wake - 1) & 0xFFFFFF
                 if missed:
                     gap = f" missed={missed}"
-            charge_note = " (charging)" if charging else ""
+            charge_note = " (charging)" if parsed3["charging"] else ""
+            live_note = " LIVE" if parsed3["live_mode"] else ""
+            # A placeholder advertisement (an OTA discovery window, or a failed FDC read) carries
+            # dataCh0=0. Printing that as a count would be a fabricated reading.
+            count_note = (
+                f"dataCh0={parsed3['data_ch0']}"
+                if parsed3["reading_valid"]
+                else "dataCh0=-- (no reading)"
+            )
+            extras = ""
+            if parsed3["board_temp_c"] is not None:
+                extras += f" temp={parsed3['board_temp_c']:.1f}C"
+            if parsed3["mux_code"] is not None:
+                extras += f" mux={parsed3['mux_code']}"
+            if parsed3["fdc_status"] is not None:
+                extras += f" status=0x{parsed3['fdc_status']:04X}"
             print(
                 f"[{now()}] {advertised_name} {device.address} "
-                f"RSSI={adv.rssi} sensor={sensor_id} wake={wake_count} "
-                f"dataCh0={data_ch0} battMv={battery_mv}{charge_note}{gap}"
+                f"RSSI={adv.rssi} sensor={sensor_id} wake={wake_count}{live_note} "
+                f"{count_note} battMv={parsed3['battery_mv']}{extras}{charge_note}{gap}"
             )
 
     print(f"[{now()}] Monitoring BLE advertisements. Press Ctrl+C to stop.")

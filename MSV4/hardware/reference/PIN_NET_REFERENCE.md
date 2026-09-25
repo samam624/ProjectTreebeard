@@ -286,3 +286,37 @@ tables above still describe rev3 for anything finding 10 lists.
 - Remaining, BOM/labels only: the VBAT_DIV cap (100 nF X7R) has designator `DNP` but is still a
   fitted line item (qty 8 on the X7R row). Fine for hand assembly (do not place it); mark it
   not-fitted if a BOM is ever used for purchasing/assembly. The BQ25504 is still designator `U`.
+
+### 14. FUTURE REVISION CANDIDATE — power-gate U3/U4 during sleep (2026-09-20)
+
+The present board is acceptable as built: asserting both FSUSB42 `/OE` inputs HIGH disconnects
+their analog channels, and each part specifies at most 1 µA quiescent supply current when its
+control inputs are at valid rails. U3 + U4 therefore add at most about **2 µA**, or
+**0.048 mAh/day**, while powered but disabled. Do not rework the first boards solely for this.
+
+For a future PCB revision, consider feeding U3 and U4 from one GPIO-controlled **high-side power
+gate** (`SW_AFE_3V3`) instead of directly from `3V3`. A P-channel MOSFET or load switch with
+guaranteed off leakage well below 1 µA over the required temperature range could recover up to
+about 2 µA. This is a modest whole-probe energy improvement, but material against the intended
+10–15 µA sleep-current budget. Select from guaranteed maximum leakage, including temperature,
+rather than a room-temperature typical value, and include the gate/load-switch current in the
+comparison.
+
+This change is safe only if the schematic and firmware implement all of the following:
+
+1. Move R21 and R23 (`SWAP_nOE` and `READ_nOE`) from permanent `3V3` to `SW_AFE_3V3`. Leaving a
+   control input at 3.3 V while the FSUSB42 VCC is 0 V violates its specified control-input range
+   and can back-power the part. R20/R22 `Sel` pulldowns may remain on GND.
+2. Give the power-gate enable a hardware default-OFF state during reset and boot. Keep all four
+   switch-control GPIOs high-impedance while `SW_AFE_3V3` is off.
+3. Sleep sequence: set both `/OE` inputs HIGH while power is present, park `DRV` LOW, release the
+   control GPIOs, then remove `SW_AFE_3V3`.
+4. Wake sequence: keep `DRV` LOW and the control GPIOs released, enable `SW_AFE_3V3`, wait for its
+   rail/decoupling to settle, then select the paths and drive `/OE` LOW.
+5. The FSUSB42 signal ports are power-off tolerant, but still specify up to ±2 µA `IOFF` per port
+   when an external voltage is present. Parking `DRV` LOW and discharging the filter nodes avoids
+   providing a voltage that can drive this leakage. Power gating removes VCC quiescent current; it
+   does not guarantee zero analog-port leakage.
+
+Verify the revision by measuring whole-board sleep current both with the AFE rail forced on and
+with it gated off. The measured difference, not the 2 µA datasheet ceiling, is the real benefit.

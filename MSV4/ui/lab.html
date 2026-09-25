@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MSV4 Lab</title>
+  <link rel="stylesheet" href="/lab.css">
+  <script src="/lab.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <div class="brand"><span class="brand-mark">T</span><div><span class="eyebrow">PROJECT TREEBEARD / INSTRUMENTS</span><h1>MSV4 Lab</h1></div></div>
+      <div class="connection-pill" id="connection-pill"><span class="status-dot"></span><span id="connection-text">Disconnected</span></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-heading"><div><span class="eyebrow">01 / HARDWARE</span><h2>BLE connection</h2></div></div>
+          <p class="muted">Connect to the MSV4 bring-up image near this computer. The page and session files stay local.</p>
+          <div class="field-row"><label for="board-select">Detected boards</label><button id="scan-btn" class="text-button">Scan</button></div>
+          <select id="board-select"><option value="">Auto-select the only MSV4 board</option></select>
+          <label for="device-input">Or enter BLE name / address</label>
+          <input id="device-input" placeholder="MSV4-BU-XXXX or address" autocomplete="off">
+          <div class="button-row"><button id="connect-btn" class="primary">Connect</button><button id="disconnect-btn" class="secondary">Disconnect</button></div>
+          <div class="small-status" id="device-detail">No board connected</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading"><div><span class="eyebrow">02 / WORKSPACE</span><h2>Session</h2></div></div>
+          <label for="session-select">Saved sessions</label>
+          <div class="field-row"><select id="session-select"></select><button id="open-session-btn" class="text-button">Open</button></div>
+          <label for="session-title">New session title</label>
+          <div class="field-row"><input id="session-title" placeholder="e.g. first soil sweep"><button id="new-session-btn" class="secondary">New</button></div>
+          <div class="button-row"><button id="export-btn" class="secondary">Export JSON</button><button id="import-btn" class="secondary">Import JSON</button><input id="import-file" type="file" accept=".json,application/json" hidden></div>
+          <p class="hint">Export a session to move it to your laptop. You can also start with <code>--data-dir</code> pointed at a folder you already sync.</p>
+        </section>
+
+        <section class="panel compact">
+          <div class="panel-heading"><div><span class="eyebrow">03 / CAPTURE</span><h2>Repeated readings</h2></div></div>
+          <div class="checks">
+            <label><input type="checkbox" name="capture" value="temp" checked> Tip temperature</label>
+            <label><input type="checkbox" name="capture" value="read" checked> Front-end voltages</label>
+            <label><input type="checkbox" name="capture" value="vbat"> Battery / VBAT</label>
+            <label><input type="checkbox" name="capture" value="iq 16"> I/Q at 1 MHz</label>
+            <label><input type="checkbox" name="capture" value="spectrum ab"> Spectrum A + B</label>
+          </div>
+          <label for="capture-interval">Seconds between sets</label>
+          <div class="field-row"><input id="capture-interval" type="number" min="2" max="3600" value="10"><button id="capture-btn" class="primary">Start capture</button></div>
+          <p class="hint">Each command finishes before the next begins. Capture continues while this page is open or closed, until stopped or disconnected.</p>
+        </section>
+      </aside>
+
+      <div class="main-column">
+        <section class="panel overview">
+          <div class="panel-heading wide"><div><span class="eyebrow">LIVE / LATEST REPLIES</span><h2>Measurements</h2></div><span id="last-reading" class="muted">Waiting for data</span></div>
+          <div class="metric-grid">
+            <div class="metric"><span>TIP TEMPERATURE</span><strong id="metric-temp_c">—</strong><small>°C</small></div>
+            <div class="metric"><span>SENSE OUT</span><strong id="metric-sense_mv">—</strong><small>mV</small></div>
+            <div class="metric"><span>DRIVE OUT</span><strong id="metric-drv_mv">—</strong><small>mV</small></div>
+            <div class="metric"><span>RSOIL</span><strong id="metric-rsoil_ohm">—</strong><small>Ω · spectrum fit</small></div>
+            <div class="metric"><span>INTERFACE CM</span><strong id="metric-cm_pf">—</strong><small>pF · spectrum fit</small></div>
+            <div class="metric"><span>VBAT</span><strong id="metric-vbat_mv">—</strong><small>mV</small></div>
+          </div>
+          <p class="hint">Values are the latest command replies, not an automatic production moisture reading. Spectrum soil capacitance is not identifiable in moist soil below 4 MHz.</p>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="panel-heading wide"><div><span class="eyebrow">SESSION HISTORY</span><h2>Trend</h2></div><select id="chart-metric" aria-label="Chart metric"><option value="temp_c">Tip temperature · °C</option><option value="sense_mv">Sense output · mV</option><option value="drv_mv">Drive output · mV</option><option value="rsoil_ohm">Soil resistance · Ω</option><option value="cm_pf">Interface Cm · pF</option><option value="vbat_mv">VBAT · mV</option></select></div>
+          <div class="chart-frame"><canvas id="trend-chart" aria-label="Selected measurement trend"></canvas><div id="chart-empty">Run a measurement to begin a trend.</div></div>
+        </section>
+
+        <section class="panel command-panel">
+          <div class="panel-heading wide"><div><span class="eyebrow">DIRECT CONTROL</span><h2>Command console</h2></div><span class="muted" id="busy-label">Ready</span></div>
+          <div class="quick-actions" id="quick-actions">
+            <button data-command="info">Info</button><button data-command="temp">Temp</button><button data-command="vbat">VBAT</button><button data-command="vdd">VDD</button><button data-command="read">Read</button><button data-command="iq 16">I/Q 1 MHz</button><button data-command="spectrum open">Open ref</button><button data-command="spectrum ab">Spectrum A+B</button><button data-command="safe">Safe</button><button data-command="stop">Stop</button>
+          </div>
+          <form id="command-form" class="command-entry"><span class="prompt">&gt;</span><input id="command-input" aria-label="BLE command" placeholder="Type a bring-up command, e.g. swap a" autocomplete="off"><button type="submit" class="primary">Send</button></form>
+          <div class="terminal-toolbar"><span>TRANSCRIPT</span><span id="event-count">0 events</span></div>
+          <div id="transcript" class="transcript" role="log" aria-live="polite"></div>
+          <form id="note-form" class="note-entry"><input id="note-input" placeholder="Add a session note: setup, watering, scope observation…" aria-label="Session note"><button type="submit" class="secondary">Add note</button></form>
+        </section>
+      </div>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <footer>MSV4 LAB · LOCALHOST ONLY · BLE NORDIC UART SERVICE</footer>
+  </div>
+</body>
+</html>

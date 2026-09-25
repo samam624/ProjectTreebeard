@@ -15,6 +15,7 @@ packet_test*.csv
 cloud/web/*.zip
 node_modules/
 .arduino-build/
+MSV4/.lab-sessions/
 cloud/supabase/.temp/
 cloud/supabase/.branches/
 cloud/supabase/.env
@@ -49,4 +50,6 @@ docs/paper/build/
 /tmux1574_full.txt
 /generated/MSV_Evolution_Slides.pptx.bak
 /generated/MSV_Evolution_Slides.zip
+# Bambu/Orca slicer CLI status file, written to the working directory on every slice.
+/result.json
 

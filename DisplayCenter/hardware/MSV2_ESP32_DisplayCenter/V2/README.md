@@ -48,10 +48,10 @@ turn toward the rear without supporting the enclosure on the cable.
 
 ## Antenna placement
 
-The supplied antenna geometry has a 9.4 mm hinged base. The rear-right mount is
-now one unobstructed **10.0 mm circular through-hole**—there is no D-flat,
-counterbore, or second diameter. The antenna folds 90 degrees horizontally
-across the upper rear, entirely inside the front-view outline.
+The new antenna sits inside the enclosure. The former 10 mm rear bulkhead
+opening is closed with the full 2.6 mm rear-wall thickness. Check the ordered
+antenna's exact placement and cable routing against the physical PCB before
+assembly; the antenna is not modeled in the enclosure STEP files.
 
 ## Adjustable desk prop
 
@@ -63,34 +63,46 @@ The deployed STEP shows a 30-degree example position.
 
 ## Output files
 
-- `MSV3_display_enclosure_assembly.step` - closed enclosure, folded stand, and
-  folded rear antenna reference
+- `MSV3_display_enclosure_assembly.step` - closed enclosure and folded stand
 - `MSV3_display_enclosure_deployed.step` - stand shown at 30 degrees
-- `MSV3_display_fit_check_assembly.step` - enclosure plus the complete PCB and
-  antenna references
+- `MSV3_display_fit_check_assembly.step` - enclosure plus the complete PCB
+  reference
 - `MSV3_display_pcb_alignment_check.step` - front cover plus the complete native-
   origin two-PCB assembly, with the rear left open for direct alignment checks
 - `MSV3_display_enclosure_exploded.step` - separated inspection arrangement
 - `MSV3_display_front_cover.step` - unified front cover with insert seats
 - `MSV3_display_front_bezel_reference.step` - untouched source bezel reference
-- `MSV3_display_rear_shell.step` - unified rear shell, USB bay, feet, screw
-  bosses, and antenna bulkhead cutout
+- `MSV3_display_rear_shell.step` - unified rear shell, USB bay, feet, and screw
+  bosses
 - `MSV3_display_kickstand.step` - separate adjustable prop
-- `MSV3_display_antenna_positioned.step` - antenna articulated into its folded
-  rear position
 - matching `*_print.stl` files for the three printed parts
 - `design_report.json` and `validation_report.json`
 
-The STEP files import directly into Fusion 360 as solid bodies. PETG is a good
-first-prototype material. Use approximately 0.25 mm foam or TPU pads on the two
-controller support posts and verify the exact RP-SMA bulkhead pigtail, screw
-lengths, USB plug overmold, and heat-set-insert length before final production.
+The printer-ready P1S/PLA release is under `output/p1s_0p4_pla_v1`. It is split
+into two Bambu Studio projects so the rear shell can use its own tree-support
+settings without adding support to the bezel or kickstand:
+
+- `MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v1.3mf`
+- `MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v1.3mf`
+- `PRINT_IN_BAMBU_STUDIO.md`
+
+Both 3MF projects are pre-sliced for a Bambu Lab P1S, 0.4 mm nozzle, generic
+PLA, Textured PEI Plate, 0.20 mm layers, three walls, 20% gyroid infill, and a
+5 mm outer brim. The bezel prints visible-face-down; the kickstand prints on
+its wide foot; the rear shell stands on its continuous right side wall with
+build-plate-only tree supports. Bambu Studio 02.07.01.62 sliced both projects
+without warnings.
+
+The STEP files import directly into Fusion 360 as solid bodies. Use
+approximately 0.25 mm foam or TPU pads on the two controller support posts and
+verify the internal antenna, screw lengths, USB plug overmold, and heat-set-
+insert length before final production.
 
 ## Regeneration
 
 From the repository root:
 
 ```powershell
-node hardware\MSV2_ESP32_DisplayCenter\V2\design\generate_desktop_enclosure.mjs
-node hardware\MSV2_ESP32_DisplayCenter\V2\tools\validate_desktop_enclosure.js
+node DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\design\generate_desktop_enclosure.mjs
+node DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\tools\validate_desktop_enclosure.js
 ```

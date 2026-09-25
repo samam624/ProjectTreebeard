@@ -167,6 +167,39 @@ condition `DEFAULT_TO_OTA_DFU` turns into persistent BLE recovery. The swap is n
 power while the bootloader itself is being rewritten leaves it half-written with no SWD underneath
 it on a coated board, and nothing recovers that.
 
+> **WITHDRAWN 2026-09-20 -- the paragraph above is wrong, and it was the main thing blocking an
+> OTA delivery of 1.0.4.** The swap is performed by the **MBR**, not by the bootloader.
+> `dfu_activate_bl()` only persists `bank_1 = BANK_VALID_BOOT` plus `bl_image_size` into the
+> settings page and resets; the copy itself happens on the next boot via
+> `SD_MBR_COMMAND_COPY_BL` (`dfu_bl_image_swap()`). The MBR lives in the first 4 KB and is never
+> erased, and it journals the copy's progress into the **MBR params page**, which it locates
+> through `UICR.NRFFW[1]`. An interrupted copy therefore **resumes on the next boot**;
+> `bootloader_dfu_sd_in_progress()` in `main.c` re-enters the swap, and `dfu_bl_image_validate()`
+> COMPAREs and re-copies on mismatch.
+>
+> The precondition is that `UICR.NRFFW[1]` is actually provisioned. `bootloader_settings.c` writes
+> it when it reads blank, so it should be set on any board that has run an Adafruit-derived
+> bootloader -- but "should" was not good enough to bet a coated probe on, so it was **measured**.
+> Probe 8, read over its USB console on 2026-09-20 with the `uicr` command added to
+> `MSV3_Probe_Bringup_Test` in diagnostic v65565:
+>
+> ```
+> NRFFW[0] @0x10001014 (boot start) = 0x000F4000  expect 0x000F4000  OK
+> NRFFW[1] @0x10001018 (MBR params) = 0x000FE000  expect 0x000FE000  OK
+> ```
+>
+> So on probe 8 an OTA bootloader update is power-fail recoverable. Corroborating evidence that
+> the BL path works at all on this hardware: probe 4 took an SD+BL+APP package over the air from
+> the stock loader on 2026-09-03 with `swd_accessible: false`.
+>
+> **What this does NOT license.** The measurement is from probe 8 and only probe 8. Run `uicr` on
+> each board before delivering a bootloader to it -- a blank `NRFFW[1]` would restore exactly the
+> failure this paragraph describes. The deployment table below is also stale on its own terms: it
+> lists probe 7 as SWD-accessible and probe 99 as the bench board, and `MSV3/fleet.json` (verified
+> 2026-09-20 by the maintainer) says every probe EXCEPT 6 has reachable SWD pads, probe 99 no
+> longer exists, and probe 8 is that board. Probe 6 is the coated one and the only board where a
+> bad outcome is permanent, so it goes last.
+
 So the deployment picture:
 
 | Board | Path |

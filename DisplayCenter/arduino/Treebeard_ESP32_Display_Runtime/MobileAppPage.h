@@ -405,6 +405,35 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
     .smoothing-actions button { flex: 1; }
     .chart-visibility-row { display: flex; gap: 8px; margin: 10px 0 4px; }
     .chart-visibility-row button { flex: 1; }
+    /* ---- Bench tab: MSV3 bring-up probe instrument readout ---- */
+    /* Engineering instrumentation, not plant data. Monospace + tabular numerals throughout so a
+       digit changing never reflows the line - these values update ~4x/second. */
+    .bench-card { margin-bottom: 12px; }
+    .bench-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .bench-id { font-size: 15px; font-weight: 750 }
+    .bench-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 7px; }
+    .bench-dot.live { background: var(--accent); }
+    .bench-dot.stale { background: var(--danger); }
+    .bench-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; margin-left: 6px; white-space: nowrap; }
+    .bench-count {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(26px, 8vw, 40px); font-weight: 700; letter-spacing: -.01em;
+      font-variant-numeric: tabular-nums; margin: 8px 0 2px;
+    }
+    .bench-count.novalue { color: var(--muted); font-size: clamp(18px, 5vw, 24px); }
+    .bench-delta {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 15px; color: var(--accent); font-variant-numeric: tabular-nums; min-height: 21px;
+    }
+    .bench-delta.neg { color: var(--warn); }
+    .bench-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px 12px; margin-top: 12px; }
+    .bench-stat b {
+      display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+    .bench-stat span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .bench-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .bench-actions button { flex: 1; }
     .hidden { display: none; }
     @media (min-width: 700px) {
       main { max-width: 960px; }
@@ -433,6 +462,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <button id="setupTab" type="button">Setup</button>
       <button id="diagnosticsTab" type="button">Diagnostics</button>
       <button id="historyTab" type="button">History</button>
+      <button id="benchTab" type="button">Bench</button>
     </div>
 
     <section id="statusView">
@@ -743,6 +773,29 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         </div>
       </section>
     </section>
+
+    <!-- Bench: MSV3 bring-up probes. A DIFFERENT DATA SOURCE from every other tab here.
+         Those read /data, which carries plant sensors only. This reads /bench-data, which carries
+         probes advertising the "MSV3" bench magic - deliberately dropped by the dashboard so a
+         board on a desk can never contribute a reading to a plant's history. Keep the two apart:
+         nothing in this section may read `readings` and nothing elsewhere may read benchProbes. -->
+    <section id="benchView" class="hidden">
+      <section class="network-card">
+        <div class="editor-head">
+          <div>
+            <div class="name">Bench probes</div>
+            <div class="meta" id="benchStatus">connecting...</div>
+          </div>
+        </div>
+        <div class="notice">
+          Raw FDC2214 instrument readout for probes running <code>MSV3_Probe_Bringup_Test</code>.
+          These are NOT plant sensors and never reach history or the cloud. A probe appears
+          continuously only while it is in <code>bench on</code>; an idle one shows up for about
+          five seconds a minute during its OTA window.
+        </div>
+      </section>
+      <div id="benchList"></div>
+    </section>
   </main>
 
   <script>
@@ -870,10 +923,205 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       $("setupView").classList.toggle("hidden", name !== "setup");
       $("diagnosticsView").classList.toggle("hidden", name !== "diagnostics");
       $("historyView").classList.toggle("hidden", name !== "history");
+      $("benchView").classList.toggle("hidden", name !== "bench");
       $("statusTab").classList.toggle("active", name === "status");
       $("setupTab").classList.toggle("active", name === "setup");
       $("diagnosticsTab").classList.toggle("active", name === "diagnostics");
       $("historyTab").classList.toggle("active", name === "history");
+      $("benchTab").classList.toggle("active", name === "bench");
+      // Bench polls at 2Hz, which is far faster than loadReadings()' 3s cadence. Start it only
+      // while the tab is actually visible and stop it on the way out - the receiver serves this
+      // from the same single-threaded loop that drives the display and the cloud uploader, so an
+      // always-on 2Hz poll would be a permanent tax for a tab nobody is looking at.
+      if (name === "bench") startBenchPolling();
+      else stopBenchPolling();
+    }
+
+    // ================================================================ Bench tab =====
+    //
+    // MSV3 bring-up probes, read from /bench-data. See the #benchView comment for why this data
+    // source is kept strictly separate from /data and the `readings` map.
+    //
+    // Everything presentational lives here rather than in firmware: digit grouping, the demo
+    // baseline/delta, age formatting. The firmware serves raw observables and holds no per-viewer
+    // UI state, so two people can have different baselines set at the same time.
+    const BENCH_POLL_MS = 500;
+    let benchTimer = null;
+    let benchSelected = null;
+    let benchSending = false;
+    let benchFailures = 0;
+    // Demo baselines, keyed by sensor id. Deliberately browser-only and lost on reload: "Zero" is
+    // a presentation aid, not a measurement, and must never look like one.
+    const benchBaselines = {};
+
+    function startBenchPolling() {
+      if (benchTimer !== null) return;
+      loadBench();
+      benchTimer = setInterval(loadBench, BENCH_POLL_MS);
+    }
+
+    function stopBenchPolling() {
+      if (benchTimer === null) return;
+      clearInterval(benchTimer);
+      benchTimer = null;
+    }
+
+    const benchGroup = (n) => Number(n).toLocaleString("en-US");
+
+    function benchAge(ms) {
+      if (ms < 1000) return "now";
+      if (ms < 60000) return Math.round(ms / 1000) + "s";
+      return Math.round(ms / 60000) + "m";
+    }
+
+    const benchStat = (label, value) =>
+      `<div class="bench-stat"><b>${value}</b><span>${label}</span></div>`;
+
+    function renderBench(data) {
+      const probes = data.probes || [];
+      const list = $("benchList");
+
+      if (!probes.length) {
+        list.innerHTML =
+          '<section class="network-card"><div class="notice">No bring-up probe is advertising. ' +
+          'Connect one over USB and enter <code>bench on</code> on its serial console.</div></section>';
+        return;
+      }
+
+      // Default selection: the freshest live probe, else the freshest of any kind. Recomputed
+      // whenever the current selection leaves the air so the tab never sits on a dead card.
+      if (benchSelected === null || !probes.some((p) => p.sensorId === benchSelected)) {
+        benchSelected = probes.slice().sort((a, b) => {
+          if (a.liveMode !== b.liveMode) return a.liveMode ? -1 : 1;
+          return a.ageMs - b.ageMs;
+        })[0].sensorId;
+      }
+
+      list.innerHTML = probes.map((p) => {
+        const dot = p.liveMode && p.fresh
+          ? "bench-dot live"
+          : (p.fresh ? "bench-dot" : "bench-dot stale");
+
+        // readingValid false means the probe advertised a placeholder, not a measurement, and the
+        // firmware omits fdcCounts entirely in that case. Never render 0 as a count.
+        const count = p.readingValid
+          ? `<div class="bench-count">${benchGroup(p.fdcCounts)}</div>`
+          : '<div class="bench-count novalue">-- no reading</div>';
+
+        let delta = '<div class="bench-delta">&nbsp;</div>';
+        const base = benchBaselines[p.sensorId];
+        if (p.readingValid && base !== undefined) {
+          const d = p.fdcCounts - base.counts;
+          // A delta across a mux change compares two different measurements. Say so rather than
+          // presenting it as a moisture swing.
+          const muxNote = (base.muxCode !== undefined && p.muxCode !== undefined &&
+                           base.muxCode !== p.muxCode) ? " (mux changed)" : "";
+          const sign = d < 0 ? "−" : "+";
+          delta = `<div class="bench-delta${d < 0 ? " neg" : ""}">${sign}${benchGroup(Math.abs(d))}${muxNote}</div>`;
+        }
+
+        const tempText = p.boardTempC === undefined ? "--" : `${p.boardTempC.toFixed(2)} °C`;
+        const statusText = p.fdcStatus === undefined
+          ? "?"
+          : "0x" + p.fdcStatus.toString(16).toUpperCase().padStart(4, "0");
+        const stats =
+          benchStat("battery", `${benchGroup(p.batteryMv)} mV${p.charging ? " ⚡" : ""}`) +
+          benchStat("board temp", tempText) +
+          benchStat("mux", p.muxCode === undefined ? "?" : String(p.muxCode)) +
+          benchStat("fdc status", statusText) +
+          benchStat("rssi", `${p.rssi} dBm`) +
+          benchStat("wake", benchGroup(p.wake)) +
+          benchStat("packets", benchGroup(p.received)) +
+          benchStat("last seen", benchAge(p.ageMs));
+
+        const badges =
+          `<span class="bench-badge">${p.liveMode ? "LIVE" : "idle"}</span>` +
+          (p.otaPowerOk ? '<span class="bench-badge">OTA gate open</span>' : "") +
+          (p.formatVersion === 0 ? '<span class="bench-badge">old firmware</span>' : "");
+
+        const actions =
+          `<button type="button" class="ghost" data-act="zero"${p.readingValid ? "" : " disabled"}>Zero</button>` +
+          `<button type="button" class="ghost" data-act="clear"${base === undefined ? " disabled" : ""}>Clear</button>` +
+          `<button type="button" data-act="identify"${benchSending ? " disabled" : ""}>${benchSending ? "Sending..." : "Identify LED"}</button>`;
+
+        return `<section class="network-card bench-card" data-id="${p.sensorId}">` +
+          `<div class="bench-top"><div class="bench-id"><span class="${dot}"></span>Probe #${p.sensorId}${badges}</div></div>` +
+          count + delta +
+          `<div class="bench-stats">${stats}</div>` +
+          `<div class="bench-actions">${actions}</div>` +
+        `</section>`;
+      }).join("");
+    }
+
+    // One delegated listener on a container that is rebuilt twice a second. Per-card listeners
+    // would be re-attached on every poll and leak.
+    $("benchList").addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      const card = event.target.closest(".bench-card");
+      if (!card) return;
+      const id = parseInt(card.dataset.id, 10);
+      benchSelected = id;
+      if (!button) { loadBench(); return; }
+
+      const act = button.dataset.act;
+      if (act === "clear") { delete benchBaselines[id]; loadBench(); return; }
+
+      if (act === "zero") {
+        // Re-fetch rather than scraping the rendered card: a baseline must come from the JSON
+        // number, never from a formatted string.
+        fetch("/bench-data", { cache: "no-store" })
+          .then((r) => r.json())
+          .then((d) => {
+            const probe = (d.probes || []).find((x) => x.sensorId === id);
+            if (probe && probe.readingValid) {
+              benchBaselines[id] = { counts: probe.fdcCounts, muxCode: probe.muxCode };
+            }
+            loadBench();
+          })
+          .catch(() => {});
+        return;
+      }
+
+      if (act === "identify") {
+        benchSending = true;
+        loadBench();
+        fetch("/bench-identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sensorId: id })
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (!d.ok) {
+              $("benchStatus").textContent = "identify failed: " + (d.error || "unknown");
+            }
+          })
+          .catch(() => { $("benchStatus").textContent = "identify request failed"; })
+          .finally(() => { benchSending = false; loadBench(); });
+      }
+    });
+
+    async function loadBench() {
+      // Self-contained try/catch for the same reason loadReadings() has one: this runs on an
+      // interval with no outer catch, so an unhandled rejection would freeze the status line on
+      // a stale message that still looks live.
+      try {
+        const response = await fetch("/bench-data", { cache: "no-store" });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const data = await response.json();
+        benchFailures = 0;
+        renderBench(data);
+        const n = (data.probes || []).length;
+        $("benchStatus").textContent =
+          `${n} ${n === 1 ? "probe" : "probes"} on air` +
+          (data.identifyBroadcasting ? " · identify on air" : "");
+      } catch (error) {
+        benchFailures++;
+        // One missed poll on a busy receiver is not worth shouting about; a run of them is.
+        if (benchFailures >= 3) {
+          $("benchStatus").textContent = "Connection lost - retrying...";
+        }
+      }
     }
 
     async function loadConfig() {
@@ -2625,6 +2873,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     $("setupTab").addEventListener("click", () => setTab("setup"));
     $("diagnosticsTab").addEventListener("click", () => setTab("diagnostics"));
     $("historyTab").addEventListener("click", () => { setTab("history"); loadHistory(); });
+    $("benchTab").addEventListener("click", () => setTab("bench"));
     $("historySensorSelect").addEventListener("change", loadHistory);
     $("historyRangeSelect").addEventListener("change", () => {
       $("historyCustomRangeRow").classList.toggle("hidden", $("historyRangeSelect").value !== "custom");

@@ -1,0 +1,113 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x0111U        /* 1.0.17 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x0112U        /* 1.0.18 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+@@ -198,6 +198,7 @@
+     uint8_t  fail_completed_slot;   /**< Same three, for the FIRST rejected frame. Write-once. */
+     uint8_t  fail_completed_hdr0;   /**< Its HCI header byte 0; bits 0-2 are the sequence number. */
+     uint8_t  fail_ordinal;          /**< 0 until the latch fires -- this IS the write-once flag. */
++    uint8_t  init_retry;            /**< MSV3 1.0.18: INIT deferrals while the erase finished. */
+     uint8_t  fail_extract_rc;       /**< ACTUAL hci_mem_pool_rx_extract() return, not inferred. */
+     uint8_t  fail_extracted_slot;   /**< 0xFF = the pointer was not a pool buffer at all. */
+     uint8_t  fail_extracted_hdr0;   /**< 0xEE = deliberately not dereferenced (see hci_transport). */
+@@ -262,6 +263,7 @@
+     t->fail_completed_slot = 0xFF;
+     t->fail_completed_hdr0 = 0xEE;
+     t->fail_ordinal        = 0;
++    t->init_retry          = 0;
+     t->fail_extract_rc     = 0xEE;
+     t->fail_extracted_slot = 0xFF;
+     t->fail_extracted_hdr0 = 0xEE;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -124,6 +124,13 @@
+ /* The last ACCEPTED frame's identity, kept out of the trace on purpose. START is accepted BEFORE
+  * process_dfu_packet() arms the trace, so writing it into the record here would only be wiped by
+  * that arm. It is committed by the failure latch below, which runs after. */
++/* MSV3 1.0.18: how many main-loop passes an init packet may wait for the application-bank erase
++ * before the transport gives up. The erase is about 3 s on a 132 KB image and the main loop runs
++ * far faster than that, so this is generous by design; it exists only so that a pstorage failure
++ * cannot hang the bootloader forever. See MSV3_SERIAL_INIT_RETRY. */
++#define MSV3_SERIAL_INIT_DEFER_MAX  20000u
++static uint32_t m_init_defer_count;
++
+ static uint8_t msv3_good_completed_slot = 0xFFu;
+ static uint8_t msv3_good_extracted_slot = 0xFFu;
+ static uint8_t msv3_good_ordinal;
+@@ -386,6 +393,55 @@
+                     case INIT_PACKET:
+                         (void)dfu_init_pkt_handle(packet);
+                         retval = dfu_init_pkt_complete();
++
++                        /* MSV3_SERIAL_INIT_RETRY (1.0.18): THE INIT-PACKET RESET.
++                         *
++                         * dfu_start_pkt_handle() erases the whole application bank through
++                         * ASYNCHRONOUS pstorage, and the state machine only reaches DFU_STATE_RDY
++                         * when that completes. The host does not wait for an answer -- the serial
++                         * transport has no reply channel for init, so adafruit-nrfutil just sleeps
++                         * get_erase_wait_time(), a FIXED estimate of
++                         * max(0.5, (size/4096 + 1) * 0.0897) = about 2.96 s for a 132 KB image, and
++                         * then sends the init packet regardless.
++                         *
++                         * When the erase has not finished, dfu_init_pkt_handle() declines to
++                         * append (its switch has no case for the preparing state) and
++                         * dfu_init_pkt_complete() returns NRF_ERROR_INVALID_STATE -- whereupon
++                         * stock's APP_ERROR_CHECK RESETS THE DEVICE. That is the vanishing COM
++                         * port: not corruption, not a protocol error, a race lost by four
++                         * milliseconds and punished with a reboot.
++                         *
++                         * Measured on probe 8, 2026-09-21: with bootloader 1.0.17 and the stock
++                         * client the wired transfer died inside send_init_packet() every time;
++                         * with the client's flash-timing constants multiplied by six -- which only
++                         * lengthens that sleep -- init was accepted and DATA frames reached flash
++                         * for the first time (application page CRC moved from the erased 0x0FE1 to
++                         * a partially written 0x4573).
++                         *
++                         * So: defer instead of dying. The element stays queued and
++                         * process_dfu_packet() is re-scheduled, which retries on the next main-loop
++                         * pass -- the same loop that pumps pstorage, so the erase can actually
++                         * finish. Re-calling dfu_init_pkt_handle() is safe precisely BECAUSE it
++                         * declined to append: the packet is appended exactly once, on the attempt
++                         * that finds the state machine ready. The bound keeps a permanently stuck
++                         * erase from hanging the bootloader forever; exhausting it fails exactly as
++                         * stock did. */
++                        if (NRF_ERROR_INVALID_STATE == retval)
++                        {
++                            if (m_init_defer_count < MSV3_SERIAL_INIT_DEFER_MAX)
++                            {
++                                m_init_defer_count++;
++                                if ((MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++                                    (MSV3_DFU_TRACE->init_retry != 0xFFU))
++                                {
++                                    MSV3_DFU_TRACE->init_retry++;
++                                }
++                                /* Leave the element ALLOCATED and come back to it. */
++                                (void)app_sched_event_put(NULL, 0, process_dfu_packet);
++                                return;
++                            }
++                        }
++                        m_init_defer_count = 0;
+                         APP_ERROR_CHECK(retval);
+ 
+                         led_state(STATE_WRITING_STARTED);
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -813,7 +813,7 @@
+   payload[i++] = t->good_completed_slot;
+   payload[i++] = t->good_extracted_slot;
+   payload[i++] = t->fail_completed_slot;
+-  payload[i++] = t->fail_completed_hdr0;
++  payload[i++] = t->init_retry;   /* MSV3 1.0.18, replacing the answered fail_completed_hdr0 */
+   payload[i++] = t->fail_ordinal;
+   payload[i++] = t->fail_extract_rc;
+   payload[i++] = t->fail_extracted_slot;

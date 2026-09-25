@@ -1,0 +1,446 @@
+diff --git a/lib/sdk/components/libraries/hci/hci_mem_pool.c b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+--- a/lib/sdk/components/libraries/hci/hci_mem_pool.c
++++ b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+@@ -69,6 +69,43 @@
+ static rx_buffer_queue_t m_rx_buffer_queue;                         /**< RX buffer queue element instance. */
+ 
+ 
++/* MSV3_POOL_INSPECT (1.0.14): read-only windows into the pool, for the retained DFU trace.
++ *
++ * The wired transfer's 15 rejected frames all passed CRC and the HCI sequence check and were all
++ * acknowledged, and the host has been proven to build every frame correctly -- so the buffer the
++ * DFU layer classifies is not the buffer that was validated. Proving that needs the pool's own
++ * bookkeeping at the moment of extraction, and its indices are file-static. These two functions
++ * READ and never write; nothing about the pool's behaviour changes. */
++uint8_t hci_mem_pool_rx_slot_of(const uint8_t * p_buffer)
++{
++    uint32_t index;
++
++    if (m_rx_buffer_queue.p_buffer == NULL) return 0xFFu;
++
++    for (index = 0; index < HCI_RX_BUF_QUEUE_SIZE; index++)
++    {
++        if ((const uint8_t *)m_rx_buffer_queue.p_buffer[index].rx_buffer == p_buffer)
++        {
++            return (uint8_t)index;
++        }
++    }
++    return 0xFFu;   /* not one of ours: the ack buffer, a stale pointer, or an adjusted one */
++}
++
++void hci_mem_pool_rx_counters(uint8_t * p_read_index,
++                              uint8_t * p_write_index,
++                              uint8_t * p_read_available,
++                              uint8_t * p_free_available,
++                              uint8_t * p_free_window)
++{
++    *p_read_index     = (uint8_t)m_rx_buffer_queue.read_index;
++    *p_write_index    = (uint8_t)m_rx_buffer_queue.write_index;
++    *p_read_available = (uint8_t)m_rx_buffer_queue.read_available_count;
++    *p_free_available = (uint8_t)m_rx_buffer_queue.free_available_count;
++    *p_free_window    = (uint8_t)m_rx_buffer_queue.free_window_count;
++}
++
++
+ uint32_t hci_mem_pool_open(void)
+ {
+     m_is_tx_allocated                      = false;
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.c b/lib/sdk/components/libraries/hci/hci_slip.c
+--- a/lib/sdk/components/libraries/hci/hci_slip.c
++++ b/lib/sdk/components/libraries/hci/hci_slip.c
+@@ -135,12 +135,12 @@
+    * hci_slip_tx_pump() is what finishes the frame. See MSV3_SERIAL_TX_PUMP below. */
+   if ( MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC )
+   {
++    /* MSV3 1.0.14 retired tx_stall_index and tx_stall_length. 1.0.13 measured tx_block_count 0 on
++     * hardware -- the CDC TX FIFO never once refused a byte during a wired transfer -- so there
++     * has never been a stall for them to describe, and the retained region needed those four
++     * bytes for the buffer-identity capture. The counter itself stays: it is what PROVES the
++     * transmit path is clear, and a future change to USB pacing could reintroduce a stall. */
+     if ( MSV3_DFU_TRACE->tx_block_count != 0xFFFFU ) MSV3_DFU_TRACE->tx_block_count++;
+-    if ( m_tx_buffer_index >= MSV3_DFU_TRACE->tx_stall_index )
+-    {
+-      MSV3_DFU_TRACE->tx_stall_index  = (uint16_t) m_tx_buffer_index;
+-      MSV3_DFU_TRACE->tx_stall_length = (uint16_t) m_tx_buffer_length;
+-    }
+   }
+   return NRF_ERROR_NO_MEM;
+ }
+diff --git a/lib/sdk/components/libraries/hci/hci_mem_pool.h b/lib/sdk/components/libraries/hci/hci_mem_pool.h
+--- a/lib/sdk/components/libraries/hci/hci_mem_pool.h
++++ b/lib/sdk/components/libraries/hci/hci_mem_pool.h
+@@ -158,6 +158,20 @@
+  */
+ uint32_t hci_mem_pool_rx_consume(uint8_t * p_buffer);
+ 
++/**@brief MSV3 1.0.14: which pool slot a pointer is, or 0xFF if it is not a pool buffer.
++ *
++ * Read-only. Used to prove whether the buffer handed to the DFU transport is the same one the
++ * SLIP layer filled and hci_transport validated. See MSV3_POOL_INSPECT in hci_mem_pool.c.
++ */
++uint8_t hci_mem_pool_rx_slot_of(const uint8_t * p_buffer);
++
++/**@brief MSV3 1.0.14: the RX queue's own bookkeeping, truncated to a byte each. Read-only. */
++void hci_mem_pool_rx_counters(uint8_t * p_read_index,
++                              uint8_t * p_write_index,
++                              uint8_t * p_read_available,
++                              uint8_t * p_free_available,
++                              uint8_t * p_free_window);
++
+ 
+ #ifdef __cplusplus
+ }
+diff --git a/lib/sdk/components/libraries/hci/hci_transport.c b/lib/sdk/components/libraries/hci/hci_transport.c
+--- a/lib/sdk/components/libraries/hci/hci_transport.c
++++ b/lib/sdk/components/libraries/hci/hci_transport.c
+@@ -89,6 +89,33 @@
+ static hci_transport_tx_done_handler_t m_transport_tx_done_handle;   /**< TX done event callback function. */
+ static hci_transport_event_handler_t   m_transport_event_handle;     /**< Event handler callback function. */
+ static uint8_t *                       mp_slip_used_rx_buffer;       /**< Reference to RX buffer used by the slip layer. */
++
++/* MSV3_BUFFER_IDENTITY (1.0.14): the handoff from "SLIP filled and I validated this buffer" to
++ * "the DFU transport classified that buffer".
++ *
++ * 1.0.13 proved the transmit path innocent -- every frame acknowledged, no FIFO stall, no sequence
++ * mismatch, no pool exhaustion -- and a separate host-side capture proved the host builds every
++ * frame correctly (START 0x03, INIT 0x01, DATA 0x04, STOP 0x05, all little-endian, all with valid
++ * headers and CRCs). Since the host computes the CRC over the same bytes it sends, a frame that
++ * validates here cannot be wrong. Yet 15 of 16 reach data_queue_element_alloc() as type 0x00.
++ * The only remaining possibility is that the two buffers are not the same buffer.
++ *
++ * These are plain globals rather than trace fields because they are written per frame and only the
++ * LATCHED pair matters; dfu_transport_serial.c commits them once, write-once, when it sees its
++ * first rejection. The ordinal proves both halves describe the same frame. */
++volatile uint8_t  msv3_hci_completed_slot = 0xFFu;   /**< Slot SLIP filled, before produce() moves on. */
++volatile uint8_t  msv3_hci_completed_hdr0 = 0xEEu;   /**< Its HCI header byte 0 -- carries the sequence. */
++volatile uint8_t  msv3_hci_rx_ordinal;               /**< Which validated frame this is, from 1. */
++volatile uint8_t  msv3_hci_extract_rc     = 0xEEu;   /**< ACTUAL hci_mem_pool_rx_extract() return. */
++volatile uint8_t  msv3_hci_extracted_slot = 0xFFu;   /**< Slot it returned, pre-adjustment. */
++volatile uint8_t  msv3_hci_extracted_hdr0 = 0xEEu;   /**< Its header byte 0, only if safe to read. */
++volatile uint16_t msv3_hci_raw_length     = 0xFFFFu; /**< Length BEFORE the -6 adjustment. */
++volatile uint16_t msv3_hci_adj_length     = 0xFFFFu; /**< ...and after it. */
++volatile uint8_t  msv3_pool_read_index;
++volatile uint8_t  msv3_pool_write_index;
++volatile uint8_t  msv3_pool_read_avail;
++volatile uint8_t  msv3_pool_free_avail;
++volatile uint8_t  msv3_pool_free_window;
+ static uint32_t                        m_packet_expected_seq_number; /**< Sequence number counter of the packet expected to be received . */
+ static uint32_t                        m_packet_transmit_seq_number; /**< Sequence number counter of the transmitted packet for which acknowledgement packet is waited for. */
+ static uint8_t *                       mp_tx_buffer;                 /**< Pointer to TX application buffer to be transmitted. */
+@@ -275,6 +302,13 @@
+         const uint8_t rx_seq_number = packet_seq_nmbr_extract(p_buffer);
+         if (packet_number_expected_get() == rx_seq_number)
+         {
++            /* MSV3 1.0.14: p_buffer is event.packet -- the buffer SLIP actually filled and that
++             * is_rx_pkt_valid() has just CRC-checked. Record WHICH pool slot that is, here, before
++             * hci_mem_pool_rx_produce() below repoints mp_slip_used_rx_buffer at the next one. */
++            msv3_hci_completed_slot = hci_mem_pool_rx_slot_of(p_buffer);
++            msv3_hci_completed_hdr0 = p_buffer[0];
++            if (msv3_hci_rx_ordinal != 0xFFu) msv3_hci_rx_ordinal++;
++
+             // Sequence number is valid: transmit acknowledgement.
+             packet_number_expected_inc();
+             ack_transmit();
+@@ -814,11 +848,36 @@
+         if (m_is_slip_decode_ready)
+         {
+             m_is_slip_decode_ready = false;
++
++            /* MSV3 1.0.14: the pool's bookkeeping AS IT IS AT THE MOMENT OF EXTRACTION. Latched
++             * here and not in the DFU rejection path, because by then consume() has run. */
++            hci_mem_pool_rx_counters((uint8_t *)&msv3_pool_read_index,
++                                     (uint8_t *)&msv3_pool_write_index,
++                                     (uint8_t *)&msv3_pool_read_avail,
++                                     (uint8_t *)&msv3_pool_free_avail,
++                                     (uint8_t *)&msv3_pool_free_window);
++
+             err_code               = hci_mem_pool_rx_extract(pp_buffer, &length);
++
++            /* MSV3 1.0.14: the REAL return code, not inferred from a length that looks odd. */
++            msv3_hci_extract_rc    = (uint8_t)err_code;
++            msv3_hci_raw_length    = (length > 0xFFFFu) ? 0xFFFFu : (uint16_t)length;
++            msv3_hci_extracted_slot = (NRF_SUCCESS == err_code)
++                                    ? hci_mem_pool_rx_slot_of(*pp_buffer) : 0xFFu;
++            /* Dereference ONLY when extraction succeeded, the pointer is genuinely one of the pool
++             * buffers, and the frame is at least a header long. On the failure path this pointer
++             * can be 0x00000004 -- NULL plus the adjustment below -- or stale, and reading it to
++             * satisfy curiosity would fault the one board that cannot be recovered over SWD. */
++            msv3_hci_extracted_hdr0 = ((NRF_SUCCESS == err_code) &&
++                                       (msv3_hci_extracted_slot != 0xFFu) &&
++                                       (length >= PKT_HDR_SIZE))
++                                    ? (*pp_buffer)[0] : 0xEEu;
++
+             length                -= (PKT_HDR_SIZE + PKT_CRC_SIZE);
+ 
+             *p_length              = (uint16_t)length;
+             *pp_buffer            += PKT_HDR_SIZE;
++            msv3_hci_adj_length    = (uint16_t)length;
+         }
+         else
+         {
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x010DU        /* 1.0.13 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x010EU        /* 1.0.14 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+@@ -177,13 +177,38 @@
+      * exists in RAM would read zero for exactly the run that mattered. */
+     uint16_t tx_block_count;    /**< tud_cdc_write_char() returned 0 -- CDC TX FIFO full. */
+     uint16_t tx_resume_count;   /**< hci_slip_tx_pump() made progress on a stalled frame. */
+-    uint16_t tx_stall_index;    /**< Largest m_tx_buffer_index a write blocked at. */
+-    uint16_t tx_stall_length;   /**< m_tx_buffer_length at that stall. index<length == truncated. */
+     uint16_t ack_frames_done;   /**< Frames fully written to SLIP, i.e. ACKs that really left. */
+     uint16_t produce_nomem;     /**< hci_mem_pool_rx_produce() returned NO_MEM (pool exhausted). */
+     uint8_t  seq_mismatch_rx;   /**< FIRST HCI sequence mismatch: the number received. */
+     uint8_t  seq_mismatch_exp;  /**< ...and the number expected. Both 0xFF = never happened. */
+     uint16_t seq_mismatch_cnt;  /**< Frames rejected on sequence number, saturating. */
++    /* MSV3 1.0.14 -- see MSV3_BUFFER_IDENTITY in hci_transport.c.
++     *
++     * 1.0.13 cleared the transmit path (every frame acknowledged, no stall, no sequence loss) and
++     * a host-side capture cleared the host (every frame built correctly). What is left is that the
++     * buffer the DFU transport classifies is not the buffer SLIP filled and hci_transport
++     * validated. These fields put those two identities side by side for one good frame and for the
++     * first rejected one; if the slots differ, the handoff is the fault and nothing else is.
++     *
++     * The good-frame trio is refreshed on every acceptance and committed by the failure latch, so
++     * it describes the LAST frame that worked before the first that did not. */
++    uint8_t  good_completed_slot;   /**< Pool slot SLIP filled for that good frame. */
++    uint8_t  good_extracted_slot;   /**< Pool slot rx_extract() returned for it. Equal == healthy. */
++    uint8_t  good_ordinal;          /**< Which received frame it was, counting from 1. */
++    uint8_t  fail_completed_slot;   /**< Same three, for the FIRST rejected frame. Write-once. */
++    uint8_t  fail_completed_hdr0;   /**< Its HCI header byte 0; bits 0-2 are the sequence number. */
++    uint8_t  fail_ordinal;          /**< 0 until the latch fires -- this IS the write-once flag. */
++    uint8_t  fail_extract_rc;       /**< ACTUAL hci_mem_pool_rx_extract() return, not inferred. */
++    uint8_t  fail_extracted_slot;   /**< 0xFF = the pointer was not a pool buffer at all. */
++    uint8_t  fail_extracted_hdr0;   /**< 0xEE = deliberately not dereferenced (see hci_transport). */
++    uint16_t fail_raw_length;       /**< Length BEFORE the unconditional -6 adjustment. */
++    uint16_t fail_adj_length;       /**< ...and after it. 0xFFFA means extraction had failed. */
++    uint8_t  fail_payload[4];       /**< The four bytes the type byte is read from. THE question. */
++    uint8_t  pool_read_index;       /**< Pool bookkeeping latched at the moment of extraction, */
++    uint8_t  pool_write_index;      /**< because by the DFU rejection path consume() has run. */
++    uint8_t  pool_read_avail;
++    uint8_t  pool_free_avail;
++    uint8_t  pool_free_window;
+     uint32_t check;             /**< ~magic, written LAST. A torn record fails this. */
+ } msv3_dfu_trace_t;
+ 
+@@ -225,13 +250,32 @@
+     t->stop_processed  = 0;
+     t->tx_block_count  = 0;
+     t->tx_resume_count = 0;
+-    t->tx_stall_index  = 0;
+-    t->tx_stall_length = 0;
+     t->ack_frames_done = 0;
+     t->produce_nomem   = 0;
+     t->seq_mismatch_rx  = 0xFF;
+     t->seq_mismatch_exp = 0xFF;
+     t->seq_mismatch_cnt = 0;
++    t->good_completed_slot = 0xFF;
++    t->good_extracted_slot = 0xFF;
++    t->good_ordinal        = 0;
++    /* fail_ordinal is the write-once flag: zero here, non-zero once the latch has fired. */
++    t->fail_completed_slot = 0xFF;
++    t->fail_completed_hdr0 = 0xEE;
++    t->fail_ordinal        = 0;
++    t->fail_extract_rc     = 0xEE;
++    t->fail_extracted_slot = 0xFF;
++    t->fail_extracted_hdr0 = 0xEE;
++    t->fail_raw_length     = 0xFFFF;
++    t->fail_adj_length     = 0xFFFF;
++    t->fail_payload[0]     = 0xEE;
++    t->fail_payload[1]     = 0xEE;
++    t->fail_payload[2]     = 0xEE;
++    t->fail_payload[3]     = 0xEE;
++    t->pool_read_index     = 0xFF;
++    t->pool_write_index    = 0xFF;
++    t->pool_read_avail     = 0xFF;
++    t->pool_free_avail     = 0xFF;
++    t->pool_free_window    = 0xFF;
+     t->check          = ~MSV3_DFU_TRACE_MAGIC;
+ }
+ 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -105,6 +105,28 @@
+ } dfu_data_queue_t;
+ 
+ static dfu_data_queue_t      m_data_queue;                                           /**< Received-data packet queue. */
++
++/* MSV3 1.0.14: hci_transport.c's per-frame identity record. See MSV3_BUFFER_IDENTITY there. */
++extern volatile uint8_t  msv3_hci_completed_slot;
++extern volatile uint8_t  msv3_hci_completed_hdr0;
++extern volatile uint8_t  msv3_hci_rx_ordinal;
++extern volatile uint8_t  msv3_hci_extract_rc;
++extern volatile uint8_t  msv3_hci_extracted_slot;
++extern volatile uint8_t  msv3_hci_extracted_hdr0;
++extern volatile uint16_t msv3_hci_raw_length;
++extern volatile uint16_t msv3_hci_adj_length;
++extern volatile uint8_t  msv3_pool_read_index;
++extern volatile uint8_t  msv3_pool_write_index;
++extern volatile uint8_t  msv3_pool_read_avail;
++extern volatile uint8_t  msv3_pool_free_avail;
++extern volatile uint8_t  msv3_pool_free_window;
++
++/* The last ACCEPTED frame's identity, kept out of the trace on purpose. START is accepted BEFORE
++ * process_dfu_packet() arms the trace, so writing it into the record here would only be wiped by
++ * that arm. It is committed by the failure latch below, which runs after. */
++static uint8_t msv3_good_completed_slot = 0xFFu;
++static uint8_t msv3_good_extracted_slot = 0xFFu;
++static uint8_t msv3_good_ordinal;
+ 
+ /* MSV3_SERIAL_RX_GATE
+  *
+@@ -491,6 +513,50 @@
+             MSV3_DFU_TRACE->alloc_fail_rc   = retval;
+             MSV3_DFU_TRACE->alloc_fail_type = p_rpc_cmd_buffer[0];
+         }
++
++        /* MSV3 1.0.14: THE BUFFER-IDENTITY LATCH.
++         *
++         * p_rpc_cmd_buffer is safe to read here: this block is inside the branch where
++         * hci_transport_rx_pkt_extract() returned NRF_SUCCESS, so the pointer is a real pool
++         * buffer plus the header adjustment. The four payload bytes are the whole question --
++         * 00 00 00 04 would mean an endianness or alignment slip, all-zero means a buffer nobody
++         * ever wrote, and anything else means genuine corruption. */
++        if (NRF_SUCCESS == retval)
++        {
++            /* Refreshed on every acceptance, so the committed values describe the last frame that
++             * worked immediately before the first that did not. */
++            msv3_good_completed_slot = msv3_hci_completed_slot;
++            msv3_good_extracted_slot = msv3_hci_extracted_slot;
++            msv3_good_ordinal        = msv3_hci_rx_ordinal;
++        }
++        else if ((MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++                 (MSV3_DFU_TRACE->fail_ordinal == 0))   /* fail_ordinal IS the write-once flag */
++        {
++            MSV3_DFU_TRACE->good_completed_slot = msv3_good_completed_slot;
++            MSV3_DFU_TRACE->good_extracted_slot = msv3_good_extracted_slot;
++            MSV3_DFU_TRACE->good_ordinal        = msv3_good_ordinal;
++
++            MSV3_DFU_TRACE->fail_completed_slot = msv3_hci_completed_slot;
++            MSV3_DFU_TRACE->fail_completed_hdr0 = msv3_hci_completed_hdr0;
++            MSV3_DFU_TRACE->fail_extract_rc     = msv3_hci_extract_rc;
++            MSV3_DFU_TRACE->fail_extracted_slot = msv3_hci_extracted_slot;
++            MSV3_DFU_TRACE->fail_extracted_hdr0 = msv3_hci_extracted_hdr0;
++            MSV3_DFU_TRACE->fail_raw_length     = msv3_hci_raw_length;
++            MSV3_DFU_TRACE->fail_adj_length     = msv3_hci_adj_length;
++            MSV3_DFU_TRACE->fail_payload[0]     = p_rpc_cmd_buffer[0];
++            MSV3_DFU_TRACE->fail_payload[1]     = p_rpc_cmd_buffer[1];
++            MSV3_DFU_TRACE->fail_payload[2]     = p_rpc_cmd_buffer[2];
++            MSV3_DFU_TRACE->fail_payload[3]     = p_rpc_cmd_buffer[3];
++            MSV3_DFU_TRACE->pool_read_index     = msv3_pool_read_index;
++            MSV3_DFU_TRACE->pool_write_index    = msv3_pool_write_index;
++            MSV3_DFU_TRACE->pool_read_avail     = msv3_pool_read_avail;
++            MSV3_DFU_TRACE->pool_free_avail     = msv3_pool_free_avail;
++            MSV3_DFU_TRACE->pool_free_window    = msv3_pool_free_window;
++
++            /* LAST, because it is the flag. A torn write here would re-latch on the next frame
++             * rather than leave a half-filled record claiming to describe the first failure. */
++            MSV3_DFU_TRACE->fail_ordinal        = msv3_hci_rx_ordinal;
++        }
+         if (NRF_SUCCESS == retval)
+         {
+             //subtract 1 since we are interested in payload length and not the type field.
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -766,41 +766,27 @@
+    * spare. frames_dropped is saturated into 16 bits because its only interesting values are 0 and
+    * "not 0"; a full 32-bit counter would not fit alongside both return codes, and the return codes
+    * are what actually name the failing branch. */
+-  /* MSV3 1.0.13 payload, 28 bytes -> a 30-byte AD structure inside the 31-byte scan response.
++  /* MSV3 1.0.14 payload, 28 bytes -> a 30-byte AD structure inside the 31-byte scan response.
+    *
+-   * 1.0.11's field set answered its question and is now mostly spent. alloc_fail_rc came back
+-   * NRF_ERROR_INVALID_PARAM, reset_reas came back SREQ, and sched_fail came back zero; all three
+-   * are kept but NARROWED to a single byte each (error codes and RESETREAS bits of interest both
+-   * live in the low byte, and sched_fail folds into the stop flags) to buy room for what 1.0.13
+-   * actually has to prove.
++   * 1.0.13's transmit counters are RETIRED from the advertisement: they came back tx_block_count 0,
++   * tx_resume_count 0, ack_frames_done == rx_seen, no sequence mismatch, no pool exhaustion. The
++   * transmit path is not the fault and does not need watching again. Likewise alloc_fail_rc, which
++   * has been 0x07 INVALID_PARAM every time and is now implied by fail_payload[0].
+    *
+-   * The new question is whether acknowledgements REACH THE WIRE. tx_block_count is how often the
+-   * CDC TX FIFO refused a byte, tx_resume_count is how often hci_slip_tx_pump() finished a frame
+-   * that stock would have abandoned forever, and ack_frames_done against rx_seen is the verdict:
+-   * equal means every received frame was answered. seq_mismatch is the host's side of the same
+-   * event -- adafruit-nrfutil resets its sequence counter when an ACK never arrives, so a
+-   * mismatch here is a missing ACK seen one frame later.
++   * What this build asks is a single question: IS THE BUFFER THE DFU TRANSPORT CLASSIFIED THE SAME
++   * BUFFER SLIP FILLED? good_* is a frame that worked, fail_* is the first that did not, and the
++   * completed/extracted slot pair answers it directly. fail_payload is the four bytes the type
++   * byte is read from -- 00 00 00 04 would mean an endianness or alignment slip, all-zero means a
++   * buffer nobody ever wrote, anything else means genuine corruption.
+    *
+    * Reader: MSV3/scripts/msv3_read_dfu_trace.py. Keep the two in step; this layout is an ABI. */
+   uint8_t payload[29];
+   uint8_t i = 0;
+ 
+-  uint16_t dropped = (t->frames_dropped > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_dropped;
+-  uint16_t queued  = (t->frames_queued  > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_queued;
+-
+-  /* Both sequence numbers are 3-bit, so they pack into one byte. 0xFF means no mismatch ever
+-   * happened, which is distinguishable because a real pair can never set the high nibble to 0xF. */
+-  uint8_t seq_mm = (t->seq_mismatch_exp == 0xFFU)
+-                 ? 0xFFU
+-                 : (uint8_t)(((t->seq_mismatch_exp & 0x0FU) << 4) | (t->seq_mismatch_rx & 0x0FU));
+-
+-  /* bit0 STOP reached the transport, bit1 STOP was processed, bit2 app_sched_event_put() ever
+-   * failed, bit3 hci_mem_pool_rx_produce() ever returned NO_MEM. Four one-bit answers that used
+-   * to cost four bytes. */
+-  uint8_t flags = (uint8_t)((t->stop_seen_at_rx ? 0x01U : 0U) |
+-                            (t->stop_processed  ? 0x02U : 0U) |
+-                            (t->sched_fail      ? 0x04U : 0U) |
+-                            (t->produce_nomem   ? 0x08U : 0U));
++  /* Pool counters are all 0..16, so five of them fit in three bytes rather than five. */
++  uint16_t pool_avail = (uint16_t)((t->pool_read_avail  & 0x1FU)        |
++                                   ((t->pool_free_avail & 0x1FU) << 5)  |
++                                   ((t->pool_free_window & 0x1FU) << 10));
+ 
+   payload[i++] = 0xFF;
+   payload[i++] = 0xFF;
+@@ -808,20 +794,21 @@
+   memcpy(&payload[i], &app_crc, 2);                            i += 2;
+   payload[i++] = 1;   /* trace_valid */
+   payload[i++] = (uint8_t)(t->nonce & 0xFFUL);
+-  payload[i++] = t->transport;
+-  payload[i++] = t->stage;
+-  payload[i++] = flags;
+-  payload[i++] = t->alloc_fail_type;
+-  payload[i++] = (uint8_t)(t->alloc_fail_rc & 0xFFUL);
+-  payload[i++] = (uint8_t)(t->reset_reas & 0xFFUL);
+-  payload[i++] = seq_mm;
+-  payload[i++] = (t->produce_nomem > 0xFFU) ? 0xFFU : (uint8_t)t->produce_nomem;
+-  memcpy(&payload[i], (const void *)&t->rx_seen, 2);           i += 2;
+-  memcpy(&payload[i], &queued, 2);                             i += 2;
+-  memcpy(&payload[i], &dropped, 2);                            i += 2;
+-  memcpy(&payload[i], (const void *)&t->tx_block_count, 2);    i += 2;
+-  memcpy(&payload[i], (const void *)&t->tx_resume_count, 2);   i += 2;
+-  memcpy(&payload[i], (const void *)&t->ack_frames_done, 2);   i += 2;
++  payload[i++] = (uint8_t)((t->transport & 0x0FU) | ((t->stage & 0x0FU) << 4));
++  payload[i++] = t->good_completed_slot;
++  payload[i++] = t->good_extracted_slot;
++  payload[i++] = t->fail_completed_slot;
++  payload[i++] = t->fail_completed_hdr0;
++  payload[i++] = t->fail_ordinal;
++  payload[i++] = t->fail_extract_rc;
++  payload[i++] = t->fail_extracted_slot;
++  payload[i++] = t->fail_extracted_hdr0;
++  memcpy(&payload[i], (const void *)&t->fail_raw_length, 2);   i += 2;
++  memcpy(&payload[i], (const void *)&t->fail_adj_length, 2);   i += 2;
++  memcpy(&payload[i], (const void *)t->fail_payload, 4);       i += 4;
++  payload[i++] = (uint8_t)((t->pool_read_index & 0x0FU) |
++                           ((t->pool_write_index & 0x0FU) << 4));
++  memcpy(&payload[i], &pool_avail, 2);                         i += 2;
+ 
+   advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, payload, i);
+ }

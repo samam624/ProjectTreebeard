@@ -1,7 +1,15 @@
 param(
   [ValidateSet("compile", "upload", "monitor", "board-list", "doctor")]
   [string]$Action = "compile",
+  # For -Action upload this is the APPLICATION port (PID 0x80DA). The DFU port (PID 0x00DA) is a
+  # DIFFERENT COM number on Windows and is discovered automatically from the same chip serial.
   [string]$Port,
+  # -Action upload only. The version written into the SIGNED init packet, which the bootloader
+  # checks against its on-device anti-rollback floor. It must be >= the floor or the image is
+  # refused -- see MSV3/fleet.json installed_application_version for what is currently installed.
+  [uint32]$ApplicationVersion = 0,
+  # -Action upload only. Build and sign the package but do NOT touch the board.
+  [switch]$PackageOnly,
   [string]$Sketch = "arduino/MSV3_Probe_Bringup_Test",
   # REQUIRED for the production sketch. See Assert-ProductionBuildParameters below: an image whose
   # identity came from an uncommitted edit is not reproducible, and probe 4's deployed firmware is
@@ -536,11 +544,160 @@ Refusing this image. The bootloader/application retention ABI was not linked.
 }
 
 if ($Action -eq "upload") {
-  if ([string]::IsNullOrWhiteSpace($Port)) {
-    throw "Compile passed, but upload needs the current port. Rerun with -Action upload -Port COMx."
+  # MSV3_SIGNED_UPLOAD
+  #
+  # WHY THIS DOES NOT CALL `arduino-cli upload`.
+  #
+  # The Adafruit core's upload recipe runs `adafruit-nrfutil dfu genpkg --dev-type 0x0052
+  # --application ...` and pushes the result. That package is UNSIGNED and carries STOCK ADAFRUIT'S
+  # device type. The MSV3 bootloader is built with SIGNED_FW and binds to device type 0x3356, so it
+  # is required to reject exactly that image -- and because single-bank DFU erases the application
+  # BEFORE the init packet is authenticated, a rejected upload costs the probe its running
+  # firmware and needs a BLE recovery.
+  #
+  # Measured on probe 8, 2026-09-21: two Arduino IDE uploads, which use that same recipe, each
+  # erased the application and reset the board. dfu_init_prevalidate() refused the image and
+  # APP_ERROR_CHECK rebooted; the retained trace showed reset_tag 0 (no MSV3 reset site) with the
+  # application page erased. The transport was fine -- zero frames dropped. The PACKAGE was wrong.
+  #
+  # So this signs the compiled sketch the same way build_msv3_release.ps1 signs a release, proves
+  # the package is well-formed BEFORE the radio or the cable touches the board, and only then
+  # uploads. Never "fix" this by relaxing the device type or dropping the signature: those checks
+  # are what make OTA to a coated probe safe at all.
+
+  if ($ApplicationVersion -eq 0) {
+    throw @"
+-Action upload needs -ApplicationVersion.
+
+It is written into the signed init packet and checked against the bootloader's on-device
+anti-rollback floor, which refuses anything BELOW the installed version. Look up the target's
+installed_application_version in MSV3/fleet.json and pass that or higher.
+"@
   }
-  Invoke-ArduinoCli @(
-    "upload", "-p", $Port, "--fqbn", $Fqbn,
-    "--input-dir", $buildPath, $sketchPath
-  )
+
+  . (Join-Path $scriptDir "msv3_python.ps1")
+  $upPython = Resolve-Msv3Python -Explicit $Python -Msv3Root $repoRoot
+  if (-not (Test-Msv3Python -PythonExe $upPython)) {
+    throw "-Action upload needs a working Python for signing and for the DFU client. Pass -Python <path>."
+  }
+
+  $keyPath = Join-Path $repoRoot ".secrets\msv3-dfu-signing-private.pem"
+  if (-not (Test-Path -LiteralPath $keyPath)) {
+    throw @"
+No signing key at:
+  $keyPath
+Without it this cannot produce an image the bootloader will accept. An unsigned upload does not
+fail safely -- it erases the application first and is refused afterwards.
+"@
+  }
+
+  $appHex = Join-Path $buildPath ((Split-Path $sketchPath -Leaf) + ".ino.hex")
+  if (-not (Test-Path -LiteralPath $appHex)) {
+    throw "Compiled hex not found at $appHex. Run -Action compile first."
+  }
+
+  $nrfutil = Join-Path $repoRoot ".arduino-build\dfu-pydeps\nordicsemi"
+  $pkgDir  = Join-Path $buildPath "signed"
+  $null = New-Item -ItemType Directory -Force -Path $pkgDir
+  $signedPkg = Join-Path $pkgDir ("msv3-sketch-v$ApplicationVersion-signed.zip")
+  if (Test-Path -LiteralPath $signedPkg) { Remove-Item -LiteralPath $signedPkg -Force }
+
+  # Identical parameters to a release build. 0x3356 is the MSV3 device type; 0xB6 is S140 6.1.1.
+  & $upPython -m nordicsemi dfu genpkg --dev-type 0x3356 --dev-revision 52840 `
+    --application-version $ApplicationVersion --sd-req 0xB6 `
+    --application $appHex --key-file $keyPath $signedPkg
+  if ($LASTEXITCODE -ne 0) { throw "Signing the sketch package failed." }
+  Write-Host "MSV3 signed package: $signedPkg"
+
+  # PROVE IT BEFORE TOUCHING THE BOARD. ble_ota_update.py --preflight-only is laptop-only -- it
+  # stops before the radio -- and it checks exactly what the bootloader will: package integrity,
+  # the signature against the key compiled into the target's bootloader, device type, the
+  # ANTI-ROLLBACK FLOOR, and boot-guard pairing. A version below the floor is refused here rather
+  # than after the probe's application has been erased.
+  if ($SensorId -lt 0) {
+    throw "-Action upload needs -SensorId so the package can be checked against MSV3/fleet.json before anything is sent."
+  }
+  & $upPython (Join-Path $actualRepoRoot "scripts\ble_ota_update.py") $signedPkg --probe $SensorId --preflight-only
+  if ($LASTEXITCODE -ne 0) {
+    throw @"
+Preflight refused this package, so NOTHING was sent to the board and the probe is untouched.
+That is the intended outcome: single-bank DFU erases before it authenticates, so a package the
+bootloader would reject must never reach a probe.
+"@
+  }
+
+  if ($PackageOnly) {
+    Write-Host "MSV3 -PackageOnly: stopping before the cable. Package is at $signedPkg"
+    return
+  }
+
+  if ([string]::IsNullOrWhiteSpace($Port)) {
+    throw "Upload needs the APPLICATION port. Rerun with -Action upload -Port COMx -ApplicationVersion N."
+  }
+
+  # The DFU port is a different COM number. Both are children of the same USB composite device,
+  # whose serial is the chip's FICR DEVICEID -- match on the PARENT, never on the MI_00 child,
+  # whose instance id is a Windows-generated hash. See
+  # MSV3_COM_PORT_PROBE_IDENTIFICATION_PITFALLS_2026-09-11.md.
+  $appDev = Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue |
+            Where-Object { $_.FriendlyName -match "\($Port\)" } | Select-Object -First 1
+  if ($null -eq $appDev) { throw "No device found for $Port." }
+  $chipSerial = ((Get-PnpDeviceProperty -InstanceId $appDev.InstanceId -KeyName 'DEVPKEY_Device_Parent' `
+                   -ErrorAction SilentlyContinue).Data -split '\\')[-1]
+  if ([string]::IsNullOrWhiteSpace($chipSerial)) { throw "Could not read the chip serial behind $Port." }
+  Write-Host "MSV3 target chip serial: $chipSerial"
+
+  # If -Port is ALREADY the DFU port, there is nothing to touch. This is the common case on this
+  # hardware: the production application is duty-cycled and only enumerates USB CDC while awake, so
+  # a probe is often reachable over USB only once it is already sitting in the bootloader -- after a
+  # double-tap reset, after a BLE-commanded jump, or after a failed attempt left it there.
+  if ($appDev.InstanceId -like "*PID_00DA*") {
+    Write-Host "MSV3 $Port is already the DFU port -- skipping the touch."
+    $dfuPort = $Port
+  }
+  else {
+
+  Write-Host "MSV3 1200-baud touch on $Port to enter DFU ..."
+  try {
+    $touch = New-Object System.IO.Ports.SerialPort $Port, 1200
+    $touch.DtrEnable = $false
+    $touch.Open(); Start-Sleep -Milliseconds 200; $touch.Close()
+  } catch { Write-Host "  (port dropped during touch, which is normal)" }
+
+  $dfuPort = $null
+  foreach ($i in 1..60) {
+    Start-Sleep -Milliseconds 500
+    $cand = Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue | Where-Object {
+      $_.Status -eq "OK" -and $_.InstanceId -like "*PID_00DA*" -and
+      ((Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_Parent' `
+         -ErrorAction SilentlyContinue).Data -like "*$chipSerial*")
+    } | Select-Object -First 1
+    if ($cand -and $cand.FriendlyName -match "\((COM\d+)\)") { $dfuPort = $Matches[1]; break }
+  }
+  if (-not $dfuPort) {
+    throw @"
+The DFU port for chip $chipSerial never appeared after the touch.
+The application may have been asleep -- this is a duty-cycled sensor and USB CDC only enumerates
+while it is awake. Nothing was sent, so the probe is untouched. Try again during a wake window.
+"@
+  }
+  Write-Host "MSV3 DFU port: $dfuPort (application was on $Port)"
+  Start-Sleep -Milliseconds 1500
+  }
+
+  & $upPython -m nordicsemi dfu serial -pkg $signedPkg -p $dfuPort -b 115200 -sb -t 0
+  if ($LASTEXITCODE -ne 0) {
+    throw @"
+The wired DFU did not complete. The probe's application is very likely ERASED -- single-bank DFU
+erases before it authenticates -- so recover it over BLE before anything else:
+
+  MSV3\.arduino-build\python-portable\runtime\python.exe scripts\ble_ota_update.py <signed zip> --probe N
+
+Then read the bootloader's account of what happened:
+
+  MSV3\.arduino-build\python-portable\runtime\python.exe MSV3\scripts\msv3_read_dfu_trace.py --probe N
+"@
+  }
+  Write-Host "MSV3 wired upload complete. Confirm the probe is actually running it:"
+  Write-Host "  scripts\msv3_fleet_scan.py --probe N --require-progress"
 }

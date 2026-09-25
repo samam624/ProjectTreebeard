@@ -14,6 +14,29 @@ per-device USB serial number -- the last segment of the PnP instance ID
 board reported. Two different physical boards plugged into two different ports are
 indistinguishable from `Get-CimInstance Win32_PnPEntity` output alone.
 
+> **CORRECTED 2026-09-20: this is wrong, and it is the most useful thing on the page once fixed.**
+> The instance ID quoted above is the **`MI_00` child** -- the CDC interface. That one is indeed a
+> Windows-generated hash. The **composite parent** carries a real, chip-derived serial:
+>
+> ```
+> USB\VID_239A&PID_80DA\1A2F0613682FD239     <- probe 8
+> USB\VID_239A&PID_80DA\695715B3A7F8217E     <- probe 5
+> ```
+>
+> Sixteen hex digits, no `&` separators, stable across replug: that is the board's own
+> `iSerialNumber`, which the Adafruit nRF52 core derives from the chip's factory `FICR->DEVICEID`.
+> It is a hardware-unique identity, so a probe-to-port match made this way is **deterministic**,
+> not the convergent circumstantial evidence the rest of this document settles for.
+>
+> Pair the parent with its child by `DEVPKEY_Device_LastArrivalDate` -- both functions of one
+> device share a timestamp to the second, which is how the two IDs above were bound to their COM
+> ports. Note this identifies the *board*, not the sensor ID compiled into it; confirm that over
+> BLE, or record the serial in `MSV3/fleet.json` once (probe 8's is recorded there now) and the
+> mapping becomes a lookup.
+>
+> The convergent-evidence method below still works and is still the only option for a board that
+> is not plugged in. It is no longer the best option for one that is.
+
 **`MSV3/fleet.json`.** Deliberately has no COM-port field -- see its own `_comment`. Ports
 aren't a stable identity: unplug and replug the same board and Windows may hand it a different
 COM number, since there's no persistent serial number to recognize it by.

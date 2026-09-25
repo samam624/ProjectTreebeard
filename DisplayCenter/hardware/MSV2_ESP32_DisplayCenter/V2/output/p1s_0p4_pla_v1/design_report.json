@@ -1,0 +1,263 @@
+{
+  "version": "prototype-8-p1s-0p4-pla",
+  "units": "mm",
+  "parameters": {
+    "pcbTranslation": [
+      0,
+      0,
+      0
+    ],
+    "enclosureToPcbTranslation": [
+      -6.39,
+      -13.903,
+      3
+    ],
+    "bezelOpening": {
+      "xMin": -47,
+      "xMax": 41,
+      "yMin": 2.013,
+      "yMax": 60.013
+    },
+    "displayActiveArea": {
+      "width": 83.52,
+      "height": 55.68
+    },
+    "mainOuter": {
+      "xMin": -64,
+      "xMax": 58,
+      "yMin": -4,
+      "yMax": 78
+    },
+    "shellFrontZ": -6.15,
+    "shellBackZ": -21,
+    "shellInnerBackZ": -18.4,
+    "wallThickness": 2.2,
+    "frontFaceBackZ": 2.08,
+    "visibleFrontZ": 3.1,
+    "closureHoleCenters": [
+      [
+        -56.88,
+        3.5645
+      ],
+      [
+        45.16,
+        3.5645
+      ],
+      [
+        45.16,
+        58.463
+      ],
+      [
+        -54.11,
+        72.4
+      ]
+    ],
+    "closurePostEndZ": [
+      -4,
+      -4,
+      -4,
+      -8.08
+    ],
+    "closureInsertFaceZ": [
+      -2.15,
+      -2.15,
+      -2.15,
+      -7.54
+    ],
+    "enclosureScrewClearanceDiameter": 2.4,
+    "enclosureScrewHeadDiameter": 4.6,
+    "enclosureScrewHeadDepth": 2,
+    "enclosureInsertDiameter": 2.9,
+    "enclosureInsertDepth": 3.2,
+    "enclosureInsertBossRadius": 3.2,
+    "usbOpening": {
+      "xMin": -36.3,
+      "xMax": -25.9,
+      "zMin": -11.8,
+      "zMax": -6.55
+    },
+    "usbCableBay": {
+      "xMin": -39,
+      "xMax": -23,
+      "yMin": -12.2,
+      "yMax": 5.6
+    },
+    "bottomFeet": {
+      "yMin": -12,
+      "yMax": -4,
+      "leftXMin": -62,
+      "leftXMax": -43,
+      "rightXMin": 37,
+      "rightXMax": 56
+    },
+    "kickstandPivot": {
+      "y": 41,
+      "z": -23.8
+    },
+    "kickstandFar": {
+      "y": -7.5,
+      "z": -24.8
+    },
+    "kickstandArmThickness": 4,
+    "kickstandPivotHoleDiameter": 2.4,
+    "kickstandInsertDiameter": 2.9,
+    "kickstandInsertDepth": 3.2
+  },
+  "outputCoordinates": {
+    "bodyEnvelope": {
+      "xMin": -70.39,
+      "xMax": 51.61,
+      "yMin": -17.903,
+      "yMax": 64.097
+    },
+    "closureHoleCenters": [
+      [
+        -63.27,
+        -10.3385
+      ],
+      [
+        38.769999999999996,
+        -10.3385
+      ],
+      [
+        38.769999999999996,
+        44.56
+      ],
+      [
+        -60.5,
+        58.49700000000001
+      ]
+    ],
+    "kickstandPivot": [
+      27.097,
+      -20.8
+    ]
+  },
+  "frontCoverConstruction": {
+    "part": "new single-piece planar frame using the proven screen-window dimensions from display_enclosure.step",
+    "modifiedLegacyBody": false,
+    "construction": "one face slab, one LCD opening, four continuous perimeter walls, and four blind internal insert bosses",
+    "originalBounds": [
+      [
+        -70.3900001000002,
+        -17.890352247643342,
+        -3.0769229061063297
+      ],
+      [
+        51.6100010253483,
+        52.1122037369647,
+        6.100176786133664
+      ]
+    ],
+    "finishedBounds": [
+      [
+        -70.39000015,
+        -17.903000150000008,
+        -4.540000150000007
+      ],
+      [
+        51.610000150000005,
+        64.09700015000001,
+        6.100000150000007
+      ]
+    ],
+    "openingCenter": [
+      -9.39,
+      17.11
+    ],
+    "legacySideSlot": false,
+    "legacyFaceSeams": false,
+    "visibleFrontFaceCount": 1,
+    "visibleFrontFaces": [
+      {
+        "bounds": [
+          [
+            -70.39000015,
+            -17.90300015,
+            6.09999985
+          ],
+          [
+            51.61000015,
+            64.09700015000001,
+            6.10000015
+          ]
+        ],
+        "innerWireCount": 1
+      }
+    ]
+  },
+  "pcbFit": {
+    "sourceAssembly": "MSV3_desktop_display.step",
+    "solidCount": 338,
+    "nativeBounds": [
+      [
+        -66.27301742590593,
+        -13.763017425905943,
+        -14.534017425905741
+      ],
+      [
+        41.77301742590566,
+        61.503017425905746,
+        4.935517425905747
+      ]
+    ],
+    "nativeOriginPreserved": true,
+    "displayGlassRecessBelowBezelFront": 0.15,
+    "unifiedRectangle": true,
+    "backComponentClearance": 0.87,
+    "displayBoardRetention": "clamped at three unobstructed 3.2 mm display-board mounting holes",
+    "controllerBoardRetention": "fourth enclosure screw passes through the controller board upper-left mounting hole",
+    "controllerSupport": "soldered header plus two foam-tipped rear posts at the upper mounting holes",
+    "frontCoverIntersectionVolume": 0.06980226177118348,
+    "originalReferenceIntersectionVolume": 691.9625611842908,
+    "rearShellIntersectionVolume": 0
+  },
+  "antenna": {
+    "placement": "internal antenna; exact location and cable routing to be checked with the ordered part",
+    "externalOpening": false
+  },
+  "usb": {
+    "connectorDirection": "downward",
+    "access": "open bottom/rear cable bay between two 8 mm feet",
+    "purpose": "allows a straight USB-C plug to enter and its cable to turn toward the rear above the desk"
+  },
+  "stand": {
+    "type": "fold-flat friction kickstand",
+    "fasteners": "two M2 screws into 2.9 mm x 3.2 mm heat-set-insert pockets",
+    "armCenterDistance": 48.51030818290067,
+    "armThickness": 4,
+    "foldedWithinMainXYFootprint": true,
+    "adjustment": "set display lean angle by rotating the prop and tightening both M2 pivots",
+    "foldedIntersectionVolume": 0
+  },
+  "closure": {
+    "type": "four M2 screws through three display-PCB holes and one controller-PCB hole into front-cover heat-set inserts",
+    "screwCount": 4,
+    "clearanceHoleDiameter": 2.4,
+    "insertPocket": {
+      "diameter": 2.9,
+      "depth": 3.2
+    },
+    "minimumInsertBlindWall": 2.05,
+    "frontFaceThickness": 1.02,
+    "controllerInsertFaceClearance": 0.0485199999999999,
+    "controllerRearPostClearance": 0.08000000000000007,
+    "pcbMountingHoleDiameter": 3.2,
+    "closedBezelIntersectionVolume": 0
+  },
+  "printProfile": {
+    "printer": "Bambu Lab P1S",
+    "nozzleDiameter": 0.4,
+    "material": "PLA",
+    "layerHeight": 0.2,
+    "nominalLineWidth": 0.42,
+    "wallLoops": 3,
+    "supportPlan": "front cover and kickstand: none; rear shell: build-plate-only tree supports",
+    "frontCoverOrientation": "visible bezel face on bed",
+    "rearShellOrientation": "continuous right side wall on bed, shell vertical",
+    "kickstandOrientation": "wide foot on bed, arms vertical",
+    "minimumWallThickness": 2.2,
+    "frontFaceThickness": 1.02,
+    "minimumInsertBossRadialWall": 1.7500000000000002
+  }
+}

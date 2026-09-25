@@ -1,0 +1,4 @@
+90399f7f8a4f7595ba010c598148eaf9865edc7b52c9bf10c282bafb0c18ba06 *msv3-1.0.5-sensor008-v65568-initial-install-from-stock.zip
+5a0ecb773bdcad2b404fa3522db96e745b2372f405dc6a10298d89fcab150889 *msv3-1.0.5-sensor008-v65568-sdbl-app-signed-ota.zip
+dcd6f58d5f71a7ab1486ff0eabe6e285336bdfb359bd6de397dc19a7f84000ca *msv3-1.0.5-sensor008-v65568-signed-ota.zip
+d5091033a20db78c05e1bb7d8f7eebceaaad56519e437176dbdd2142ead5f7cf *msv3-e73-recovery-signed-s140-6.1.1.hex

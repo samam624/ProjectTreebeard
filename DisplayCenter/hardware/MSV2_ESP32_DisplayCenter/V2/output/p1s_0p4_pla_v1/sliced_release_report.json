@@ -1,0 +1,40 @@
+{
+  "release": "MSV2_DisplayCenter_P1S_0p4_PLA_v1",
+  "generated": "2026-09-24",
+  "slicer": "Bambu Studio 02.07.01.62",
+  "printer": "Bambu Lab P1S",
+  "nozzle_diameter_mm": 0.4,
+  "material": "Generic PLA",
+  "plate": "Textured PEI Plate",
+  "nozzle_temperature_c": 220,
+  "bed_temperature_c": 55,
+  "layer_height_mm": 0.2,
+  "wall_loops": 3,
+  "sparse_infill_percent": 20,
+  "sparse_infill_pattern": "gyroid",
+  "brim_width_mm": 5,
+  "projects": {
+    "front_and_stand": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v1.3mf",
+      "return_code": 0,
+      "warning_message": "",
+      "estimated_seconds": 6083.97216796875,
+      "estimated_filament_g": 18.622642517089844,
+      "supports": false,
+      "objects": 2
+    },
+    "rear_shell": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v1.3mf",
+      "return_code": 0,
+      "warning_message": "",
+      "estimated_seconds": 18783.970703125,
+      "estimated_filament_g": 57.40619659423828,
+      "supports": "tree(auto), build plate only",
+      "objects": 1
+    }
+  },
+  "totals": {
+    "estimated_seconds": 24867.94287109375,
+    "estimated_filament_g": 76.02883911132812
+  }
+}

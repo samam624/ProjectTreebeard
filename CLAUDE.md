@@ -126,6 +126,66 @@ STICKYERR set, no busy state, flash untouched. `erase: OK` was printed anyway an
 still running its previous application. Any erase must PROVE its postcondition by blank-checking
 before reporting success; a status string from the adapter is not evidence.
 
+## Before you patch vendored upstream code, find out what upstream actually does
+
+Two days and twenty bootloader releases were spent on 2026-09-20/21 fixing races in the Adafruit
+nRF52 serial DFU path. **None of those races exist upstream.** Stock 0.11.0 brings up exactly one
+transport:
+
+```c
+if (_ota_dfu) { mbr_init_sd(); ble_stack_init(); }   // SoftDevice ENABLED
+else          { usb_init(serial_only_dfu); }          // wired: SoftDevice NEVER enabled
+```
+
+so a stock wired session has no SoftDevice, synchronous flash, and no asynchronous erase to race.
+MSV3 1.0.4 attached USB inside the SoftDevice-enabled branch, and every symptom chased afterwards
+descended from that one local change. One look at that branch on day one would have replaced the
+entire search.
+
+So, when something works for everyone else and not here:
+
+1. **Read the upstream source for the exact version pinned** under `MSV3/.arduino-build/`, and find
+   the branch that makes it work for them.
+2. **Ask what this repo changed.** `MSV3/bootloader/patches/` is the list of local deviations; the
+   answer is usually in it.
+3. Only then design a fix. A fix that teaches local code to survive a condition upstream never
+   creates is almost always the wrong shape — prefer restoring the upstream invariant.
+
+The same applies to host tooling. The vendored `adafruit-nrfutil` under
+`MSV3/.arduino-build/dfu-pydeps/` is the reference for what the Arduino IDE actually sends; read it
+before theorising about the wire protocol, and capture the bytes if in doubt. Doing that took ten
+minutes and eliminated the host as a suspect outright.
+
+## Trust measurement over inference, and verify the instrument first
+
+Every wrong turn in that same investigation came from believing a reading instead of checking what
+produced it:
+
+- A retained trace with **no nonce** was read four times across four bootloaders and reported
+  byte-identical. The conclusion drawn — "the fix changed nothing" — was wrong; the record had
+  simply never been re-armed. `msv3_dfu_trace_arm()` now increments a nonce that is deliberately
+  never cleared. **If the nonce has not moved since the last read, nothing else in the record is
+  evidence.**
+- An **inverted constant** in the reader (`MSV3_DFU_TRANSPORT_SERIAL` is `0x01`, BLE is `0x02`)
+  reported a serial-transport record as a BLE one.
+- Un-latched sentinel values were rendered as a confident "the ring has drifted" warning.
+- Scan-response bytes were **reused across builds** without updating the decoder, four times. One
+  produced a definite-sounding sentence about a field that did not exist in the build being read.
+
+Rules that follow, and they are cheap:
+
+- The scan-response layout is an **ABI** between `scan_response_init()` in `dfu_transport_ble.c` and
+  `MSV3/scripts/msv3_read_dfu_trace.py`. Change one side, change the other, and key any reused byte
+  on `build_id`.
+- **Self-test a decoder against synthetic input** before trusting it against hardware.
+- When a measurement contradicts the model, suspect the instrument before rebuilding firmware — a
+  bootloader cycle here is ~20 minutes and a BLE-only recovery.
+- State plainly which findings are **measured** and which are **inferred**. Three releases were
+  built on an inference presented as a conclusion.
+
+See [the wired DFU resolution](MSV3/docs/MSV3_WIRED_DFU_RESOLVED_2026-09-21.md) for the full
+account.
+
 ## Working in this repository as an automated agent
 
 - **Always push to `main`.** Never push a feature, topic, or working branch to GitHub. If work was

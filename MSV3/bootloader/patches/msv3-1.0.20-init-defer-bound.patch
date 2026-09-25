@@ -1,0 +1,79 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x0113U        /* 1.0.19 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x0114U        /* 1.0.20 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+@@ -199,6 +199,7 @@
+     uint8_t  fail_completed_hdr0;   /**< Its HCI header byte 0; bits 0-2 are the sequence number. */
+     uint8_t  fail_ordinal;          /**< 0 until the latch fires -- this IS the write-once flag. */
+     uint8_t  init_retry;            /**< MSV3 1.0.18: INIT deferrals while the erase finished. */
++    uint8_t  init_gave_up;          /**< MSV3 1.0.20: 1 = the deferral bound was exhausted. */
+     uint8_t  fail_extract_rc;       /**< ACTUAL hci_mem_pool_rx_extract() return, not inferred. */
+     uint8_t  fail_extracted_slot;   /**< 0xFF = the pointer was not a pool buffer at all. */
+     uint8_t  fail_extracted_hdr0;   /**< 0xEE = deliberately not dereferenced (see hci_transport). */
+@@ -264,6 +265,7 @@
+     t->fail_completed_hdr0 = 0xEE;
+     t->fail_ordinal        = 0;
+     t->init_retry          = 0;
++    t->init_gave_up        = 0;
+     t->fail_extract_rc     = 0xEE;
+     t->fail_extracted_slot = 0xFF;
+     t->fail_extracted_hdr0 = 0xEE;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -128,7 +128,13 @@
+  * before the transport gives up. The erase is about 3 s on a 132 KB image and the main loop runs
+  * far faster than that, so this is generous by design; it exists only so that a pstorage failure
+  * cannot hang the bootloader forever. See MSV3_SERIAL_INIT_RETRY. */
+-#define MSV3_SERIAL_INIT_DEFER_MAX  20000u
++/* MSV3 1.0.20: 20000 was too small and it was a guess. The application-bank erase is ~33 pages at
++ * up to 85 ms, so roughly 2.8 s, against a main loop that turns far faster than 7 kHz -- so the
++ * old ceiling could be spent before the erase had any chance to finish, turning a survivable race
++ * into the same reboot by a longer road. This is now sized so that only a genuinely stuck pstorage
++ * reaches it, and init_gave_up records whether it ever did, so the number never has to be guessed
++ * at again. */
++#define MSV3_SERIAL_INIT_DEFER_MAX  2000000u
+ static uint32_t m_init_defer_count;
+ static volatile bool m_init_retry_pending;
+ static void process_dfu_packet(void * p_event_data, uint16_t event_size);
+@@ -465,6 +471,14 @@
+                                 return;
+                             }
+                         }
++                        if ((NRF_ERROR_INVALID_STATE == retval) &&
++                            (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC))
++                        {
++                            /* Fell out of the deferral loop still not ready: we are about to fail
++                             * exactly as stock did, and this says so rather than leaving the next
++                             * reader to infer it from a saturated counter. */
++                            MSV3_DFU_TRACE->init_gave_up = 1;
++                        }
+                         m_init_defer_count   = 0;
+                         m_init_retry_pending = false;
+                         APP_ERROR_CHECK(retval);
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -815,9 +815,12 @@
+   payload[i++] = t->fail_completed_slot;
+   payload[i++] = t->init_retry;   /* MSV3 1.0.18, replacing the answered fail_completed_hdr0 */
+   payload[i++] = t->fail_ordinal;
+-  payload[i++] = t->fail_extract_rc;
++  payload[i++] = t->init_gave_up;   /* MSV3 1.0.20, replacing the answered fail_extract_rc */
+   payload[i++] = t->fail_extracted_slot;
+-  payload[i++] = t->fail_extracted_hdr0;
++  /* MSV3 1.0.20: RESETREAS is back in the advertisement. With the device now failing by going
++   * quiet rather than by rebooting, "did it reset at all" is the one bit that separates a
++   * bootloader that gave up from one that is alive and simply not acknowledging. */
++  payload[i++] = (uint8_t)(t->reset_reas & 0xFFUL);
+   memcpy(&payload[i], (const void *)&t->fail_raw_length, 2);   i += 2;
+   memcpy(&payload[i], (const void *)&t->fail_adj_length, 2);   i += 2;
+   memcpy(&payload[i], (const void *)t->fail_payload, 4);       i += 4;

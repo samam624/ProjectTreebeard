@@ -1,0 +1,59 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -23,7 +23,32 @@
+ #include "app_scheduler.h"
+ #include "boards.h"
+ 
+-#define MAX_BUFFERS          4u                                                      /**< Maximum number of buffers that can be received queued without being consumed. */
++/* MSV3_SERIAL_QUEUE_CREDIT
++ *
++ * Stock is 4, which DATA_QUEUE_FULL() turns into 3 usable entries. The HCI receive pool is
++ * HCI_RX_BUF_QUEUE_SIZE = 16 (src/sdk_config.h). That mismatch is the defect: HCI accepts and
++ * ACKNOWLEDGES up to 16 frames, the application queue can retain 3, and every frame past the third
++ * takes the queue-full path -- where it is consumed and DISCARDED after the link layer has already
++ * told the host it arrived.
++ *
++ * Measured on probe 8, 2026-09-20, from bootloader 1.0.6's retained trace: 15 frames dropped, and
++ * stage never advanced past ARMED. The drop path does not discriminate by packet type, so the
++ * single STOP_DATA packet was dropped along with the data -- which is why dfu_image_validate() and
++ * dfu_image_activate() were never called at all, and why the host saw an ACK for every frame it
++ * sent and reported success against a board with no application. Six earlier host-side experiments
++ * were tuning delivery into a handler that was never entered.
++ *
++ * Sizing this to the HCI pool is what makes backpressure real rather than notional: once all 16
++ * HCI buffers are held by the queue, the transport cannot produce a seventeenth receive buffer, so
++ * the SLIP decoder stalls and the USB CDC OUT endpoint NAKs. That is genuine flow control and it
++ * needs no host change, which matters because the host here is the stock Arduino IDE client.
++ *
++ * Deliberately NOT an arbitrary larger number: a bigger queue than the pool would only raise the
++ * threshold at which frames are silently lost. The +1 is DATA_QUEUE_FULL()'s own off-by-one.
++ * Costs about 200 bytes of RAM, against 8.39% RAM used.
++ */
++#define MSV3_SERIAL_QUEUE_CREDIT  16u
++#define MAX_BUFFERS          (MSV3_SERIAL_QUEUE_CREDIT + 1u)                         /**< Maximum number of buffers that can be received queued without being consumed. */
+ 
+ /* MSV3 1.0.5: the last serial validate/activate results, which stock 0.11.0 discards outright.
+  * Volatile and never read back here on purpose -- keeping them out of the optimiser is enough to
+@@ -341,6 +366,21 @@
+             DATA_QUEUE_ELEMENT_SET_PLEN(element_index,(rpc_cmd_length_read / sizeof(uint32_t)) - 1);
+             DATA_QUEUE_ELEMENT_COPY_PDATA(element_index, &p_rpc_cmd_buffer[4]);
+             retval = app_sched_event_put(NULL, 0, process_dfu_packet);
++
++            /* MSV3 1.0.7: stock leaks here. If the scheduler put fails, the element below is
++             * already ALLOCATED and pointing into this HCI buffer, and the tail of this function
++             * then consumes the buffer -- leaving a queue entry aimed at memory the transport is
++             * free to reuse. Give the element back before that happens. SCHED_QUEUE_SIZE is 30
++             * against an HCI pool of 16, so this should be unreachable; it is handled because an
++             * unreachable path that corrupts the queue is exactly the kind of thing that turns a
++             * later capacity change into a silent memory bug. */
++            if (NRF_SUCCESS != retval)
++            {
++                DATA_QUEUE_ELEMENT_SET_PTYPE(element_index, INVALID_PACKET);
++                DATA_QUEUE_ELEMENT_COPY_PDATA(element_index, NULL);
++                DATA_QUEUE_ELEMENT_SET_PLEN(element_index, 0);
++                m_data_queue.count--;
++            }
+         }
+     }
+ 

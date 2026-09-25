@@ -6,7 +6,7 @@ const outputDir = path.join(projectDir, 'output');
 const sourcePcb = path.join(projectDir, 'MSV3_desktop_display.step');
 const occtimportjs = require(path.resolve(
   __dirname,
-  '../../../MSV3_Probe_PCB_Enclosure/tools/node/node_modules/occt-import-js',
+  '../../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/occt-import-js',
 ))();
 
 const PCB_TRANSLATION = [0.00, 0.00, 0.00];
@@ -54,17 +54,55 @@ function inspectBinaryStl(filename) {
   }
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
+  const edgeUses = new Map();
+  let degenerateTriangleCount = 0;
+  let bedContactVertexCount = 0;
+  const vertexKey = (point) => point.map((value) => value.toFixed(5)).join(',');
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const base = 84 + triangle * 50 + 12;
+    const points = [];
     for (let vertex = 0; vertex < 3; vertex += 1) {
+      const point = [];
       for (let axis = 0; axis < 3; axis += 1) {
         const value = data.readFloatLE(base + vertex * 12 + axis * 4);
+        point.push(value);
         min[axis] = Math.min(min[axis], value);
         max[axis] = Math.max(max[axis], value);
       }
+      if (Math.abs(point[2]) <= 0.02) bedContactVertexCount += 1;
+      points.push(point);
+    }
+    const ab = points[1].map((value, axis) => value - points[0][axis]);
+    const ac = points[2].map((value, axis) => value - points[0][axis]);
+    const cross = [
+      ab[1] * ac[2] - ab[2] * ac[1],
+      ab[2] * ac[0] - ab[0] * ac[2],
+      ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    if (Math.hypot(...cross) <= 1e-10) degenerateTriangleCount += 1;
+    for (const [from, to] of [[0, 1], [1, 2], [2, 0]]) {
+      const ends = [vertexKey(points[from]), vertexKey(points[to])].sort();
+      const key = `${ends[0]}|${ends[1]}`;
+      edgeUses.set(key, (edgeUses.get(key) || 0) + 1);
     }
   }
-  return { triangleCount, byteLength: data.length, min, max };
+  let boundaryEdgeCount = 0;
+  let nonManifoldEdgeCount = 0;
+  for (const uses of edgeUses.values()) {
+    if (uses === 1) boundaryEdgeCount += 1;
+    else if (uses !== 2) nonManifoldEdgeCount += 1;
+  }
+  return {
+    triangleCount,
+    byteLength: data.length,
+    min,
+    max,
+    bedContactVertexCount,
+    degenerateTriangleCount,
+    boundaryEdgeCount,
+    nonManifoldEdgeCount,
+    watertight: boundaryEdgeCount === 0 && nonManifoldEdgeCount === 0,
+  };
 }
 
 function approx(value, expected, tolerance = 0.05) {
@@ -119,12 +157,14 @@ function xIntersectionsAt(mesh, y, z) {
 
 occtimportjs.then((occt) => {
   const errors = [];
+  if (fs.existsSync(path.join(outputDir, 'MSV3_display_antenna_positioned.step'))) {
+    errors.push('The obsolete external antenna reference STEP is still in the output folder.');
+  }
   const stepFiles = {
     originalBezel: 'MSV3_display_front_bezel_reference.step',
     frontCover: 'MSV3_display_front_cover.step',
     rearShell: 'MSV3_display_rear_shell.step',
     kickstand: 'MSV3_display_kickstand.step',
-    antenna: 'MSV3_display_antenna_positioned.step',
     foldedAssembly: 'MSV3_display_enclosure_assembly.step',
     deployedAssembly: 'MSV3_display_enclosure_deployed.step',
     fitCheckAssembly: 'MSV3_display_fit_check_assembly.step',
@@ -147,9 +187,8 @@ occtimportjs.then((occt) => {
     frontCover: 1,
     rearShell: 1,
     kickstand: 1,
-    antenna: 2,
-    foldedAssembly: 5,
-    deployedAssembly: 5,
+    foldedAssembly: 3,
+    deployedAssembly: 3,
     pcbAlignmentCheck: 339,
   };
   for (const [name, expected] of Object.entries(expectedMeshCounts)) {
@@ -170,6 +209,16 @@ occtimportjs.then((occt) => {
     const report = inspectBinaryStl(path.join(outputDir, basename));
     stlReports[name] = report;
     if (Math.abs(report.min[2]) > 0.08) errors.push(`${name} STL is not on the print bed.`);
+    if (report.triangleCount < 100) errors.push(`${name} STL has too few triangles to be useful.`);
+    if (report.degenerateTriangleCount !== 0) {
+      errors.push(`${name} STL contains ${report.degenerateTriangleCount} degenerate triangles.`);
+    }
+    if (!report.watertight) {
+      errors.push(`${name} STL is not watertight (${report.boundaryEdgeCount} boundary edges, ${report.nonManifoldEdgeCount} non-manifold edges).`);
+    }
+    if (report.bedContactVertexCount < 6) {
+      errors.push(`${name} STL has insufficient contact with the print bed.`);
+    }
   }
 
   const pcb = readStep(occt, sourcePcb);
@@ -239,51 +288,38 @@ occtimportjs.then((occt) => {
     errors.push('Bottom/rear USB cable bay does not surround the connector tunnel.');
   }
 
-  const antennaStep = readStep(occt, path.join(outputDir, stepFiles.antenna));
-  const antennaMeshes = antennaStep.meshes.map((mesh) => ({
-    mesh,
-    bounds: boundsForMeshes([mesh]),
-  })).sort((a, b) => (b.bounds.max[0] - b.bounds.min[0])
-    - (a.bounds.max[0] - a.bounds.min[0]));
-  const whipBounds = antennaMeshes[0].bounds;
-  const antennaBaseBounds = antennaMeshes[1].bounds;
-  const antennaBehindRearClearance = -18.00 - whipBounds.max[2];
-  const antennaBaseRegisteredToWall = approx(antennaBaseBounds.max[2], -18.00, 0.10)
-    && antennaBaseBounds.min[0] <= 44.11 && antennaBaseBounds.max[0] >= 44.11
-    && antennaBaseBounds.min[1] <= 56.097 && antennaBaseBounds.max[1] >= 56.097;
-  if (!antennaBaseRegisteredToWall) {
-    errors.push('Antenna base is not registered to the rear panel opening.');
-  }
-  if (whipBounds.min[0] < -70.39 || whipBounds.max[0] > 51.61
-      || whipBounds.min[1] < 50.99 || whipBounds.max[1] > 61.20
-      || antennaBehindRearClearance < 10.00) {
-    errors.push('Folded antenna is not hidden horizontally behind the upper rear silhouette.');
-  }
-  const antennaBoreCenter = [44.11, 56.097];
+  const formerAntennaBoreCenter = [44.11, 56.097];
   const rearShellMesh = stepResults.rearShell.meshes[0];
-  const antennaBoreChecks = {
-    center: zIntersectionsAt(rearShellMesh, ...antennaBoreCenter),
-    insideXMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] - 4.80, antennaBoreCenter[1]),
-    insideXPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] + 4.80, antennaBoreCenter[1]),
-    insideYMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0], antennaBoreCenter[1] - 4.80),
-    insideYPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0], antennaBoreCenter[1] + 4.80),
-    outsideXMinus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] - 5.20, antennaBoreCenter[1]),
-    outsideXPlus: zIntersectionsAt(rearShellMesh, antennaBoreCenter[0] + 5.20, antennaBoreCenter[1]),
-  };
-  const boreInteriorIsOpen = [
-    antennaBoreChecks.center,
-    antennaBoreChecks.insideXMinus,
-    antennaBoreChecks.insideXPlus,
-    antennaBoreChecks.insideYMinus,
-    antennaBoreChecks.insideYPlus,
-  ].every((hits) => hits.length === 0);
-  const boreExteriorIsSolid = antennaBoreChecks.outsideXMinus.length >= 2
-    && antennaBoreChecks.outsideXPlus.length >= 2;
-  if (!boreInteriorIsOpen || !boreExteriorIsSolid) {
-    errors.push('Antenna mount is not one unobstructed 10.0 mm circular through-bore.');
+  const formerAntennaBoreChecks = [
+    [0, 0], [-4.80, 0], [4.80, 0], [0, -4.80], [0, 4.80],
+  ].map(([dx, dy]) => ({
+    x: formerAntennaBoreCenter[0] + dx,
+    y: formerAntennaBoreCenter[1] + dy,
+    z: zIntersectionsAt(rearShellMesh, formerAntennaBoreCenter[0] + dx,
+      formerAntennaBoreCenter[1] + dy),
+  }));
+  const formerAntennaBoreIsSolid = formerAntennaBoreChecks.every(({ z }) =>
+    z.length >= 2 && approx(z[0], -18.00, 0.05) && approx(z[z.length - 1], -15.40, 0.05));
+  if (!formerAntennaBoreIsSolid) {
+    errors.push('The former antenna opening is not closed by the full 2.6 mm rear wall.');
   }
 
   const reportData = JSON.parse(fs.readFileSync(path.join(outputDir, 'design_report.json'), 'utf8'));
+  const printProfile = reportData.printProfile;
+  if (printProfile?.printer !== 'Bambu Lab P1S'
+      || !approx(printProfile?.nozzleDiameter, 0.40, 0.001)
+      || printProfile?.material !== 'PLA') {
+    errors.push('Design report does not identify the required P1S / 0.4 mm / PLA target.');
+  }
+  if (printProfile?.minimumWallThickness < 4 * printProfile?.nozzleDiameter) {
+    errors.push('Main wall is thinner than four 0.4 mm nozzle widths.');
+  }
+  if (printProfile?.frontFaceThickness < 4 * printProfile?.layerHeight) {
+    errors.push('Front face is thinner than four 0.20 mm layers.');
+  }
+  if (printProfile?.minimumInsertBossRadialWall < 3 * printProfile?.nominalLineWidth) {
+    errors.push('Insert-boss radial wall is thinner than three nominal extrusion lines.');
+  }
   if (reportData.frontCoverConstruction.visibleFrontFaceCount !== 1
       || reportData.frontCoverConstruction.visibleFrontFaces[0]?.innerWireCount !== 1) {
     errors.push('The visible front is split into multiple B-rep faces or contains an opening besides the LCD.');
@@ -439,16 +475,9 @@ occtimportjs.then((occt) => {
       deployedPreviewAngle: 30.00,
     },
     antenna: {
-      foldedBehindRear: true,
-      whipBounds,
-      antennaBaseBounds,
-      antennaBehindRearClearance,
-      antennaBaseRegisteredToWall,
-      antennaBoreChecks,
-      bulkheadCutout: {
-        type: 'single circular through-bore',
-        diameter: 10.00,
-      },
+      externalOpening: false,
+      formerAntennaBoreIsSolid,
+      formerAntennaBoreChecks,
     },
     enclosure: {
       unifiedRectangle,
@@ -456,6 +485,18 @@ occtimportjs.then((occt) => {
       leftWallContinuityChecks,
       bodyEnvelope: { xMin: -70.39, xMax: 51.61, yMin: -17.903, yMax: 64.097 },
       bottomFeetYMin: -25.903,
+    },
+    printability: {
+      ...printProfile,
+      bedEnvelope: [256, 256, 256],
+      allPartsFitP1SBedIndividually: Object.values(stlReports).every((item) => (
+        item.max[0] - item.min[0] <= 256
+          && item.max[1] - item.min[1] <= 256
+          && item.max[2] - item.min[2] <= 256
+      )),
+      allMeshesWatertight: Object.values(stlReports).every((item) => item.watertight),
+      allMeshesNonDegenerate: Object.values(stlReports)
+        .every((item) => item.degenerateTriangleCount === 0),
     },
   };
   fs.writeFileSync(path.join(outputDir, 'validation_report.json'), `${JSON.stringify(report, null, 2)}\n`);

@@ -515,6 +515,97 @@ uint32_t g_bleWakeCount = 0;
 const uint16_t OTA_MIN_BATTERY_MV = 3800;
 const uint16_t BLE_ADV_FAST_INTERVAL_UNITS = 32;  // 20ms
 
+// ---- Bench live broadcast (the receiver's Bench page) ----
+//
+// `bench on` re-reads the FDC and re-advertises every BENCH_LIVE_INTERVAL_MS so a scanner sees a
+// genuinely live number instead of the frozen payload `blestart` leaves on air. Bench-only: this
+// board is USB-powered on the desk while it runs, so there is no power budget to respect here.
+// Deliberately NOT added to MSV3_Moisture_BLE_Sleep -- a deployed probe advertising four times a
+// second would flatten its battery, and the production image stays clean.
+//
+// The interval is a compromise measured against the FDC's own conversion time, not a guess: a
+// full probeWake() settle is far too slow to repeat at this rate, so the live path re-reads an
+// ALREADY-AWAKE FDC (bench on performs the one wake) and only pays a register read per tick.
+const uint32_t BENCH_LIVE_INTERVAL_MS = 250;
+// Advertising must stay on air continuously between refreshes, so each refresh restarts the
+// advertiser with a 0 timeout. Keep the fast interval -- at 20ms the receiver gets several
+// chances to catch each payload inside one BENCH_LIVE_INTERVAL_MS window.
+bool g_benchLiveActive = false;
+uint32_t g_benchLastBroadcastMs = 0;
+uint8_t g_benchLastMuxCode = 0;
+uint16_t g_benchLastFdcStatus = 0;
+
+// Board (die) temperature, quarter-degrees C, as sd_temp_get() reports it. Same range gate as
+// production's readBoardTempQuarterC().
+const int32_t BOARD_TEMP_MIN_Q4C = -160;  // -40 C
+const int32_t BOARD_TEMP_MAX_Q4C = 340;   // +85 C
+const uint32_t BOARD_TEMP_HFCLK_POLL_TIMEOUT_MS = 10;
+
+// ---- Bench command beacon: receiver -> probe, connectionless ----
+//
+// The receiver ADVERTISES a command; this probe SCANS for it. That direction is deliberate. The
+// obvious alternative - the receiver connecting to this board's existing GATT and writing a
+// characteristic - would require the receiver to become a BLE central, and the receiver is the
+// RAM-constrained device that watches the whole garden (its cloud upload path has already failed
+// once for want of contiguous internal RAM; see
+// DisplayCenter/docs/RECEIVER_CLOUD_UPLOAD_CONNECTION_REFUSED_2026-08-31.md). This bench image
+// has ~94% of its RAM free, so the new role belongs here, not there.
+//
+// ---- COMMAND BEACON ABI ----
+// Shared with buildBenchCommandBeacon() in Treebeard_ESP32_Display_Runtime.ino. Manufacturer
+// data, company 0xFFFF:
+//   [0-1]  company id
+//   [2-5]  magic "TBCM" -- distinct from both "MSV2" and "MSV3" so a command can never be parsed
+//          as sensor data, nor sensor data as a command
+//   [6]     target sensor id, or BENCH_CMD_TARGET_ALL
+//   [7]     opcode
+//   [8-11]  counter, uint32 LE, monotonic WITHIN one receiver boot
+//   [12-13] session id, uint16 LE, randomised once per receiver boot
+//
+// SECURITY, STATED PLAINLY: this is unauthenticated. Anyone in radio range who knows the layout
+// can blink a bench probe's LED. That is acceptable for exactly two reasons and no others -- the
+// only opcode is a light, and this whole section is compiled only into the bring-up image, never
+// into MSV3_Moisture_BLE_Sleep. Do not add an opcode here that changes measurement, power or
+// firmware state; those need a real authenticated channel, not a beacon.
+const uint8_t BENCH_CMD_MAGIC[4] = {'T', 'B', 'C', 'M'};
+const uint8_t BENCH_CMD_TARGET_ALL = 0xFF;
+const uint8_t BENCH_CMD_OP_IDENTIFY = 0x01;
+const uint8_t BENCH_CMD_PACKET_LEN = 14;
+// Replay handling. The counter alone is NOT enough, and this was MEASURED, not theorised:
+// the receiver restarts its counter at 1 on every boot, so after a receiver reflash the first
+// command carried counter==1 while this probe still held last==1 from before, and the equality
+// test below silently dropped it. Observed 2026-09-21 -- accepted/executed stayed at 1/1 across
+// a POST that returned {"ok":true}. The symptom is "identify works, except the first time after
+// the receiver restarts", which is exactly the kind of intermittent nobody would diagnose.
+//
+// The session id fixes it at the root: a different session means a different sequence, so the
+// counter is only ever compared WITHIN one receiver boot. That also let the old backwards-jump
+// heuristic go, which guessed at reboots from the size of the rewind and could not have handled
+// this case however it was tuned.
+volatile uint32_t g_benchCmdLastCounter = 0;
+volatile uint16_t g_benchCmdLastSession = 0;
+volatile bool g_benchCmdCounterSeen = false;
+// Set by the scan callback, consumed by the main loop. The callback runs on the Bluefruit
+// callback task and must not blink an LED for a second and a half.
+volatile uint8_t g_benchCmdPendingOp = 0;
+bool g_benchScannerRunning = false;
+// Counts commands ACCEPTED (magic, target and replay checks all passed) and commands EXECUTED.
+// Exposed by the `bench` console command so "the receiver says it broadcast" and "the probe
+// actually acted" are two separate observations instead of one inference. This repo has paid for
+// that distinction before -- see CLAUDE.md on trusting measurement over inference.
+volatile uint32_t g_benchCmdAcceptedCount = 0;
+volatile uint32_t g_benchCmdExecutedCount = 0;
+volatile uint8_t g_benchCmdLastOp = 0;
+
+// Non-blocking identify blink. A blocking one would stall the OTA window service and the USB
+// console for the duration, which is exactly the kind of avoidable unresponsiveness that makes a
+// probe look hung.
+const uint8_t IDENTIFY_TOGGLE_COUNT = 8;      // 4 on/off pairs
+const uint32_t IDENTIFY_TOGGLE_MS = 150;
+uint8_t g_identifyTogglesRemaining = 0;
+uint32_t g_identifyNextToggleMs = 0;
+bool g_identifyLedOn = false;
+
 #ifdef MSV3_SENSOR_ID
 // Targeted diagnostic builds must remain recoverable after USB is removed or coated over. Match
 // production's proven five-second-per-minute discovery opportunity and 30-second connected hold.
@@ -553,7 +644,11 @@ void otaDisconnectCallback(uint16_t connHandle, uint8_t reason) {
 void bleInitOnce() {
   if (g_bleInited) return;
   Bluefruit.autoConnLed(false);
-  if (!Bluefruit.begin()) return;
+  // (peripheral 1, central 1). The central slot is what enables BLEScanner at all, which this
+  // image needs for the bench command beacon - scanning is a central-role activity even when no
+  // connection is ever made. The peripheral count is unchanged, so the DFU/DIS peripheral path
+  // and its OTA window behave exactly as before.
+  if (!Bluefruit.begin(1, 1)) return;
   Bluefruit.setTxPower(4);
   Bluefruit.setName(BLE_DEVICE_NAME);
 #ifdef MSV3_SENSOR_ID
@@ -570,15 +665,116 @@ void bleInitOnce() {
   g_bleInited = true;
 }
 
+// nRF52840 die temperature through the SoftDevice's sd_temp_get(), ported verbatim in behaviour
+// from MSV3_Moisture_BLE_Sleep.ino's readBoardTempQuarterC(). Read that function's comment for
+// why the SVC path (not the raw NRF_TEMP peripheral) is the only correct one while the
+// SoftDevice is enabled, and why HFXO is requested around the measurement.
+//
+// This is a straight port on purpose. Do not "simplify" it into a bare readCPUTemperature()
+// call -- the installed core's helper omits the HFXO request that TEMP's specified accuracy
+// assumes. sd_clock_hfclk_request()/release() is ordinary SoftDevice clock-request API and
+// never touches NRF_CLOCK directly, which is the thing docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md
+// forbids.
+bool readBoardTempQuarterC(int16_t &result) {
+  // Every caller runs after bleInitOnce(), but a bench console can reach this in any order --
+  // sd_temp_get() without an enabled SoftDevice is a hard fault, not a failed return.
+  if (!g_bleInited) return false;
+  if (sd_clock_hfclk_request() != NRF_SUCCESS) return false;
+
+  bool hfclkRunning = false;
+  uint32_t pollStart = millis();
+  do {
+    uint32_t isRunning = 0;
+    if (sd_clock_hfclk_is_running(&isRunning) == NRF_SUCCESS && isRunning) {
+      hfclkRunning = true;
+      break;
+    }
+  } while (millis() - pollStart < BOARD_TEMP_HFCLK_POLL_TIMEOUT_MS);
+
+  bool ok = false;
+  if (hfclkRunning) {
+    int32_t tempQ4C = 0;
+    if (sd_temp_get(&tempQ4C) == NRF_SUCCESS &&
+        tempQ4C >= BOARD_TEMP_MIN_Q4C && tempQ4C <= BOARD_TEMP_MAX_Q4C) {
+      result = (int16_t)tempQ4C;
+      ok = true;
+    }
+  }
+
+  // Balances the successful request above on every return path, exactly as production does.
+  sd_clock_hfclk_release();
+  return ok;
+}
+
 // Mirrors MSV2_Moisture_BLE_Sleep.ino's startAdv() layout exactly (company
 // ID, magic, sensor id, 24-bit wake counter, battery mV, charging flag) --
 // the only change is widening the 2-byte RC-oscillator kHz field to a
 // 4-byte raw FDC2214 DATA_CH0, since that reading is up to 28 bits and
 // doesn't fit in 2 bytes the way MSV2's oscillator count did.
+//
+// ---- BENCH PACKET LAYOUT -- THIS IS AN ABI. ----
+// Three decoders read these bytes. Change one, change all three, in the same commit:
+//   - Treebeard_ESP32_Display_Runtime.ino    parseBenchAdvertisement()   (the Bench page)
+//   - scripts/ble_periodic_reader.py         decode_msv3()
+//   - scripts/msv3_fleet_scan.py             (magic/sensor/wake only -- length-tolerant)
+// CLAUDE.md's "the scan-response layout is an ABI" rule applies here for the same reason: four
+// readings were mislabelled during the DFU work because a reused byte was decoded against the
+// wrong build. Byte [19] is the bench format version so that can never happen silently here.
+//
+// [0-1]   companyId (0xFFFF)
+// [2-5]   magic "MSV3" -- DELIBERATELY NOT "MSV2". See BLE_MAGIC's comment: a production
+//         receiver drops this packet before it ever looks at sensorId, so bench firmware can
+//         never be mistaken for real plant data. The Bench page opts back in with a separate
+//         parser that never writes sensors[]/history/cloud.
+// [6]     sensorId (99 on an untargeted bench build, the real fleet id on a targeted one)
+// [7-9]   wake, 24-bit LE
+// [10-13] raw FDC2214 DATA_CH0, 32-bit LE
+// [14-15] raw battery mV, 16-bit LE
+// [16]    flags: bit0=charging, bit2=board temp valid, bit4=OTA power gate open,
+//         bit5=FDC read failed (reading invalid), bit7=bench live mode active.
+//         Bits 1/3/6 stay 0 here: they mean electrode-swap phase, legacy bare-tank validity and
+//         capless-tank in the production packet, and none of them is meaningful on the bench
+//         path. Keeping them clear means a decoder that shares production's flag names cannot
+//         read a bench packet as a phase/capless claim.
+// [17-18] board temperature, signed int16 LE, quarter-degrees C (0 when bit2 is clear). Same
+//         field, same units and same byte positions as the production packet, so a decoder can
+//         share this one field across both magics.
+// [19]    BENCH FORMAT VERSION. Production sends the low byte of its always-zero legacy
+//         bare-tank field here, so version >= 1 is unambiguous evidence of a bench packet that
+//         actually carries the fields below.
+// [20]    mux code the DATA_CH0 reading was taken on (TMUX1109 select; see setMux()).
+// [21-22] FDC2214 STATUS register at the moment of the read, uint16 LE.
+//
+// 23 total bytes: 3 (Flags) + 3 (TxPower) + 2 (mfg header) + 23 = exactly the 31-byte legacy
+// PDU. The name goes in the SCAN RESPONSE, not here, so it costs nothing against this budget.
+const uint8_t BENCH_ADV_FORMAT_VERSION = 1;
+#define BENCH_ADV_FLAG_CHARGING        (1U << 0)
+#define BENCH_ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
+#define BENCH_ADV_FLAG_OTA_POWER_OK    (1U << 4)
+#define BENCH_ADV_FLAG_READING_INVALID (1U << 5)
+#define BENCH_ADV_FLAG_LIVE_MODE       (1U << 7)
+
+// readingValid is an explicit PARAMETER, not a global the callers are trusted to have set,
+// because the call sites genuinely disagree: servicePeriodicOtaWindow() advertises a placeholder
+// DATA_CH0 of 0 without ever reading the FDC, and the Bench page must show that as "no reading"
+// rather than as a real count of zero. A stale global here is exactly the shape of the retained
+// -trace bug CLAUDE.md warns about -- a field that looks like evidence but was never re-armed.
 void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging, bool otaPowerOk,
-                 uint16_t slowIntervalUnits, uint16_t timeoutSeconds) {
+                 uint16_t slowIntervalUnits, uint16_t timeoutSeconds, bool readingValid) {
   uint16_t batteryMvRounded = (uint16_t)(rawBatteryMv + 0.5f);
-  uint8_t mfg[17];
+  uint8_t mfg[23];
+  // Same compile-time budget check production carries, for the same reason: this sketch can log
+  // the runtime addData() failure, but a build that silently overflows the PDU should break at
+  // the developer's desk, not on air.
+  static_assert(
+    3 /* Flags */ + 3 /* TxPower */ + 2 /* manufacturer-data AD header */ + sizeof(mfg) <= 31,
+    "MSV3 bench advertising payload exceeds the 31-byte legacy PDU limit"
+  );
+
+  int16_t boardTempQuarterC = 0;
+  const bool boardTempValid = readBoardTempQuarterC(boardTempQuarterC);
+  const uint16_t boardTempField = boardTempValid ? (uint16_t)boardTempQuarterC : 0;
+
   mfg[0] = lowByte(BLE_COMPANY_ID);
   mfg[1] = highByte(BLE_COMPANY_ID);
   memcpy(&mfg[2], BLE_MAGIC, 4);
@@ -594,7 +790,17 @@ void bleStartAdv(uint32_t dataCh0, float rawBatteryMv, bool isCharging, bool ota
   mfg[15] = (uint8_t)((batteryMvRounded >> 8) & 0xFF);
   // bit0 retains the historical charging meaning. bit4 mirrors production's OTA power gate so
   // the identity-locked updater can distinguish an intentionally shut gate from old firmware.
-  mfg[16] = (isCharging ? 0x01 : 0x00) | (otaPowerOk ? 0x10 : 0x00);
+  mfg[16] = (isCharging ? BENCH_ADV_FLAG_CHARGING : 0) |
+            (boardTempValid ? BENCH_ADV_FLAG_BOARD_TEMP_OK : 0) |
+            (otaPowerOk ? BENCH_ADV_FLAG_OTA_POWER_OK : 0) |
+            (readingValid ? 0 : BENCH_ADV_FLAG_READING_INVALID) |
+            (g_benchLiveActive ? BENCH_ADV_FLAG_LIVE_MODE : 0);
+  mfg[17] = (uint8_t)(boardTempField & 0xFF);
+  mfg[18] = (uint8_t)((boardTempField >> 8) & 0xFF);
+  mfg[19] = BENCH_ADV_FORMAT_VERSION;
+  mfg[20] = g_benchLastMuxCode;
+  mfg[21] = (uint8_t)(g_benchLastFdcStatus & 0xFF);
+  mfg[22] = (uint8_t)((g_benchLastFdcStatus >> 8) & 0xFF);
 
 #ifdef MSV3_SENSOR_ID
   bledfu.setDfuAllowed(otaPowerOk);
@@ -677,8 +883,11 @@ void servicePeriodicOtaWindow() {
   bool charging = false;
   const bool otaPowerOk = readOtaPowerState(batteryMv, charging);
   g_bleWakeCount++;
+  // readingValid=false: this window exists to be discoverable for OTA, not to report a
+  // measurement. DATA_CH0 is a literal 0 placeholder and the FDC was never read, so the Bench
+  // page must render "--" here rather than a count of zero.
   bleStartAdv(0, batteryMv, charging, otaPowerOk,
-              OTA_ADV_SLOW_INTERVAL_UNITS, OTA_ADV_HARD_TIMEOUT_SECONDS);
+              OTA_ADV_SLOW_INTERVAL_UNITS, OTA_ADV_HARD_TIMEOUT_SECONDS, false);
   g_otaWindowEverStarted = true;
   g_lastOtaWindowStartMs = nowMs;
   g_otaWindowStartMs = nowMs;
@@ -707,9 +916,11 @@ void doBleCycle(int n) {
     // stabilized, is what produces bad data.
     uint32_t data = 0;
     uint16_t status = 0;
+    bool readingValid = false;
     if (probeWake(BLE_WAKE_DISCARD_CONVERSIONS)) {
-      fdcReadChannel0(data, status);
+      readingValid = fdcReadChannel0(data, status);
     }
+    g_benchLastFdcStatus = status;
 
     // Shares readVbatMv() with doVbat() rather than duplicating the divider/ADC
     // math -- the duplicate copy that used to live here inherited the same wrong
@@ -736,7 +947,7 @@ void doBleCycle(int n) {
              charging ? 1 : 0, (unsigned long)BLE_ADVERTISE_MS);
     printLineResilient(buf);
 
-    bleStartAdv(data, vBatMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
+    bleStartAdv(data, vBatMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0, readingValid);
     delayFeedingWatchdog(BLE_ADVERTISE_MS);
     Bluefruit.Advertising.stop();
 
@@ -750,6 +961,160 @@ void doBleCycle(int n) {
     delayFeedingWatchdog(sleepMs);
   }
   printLineResilient("  blecycle: done");
+}
+
+// ------------------------------------------------- bench command beacon ----
+//
+// Runs on the Bluefruit callback task, not in an interrupt, but still does the minimum: validate,
+// latch an opcode, resume. Everything that takes time happens in serviceBenchIdentify().
+//
+// EVERY PATH OUT OF THIS FUNCTION MUST RESUME THE SCANNER. BLEScanner's event handler only calls
+// resume() itself on the branch where no rx callback is installed (BLEScanner.cpp, the
+// `invoke_cb` block); once a callback exists, forgetting to resume stops scanning permanently
+// after the first advertisement the radio hears - which on a busy bench is immediate.
+void benchCommandScanCallback(ble_gap_evt_adv_report_t* report) {
+  uint8_t buf[31];
+  const uint8_t len = Bluefruit.Scanner.parseReportByType(
+      report, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, buf, sizeof(buf));
+
+  do {
+    if (len < BENCH_CMD_PACKET_LEN) break;
+    const uint16_t companyId = (uint16_t)(buf[0] | (buf[1] << 8));
+    if (companyId != BLE_COMPANY_ID) break;
+    if (memcmp(&buf[2], BENCH_CMD_MAGIC, sizeof(BENCH_CMD_MAGIC)) != 0) break;
+
+    const uint8_t target = buf[6];
+    if (target != BENCH_CMD_TARGET_ALL && target != BLE_TEST_SENSOR_ID) break;
+
+    const uint32_t counter = ((uint32_t)buf[8]) | ((uint32_t)buf[9] << 8) |
+                             ((uint32_t)buf[10] << 16) | ((uint32_t)buf[11] << 24);
+    const uint16_t session = (uint16_t)(buf[12] | (buf[13] << 8));
+    if (g_benchCmdCounterSeen && session == g_benchCmdLastSession) {
+      // Same receiver boot: the counter is meaningful, so drop the command we are already
+      // acting on and anything older. The beacon is on air for seconds at a 20ms interval, so
+      // this rejects roughly 125 repeats per command.
+      const uint32_t last = g_benchCmdLastCounter;
+      if (counter == last) break;
+      if ((int32_t)(counter - last) < 0) break;
+    }
+    g_benchCmdLastCounter = counter;
+    g_benchCmdLastSession = session;
+    g_benchCmdCounterSeen = true;
+    g_benchCmdPendingOp = buf[7];
+    g_benchCmdLastOp = buf[7];
+    g_benchCmdAcceptedCount++;
+  } while (0);
+
+  Bluefruit.Scanner.resume();
+}
+
+void benchScannerStart() {
+  if (g_benchScannerRunning || !g_bleInited) return;
+  Bluefruit.Scanner.setRxCallback(benchCommandScanCallback);
+  // Passive scan: a command beacon carries everything in its advertisement, so there is no scan
+  // response worth asking for, and an active scan would make this board transmit a scan request
+  // at every advertisement it hears from anything.
+  Bluefruit.Scanner.useActiveScan(false);
+  Bluefruit.Scanner.filterMSD(BLE_COMPANY_ID);
+  Bluefruit.Scanner.setIntervalMS(100, 50);  // 50% duty; USB-powered bench board
+  Bluefruit.Scanner.restartOnDisconnect(false);
+  g_benchScannerRunning = Bluefruit.Scanner.start(0);
+}
+
+void benchScannerStop() {
+  if (!g_benchScannerRunning) return;
+  Bluefruit.Scanner.stop();
+  g_benchScannerRunning = false;
+}
+
+void startIdentifyBlink() {
+  g_identifyTogglesRemaining = IDENTIFY_TOGGLE_COUNT;
+  g_identifyNextToggleMs = millis();
+  g_identifyLedOn = false;
+}
+
+// Drives the identify blink and executes any opcode the scan callback latched. Called every loop
+// pass; does nothing when there is nothing to do.
+void serviceBenchCommands() {
+  const uint8_t pending = g_benchCmdPendingOp;
+  if (pending != 0) {
+    g_benchCmdPendingOp = 0;
+    if (pending == BENCH_CMD_OP_IDENTIFY) {
+      startIdentifyBlink();
+      g_benchCmdExecutedCount++;
+    }
+    // Unknown opcodes are ignored on purpose. A bench probe should not guess at a command from a
+    // receiver running newer firmware than it.
+  }
+
+  if (g_identifyTogglesRemaining == 0) return;
+  const uint32_t nowMs = millis();
+  if ((int32_t)(nowMs - g_identifyNextToggleMs) < 0) return;
+  g_identifyLedOn = !g_identifyLedOn;
+  ledWrite(g_identifyLedOn);
+  g_identifyNextToggleMs = nowMs + IDENTIFY_TOGGLE_MS;
+  g_identifyTogglesRemaining--;
+  if (g_identifyTogglesRemaining == 0) {
+    // Always finish dark, whatever parity the toggle count had.
+    ledWrite(false);
+    g_identifyLedOn = false;
+  }
+}
+
+// ------------------------------------------------------ bench live mode ----
+//
+// Reads battery/charger state the same way every other advertising path here does. Exists as one
+// function because the targeted and untargeted builds reach the same answer through different
+// code (readOtaPowerState() only exists under MSV3_SENSOR_ID), and duplicating that split at
+// each call site is how the two copies of the battery-divider math drifted apart before.
+void benchReadPower(float &batteryMv, bool &charging, bool &otaPowerOk) {
+#ifdef MSV3_SENSOR_ID
+  otaPowerOk = readOtaPowerState(batteryMv, charging);
+#else
+  batteryMv = readVbatMv(nullptr);
+  bool statHigh = true;
+  bool pgHigh = true;
+  readChargerPins(statHigh, pgHigh);
+  charging = statHigh == LOW;
+  const bool batteryReadingValid = batteryMv >= 2500.0f && batteryMv <= 5000.0f;
+  otaPowerOk = pgHigh == LOW ||
+               (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
+#endif
+}
+
+// Re-reads an ALREADY-AWAKE FDC and re-advertises, so a scanner sees a live number. `bench on`
+// performs the one probeWake(); this path deliberately does not wake per tick, because a full
+// settle per 250ms tick would both miss the cadence and make the reading a different
+// measurement from the streaming one `fdcstream` reports.
+void serviceBenchLive() {
+  if (!g_benchLiveActive) return;
+
+  // Never restart the advertiser underneath a live connection. servicePeriodicOtaWindow() owns
+  // the connected state, including the DFU reset handoff -- tearing advertising down and back up
+  // mid-DFU is exactly the kind of avoidable disturbance that costs a 20-minute bootloader
+  // recovery cycle. Bench mode simply pauses until the connection ends.
+  if (Bluefruit.connected()) return;
+
+  const uint32_t nowMs = millis();
+  if (nowMs - g_benchLastBroadcastMs < BENCH_LIVE_INTERVAL_MS) return;
+  g_benchLastBroadcastMs = nowMs;
+
+  uint32_t data = 0;
+  uint16_t status = 0;
+  const bool readingValid = fdcReadChannel0(data, status);
+  g_benchLastFdcStatus = status;
+
+  float batteryMv = 0;
+  bool charging = false;
+  bool otaPowerOk = false;
+  benchReadPower(batteryMv, charging, otaPowerOk);
+
+  g_bleWakeCount++;
+  // Stop before re-arming. bleStartAdv() reconfigures the advertising set from scratch
+  // (clearData/addData/start); restarting from a known-stopped state is one less SoftDevice
+  // state question to answer than reconfiguring a set that is already running.
+  if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+  bleStartAdv(data, batteryMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0, readingValid);
 }
 
 // --------------------------------------------------------------- setup ----
@@ -882,6 +1247,110 @@ void printWatchdogStatus() {
   Serial.println(NRF_USBD->LOWPOWER ? "1(low-power)" : "0(normal power)");
 }
 
+// 2026-09-20: the precondition for delivering bootloader 1.0.4 OVER THE AIR, on a board with no
+// SWD underneath it.
+//
+// A bootloader update is not written by the bootloader. dfu_activate_bl() only persists
+// bank_1 = BANK_VALID_BOOT plus bl_image_size into the settings page and resets; the actual
+// overwrite of the bootloader region is done by the MBR, via SD_MBR_COMMAND_COPY_BL, on the next
+// boot (dfu_bl_image_swap(), lib/sdk11/.../dfu_single_bank.c). The MBR lives in the first 4 KB and
+// is never erased, so the copy itself is restartable -- but ONLY if the MBR has a params page to
+// journal its progress into, and it finds that page through UICR.NRFFW[1].
+//
+// bootloader_settings.c writes that UICR word if it reads blank, so on any board that has run an
+// Adafruit-derived bootloader it should already be 0x000FE000 (nRF52840; dfu_types.h picks
+// 0x0007E000 on the 512 KB parts). "Should" is the whole problem: if that word is erased, an
+// interrupted MBR copy has nowhere to resume from and the board is a brick with no SWD to fix it.
+// That is the single fact this command exists to establish, and it cannot be read any other way
+// without SWD.
+//
+// Also dumps the bootloader settings page, because the same read answers the anti-rollback floor
+// question (MSV3 1.0.2+ stores it there) and the floor decides which packages this probe will
+// still accept. Layout is bootloader_types.h as patched by msv3-1.0.2-anti-rollback.patch, whose
+// own _Static_asserts pin msv3_version_floor at offset 32 and its complement at 36.
+//
+// Pure reads. Nothing here writes flash, UICR, or the settings page.
+void printBootloaderProvisioning() {
+  char buf[120];
+
+  // UICR is memory-mapped and readable by the application at any time. Use the literal addresses
+  // the bootloader's own dfu_types.h names (NRF_UICR_BASE + 0x14 / + 0x18) rather than an NRFFW[]
+  // index, so this cannot silently drift if a core header renumbers the array.
+  const uint32_t bootStart = *(volatile uint32_t *)0x10001014UL;
+  const uint32_t mbrParams = *(volatile uint32_t *)0x10001018UL;
+
+  // nRF52840 values from lib/sdk11/components/libraries/bootloader_dfu/dfu_types.h.
+  const uint32_t expectBootStart = 0x000F4000UL;
+  const uint32_t expectMbrParams = 0x000FE000UL;
+
+  Serial.println(F("UICR bootloader provisioning:"));
+  snprintf(buf, sizeof(buf), "  NRFFW[0] @0x10001014 (boot start)   = 0x%08lX  expect 0x%08lX  %s",
+           (unsigned long)bootStart, (unsigned long)expectBootStart,
+           bootStart == expectBootStart ? "OK" : "MISMATCH");
+  Serial.println(buf);
+  snprintf(buf, sizeof(buf), "  NRFFW[1] @0x10001018 (MBR params)   = 0x%08lX  expect 0x%08lX  %s",
+           (unsigned long)mbrParams, (unsigned long)expectMbrParams,
+           mbrParams == expectMbrParams ? "OK" : "MISMATCH");
+  Serial.println(buf);
+
+  Serial.print(F("  VERDICT: "));
+  if (mbrParams == expectMbrParams) {
+    Serial.println(F("MBR params page IS provisioned -- an interrupted SD_MBR_COMMAND_COPY_BL"));
+    Serial.println(F("           can resume on the next boot. OTA bootloader update is recoverable."));
+  } else if (mbrParams == 0xFFFFFFFFUL) {
+    Serial.println(F("UICR.NRFFW[1] IS ERASED. DO NOT ATTEMPT AN OTA BOOTLOADER UPDATE."));
+    Serial.println(F("           An interrupted MBR copy would have nowhere to resume from."));
+  } else {
+    Serial.println(F("UNEXPECTED value -- do not attempt an OTA bootloader update until explained."));
+  }
+
+  // Bootloader settings page. nRF52840: 0x000FF000.
+  const volatile uint8_t *s = (const volatile uint8_t *)0x000FF000UL;
+  const uint16_t bank0     = *(const volatile uint16_t *)(s + 0);
+  const uint16_t bank0Crc  = *(const volatile uint16_t *)(s + 2);
+  const uint16_t bank1     = *(const volatile uint16_t *)(s + 4);
+  const uint32_t bank0Size = *(const volatile uint32_t *)(s + 8);
+  const uint32_t sdSize    = *(const volatile uint32_t *)(s + 12);
+  const uint32_t blSize    = *(const volatile uint32_t *)(s + 16);
+  const uint32_t appSize   = *(const volatile uint32_t *)(s + 20);
+  const uint32_t sdStart   = *(const volatile uint32_t *)(s + 24);
+  const uint32_t vMagic    = *(const volatile uint32_t *)(s + 28);
+  const uint32_t vFloor    = *(const volatile uint32_t *)(s + 32);
+  const uint32_t vFloorCpl = *(const volatile uint32_t *)(s + 36);
+
+  Serial.println(F("bootloader settings page @0x000FF000:"));
+  snprintf(buf, sizeof(buf), "  bank_0=0x%04X bank_0_crc=0x%04X bank_1=0x%04X bank_0_size=%lu",
+           (unsigned)bank0, (unsigned)bank0Crc, (unsigned)bank1, (unsigned long)bank0Size);
+  Serial.println(buf);
+  snprintf(buf, sizeof(buf), "  sd_image_size=%lu bl_image_size=%lu app_image_size=%lu sd_image_start=0x%08lX",
+           (unsigned long)sdSize, (unsigned long)blSize, (unsigned long)appSize,
+           (unsigned long)sdStart);
+  Serial.println(buf);
+
+  // BANK_VALID_BOOT in bank_1 means a bootloader swap is STAGED and the next reset performs it.
+  // Seeing it here on an idle probe would mean a previous update never completed.
+  if (bank1 == 0x0001) {
+    Serial.println(F("  NOTE: bank_1=0x0001 (BANK_VALID_BOOT) -- a bootloader swap is STAGED."));
+  }
+
+  // The floor is meaningful only when the magic matches AND floor ^ complement is all ones; the
+  // patch fails OPEN on anything else, so an unreadable floor accepts any version rather than
+  // refusing the probe's own rescue image.
+  const bool floorValid = (vMagic == 0x4D535633UL) &&
+                          ((vFloor ^ vFloorCpl) == 0xFFFFFFFFUL);
+  snprintf(buf, sizeof(buf), "  msv3_version_magic=0x%08lX floor=%lu complement=0x%08lX",
+           (unsigned long)vMagic, (unsigned long)vFloor, (unsigned long)vFloorCpl);
+  Serial.println(buf);
+  Serial.print(F("  anti-rollback floor: "));
+  if (floorValid) {
+    snprintf(buf, sizeof(buf), "VALID -- this probe refuses any signed application below %lu",
+             (unsigned long)vFloor);
+    Serial.println(buf);
+  } else {
+    Serial.println(F("NOT RECORDED (fails open -- bootloader 1.0.0/1.0.1, or a fresh page)"));
+  }
+}
+
 void printHelp() {
   Serial.println(F("  led on|off|blink        - status LED (P1.10)"));
   Serial.println(F("  i2cscan                 - scan I2C bus 0x08-0x77"));
@@ -905,6 +1374,8 @@ void printHelp() {
   Serial.println(F("  chgstatus                - read BQ25170 STAT/PG charger status pins"));
   Serial.println(F("  divnode                  - analogRead DIV_NODE (EC-check midpoint), P0.03/AIN1 bodge"));
   Serial.println(F("  wdtstatus                - report watchdog/LFCLK hardware status registers"));
+  Serial.println(F("  uicr                     - UICR boot-start/MBR-params words + bootloader settings page;"));
+  Serial.println(F("                             says whether an OTA BOOTLOADER update could survive a power cut"));
   Serial.println(F("  i2cdebug                 - report the I2C forensic breadcrumb (last step/call count)"));
 #ifdef MSV3_SENSOR_ID
   Serial.println(F("  dfu                      - USB-gated reset into resident BLE recovery bootloader"));
@@ -913,6 +1384,10 @@ void printHelp() {
   Serial.println(F("  blestart                 - init BLE, advertise continuously (one-shot reading) until blestop"));
   Serial.println(F("  blestop                  - stop advertising"));
   Serial.println(F("  blecycle <n>             - run n MSV2-style wake/measure/advertise/sleep cycles (~10s each)"));
+  Serial.println(F("  bench on [muxCode]       - LIVE broadcast: re-read FDC + re-advertise every 250ms"));
+  Serial.println(F("  bench off                - stop the live broadcast (probe stays awake)"));
+  Serial.println(F("  bench                    - show live-broadcast state, last mux code and FDC STATUS"));
+  Serial.println(F("  identify                 - blink the status LED (same action the receiver requests)"));
   Serial.println(F("  sleep                    - put all ICs into their lowest-power state"));
   Serial.println(F("  wake                     - full wake incl. FDC reconfigure + settle"));
   Serial.println(F("  wakeprofile <n>          - cold-wake then print n UNDISCARDED conversions (measures real settle time)"));
@@ -1001,6 +1476,11 @@ void doIdrive(int code) {
 void setMux(uint8_t code) {
   digitalWrite(PIN_MUX_A0, (code & 0x01) ? HIGH : LOW);
   digitalWrite(PIN_MUX_A1, (code & 0x02) ? HIGH : LOW);
+  // Recorded here, at the single place the mux actually moves, so the bench advertisement can
+  // always say which code its DATA_CH0 came from without every caller remembering to report it.
+  // A live count is meaningless on the Bench page without knowing whether it is the electrode or
+  // the EC-check path being measured.
+  g_benchLastMuxCode = code & 0x03;
 }
 
 // Confirmed 2026-08-21 against TMUX1109's real Table 6-1 truth table (EN=1,
@@ -1752,6 +2232,8 @@ void handleCommand(String cmd) {
   } else if (cmd == "wdtstatus") {
     printResetReason();
     printWatchdogStatus();
+  } else if (cmd == "uicr") {
+    printBootloaderProvisioning();
   } else if (cmd == "i2cdebug") {
     char buf[100];
     snprintf(buf, sizeof(buf), "  i2cStep=%lu i2cStepMs=%lu i2cCallCount=%lu (now=%lu)",
@@ -1828,7 +2310,8 @@ void handleCommand(String cmd) {
     } else {
       uint32_t data = 0;
       uint16_t status = 0;
-      fdcReadChannel0(data, status);
+      const bool readingValid = fdcReadChannel0(data, status);
+      g_benchLastFdcStatus = status;
       float batteryMv = 0;
       bool charging = false;
 #ifdef MSV3_SENSOR_ID
@@ -1844,7 +2327,8 @@ void handleCommand(String cmd) {
                         (batteryReadingValid && batteryMv >= (float)OTA_MIN_BATTERY_MV);
 #endif
       g_bleWakeCount++;
-      bleStartAdv(data, batteryMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0);
+      bleStartAdv(data, batteryMv, charging, otaPowerOk, BLE_ADV_FAST_INTERVAL_UNITS, 0,
+                  readingValid);
       Serial.print(F("  advertising as \""));
       Serial.print(BLE_DEVICE_NAME);
       Serial.println(F("\" continuously (until blestop)"));
@@ -1928,9 +2412,72 @@ void handleCommand(String cmd) {
   } else if (cmd.startsWith("wakeprofile")) {
     int n = cmd.length() > 12 ? cmd.substring(12).toInt() : 12;
     doWakeProfile(n);
+  } else if (cmd == "bench on" || cmd.startsWith("bench on ")) {
+    // Optional mux code: `bench on 2` measures across the C17 pads instead of the electrode.
+    int muxCode = -1;
+    if (cmd.length() > 9) {
+      muxCode = cmd.substring(9).toInt();
+      if (muxCode < 0 || muxCode > 3) {
+        Serial.println(F("  bench on: mux code must be 0-3"));
+        return;
+      }
+    }
+    bleInitOnce();
+    if (!g_bleInited) {
+      Serial.println(F("  bench on aborted -- BLE did not initialise"));
+      return;
+    }
+    // One wake here, not one per tick. See serviceBenchLive()'s comment.
+    if (!probeWake(BLE_WAKE_DISCARD_CONVERSIONS)) {
+      Serial.println(F("  bench on aborted -- probeWake() failed (FDC/I2C not responding)"));
+      return;
+    }
+    if (muxCode >= 0) setMux((uint8_t)muxCode);
+    g_benchLiveActive = true;
+    g_benchLastBroadcastMs = millis() - BENCH_LIVE_INTERVAL_MS;  // broadcast on the next loop pass
+    Serial.print(F("  bench live broadcast ON -- mux code "));
+    Serial.print(g_benchLastMuxCode);
+    Serial.print(F(" ("));
+    Serial.print(muxCodeLabel(g_benchLastMuxCode));
+    Serial.print(F("), refreshing every "));
+    Serial.print(BENCH_LIVE_INTERVAL_MS);
+    Serial.println(F("ms until `bench off`"));
+    Serial.println(F("  the probe stays awake and on air throughout; USB power is assumed"));
+    Serial.println(F("  command scanner ON -- the receiver's Bench page can now blink this LED"));
+  } else if (cmd == "bench off") {
+    g_benchLiveActive = false;
+    if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+    Serial.println(F("  bench live broadcast OFF -- advertiser stopped, probe left awake"));
+    Serial.println(F("  (run `sleep` to put the front end back down)"));
+  } else if (cmd == "identify") {
+    // Local trigger for the same blink the receiver's Bench page requests over the air. Useful
+    // for proving the LED path before blaming the radio.
+    startIdentifyBlink();
+    Serial.println(F("  identify: blinking the status LED"));
+  } else if (cmd == "bench") {
+    Serial.print(F("  bench live broadcast: "));
+    Serial.println(g_benchLiveActive ? F("ON") : F("OFF"));
+    Serial.print(F("  last mux code "));
+    Serial.print(g_benchLastMuxCode);
+    Serial.print(F(", last FDC STATUS 0x"));
+    Serial.println(g_benchLastFdcStatus, HEX);
+    Serial.print(F("  command scanner: "));
+    Serial.println(g_benchScannerRunning ? F("running (identify available)") : F("stopped"));
+    Serial.print(F("  commands accepted "));
+    Serial.print(g_benchCmdAcceptedCount);
+    Serial.print(F(", executed "));
+    Serial.print(g_benchCmdExecutedCount);
+    Serial.print(F(", last opcode 0x"));
+    Serial.println(g_benchCmdLastOp, HEX);
+    Serial.println(F("  usage: bench on [muxCode] | bench off"));
   } else if (cmd == "blestop") {
+    // Also clears bench live mode. Without this, serviceBenchLive() would re-arm the advertiser
+    // on the very next loop pass and `blestop` would silently appear not to work.
+    const bool wasBenchLive = g_benchLiveActive;
+    g_benchLiveActive = false;
     Bluefruit.Advertising.stop();
     Serial.println(F("  advertising stopped"));
+    if (wasBenchLive) Serial.println(F("  (bench live broadcast also turned off)"));
   } else if (cmd.startsWith("blecycle ")) {
     int n = cmd.substring(9).toInt();
     if (n <= 0) n = 3;
@@ -1949,6 +2496,24 @@ void loop() {
 #ifdef MSV3_SENSOR_ID
   servicePeriodicOtaWindow();
 #endif
+  // After the OTA window service, never before it: servicePeriodicOtaWindow() backs off whenever
+  // an advertiser is already running, so letting it look first keeps its connected/DFU handling
+  // authoritative while bench mode holds the radio.
+  serviceBenchLive();
+  serviceBenchCommands();
+  // The scanner is suspended for the whole of any connection. A DFU transfer is the one thing on
+  // this board that must not compete for radio time, and a ~20-minute bootloader recovery is the
+  // price of getting that wrong.
+  //
+  // Scanning is also tied to bench live mode rather than run unconditionally, because this
+  // sketch's own `sleepbench` and `wakeprofile` commands MEASURE current draw. A continuously
+  // scanning radio would silently invalidate every one of those numbers. `bench on` is the
+  // explicit statement "this board is on USB doing a demo", which is exactly when scanning is
+  // free; any other time the scanner stays off.
+  if (g_bleInited) {
+    if (Bluefruit.connected() || !g_benchLiveActive) benchScannerStop();
+    else benchScannerStart();
+  }
   while (Serial.available()) {
     char c = (char)Serial.read();
     if (c == '\n' || c == '\r') {

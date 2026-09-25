@@ -1,0 +1,281 @@
+diff --git a/lib/sdk/components/libraries/hci/hci_mem_pool.c b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+--- a/lib/sdk/components/libraries/hci/hci_mem_pool.c
++++ b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+@@ -65,6 +65,49 @@
+ } rx_buffer_queue_t;
+ 
+ static bool              m_is_tx_allocated;                         /**< Boolean value to determine if the TX buffer is allocated. */
++
++/* MSV3_POOL_OWNER (1.0.16): THE WIRED DFU ROOT CAUSE, AND WHY THE OBVIOUS FIX IS WRONG.
++ *
++ * There is ONE hci_mem_pool in the image and BOTH DFU transports use it -- dfu_transport_ble.c's
++ * app_data_process() calls rx_produce / rx_data_size_set / rx_extract / rx_consume on the same
++ * queue as the serial transport. Stock 0.11.0 only ever brought ONE of them up
++ * (`if (_ota_dfu) ble_stack_init(); else usb_init();`) so a single shared pool was safe by
++ * construction. MSV3 1.0.4 made both live at once, and bootloader.c now starts them in this order:
++ *
++ *     (void) dfu_transport_serial_update_start();   // opens the pool, produces slot 0,
++ *                                                   // and registers slot 0 with the SLIP layer
++ *     err_code = dfu_transport_ble_update_start();  // calls hci_mem_pool_open() AGAIN
++ *
++ * That second open zeroes write_index, read_index and every count while SLIP is still holding
++ * slot 0, so the pool's read_index runs permanently one ahead of the buffer SLIP is filling and
++ * every extract after the first returns a buffer that was produced but never written -- all zeros,
++ * whose first byte reads as INVALID_PACKET. Measured on probe 8 with bootloader 1.0.14: all nine
++ * trace values matched that replay exactly. It also explains why START always worked and nothing
++ * after it did -- rx_data_size_set() wrote slot 15 instead of slot 0, so START was extracted with
++ * a nonsense length too, but its payload POINTER was correct and dfu_start_pkt_handle() reads the
++ * image sizes out of the packet struct rather than from that length.
++ *
++ * 1.0.15 tried to fix this by opening the pool ONCE, and that release is WITHHELD because it would
++ * have broken BLE recovery. The second open is not purely destructive: it is also what DISCARDS
++ * the serial transport's outstanding reservation and hands BLE a clean pool, which is exactly why
++ * BLE OTA has worked all along. Suppress it and BLE inherits serial's produced-but-unfilled
++ * slot 0 -- BLE's first packet then produces slot 1, sets slot 1's length and extracts slot 0, the
++ * identical failure with the transports reversed, on the only channel that can recover a probe
++ * whose SWD pads are under conformal coating.
++ *
++ * The invariant is not "initialise once". It is EXACTLY ONE TRANSPORT MAY OWN THIS POOL FOR A
++ * SESSION, AND IT INITIALISES THE POOL FOR ITSELF AT ITS FIRST INGRESS. BLE claims at its first
++ * DFU data write and finds the pool already clean from boot, so it behaves byte-for-byte as it
++ * does today. Serial claims before the first CDC byte is drained and re-initialises the pool for
++ * itself. The loser never reaches rx_produce, rx_data_size_set, rx_extract or rx_consume at all --
++ * which is strictly more than dfu_transport_claim() does, since that only gates the DFU callback
++ * and leaves the pool calls reachable. Ownership lives in .bss and is cleared by the system reset
++ * that ends every session. */
++#define MSV3_POOL_OWNER_NONE    0u
++#define MSV3_POOL_OWNER_SERIAL  1u
++#define MSV3_POOL_OWNER_BLE     2u
++
++static uint8_t           m_pool_owner;
+ static rx_buffer_elem_t  m_rx_buffer_elem_queue[HCI_RX_BUF_QUEUE_SIZE] __ALIGN(4); /**< RX buffer element instances. */
+ static rx_buffer_queue_t m_rx_buffer_queue;                         /**< RX buffer queue element instance. */
+ 
+@@ -76,6 +119,27 @@
+  * DFU layer classifies is not the buffer that was validated. Proving that needs the pool's own
+  * bookkeeping at the moment of extraction, and its indices are file-static. These two functions
+  * READ and never write; nothing about the pool's behaviour changes. */
++bool hci_mem_pool_try_claim(uint8_t owner)
++{
++    if (m_pool_owner == owner)
++    {
++        return true;        /* already ours */
++    }
++    if (m_pool_owner != MSV3_POOL_OWNER_NONE)
++    {
++        return false;       /* the other transport got here first and keeps it until reset */
++    }
++    m_pool_owner = owner;
++    return true;
++}
++
++
++uint8_t hci_mem_pool_owner(void)
++{
++    return m_pool_owner;
++}
++
++
+ uint8_t hci_mem_pool_rx_slot_of(const uint8_t * p_buffer)
+ {
+     uint32_t index;
+diff --git a/lib/sdk/components/libraries/hci/hci_mem_pool.h b/lib/sdk/components/libraries/hci/hci_mem_pool.h
+--- a/lib/sdk/components/libraries/hci/hci_mem_pool.h
++++ b/lib/sdk/components/libraries/hci/hci_mem_pool.h
+@@ -158,6 +158,26 @@
+  */
+ uint32_t hci_mem_pool_rx_consume(uint8_t * p_buffer);
+ 
++/**@brief MSV3 1.0.16: exclusive pool ownership. See MSV3_POOL_OWNER in hci_mem_pool.c.
++ *
++ * One hci_mem_pool serves both DFU transports and it is not multiplexed, so exactly one of them
++ * may use it per session. The winner claims at its FIRST INGRESS and initialises the pool for
++ * itself; the loser must not call any rx_* function at all.
++ */
++#define MSV3_POOL_OWNER_NONE    0u
++#define MSV3_POOL_OWNER_SERIAL  1u
++#define MSV3_POOL_OWNER_BLE     2u
++
++bool    hci_mem_pool_try_claim(uint8_t owner);
++uint8_t hci_mem_pool_owner(void);
++
++/* There is deliberately NO release. Handing the pool to the other transport mid-boot would give it
++ * the previous owner's stale reservation, which is precisely the defect this fixes; a safe
++ * transfer would have to stop the loser's decoding, prove no queued DFU element still holds a pool
++ * pointer, and reset the pool, in that order. Every failure path here ends in a system reset
++ * (measured RESETREAS 0x04 SREQ on probe 8), and that reset clears ownership because it lives in
++ * .bss. Keeping ownership until then is the safe choice, not an oversight. */
++
+ /**@brief MSV3 1.0.14: which pool slot a pointer is, or 0xFF if it is not a pool buffer.
+  *
+  * Read-only. Used to prove whether the buffer handed to the DFU transport is the same one the
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.c b/lib/sdk/components/libraries/hci/hci_slip.c
+--- a/lib/sdk/components/libraries/hci/hci_slip.c
++++ b/lib/sdk/components/libraries/hci/hci_slip.c
+@@ -396,6 +396,14 @@
+ }
+ 
+ 
++/* MSV3 1.0.16: may the serial transport use the shared RX pool at all? hci_transport.c provides
++ * the real one; weak so a build without it still links and behaves exactly as stock. */
++__attribute__((weak)) bool msv3_serial_rx_claim(void)
++{
++  return true;
++}
++
++
+ /* MSV3 1.0.8: the drain, now gated and callable from the main loop.
+  *
+  * Stock drained the CDC FIFO dry on every rx callback, which is what let HCI acknowledge frames
+@@ -460,8 +468,12 @@
+    * mid-transmission would call ack_transmit() again and overwrite the bytes hci_slip_tx_pump()
+    * is about to finish sending. Stopping the drain leaves the bytes in the CDC FIFO, which NAKs
+    * the host at the USB layer -- it simply waits, with no host-side change required. */
+-  while ( tud_cdc_available() && !rx_buffer_overflowed() && msv3_serial_rx_may_drain()
+-          && (m_current_state != SLIP_TRANSMITTING) )
++  /* MSV3 1.0.16: msv3_serial_rx_claim() comes FIRST, and before rx_buffer_overflowed(), because on
++   * the first call it is what produces the buffer and registers it -- and rx_buffer_overflowed()
++   * reports true while mp_rx_buffer is still NULL. It returns false when BLE owns the pool, which
++   * leaves the bytes in the CDC FIFO and NAKs the host at the USB layer. */
++  while ( tud_cdc_available() && msv3_serial_rx_claim() && !rx_buffer_overflowed()
++          && msv3_serial_rx_may_drain() && (m_current_state != SLIP_TRANSMITTING) )
+   {
+     int8_t ch = tud_cdc_read_char();
+     handle_rx_byte((uint8_t) ch);
+diff --git a/lib/sdk/components/libraries/hci/hci_transport.c b/lib/sdk/components/libraries/hci/hci_transport.c
+--- a/lib/sdk/components/libraries/hci/hci_transport.c
++++ b/lib/sdk/components/libraries/hci/hci_transport.c
+@@ -672,6 +672,60 @@
+ }
+ 
+ 
++/* MSV3 1.0.16: has the serial side already taken the pool and re-established SLIP on it? */
++static bool m_serial_pool_ready;
++
++/* MSV3 1.0.16: claim the shared RX pool for the SERIAL transport, at its first ingress.
++ *
++ * Called from hci_slip.c's drain loop before a single CDC byte is taken. Returns false when BLE
++ * already owns the pool, which leaves the bytes in the CDC FIFO and NAKs the host at the USB
++ * layer -- the host simply waits, with no host-side change required.
++ *
++ * On the FIRST successful claim the pool has to be re-established for us, because boot left it
++ * initialised for BLE: bootloader.c starts serial and then BLE, and the BLE update_start's
++ * hci_mem_pool_open() reset the indices after hci_transport_open() had already produced a buffer
++ * and registered it with SLIP. So the pool and SLIP disagree until we fix both together here --
++ * reset, produce, register, and clear the decode-ready flag so no stale extract can fire.
++ * See MSV3_POOL_OWNER in hci_mem_pool.c. */
++bool msv3_serial_rx_claim(void)
++{
++    uint32_t err_code;
++
++    if (!hci_mem_pool_try_claim(MSV3_POOL_OWNER_SERIAL))
++    {
++        return false;
++    }
++    if (m_serial_pool_ready)
++    {
++        return true;
++    }
++
++    err_code = hci_mem_pool_open();
++    if (NRF_SUCCESS != err_code)
++    {
++        return false;
++    }
++
++    mp_slip_used_rx_buffer = NULL;
++    err_code = hci_mem_pool_rx_produce(HCI_RX_BUF_SIZE, (void **)&mp_slip_used_rx_buffer);
++    if ((NRF_SUCCESS != err_code) || (NULL == mp_slip_used_rx_buffer))
++    {
++        return false;
++    }
++
++    err_code = hci_slip_rx_buffer_register(mp_slip_used_rx_buffer, HCI_RX_BUF_SIZE);
++    if (NRF_SUCCESS != err_code)
++    {
++        return false;
++    }
++
++    /* Nothing has been decoded into the new buffer yet; a stale true here would extract it. */
++    m_is_slip_decode_ready = false;
++    m_serial_pool_ready    = true;
++    return true;
++}
++
++
+ uint32_t hci_transport_open(void)
+ {
+     mp_tx_buffer                 = NULL;
+@@ -873,6 +927,35 @@
+                                        (length >= PKT_HDR_SIZE))
+                                     ? (*pp_buffer)[0] : 0xEEu;
+ 
++            /* MSV3 1.0.15: FAIL CLOSED. Stock adjusts the pointer and the length here
++             * unconditionally -- including when the extract failed, and including when it
++             * "succeeded" for a buffer whose .length was never set. Subtracting six from zero
++             * yields 0xFFFA and the +4 yields a pointer into a buffer nobody ever wrote, which is
++             * precisely how a bookkeeping slip became a silently corrupt DFU frame instead of a
++             * clean refusal. The pool fix above removes the cause; this removes the AMPLIFIER, so
++             * that any future desync is reported rather than transmuted into garbage data.
++             *
++             * The buffer is consumed on the refusal path: it was successfully extracted, so the
++             * pool has already moved read_index past it and nothing else will ever give it back. */
++            if (NRF_SUCCESS != err_code)
++            {
++                *pp_buffer          = NULL;
++                *p_length           = 0;
++                msv3_hci_adj_length = 0;
++                return err_code;
++            }
++            if ((NULL == *pp_buffer) || (length < (PKT_HDR_SIZE + PKT_CRC_SIZE)))
++            {
++                if (NULL != *pp_buffer)
++                {
++                    (void) hci_mem_pool_rx_consume(*pp_buffer);
++                }
++                *pp_buffer          = NULL;
++                *p_length           = 0;
++                msv3_hci_adj_length = 0;
++                return NRF_ERROR_INVALID_LENGTH;
++            }
++
+             length                -= (PKT_HDR_SIZE + PKT_CRC_SIZE);
+ 
+             *p_length              = (uint16_t)length;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -472,6 +472,21 @@
+     }
+ 
+     uint32_t length = p_evt->evt.ble_dfu_pkt_write.len;
++
++    /* MSV3 1.0.16: claim the shared RX pool before touching it. One hci_mem_pool serves both DFU
++     * transports and it is not multiplexed, so whichever transport presents data first owns it for
++     * the session. BLE finds the pool already clean from boot -- bootloader.c starts BLE last, so
++     * its update_start's hci_mem_pool_open() was the final initialisation -- which is why this
++     * path behaves byte-for-byte as it did before and BLE recovery is unaffected.
++     * See MSV3_POOL_OWNER in hci_mem_pool.c. */
++    if (!hci_mem_pool_try_claim(MSV3_POOL_OWNER_BLE))
++    {
++        err_code = ble_dfu_response_send(p_dfu,
++                                         BLE_DFU_RECEIVE_APP_PROCEDURE,
++                                         BLE_DFU_RESP_VAL_NOT_SUPPORTED);
++        APP_ERROR_CHECK(err_code);
++        return;
++    }
+ 
+     err_code = hci_mem_pool_rx_produce(length, (void **) &mp_rx_buffer);
+     if (err_code != NRF_SUCCESS)
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x010EU        /* 1.0.14 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x0110U        /* 1.0.16 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u

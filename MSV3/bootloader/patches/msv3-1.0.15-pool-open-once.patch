@@ -1,0 +1,110 @@
+diff --git a/lib/sdk/components/libraries/hci/hci_mem_pool.c b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+--- a/lib/sdk/components/libraries/hci/hci_mem_pool.c
++++ b/lib/sdk/components/libraries/hci/hci_mem_pool.c
+@@ -65,6 +65,40 @@
+ } rx_buffer_queue_t;
+ 
+ static bool              m_is_tx_allocated;                         /**< Boolean value to determine if the TX buffer is allocated. */
++
++/* MSV3_POOL_OPEN_ONCE (1.0.15): THE WIRED DFU ROOT CAUSE.
++ *
++ * There is ONE hci_mem_pool in the image and BOTH DFU transports use it. Stock 0.11.0 only ever
++ * brought one of them up -- `if (_ota_dfu) ble_stack_init(); else usb_init();` -- so a single
++ * shared pool was safe by construction. MSV3 1.0.4 made both live at once so a coated probe keeps
++ * a wired way back in, and bootloader.c now starts them in this order:
++ *
++ *     (void) dfu_transport_serial_update_start();   // opens the pool, produces slot 0,
++ *                                                   // and registers slot 0 with the SLIP layer
++ *     err_code = dfu_transport_ble_update_start();  // calls hci_mem_pool_open() AGAIN
++ *
++ * The second open zeroed write_index, read_index and every count while the SLIP layer was still
++ * holding slot 0. From that point the pool's read_index ran permanently one ahead of the buffer
++ * SLIP was actually filling, so every extract after the first returned the buffer that would be
++ * used NEXT -- produced, never written, its .length never set.
++ *
++ * Measured on probe 8 with bootloader 1.0.14, and every number matched the replay: the INIT frame
++ * was completed into slot 0 while rx_extract() returned slot 1 with raw length 0 and rc
++ * NRF_SUCCESS, giving the DFU layer a pointer into an all-zero buffer whose first byte reads as
++ * INVALID_PACKET. That is the NRF_ERROR_INVALID_PARAM that nine diagnostic releases chased.
++ *
++ * It also explains why START always worked and nothing after it did: after the reset,
++ * rx_data_size_set() wrote slot 15 instead of slot 0, so START was extracted with a nonsense
++ * length too -- but its payload POINTER was still correct, and dfu_start_pkt_handle() reads the
++ * image sizes out of the packet struct rather than from that length. So START succeeded on a
++ * broken length, erased the application, and every frame after it got a virgin buffer.
++ *
++ * Opening once per boot is the whole fix. The flag lives in .bss, which the reset that ends every
++ * DFU session re-zeroes, so a fresh session still gets a fresh pool. hci_mem_pool_close() is left
++ * a no-op exactly as stock: clearing this from the serial transport's close path could pull the
++ * pool out from under a BLE transfer, and BLE is the only recovery channel on a probe whose SWD
++ * pads are under conformal coating. */
++static bool              m_is_pool_open;
+ static rx_buffer_elem_t  m_rx_buffer_elem_queue[HCI_RX_BUF_QUEUE_SIZE] __ALIGN(4); /**< RX buffer element instances. */
+ static rx_buffer_queue_t m_rx_buffer_queue;                         /**< RX buffer queue element instance. */
+ 
+@@ -108,6 +142,14 @@
+ 
+ uint32_t hci_mem_pool_open(void)
+ {
++    /* MSV3_POOL_OPEN_ONCE: a second transport opening the pool must NOT reset it out from under
++     * the first. See the note above m_is_pool_open. */
++    if (m_is_pool_open)
++    {
++        return NRF_SUCCESS;
++    }
++    m_is_pool_open                         = true;
++
+     m_is_tx_allocated                      = false;
+     m_rx_buffer_queue.p_buffer             = m_rx_buffer_elem_queue;
+     m_rx_buffer_queue.free_window_count    = HCI_RX_BUF_QUEUE_SIZE;
+diff --git a/lib/sdk/components/libraries/hci/hci_transport.c b/lib/sdk/components/libraries/hci/hci_transport.c
+--- a/lib/sdk/components/libraries/hci/hci_transport.c
++++ b/lib/sdk/components/libraries/hci/hci_transport.c
+@@ -873,6 +873,35 @@
+                                        (length >= PKT_HDR_SIZE))
+                                     ? (*pp_buffer)[0] : 0xEEu;
+ 
++            /* MSV3 1.0.15: FAIL CLOSED. Stock adjusts the pointer and the length here
++             * unconditionally -- including when the extract failed, and including when it
++             * "succeeded" for a buffer whose .length was never set. Subtracting six from zero
++             * yields 0xFFFA and the +4 yields a pointer into a buffer nobody ever wrote, which is
++             * precisely how a bookkeeping slip became a silently corrupt DFU frame instead of a
++             * clean refusal. The pool fix above removes the cause; this removes the AMPLIFIER, so
++             * that any future desync is reported rather than transmuted into garbage data.
++             *
++             * The buffer is consumed on the refusal path: it was successfully extracted, so the
++             * pool has already moved read_index past it and nothing else will ever give it back. */
++            if (NRF_SUCCESS != err_code)
++            {
++                *pp_buffer          = NULL;
++                *p_length           = 0;
++                msv3_hci_adj_length = 0;
++                return err_code;
++            }
++            if ((NULL == *pp_buffer) || (length < (PKT_HDR_SIZE + PKT_CRC_SIZE)))
++            {
++                if (NULL != *pp_buffer)
++                {
++                    (void) hci_mem_pool_rx_consume(*pp_buffer);
++                }
++                *pp_buffer          = NULL;
++                *p_length           = 0;
++                msv3_hci_adj_length = 0;
++                return NRF_ERROR_INVALID_LENGTH;
++            }
++
+             length                -= (PKT_HDR_SIZE + PKT_CRC_SIZE);
+ 
+             *p_length              = (uint16_t)length;
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x010EU        /* 1.0.14 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x010FU        /* 1.0.15 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u

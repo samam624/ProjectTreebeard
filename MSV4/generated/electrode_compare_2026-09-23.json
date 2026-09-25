@@ -1,0 +1,301 @@
+{
+  "generated": "2026-09-23",
+  "source": "MSV4/scripts/msv4_electrode_compare.py over msv4_electrode_fieldsolve.py",
+  "conditions": {
+    "frequency_Hz": 1000000.0,
+    "board_thickness_mm": 1.6,
+    "soldermask_um": 20,
+    "Rs_ohm": 1000.0,
+    "Cp_F": 1.2e-11,
+    "vdd_mV": 3300.0,
+    "msv4_plate_length_mm": 81.1,
+    "v12_length_mm": 55.0,
+    "v12_length_is_assumed": true,
+    "v12_single_sided": true
+  },
+  "lossless_per_metre": [
+    {
+      "er": 1,
+      "msv4_both_pF_per_m": 74.8,
+      "msv4_single_pF_per_m": 53.5,
+      "v12_pF_per_m": 63.0,
+      "ratio_both_over_v12": 1.188,
+      "ratio_single_over_v12": 0.85
+    },
+    {
+      "er": 4,
+      "msv4_both_pF_per_m": 148.1,
+      "msv4_single_pF_per_m": 101.4,
+      "v12_pF_per_m": 128.6,
+      "ratio_both_over_v12": 1.152,
+      "ratio_single_over_v12": 0.788
+    },
+    {
+      "er": 10,
+      "msv4_both_pF_per_m": 286.1,
+      "msv4_single_pF_per_m": 182.9,
+      "v12_pF_per_m": 240.9,
+      "ratio_both_over_v12": 1.188,
+      "ratio_single_over_v12": 0.759
+    },
+    {
+      "er": 15,
+      "msv4_both_pF_per_m": 394.4,
+      "msv4_single_pF_per_m": 243.2,
+      "v12_pF_per_m": 325.1,
+      "ratio_both_over_v12": 1.213,
+      "ratio_single_over_v12": 0.748
+    },
+    {
+      "er": 20,
+      "msv4_both_pF_per_m": 497.7,
+      "msv4_single_pF_per_m": 299.1,
+      "v12_pF_per_m": 404.3,
+      "ratio_both_over_v12": 1.231,
+      "ratio_single_over_v12": 0.74
+    },
+    {
+      "er": 30,
+      "msv4_both_pF_per_m": 691.6,
+      "msv4_single_pF_per_m": 401.9,
+      "v12_pF_per_m": 552.6,
+      "ratio_both_over_v12": 1.252,
+      "ratio_single_over_v12": 0.727
+    }
+  ],
+  "conductive_1MHz": [
+    {
+      "state": "bone dry",
+      "er": 4,
+      "sigma_S_per_m": 0.002,
+      "msv4_pF": 23.8,
+      "msv4_absZ_ohm": 2308,
+      "v12_pF": 13.7,
+      "v12_absZ_ohm": 4567,
+      "ratio_equal_length": 1.179,
+      "msv4_divider_mV": 2317
+    },
+    {
+      "state": "dry-ish",
+      "er": 8,
+      "sigma_S_per_m": 0.01,
+      "msv4_pF": 137.4,
+      "msv4_absZ_ohm": 636,
+      "v12_pF": 59.6,
+      "v12_absZ_ohm": 1195,
+      "ratio_equal_length": 1.564,
+      "msv4_divider_mV": 1321
+    },
+    {
+      "state": "moist",
+      "er": 15,
+      "sigma_S_per_m": 0.02,
+      "msv4_pF": 263.5,
+      "msv4_absZ_ohm": 410,
+      "v12_pF": 124.6,
+      "v12_absZ_ohm": 730,
+      "ratio_equal_length": 1.433,
+      "msv4_divider_mV": 1005
+    },
+    {
+      "state": "wet",
+      "er": 25,
+      "sigma_S_per_m": 0.05,
+      "msv4_pF": 520.3,
+      "msv4_absZ_ohm": 264,
+      "v12_pF": 250.8,
+      "v12_absZ_ohm": 444,
+      "ratio_equal_length": 1.407,
+      "msv4_divider_mV": 746
+    },
+    {
+      "state": "saturated",
+      "er": 30,
+      "sigma_S_per_m": 0.1,
+      "msv4_pF": 667.3,
+      "msv4_absZ_ohm": 228,
+      "v12_pF": 393.0,
+      "v12_absZ_ohm": 309,
+      "ratio_equal_length": 1.152,
+      "msv4_divider_mV": 680
+    }
+  ],
+  "penetration_er20": [
+    {
+      "depth_mm": 0.25,
+      "msv4_share_pct": 18.6,
+      "v12_share_pct": 13.9
+    },
+    {
+      "depth_mm": 0.5,
+      "msv4_share_pct": 31.8,
+      "v12_share_pct": 24.7
+    },
+    {
+      "depth_mm": 1.0,
+      "msv4_share_pct": 49.8,
+      "v12_share_pct": 41.4
+    },
+    {
+      "depth_mm": 2.0,
+      "msv4_share_pct": 70.2,
+      "v12_share_pct": 63.4
+    },
+    {
+      "depth_mm": 3.0,
+      "msv4_share_pct": 81.5,
+      "v12_share_pct": 77.5
+    },
+    {
+      "depth_mm": 5.0,
+      "msv4_share_pct": 89.7,
+      "v12_share_pct": 88.7
+    },
+    {
+      "depth_mm": 8.0,
+      "msv4_share_pct": 95.3,
+      "v12_share_pct": 96.2
+    }
+  ],
+  "insertion": {
+    "sweep": [
+      {
+        "inserted_mm": 40,
+        "pct_of_sensed_length": 49.3,
+        "air_section_pF": 3.07,
+        "bone dry_pF": 14.8,
+        "bone dry_mV": 2722,
+        "dry-ish_pF": 70.9,
+        "dry-ish_mV": 1909,
+        "moist_pF": 133.0,
+        "moist_mV": 1577,
+        "wet_pF": 259.7,
+        "wet_mV": 1278,
+        "saturated_pF": 332.2,
+        "saturated_mV": 1214
+      },
+      {
+        "inserted_mm": 50,
+        "pct_of_sensed_length": 61.7,
+        "air_section_pF": 2.33,
+        "bone dry_pF": 17.0,
+        "bone dry_mV": 2611,
+        "dry-ish_pF": 87.1,
+        "dry-ish_mV": 1723,
+        "moist_pF": 164.7,
+        "moist_mV": 1387,
+        "wet_pF": 323.1,
+        "wet_mV": 1091,
+        "saturated_pF": 413.8,
+        "saturated_mV": 1022
+      },
+      {
+        "inserted_mm": 55,
+        "pct_of_sensed_length": 67.8,
+        "air_section_pF": 1.95,
+        "bone dry_pF": 18.1,
+        "bone dry_mV": 2559,
+        "dry-ish_pF": 95.1,
+        "dry-ish_mV": 1643,
+        "moist_pF": 180.6,
+        "moist_mV": 1308,
+        "wet_pF": 354.8,
+        "wet_mV": 1016,
+        "saturated_pF": 454.5,
+        "saturated_mV": 946
+      },
+      {
+        "inserted_mm": 60,
+        "pct_of_sensed_length": 74.0,
+        "air_section_pF": 1.58,
+        "bone dry_pF": 19.2,
+        "bone dry_mV": 2509,
+        "dry-ish_pF": 103.2,
+        "dry-ish_mV": 1570,
+        "moist_pF": 196.5,
+        "moist_mV": 1237,
+        "wet_pF": 386.5,
+        "wet_mV": 950,
+        "saturated_pF": 495.3,
+        "saturated_mV": 881
+      },
+      {
+        "inserted_mm": 70,
+        "pct_of_sensed_length": 86.3,
+        "air_section_pF": 0.83,
+        "bone dry_pF": 21.4,
+        "bone dry_mV": 2414,
+        "dry-ish_pF": 119.4,
+        "dry-ish_mV": 1442,
+        "moist_pF": 228.2,
+        "moist_mV": 1115,
+        "wet_pF": 449.9,
+        "wet_mV": 841,
+        "saturated_pF": 576.8,
+        "saturated_mV": 773
+      },
+      {
+        "inserted_mm": 81.1,
+        "pct_of_sensed_length": 100.0,
+        "air_section_pF": 0.0,
+        "bone dry_pF": 23.8,
+        "bone dry_mV": 2317,
+        "dry-ish_pF": 137.4,
+        "dry-ish_mV": 1321,
+        "moist_pF": 263.5,
+        "moist_mV": 1005,
+        "wet_pF": 520.3,
+        "wet_mV": 746,
+        "saturated_pF": 667.3,
+        "saturated_mV": 680
+      }
+    ],
+    "error_budget_at_55mm": [
+      {
+        "state": "bone dry",
+        "baseline_mV": 2559,
+        "pct_per_mm_insertion": 0.4,
+        "mV_per_10mm_deeper": -98.5,
+        "mV_per_10pct_wetter": -50.1,
+        "insertion_error_vs_signal": 2.0,
+        "mm_to_fake_1p956pct": 4.91
+      },
+      {
+        "state": "dry-ish",
+        "baseline_mV": 1643,
+        "pct_per_mm_insertion": 0.92,
+        "mV_per_10mm_deeper": -140.2,
+        "mV_per_10pct_wetter": -50.6,
+        "insertion_error_vs_signal": 2.8,
+        "mm_to_fake_1p956pct": 2.12
+      },
+      {
+        "state": "moist",
+        "baseline_mV": 1308,
+        "pct_per_mm_insertion": 1.13,
+        "mV_per_10mm_deeper": -134.9,
+        "mV_per_10pct_wetter": -41.6,
+        "insertion_error_vs_signal": 3.2,
+        "mm_to_fake_1p956pct": 1.72
+      },
+      {
+        "state": "wet",
+        "baseline_mV": 1016,
+        "pct_per_mm_insertion": 1.36,
+        "mV_per_10mm_deeper": -123.5,
+        "mV_per_10pct_wetter": -16.5,
+        "insertion_error_vs_signal": 7.5,
+        "mm_to_fake_1p956pct": 1.44
+      },
+      {
+        "state": "saturated",
+        "baseline_mV": 946,
+        "pct_per_mm_insertion": 1.46,
+        "mV_per_10mm_deeper": -122.9,
+        "mV_per_10pct_wetter": -3.2,
+        "insertion_error_vs_signal": 39.0,
+        "mm_to_fake_1p956pct": 1.34
+      }
+    ]
+  }
+}

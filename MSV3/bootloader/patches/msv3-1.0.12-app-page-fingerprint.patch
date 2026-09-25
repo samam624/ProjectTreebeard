@@ -1,0 +1,91 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x010BU        /* 1.0.11 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x010CU        /* 1.0.12 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FFB8UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -14,6 +14,7 @@
+ #include "dfu_transport.h"
+ #include "dfu.h"
+ #include "bootloader_types.h"
++#include "crc16.h"
+ #include <dfu_types.h>
+ #include <stddef.h>
+ #include "boards.h"
+@@ -723,7 +724,40 @@
+ {
+   volatile msv3_dfu_trace_t * t = MSV3_DFU_TRACE;
+ 
+-  if ( (t->magic != MSV3_DFU_TRACE_MAGIC) || (t->check != ~MSV3_DFU_TRACE_MAGIC) ) return;
++  /* MSV3_APP_PAGE_FINGERPRINT (1.0.12)
++   *
++   * Measure the APPLICATION FLASH ITSELF, unconditionally, and never behind the trace-magic gate.
++   *
++   * Why: the retained trace kept coming back absent or unchanged, and that is ambiguous in the
++   * worst possible way. An empty record can mean START_PACKET was never processed (so the
++   * application was never erased and the board is merely parked in DFU by the 1200-baud touch's
++   * GPREGRET), OR it can mean the record was armed and then destroyed. Those two call for opposite
++   * fixes, and five bootloaders were built without being able to tell them apart.
++   *
++   * A CRC over the first application page cannot be ambiguous. Compare it across a run:
++   *   unchanged from the known-good application -> START never reached the erase path;
++   *   equal to the all-0xFF fingerprint         -> the erase ran, so START WAS processed.
++   *
++   * Deliberately NOT bootloader_app_is_valid() and NOT the recovery-address advertisement: both
++   * read settings-page state, which is exactly what is in question. This reads the bytes.
++   */
++  uint16_t app_crc = crc16_compute((uint8_t const *)DFU_BANK_0_REGION_START, CODE_PAGE_SIZE, NULL);
++  bool     trace_valid = (t->magic == MSV3_DFU_TRACE_MAGIC) && (t->check == ~MSV3_DFU_TRACE_MAGIC);
++
++  if ( !trace_valid )
++  {
++    /* Still publish the fingerprint. An absent record is a measurement too, and it is worthless
++     * without knowing whether the application survived. */
++    uint8_t bare[7];
++    uint8_t n = 0;
++    bare[n++] = 0xFF;
++    bare[n++] = 0xFF;
++    memcpy(&bare[n], (const void *)&t->build_id, 2); n += 2;
++    memcpy(&bare[n], &app_crc, 2);                   n += 2;
++    bare[n++] = 0;   /* trace_valid = 0 */
++    advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, bare, n);
++    return;
++  }
+ 
+   /* Company ID first, per the manufacturer-specific data format. 0xFFFF is the reserved
+    * "not assigned" identifier, which is what this project already advertises from the
+@@ -740,7 +774,7 @@
+    * WHY did the first allocation fail. alloc_fail_rc is the single decisive value: NO_MEM means
+    * queue pressure, INVALID_PARAM means the packet-type byte was rejected outright, and those two
+    * demand completely different fixes. */
+-  uint8_t payload[27];
++  uint8_t payload[28];
+   uint8_t i = 0;
+ 
+   uint16_t dropped = (t->frames_dropped > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_dropped;
+@@ -750,6 +784,8 @@
+   payload[i++] = 0xFF;
+   payload[i++] = 0xFF;
+   memcpy(&payload[i], (const void *)&t->build_id, 2);       i += 2;
++  memcpy(&payload[i], &app_crc, 2);                         i += 2;
++  payload[i++] = 1;   /* trace_valid */
+   memcpy(&payload[i], &nonce16, 2);                         i += 2;
+   payload[i++] = t->transport;
+   payload[i++] = t->stage;
+@@ -761,7 +797,6 @@
+   memcpy(&payload[i], &queued, 2);                          i += 2;
+   memcpy(&payload[i], &dropped, 2);                         i += 2;
+   memcpy(&payload[i], (const void *)&t->alloc_fail_rc, 4);  i += 4;
+-  memcpy(&payload[i], (const void *)&t->validate_rc, 4);    i += 4;
+   memcpy(&payload[i], (const void *)&t->reset_reas, 4);     i += 4;
+ 
+   advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, payload, i);

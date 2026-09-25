@@ -140,9 +140,12 @@ import argparse
 import asyncio
 import ctypes
 import functools
+import json
 import logging
 import sys
+import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -171,6 +174,7 @@ OP_CODE_VALIDATE = 0x04
 OP_CODE_PACKET_RECEIPT_NOTIF = 0x11
 OP_CODE_ENTER_BOOTLOADER = 0x01
 UPLOAD_MODE_APPLICATION = 0x04
+UPLOAD_MODE_SD_BL = 0x03  # SoftDevice + bootloader, sent as one component with sd_size/bl_size
 DFU_SERVICE_UUID = "00001530-1212-efde-1523-785feabcd123"
 
 # Device Information Service firmware revision. Since 2026-09-04 the production application
@@ -687,11 +691,41 @@ def preflight(args, probe, fleet_source_name="MSV3/fleet.json"):
     length of a transfer.
     """
     try:
-        package = read_package(args.package.resolve())
+        package = read_package(args.package.resolve(), allow_bootloader=args.bootloader)
     except FleetError as error:
         raise PreflightError(str(error)) from None
     print(f"Package: {package.describe()}", flush=True)
     print(f"Target:  {probe.describe()}", flush=True)
+
+    # BOOTLOADER DELIVERY GATE. Before anything else, because a refusal here should cost nothing.
+    #
+    # A bootloader update is not written by the bootloader. dfu_activate_bl() only records
+    # bank_1 = BANK_VALID_BOOT plus bl_image_size in the settings page and resets; the MBR performs
+    # the copy on the next boot via SD_MBR_COMMAND_COPY_BL and journals its progress into the MBR
+    # params page, so an interrupted copy resumes. The MBR finds that page through UICR.NRFFW[1].
+    #
+    # If NRFFW[1] is erased there is no journal, an interrupted copy cannot resume, and the board
+    # is gone unless SWD can reach it. That is precisely the population this feature serves, so the
+    # word is REQUIRED to have been read on THIS board -- not on a sibling, not inferred from the
+    # fact that bootloader_settings.c usually writes it. Read it with the `uicr` command in
+    # MSV3_Probe_Bringup_Test and record the date in the probe's mbr_params_page_verified.
+    if package.contains_bootloader:
+        if not args.bootloader:
+            raise PreflightError(
+                "this package carries a bootloader; pass --bootloader to acknowledge that.")
+        if not probe.mbr_params_page_verified:
+            raise PreflightError(
+                f"probe {probe.sensor_id} has no mbr_params_page_verified date in "
+                f"{fleet_source_name}.\n"
+                f"  Refusing to send a bootloader to a board whose UICR.NRFFW[1] has never been "
+                f"read.\n"
+                f"  If that word is erased, an interrupted MBR copy cannot resume and this probe "
+                f"is unrecoverable without SWD.\n"
+                f"  Install a bring-up diagnostic, run `uicr` on its USB console, confirm "
+                f"NRFFW[1] = 0x000FE000,\n"
+                f"  then record the date in that probe's mbr_params_page_verified.")
+        print(f"  bootloader   OK -- probe {probe.sensor_id} MBR params page read "
+              f"{probe.mbr_params_page_verified}; an interrupted copy can resume", flush=True)
 
     # Target suitability first. Probe 5 is on the stock bootloader, and saying so
     # plainly beats letting the signature step fail later with the downstream
@@ -1114,7 +1148,10 @@ async def run(args):
         print(f"  packet-receipt deadline raised to {prn_timeout:.1f}s "
               f"(dfu_lib would use {max(0.8, args.prn * 0.08):.2f}s)", flush=True)
 
-    package = args.package.resolve()
+    # _transfer_package is set by the two-phase bootloader path in main(). It is the single
+    # component actually going over the air; args.package stays the full signed artifact, so every
+    # preflight gate above still ran against the real release package and its identity.
+    package = (getattr(args, "_transfer_package", None) or args.package).resolve()
     updater = dfu_lib.NordicLegacyDFU(
         str(package),
         prn=args.prn,
@@ -1123,8 +1160,13 @@ async def run(args):
         progress_callback=progress,
     )
     updater.parse_zip()
-    if updater.upload_mode != UPLOAD_MODE_APPLICATION:
-        raise SystemExit("Package must contain an application only; refusing bootloader DFU over BLE.")
+    allowed_modes = {UPLOAD_MODE_APPLICATION}
+    if getattr(args, "bootloader", False):
+        allowed_modes.add(UPLOAD_MODE_SD_BL)
+    if updater.upload_mode not in allowed_modes:
+        raise SystemExit(
+            f"Package upload mode {updater.upload_mode:#04x} is not permitted here; refusing. "
+            f"An ordinary update must contain an application only.")
 
     # The guard is always installed -- it is a correctness property, not a diagnostic. Profiling
     # is opt-in.
@@ -1150,7 +1192,22 @@ async def run(args):
     # the transfer rather than waiting out an application window that will never come. The DFU
     # service check matters here: after a buttonless jump the bootloader shares the application's
     # address, so the address alone cannot tell them apart.
-    probe_timeout = args.bootloader_timeout if args.skip_jump else 6.0
+    # 6 s is enough to notice a bootloader that has been sitting there, but NOT one that is still
+    # coming back from a reset -- measured 2026-09-20, when phase 2 of a two-phase bootloader
+    # delivery probed 6 s while the MBR was still copying, found nothing, and then spent 180 s
+    # waiting for an application that could not exist because phase 1 had just erased it. When the
+    # caller KNOWS the board should be in DFU, wait properly instead of falling through to the
+    # application path.
+    #
+    # A bootloader delivery also probes long on its FIRST phase, because the usual reason to re-run
+    # one is that an earlier attempt already replaced the bootloader and left the board appless. On
+    # a board whose application is running this costs nothing extra: wait_for_advertisement returns
+    # the moment it sees the bootloader, and when there is no bootloader to see, the run was going
+    # to spend far longer than this in the application window anyway.
+    expect_bootloader = (args.skip_jump
+                         or getattr(args, "_expect_bootloader", False)
+                         or getattr(args, "bootloader", False))
+    probe_timeout = args.bootloader_timeout if expect_bootloader else 6.0
     device, _ = await wait_for_advertisement(boot_addresses, probe_timeout, "bootloader",
                                              require_dfu_service=True)
 
@@ -1278,6 +1335,99 @@ async def run(args):
     return 0
 
 
+# --------------------------------------------------- two-phase bootloader delivery ----
+#
+# nrfutil packages SD+BL+APP as TWO independently signed components, not one: `sd_bl.bin` with its
+# own init packet, and the application with its own. The legacy DFU protocol carries one component
+# per session, and dfu_lib's parse_zip() is an if/elif chain that takes `softdevice_bootloader` and
+# silently ignores the application -- so handing it the combined ZIP would transfer the bootloader
+# and quietly never install the app.
+#
+# So the delivery is genuinely two sessions, in this order:
+#
+#   phase 1  SD+BL    the images stage through the APPLICATION region (dfu_bl_image_swap() reads
+#                     from DFU_BANK_0_REGION_START), so this DESTROYS the running application. On
+#                     reset the MBR performs the bootloader copy, journalling through the MBR
+#                     params page. With no valid application afterwards, DEFAULT_TO_OTA_DFU leaves
+#                     the board in persistent BLE DFU -- usually at the RECOVERY address, which is
+#                     why run() scans both. That state is stable and retryable, not a brick.
+#   phase 2  APP      an ordinary application install through the completely unmodified path.
+#
+# The interstitial state is the reason phase 1 is gated on mbr_params_page_verified: everything
+# after the transfer is the MBR's job, and only the params page makes it resumable.
+#
+# Both phases keep args.package pointed at the full signed artifact, so preflight re-runs its
+# integrity, device-type, boot-guard and IDENTITY checks against the real release package each
+# time. The split halves are transfer payloads only; they are never what gets vetted.
+def bootloader_package_components(path: Path):
+    """Return (sd_bl_entry, app_entry) if this ZIP carries both, else None."""
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read("manifest.json"))["manifest"]
+    sd_bl_key = next((k for k in ("softdevice_bootloader", "bootloader", "softdevice")
+                      if k in manifest), None)
+    if not sd_bl_key or "application" not in manifest:
+        return None
+    return sd_bl_key, "application"
+
+
+def write_single_component(source: Path, key: str, destination: Path) -> Path:
+    """Copy one component out of a multi-component DFU ZIP into a valid single-component one.
+
+    The component's own init packet and signature are copied verbatim -- nothing is re-signed, so
+    the bootloader still authenticates exactly the bytes the release build signed.
+    """
+    with zipfile.ZipFile(source) as archive:
+        full = json.loads(archive.read("manifest.json"))["manifest"]
+        entry = full[key]
+        bin_data = archive.read(entry["bin_file"])
+        dat_data = archive.read(entry["dat_file"])
+    manifest = {"manifest": {key: entry, "dfu_version": full["dfu_version"]}}
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as out:
+        out.writestr("manifest.json", json.dumps(manifest))
+        out.writestr(entry["bin_file"], bin_data)
+        out.writestr(entry["dat_file"], dat_data)
+    return destination
+
+
+def run_two_phase(args, components) -> int:
+    sd_bl_key, app_key = components
+    print("SD+BL+APP package: delivering in two DFU sessions.", flush=True)
+    print("  phase 1 replaces the SoftDevice and bootloader and DESTROYS the running application;",
+          flush=True)
+    print("  between the phases the board sits in persistent BLE recovery, which is expected.",
+          flush=True)
+    with tempfile.TemporaryDirectory(prefix="msv3-ota-") as tmp:
+        tmp_path = Path(tmp)
+        phases = [
+            ("1/2 SoftDevice + bootloader",
+             write_single_component(args.package, sd_bl_key, tmp_path / "sd_bl.zip")),
+            ("2/2 application",
+             write_single_component(args.package, app_key, tmp_path / "app.zip")),
+        ]
+        for index, (label, component) in enumerate(phases):
+            print(f"\n===== phase {label} =====", flush=True)
+            args._transfer_package = component
+            # After phase 1 the board has no application by construction, so the only thing it can
+            # advertise is the bootloader. Say so, rather than letting run() time out against an
+            # application window that will never open. The settle covers the MBR copy and reset.
+            if index > 0:
+                args._expect_bootloader = True
+                print("  waiting 20s for the MBR bootloader copy and reset to settle...",
+                      flush=True)
+                time.sleep(20)
+            result = asyncio.run(run(args))
+            if result != 0:
+                print(f"\nPhase {label} did not complete (exit {result}).", flush=True)
+                if label.startswith("1/2"):
+                    print("The application was NOT installed. The board should be advertising "
+                          "persistent BLE recovery; re-run to retry.", flush=True)
+                else:
+                    print("The bootloader IS installed. Re-run with the application-only package "
+                          "to finish.", flush=True)
+                return result
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1304,6 +1454,13 @@ def main():
     parser.add_argument("--allow-downgrade", action="store_true",
                         help="Install a package older than the version recorded as installed. The "
                              "DEVICE does not enforce this; the registry is the only record.")
+    parser.add_argument("--bootloader", action="store_true",
+                        help="Accept a package that carries a SoftDevice/bootloader as well as an "
+                             "application. Rewrites the one component that cannot be re-flashed "
+                             "over the air, so it is never implied. Additionally requires the "
+                             "target probe to have a recorded mbr_params_page_verified date, "
+                             "proving its UICR.NRFFW[1] was read and an interrupted MBR copy could "
+                             "resume.")
     parser.add_argument("--allow-identity-mismatch", action="store_true",
                         help="Send a package built for a different sensor ID. Intended for the "
                              "bench board, which runs an uncommitted identity. Relaxes ONLY the "
@@ -1356,6 +1513,9 @@ def main():
         parser.error(f"package not found: {args.package}")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
+        components = bootloader_package_components(args.package) if args.bootloader else None
+        if components:
+            return run_two_phase(args, components)
         return asyncio.run(run(args))
     except (PreflightError, FleetError) as error:
         # A refused run is an ordinary outcome, not a crash: it means a check did its job and the

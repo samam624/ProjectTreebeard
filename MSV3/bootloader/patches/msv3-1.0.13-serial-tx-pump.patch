@@ -1,0 +1,386 @@
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.c b/lib/sdk/components/libraries/hci/hci_slip.c
+--- a/lib/sdk/components/libraries/hci/hci_slip.c
++++ b/lib/sdk/components/libraries/hci/hci_slip.c
+@@ -47,6 +47,7 @@
+ // nRF has native usb peripheral
+ #ifdef NRF_USBD
+ #include "tusb.h"
++#include "bootloader_types.h"   /* MSV3 1.0.13: the retained DFU trace. */
+ #endif
+ 
+ #define APP_SLIP_END        0xC0                            /**< SLIP code for identifying the beginning and end of a packet frame.. */
+@@ -126,7 +127,22 @@
+ 
+ static uint32_t serial_put(char ch)
+ {
+-  return tud_cdc_write_char(ch) ? NRF_SUCCESS : NRF_ERROR_NO_MEM;
++  if ( tud_cdc_write_char(ch) ) return NRF_SUCCESS;
++
++  /* MSV3 1.0.13: the CDC TX FIFO is full. Stock's caller treats that as "the UART will raise
++   * APP_UART_TX_EMPTY and we will carry on"; under NRF_USBD nothing ever raises it. Record the
++   * refusal and the exact point the frame was cut, then let transmit_buffer() unwind --
++   * hci_slip_tx_pump() is what finishes the frame. See MSV3_SERIAL_TX_PUMP below. */
++  if ( MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC )
++  {
++    if ( MSV3_DFU_TRACE->tx_block_count != 0xFFFFU ) MSV3_DFU_TRACE->tx_block_count++;
++    if ( m_tx_buffer_index >= MSV3_DFU_TRACE->tx_stall_index )
++    {
++      MSV3_DFU_TRACE->tx_stall_index  = (uint16_t) m_tx_buffer_index;
++      MSV3_DFU_TRACE->tx_stall_length = (uint16_t) m_tx_buffer_length;
++    }
++  }
++  return NRF_ERROR_NO_MEM;
+ }
+ 
+ #else
+@@ -239,6 +255,17 @@
+         // Packet transmission ended. Notify higher level.
+         m_current_state = SLIP_READY;
+ 
++#ifdef NRF_USBD
++        /* MSV3 1.0.13: an ACK that REACHED THE WIRE, as opposed to one hci_slip_write() accepted.
++         * Comparing this against rx_seen is the whole test: equal means every frame was answered,
++         * short means the host was left waiting and reset its sequence number. */
++        if ( (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++             (MSV3_DFU_TRACE->ack_frames_done != 0xFFFFU) )
++        {
++            MSV3_DFU_TRACE->ack_frames_done++;
++        }
++#endif
++
+         if (m_slip_event_handler != NULL)
+         {
+             hci_slip_evt_t event = {HCI_SLIP_TX_DONE, mp_tx_buffer, m_tx_buffer_index};
+@@ -381,9 +408,60 @@
+  * rx callback arrives to reopen it. bootloader.c calls this right after app_sched_execute(), which
+  * is the point at which queue entries have just been freed.
+  */
++/* MSV3_SERIAL_TX_PUMP (1.0.13): finish an acknowledgement the CDC TX FIFO refused halfway.
++ *
++ * THIS IS THE WIRED-DFU DEFECT, and it is one missing callback.
++ *
++ * transmit_buffer() gives up the instant serial_put() reports a full FIFO -- its own comment says
++ * "Abort and wait for APP_UART_TX_EMPTY to continue" -- leaving m_current_state at
++ * SLIP_TRANSMITTING with a half-written frame. The only code that ever continued it is in the
++ * #else branch of this file, inside uart_event_handler(). Under NRF_USBD there is no
++ * APP_UART_TX_EMPTY, no tud_cdc_tx_complete_cb, and no other caller, so the state machine sticks
++ * at SLIP_TRANSMITTING PERMANENTLY and hci_slip_write() answers NRF_ERROR_NO_MEM to every
++ * acknowledgement from that moment on. ack_transmit() throws that return value away by design
++ * ("acknowledgement packets are considered unreliable"), so nothing upstream ever notices.
++ *
++ * The host is what notices. adafruit-nrfutil's get_ack_nr() waits 1 s, gives up, and resets
++ * HciPacket.sequence_number to 0 while the device's expected number stays where it was.
++ *
++ * Measured on probe 8, bootloader 1.0.12: 16 frames reached the DFU transport, exactly 1 was
++ * accepted, and 15 were rejected with NRF_ERROR_INVALID_PARAM -- not NRF_ERROR_NO_MEM -- because
++ * their first payload byte read 0x00. The DFU packet queue was never full. That single return
++ * code is what retired 1.0.7's queue-depth increase and 1.0.8's ingress gate: both were fixing
++ * capacity, and capacity was never the constraint.
++ *
++ * It presents as a timing bug because it is a backpressure bug. Give the host enough spacing and
++ * the FIFO drains between frames and the stall never happens: 4 s between DATA frames transferred
++ * without a reset, 100 ms queued 15 frames instead of 1, default pacing failed every time.
++ */
++void hci_slip_tx_pump(void)
++{
++  if ( m_current_state != SLIP_TRANSMITTING ) return;
++
++  uint32_t const before = m_tx_buffer_index;
++
++  /* Hand the endpoint what is already queued before asking the FIFO for more room. */
++  tud_cdc_write_flush();
++  transmit_buffer();
++
++  if ( (m_tx_buffer_index != before) && (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++       (MSV3_DFU_TRACE->tx_resume_count != 0xFFFFU) )
++  {
++    MSV3_DFU_TRACE->tx_resume_count++;
++  }
++}
++
++
+ void hci_slip_rx_pump(void)
+ {
+-  while ( tud_cdc_available() && !rx_buffer_overflowed() && msv3_serial_rx_may_drain() )
++  /* MSV3 1.0.13 added the SLIP_TRANSMITTING term, and it is CORRECTNESS, not politeness.
++   * hci_transport.c's ack_transmit() encodes into ONE static ack_packet[4] and hands the pointer
++   * to this layer. Decoding another frame while the previous acknowledgement is still stalled
++   * mid-transmission would call ack_transmit() again and overwrite the bytes hci_slip_tx_pump()
++   * is about to finish sending. Stopping the drain leaves the bytes in the CDC FIFO, which NAKs
++   * the host at the USB layer -- it simply waits, with no host-side change required. */
++  while ( tud_cdc_available() && !rx_buffer_overflowed() && msv3_serial_rx_may_drain()
++          && (m_current_state != SLIP_TRANSMITTING) )
+   {
+     int8_t ch = tud_cdc_read_char();
+     handle_rx_byte((uint8_t) ch);
+diff --git a/lib/sdk/components/libraries/hci/hci_slip.h b/lib/sdk/components/libraries/hci/hci_slip.h
+--- a/lib/sdk/components/libraries/hci/hci_slip.h
++++ b/lib/sdk/components/libraries/hci/hci_slip.h
+@@ -162,6 +162,14 @@
+  */
+ void hci_slip_rx_pump(void);
+ 
++/**@brief MSV3 1.0.13: resume a frame the CDC TX FIFO refused halfway.
++ *
++ * Must be called from the main loop after tud_task(), and BEFORE hci_slip_rx_pump(), which
++ * refuses to drain while a transmission is stalled. See MSV3_SERIAL_TX_PUMP in hci_slip.c for
++ * why the USB build has no other way back out of SLIP_TRANSMITTING.
++ */
++void hci_slip_tx_pump(void);
++
+ /**@brief MSV3 1.0.8: may the SLIP layer accept another frame's worth of bytes?
+  *
+  * Weakly defined as always-true in hci_slip.c; dfu_transport_serial.c overrides it with the real
+diff --git a/lib/sdk/components/libraries/hci/hci_transport.c b/lib/sdk/components/libraries/hci/hci_transport.c
+--- a/lib/sdk/components/libraries/hci/hci_transport.c
++++ b/lib/sdk/components/libraries/hci/hci_transport.c
+@@ -41,6 +41,7 @@
+ #if NRF_MODULE_ENABLED(HCI_TRANSPORT)
+ #include "hci_transport.h"
+ #include "hci_slip.h"
++#include "bootloader_types.h"   /* MSV3 1.0.13: the retained DFU trace. */
+ #include "crc16.h"
+ #include "hci_mem_pool.h"
+ #include "app_timer.h"
+@@ -286,6 +287,19 @@
+             err_code = hci_mem_pool_rx_produce(HCI_RX_BUF_SIZE, (void **)&mp_slip_used_rx_buffer);
+             APP_ERROR_CHECK_BOOL((err_code == NRF_SUCCESS) || (err_code == NRF_ERROR_NO_MEM));
+ 
++#ifdef NRF_USBD
++            /* MSV3 1.0.13: NO_MEM here is tolerated by stock and is FAR from harmless -- the
++             * ternary below then hands SLIP m_rx_ack_buffer, which is 5 bytes. Every subsequent
++             * 522-byte DATA frame overflows it. Count it so that "the pool ran dry" can be told
++             * apart from "the acknowledgement never left", which need different fixes. */
++            if ( (err_code == NRF_ERROR_NO_MEM) &&
++                 (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++                 (MSV3_DFU_TRACE->produce_nomem != 0xFFFFU) )
++            {
++                MSV3_DFU_TRACE->produce_nomem++;
++            }
++#endif
++
+             // If memory pool RX buffer produce succeeded we register that buffer to slip layer
+             // otherwise we register the internal acknowledgement buffer.
+             err_code = hci_slip_rx_buffer_register(
+@@ -303,6 +317,25 @@
+         }
+         else
+         {
++#ifdef NRF_USBD
++            /* MSV3 1.0.13: the fingerprint of a host that gave up waiting for an acknowledgement.
++             * adafruit-nrfutil's get_ack_nr() resets HciPacket.sequence_number to 0 on a 1 s
++             * timeout while this side keeps counting, so a stalled ACK shows up here, one frame
++             * later, as a mismatch. Record the FIRST pair -- received against expected -- because
++             * the gap between them says how many acknowledgements went missing. */
++            if ( MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC )
++            {
++                if ( MSV3_DFU_TRACE->seq_mismatch_exp == 0xFFU )
++                {
++                    MSV3_DFU_TRACE->seq_mismatch_rx  = rx_seq_number;
++                    MSV3_DFU_TRACE->seq_mismatch_exp = packet_number_expected_get();
++                }
++                if ( MSV3_DFU_TRACE->seq_mismatch_cnt != 0xFFFFU )
++                {
++                    MSV3_DFU_TRACE->seq_mismatch_cnt++;
++                }
++            }
++#endif
+             // RX packet discarded: sequence number not valid, set the same buffer to slip layer in
+             // order to avoid buffer overrun.
+             err_code = hci_slip_rx_buffer_register(mp_slip_used_rx_buffer, HCI_RX_BUF_SIZE);
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+@@ -159,6 +159,15 @@
+        * discarded. Once gated, no rx callback can arrive to reopen it -- the host is being NAKed
+        * precisely so that it sends nothing. This is the pump that gets it going again, and it sits
+        * immediately after app_sched_execute() above, which is where queue entries are freed. */
++      /* MSV3 1.0.13: finish any acknowledgement the CDC TX FIFO cut short, BEFORE reopening the
++       * receive drain -- hci_slip_rx_pump() refuses to take bytes while a transmission is stalled,
++       * because ack_transmit() encodes into a single static buffer that a new frame would
++       * overwrite. Under NRF_USBD this call is the ONLY way out of SLIP_TRANSMITTING: the stock
++       * resume lives in uart_event_handler(), which this build does not compile. Without it the
++       * device silently stops acknowledging after the first full TX FIFO and the host's wired
++       * update fails with an erased application. See MSV3_SERIAL_TX_PUMP in hci_slip.c. */
++      hci_slip_tx_pump();
++
+       hci_slip_rx_pump();
+ 
+       tud_cdc_write_flush();
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,8 +129,8 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x010CU        /* 1.0.12 */
+-#define MSV3_DFU_TRACE_ADDR             0x2003FFB8UL
++#define MSV3_DFU_TRACE_BUILD_ID         0x010DU        /* 1.0.13 */
++#define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+ #define MSV3_DFU_STAGE_VALIDATE_ENTER   0x02u
+@@ -169,11 +169,26 @@
+     uint8_t  sched_fail;        /**< app_sched_event_put() failures, saturating. */
+     uint8_t  stop_seen_at_rx;   /**< STOP reached the transport callback. */
+     uint8_t  stop_processed;    /**< STOP reached process_dfu_packet(). */
++    /* MSV3 1.0.13 -- the USB ACK stall. See MSV3_SERIAL_TX_PUMP in hci_slip.c.
++     *
++     * These are written LIVE, as the events happen, rather than snapshotted when the scan
++     * response is built. They have to be: the failure being measured ENDS in a soft reset, and
++     * ordinary .bss is zeroed by that reset while this region survives it. A counter that only
++     * exists in RAM would read zero for exactly the run that mattered. */
++    uint16_t tx_block_count;    /**< tud_cdc_write_char() returned 0 -- CDC TX FIFO full. */
++    uint16_t tx_resume_count;   /**< hci_slip_tx_pump() made progress on a stalled frame. */
++    uint16_t tx_stall_index;    /**< Largest m_tx_buffer_index a write blocked at. */
++    uint16_t tx_stall_length;   /**< m_tx_buffer_length at that stall. index<length == truncated. */
++    uint16_t ack_frames_done;   /**< Frames fully written to SLIP, i.e. ACKs that really left. */
++    uint16_t produce_nomem;     /**< hci_mem_pool_rx_produce() returned NO_MEM (pool exhausted). */
++    uint8_t  seq_mismatch_rx;   /**< FIRST HCI sequence mismatch: the number received. */
++    uint8_t  seq_mismatch_exp;  /**< ...and the number expected. Both 0xFF = never happened. */
++    uint16_t seq_mismatch_cnt;  /**< Frames rejected on sequence number, saturating. */
+     uint32_t check;             /**< ~magic, written LAST. A torn record fails this. */
+ } msv3_dfu_trace_t;
+ 
+-_Static_assert(sizeof(msv3_dfu_trace_t) <= 0x40,
+-               "the DFU trace must fit the 64-byte MSV3_DFU_TRACE region the linker reserves");
++_Static_assert(sizeof(msv3_dfu_trace_t) <= 0x60,
++               "the DFU trace must fit the 96-byte MSV3_DFU_TRACE region the linker reserves");
+ _Static_assert(sizeof(msv3_dfu_trace_t) % 4 == 0, "keep the trace word-aligned");
+ 
+ #define MSV3_DFU_TRACE ((volatile msv3_dfu_trace_t *)MSV3_DFU_TRACE_ADDR)
+@@ -208,6 +223,15 @@
+     t->sched_fail      = 0;
+     t->stop_seen_at_rx = 0;
+     t->stop_processed  = 0;
++    t->tx_block_count  = 0;
++    t->tx_resume_count = 0;
++    t->tx_stall_index  = 0;
++    t->tx_stall_length = 0;
++    t->ack_frames_done = 0;
++    t->produce_nomem   = 0;
++    t->seq_mismatch_rx  = 0xFF;
++    t->seq_mismatch_exp = 0xFF;
++    t->seq_mismatch_cnt = 0;
+     t->check          = ~MSV3_DFU_TRACE_MAGIC;
+ }
+ 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -766,38 +766,62 @@
+    * spare. frames_dropped is saturated into 16 bits because its only interesting values are 0 and
+    * "not 0"; a full 32-bit counter would not fit alongside both return codes, and the return codes
+    * are what actually name the failing branch. */
+-  /* MSV3 1.0.11 payload, 27 bytes -> a 29-byte AD structure inside the 31-byte scan response.
++  /* MSV3 1.0.13 payload, 28 bytes -> a 30-byte AD structure inside the 31-byte scan response.
+    *
+-   * The field set changed deliberately. The previous one carried sizes and CRCs that were only
+-   * meaningful once validate had run -- and validate never ran. What actually needs answering is:
+-   * is this record even FRESH (nonce, build_id), did STOP arrive and did it get processed, and
+-   * WHY did the first allocation fail. alloc_fail_rc is the single decisive value: NO_MEM means
+-   * queue pressure, INVALID_PARAM means the packet-type byte was rejected outright, and those two
+-   * demand completely different fixes. */
+-  uint8_t payload[28];
++   * 1.0.11's field set answered its question and is now mostly spent. alloc_fail_rc came back
++   * NRF_ERROR_INVALID_PARAM, reset_reas came back SREQ, and sched_fail came back zero; all three
++   * are kept but NARROWED to a single byte each (error codes and RESETREAS bits of interest both
++   * live in the low byte, and sched_fail folds into the stop flags) to buy room for what 1.0.13
++   * actually has to prove.
++   *
++   * The new question is whether acknowledgements REACH THE WIRE. tx_block_count is how often the
++   * CDC TX FIFO refused a byte, tx_resume_count is how often hci_slip_tx_pump() finished a frame
++   * that stock would have abandoned forever, and ack_frames_done against rx_seen is the verdict:
++   * equal means every received frame was answered. seq_mismatch is the host's side of the same
++   * event -- adafruit-nrfutil resets its sequence counter when an ACK never arrives, so a
++   * mismatch here is a missing ACK seen one frame later.
++   *
++   * Reader: MSV3/scripts/msv3_read_dfu_trace.py. Keep the two in step; this layout is an ABI. */
++  uint8_t payload[29];
+   uint8_t i = 0;
+ 
+   uint16_t dropped = (t->frames_dropped > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_dropped;
+   uint16_t queued  = (t->frames_queued  > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_queued;
+-  uint16_t nonce16 = (uint16_t)(t->nonce & 0xFFFFUL);
++
++  /* Both sequence numbers are 3-bit, so they pack into one byte. 0xFF means no mismatch ever
++   * happened, which is distinguishable because a real pair can never set the high nibble to 0xF. */
++  uint8_t seq_mm = (t->seq_mismatch_exp == 0xFFU)
++                 ? 0xFFU
++                 : (uint8_t)(((t->seq_mismatch_exp & 0x0FU) << 4) | (t->seq_mismatch_rx & 0x0FU));
++
++  /* bit0 STOP reached the transport, bit1 STOP was processed, bit2 app_sched_event_put() ever
++   * failed, bit3 hci_mem_pool_rx_produce() ever returned NO_MEM. Four one-bit answers that used
++   * to cost four bytes. */
++  uint8_t flags = (uint8_t)((t->stop_seen_at_rx ? 0x01U : 0U) |
++                            (t->stop_processed  ? 0x02U : 0U) |
++                            (t->sched_fail      ? 0x04U : 0U) |
++                            (t->produce_nomem   ? 0x08U : 0U));
+ 
+   payload[i++] = 0xFF;
+   payload[i++] = 0xFF;
+-  memcpy(&payload[i], (const void *)&t->build_id, 2);       i += 2;
+-  memcpy(&payload[i], &app_crc, 2);                         i += 2;
++  memcpy(&payload[i], (const void *)&t->build_id, 2);          i += 2;
++  memcpy(&payload[i], &app_crc, 2);                            i += 2;
+   payload[i++] = 1;   /* trace_valid */
+-  memcpy(&payload[i], &nonce16, 2);                         i += 2;
++  payload[i++] = (uint8_t)(t->nonce & 0xFFUL);
+   payload[i++] = t->transport;
+   payload[i++] = t->stage;
+-  payload[i++] = t->stop_seen_at_rx;
+-  payload[i++] = t->stop_processed;
++  payload[i++] = flags;
+   payload[i++] = t->alloc_fail_type;
+-  payload[i++] = t->sched_fail;
+-  memcpy(&payload[i], (const void *)&t->rx_seen, 2);        i += 2;
+-  memcpy(&payload[i], &queued, 2);                          i += 2;
+-  memcpy(&payload[i], &dropped, 2);                         i += 2;
+-  memcpy(&payload[i], (const void *)&t->alloc_fail_rc, 4);  i += 4;
+-  memcpy(&payload[i], (const void *)&t->reset_reas, 4);     i += 4;
++  payload[i++] = (uint8_t)(t->alloc_fail_rc & 0xFFUL);
++  payload[i++] = (uint8_t)(t->reset_reas & 0xFFUL);
++  payload[i++] = seq_mm;
++  payload[i++] = (t->produce_nomem > 0xFFU) ? 0xFFU : (uint8_t)t->produce_nomem;
++  memcpy(&payload[i], (const void *)&t->rx_seen, 2);           i += 2;
++  memcpy(&payload[i], &queued, 2);                             i += 2;
++  memcpy(&payload[i], &dropped, 2);                            i += 2;
++  memcpy(&payload[i], (const void *)&t->tx_block_count, 2);    i += 2;
++  memcpy(&payload[i], (const void *)&t->tx_resume_count, 2);   i += 2;
++  memcpy(&payload[i], (const void *)&t->ack_frames_done, 2);   i += 2;
+ 
+   advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, payload, i);
+ }
+diff --git a/linker/nrf52840.ld b/linker/nrf52840.ld
+--- a/linker/nrf52840.ld
++++ b/linker/nrf52840.ld
+@@ -28,14 +28,17 @@
+    * Keep the bootloader stack below it so watchdog-reset state reaches the app.
+    */
+   /*
+-   * MSV3 1.0.6: MSV3_DFU_TRACE is 64 bytes of retained scratch for the DFU decision record.
++   * MSV3 1.0.6: MSV3_DFU_TRACE is retained scratch for the DFU decision record. 1.0.13 grew it
++   * from 64 to 96 bytes and moved its base DOWN to 0x2003FF98 -- the boot-guard record above it
++   * is an application ABI and cannot move, so the only direction available is into the stack.
++   * The cost is 32 bytes of bootloader stack, which measured peak usage has ample margin for.
+    * It is deliberately EXCLUDED from RAM rather than placed in a section, so no bootloader
+    * stack, heap, .bss or .data can reach it and startup clearing -- which is driven by the
+    * RAM region below -- cannot touch it. Accessed by fixed address, see MSV3_DFU_TRACE_ADDR.
+    * It sits UNDER the boot-guard record, which keeps that application ABI at 0x2003FFF8.
+    */
+-  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x2003FFB8-0x20008000
+-  MSV3_DFU_TRACE (rwx) : ORIGIN = 0x2003FFB8, LENGTH = 0x40
++  RAM (rwx) :  ORIGIN = 0x20008000, LENGTH = 0x2003FF98-0x20008000
++  MSV3_DFU_TRACE (rwx) : ORIGIN = 0x2003FF98, LENGTH = 0x60
+   MSV3_BOOT_GUARD_RETAINED (rwx) : ORIGIN = 0x2003FFF8, LENGTH = 0x08
+ 
+   /* Location for double reset detection, no init */
+@@ -114,6 +117,6 @@
+        "MSV3 boot-guard retention must immediately follow the DFU trace")
+ ASSERT(ORIGIN(MSV3_BOOT_GUARD_RETAINED) == 0x2003FFF8,
+        "MSV3 boot-guard retention moved from its application ABI address")
+-ASSERT(ORIGIN(MSV3_DFU_TRACE) == 0x2003FFB8,
++ASSERT(ORIGIN(MSV3_DFU_TRACE) == 0x2003FF98,
+        "MSV3 DFU trace moved from the address its readers hard-code")
+ INCLUDE "nrf_common.ld"

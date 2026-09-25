@@ -251,6 +251,65 @@ const uint16_t MSV2_COMPANY_ID = 0xFFFF;
 const uint8_t MSV2_MAGIC[] = { 'M', 'S', 'V', '2' };
 const uint8_t MAX_SENSOR_ID = 16;
 
+// ---- Bench probes: MSV3 bring-up firmware, deliberately a DIFFERENT magic ----
+//
+// MSV3_Probe_Bringup_Test.ino advertises "MSV3" instead of "MSV2" so that a production receiver
+// drops its packets before it ever looks at sensorId. That is a SAFETY PROPERTY, not an
+// oversight: a bench probe sitting in air next to a running receiver must never be able to
+// contribute a fabricated reading to a real plant's history or to the cloud.
+//
+// The Bench page opts back in to seeing those packets, and it does so through a SEPARATE parse
+// path (parseBenchAdvertisement) writing a SEPARATE array (benchProbes). That path must never
+// touch sensors[], the history staging buffer, the durable outbox, or the cloud snapshot. If a
+// future change makes a bench packet reach any of those, the safety property above is gone.
+const uint8_t MSV3_BENCH_MAGIC[] = { 'M', 'S', 'V', '3' };
+// Bench firmware before the 2026-09-21 widening sent 17 bytes and no format version. Both
+// lengths are accepted so an older bring-up image still appears on the page, with the v1-only
+// fields (mux code, FDC status) shown as unavailable rather than decoded from absent bytes.
+const size_t MSV3_BENCH_PACKET_MIN_LEN = 17;
+const size_t MSV3_BENCH_PACKET_V1_LEN = 23;
+// Byte [19] in the bench layout. Production sends the low byte of an always-zero legacy field at
+// this offset, so any nonzero value here is unambiguous evidence of versioned bench firmware.
+// See the bench packet ABI comment above bleStartAdv() in MSV3_Probe_Bringup_Test.ino -- keyed
+// on this version exactly so a reused byte can never be decoded against the wrong build, which
+// is the mistake CLAUDE.md records being made four times during the DFU work.
+const uint8_t MSV3_BENCH_FORMAT_VERSION_1 = 1;
+#define BENCH_ADV_FLAG_CHARGING        (1U << 0)
+#define BENCH_ADV_FLAG_BOARD_TEMP_OK   (1U << 2)
+#define BENCH_ADV_FLAG_OTA_POWER_OK    (1U << 4)
+#define BENCH_ADV_FLAG_READING_INVALID (1U << 5)
+#define BENCH_ADV_FLAG_LIVE_MODE       (1U << 7)
+// Five fits the page's list area at a readable row height. A bench rarely has more than two or
+// three probes on it at once; the slot table evicts the stalest entry rather than growing.
+const uint8_t BENCH_SLOT_COUNT = 5;
+const uint32_t BENCH_STALE_MS = 15000;
+
+// ---- Bench command beacon: receiver -> probe, connectionless ----
+//
+// ABI shared with benchCommandScanCallback() in MSV3_Probe_Bringup_Test.ino; that function's
+// comment is the authoritative description, including why the direction is receiver-advertises /
+// probe-scans rather than the other way round, and the explicit statement that this channel is
+// unauthenticated and therefore carries nothing but a light.
+//
+// "TBCM" is a third magic, distinct from both "MSV2" and "MSV3", so a command can never be
+// parsed as sensor data nor sensor data as a command.
+const uint8_t BENCH_CMD_MAGIC[] = { 'T', 'B', 'C', 'M' };
+const uint8_t BENCH_CMD_TARGET_ALL = 0xFF;
+const uint8_t BENCH_CMD_OP_IDENTIFY = 0x01;
+const size_t BENCH_CMD_PACKET_LEN = 14;
+// How long one command stays on air. Long enough that a probe scanning at 50% duty cannot miss
+// it, short enough that the radio is back to plain scanning almost immediately.
+const uint32_t BENCH_CMD_BROADCAST_MS = 2500;
+uint32_t benchCommandUntilMs = 0;
+uint32_t benchCommandCounter = 0;
+bool benchCommandAdvertising = false;
+// Randomised once, lazily, on the first command after boot. The probe compares the counter only
+// within one session, because the counter alone restarts at 1 on every receiver boot and would
+// then collide with the last value a probe already acted on -- measured 2026-09-21, and it made
+// the first identify after a receiver reflash silently do nothing. See
+// benchCommandScanCallback()'s comment in MSV3_Probe_Bringup_Test.ino.
+uint16_t benchCommandSessionId = 0;
+
 // MSV3 receiver-side temperature compensation. The probe continues to transmit only raw
 // observables; this model lives here so raw history is never replaced and the correction can
 // be revised/audited without reflashing every probe. It estimates log(Cconnected/Cbare), removes
@@ -988,6 +1047,49 @@ portMUX_TYPE temperatureCompensationMux = portMUX_INITIALIZER_UNLOCKED;
 // and BLE presentation filtering read on other tasks/cores. Treat each state as one
 // record for the same reason as sensors[].
 portMUX_TYPE autoCalMux = portMUX_INITIALIZER_UNLOCKED;
+
+// ---- Bench probe table -------------------------------------------------------------------
+//
+// Written by parseBenchAdvertisement() on the BLE scan task, read by the Bench page on
+// loopTask. Same one-record-under-one-short-lock discipline as sensors[], and for the same
+// reason: a half-updated row would render a count from one packet beside a wake counter from
+// another and look exactly like a real measurement discontinuity.
+//
+// Kept entirely separate from sensors[] by design - see MSV3_BENCH_MAGIC's comment.
+struct BenchProbe
+{
+  bool seen;
+  uint8_t sensorId;          // 99 on an untargeted bring-up build, the fleet id on a targeted one
+  uint32_t wake;
+  uint32_t fdcCounts;
+  bool readingValid;         // false = the probe advertised a placeholder, not a measurement
+  uint16_t batteryMv;
+  bool charging;
+  bool otaPowerOk;
+  bool liveMode;             // probe is in `bench on`, refreshing ~4x/s
+  bool boardTempValid;
+  int16_t boardTempQuarterC;
+  uint8_t formatVersion;     // 0 = pre-versioning bench firmware; mux/status below are absent
+  uint8_t muxCode;
+  uint16_t fdcStatus;
+  int rssi;
+  uint32_t lastSeenMs;
+  uint32_t received;
+};
+BenchProbe benchProbes[BENCH_SLOT_COUNT];
+portMUX_TYPE benchMux = portMUX_INITIALIZER_UNLOCKED;
+// Set by the BLE task when any bench row changes. The /bench web page polls rather than
+// subscribing, so nothing in firmware consumes this today; it is kept because it is the natural
+// hook for a future push/SSE endpoint and costs one byte.
+volatile bool benchDataDirty = false;
+
+// Manual prototypes for every bench function whose signature names the struct above.
+// REQUIRED, not stylistic: the .ino preprocessor inserts auto-generated prototypes immediately
+// before the file's first function definition (color565(), far above these declarations), so an
+// auto-generated one would reference BenchProbe before it exists and fail to compile. Declaring them here suppresses that generation - the same reason the PlantArtSlot
+// prototype block further down exists. See this file's closing comment for the full account.
+void benchSnapshotAll(BenchProbe* out);
+bool benchSlotIsFresh(const BenchProbe& probe, uint32_t nowMs);
 
 #if TREEBEARD_ENABLE_DISPLAY
 // Defined with the rest of the touch/display state below. Journal commits avoid an active
@@ -4563,6 +4665,187 @@ void drawBrightnessOverlay()
   drawBrightnessSoundButtonRow(soundEnabled);
   tft.fillRoundRect(panelX + panelW - 104, buttonY, 88, 34, 6, TFT_SURFACE_2);
   drawTextCenter("Close", panelX + panelW - 60, buttonY + 13, 1, TFT_MUTED, TFT_SURFACE_2);
+}
+
+// ---- Bench probe data helpers -------------------------------------------------------------
+//
+// The Bench view itself is a WEB page served from this receiver (/bench), not a screen on the
+// display. Only the data path and the command beacon live in firmware; the rendering, the
+// selection and the demo baseline are all the browser's job. See
+// DisplayCenter/docs/BENCH_PAGE_AND_COMMAND_BEACON_2026-09-21.md.
+
+// One short lock, one whole-array copy. Rendering and JSON both happen outside it, for the same
+// reason copySensorReading() exists: never hold a spinlock across slow work.
+void benchSnapshotAll(BenchProbe* out)
+{
+  portENTER_CRITICAL(&benchMux);
+  memcpy(out, benchProbes, sizeof(BenchProbe) * BENCH_SLOT_COUNT);
+  portEXIT_CRITICAL(&benchMux);
+}
+
+bool benchSlotIsFresh(const BenchProbe& probe, uint32_t nowMs)
+{
+  return probe.seen && (nowMs - probe.lastSeenMs) < BENCH_STALE_MS;
+}
+
+// Serialises benchProbes[] for GET /bench-data.
+//
+// Raw observables only. No calibration, no moisture mapping, no smoothing - this is a bench
+// instrument readout, and every transform this receiver applies to real plant data exists for
+// plants in soil, not for a board held in someone's hand. The browser does the presentation
+// (grouping digits, the demo baseline/delta, age formatting).
+String benchDataJson()
+{
+  const uint32_t nowMs = millis();
+  BenchProbe snapshot[BENCH_SLOT_COUNT];
+  benchSnapshotAll(snapshot);
+
+  StaticJsonDocument<1536> doc;
+  doc["ok"] = true;
+  doc["nowMs"] = nowMs;
+  doc["staleMs"] = BENCH_STALE_MS;
+  doc["identifyBroadcasting"] = benchCommandAdvertising;
+  JsonArray probes = doc.createNestedArray("probes");
+  for (uint8_t i = 0; i < BENCH_SLOT_COUNT; i++)
+  {
+    if (!snapshot[i].seen)
+    {
+      continue;
+    }
+    JsonObject probe = probes.createNestedObject();
+    probe["sensorId"] = snapshot[i].sensorId;
+    probe["wake"] = snapshot[i].wake;
+    // readingValid false means the probe advertised a placeholder, not a measurement (an OTA
+    // discovery window, or a failed FDC read). The count is omitted entirely rather than sent as
+    // 0, so the page cannot render a fabricated reading even by accident.
+    probe["readingValid"] = snapshot[i].readingValid;
+    if (snapshot[i].readingValid)
+    {
+      probe["fdcCounts"] = snapshot[i].fdcCounts;
+    }
+    probe["batteryMv"] = snapshot[i].batteryMv;
+    probe["charging"] = snapshot[i].charging;
+    probe["otaPowerOk"] = snapshot[i].otaPowerOk;
+    probe["liveMode"] = snapshot[i].liveMode;
+    probe["fresh"] = benchSlotIsFresh(snapshot[i], nowMs);
+    if (snapshot[i].boardTempValid)
+    {
+      probe["boardTempC"] = snapshot[i].boardTempQuarterC / 4.0f;
+    }
+    // Absent, not zero, on pre-versioning bring-up firmware: those builds never wrote these
+    // bytes. Gated on the format version, not on packet length.
+    probe["formatVersion"] = snapshot[i].formatVersion;
+    if (snapshot[i].formatVersion >= MSV3_BENCH_FORMAT_VERSION_1)
+    {
+      probe["muxCode"] = snapshot[i].muxCode;
+      probe["fdcStatus"] = snapshot[i].fdcStatus;
+    }
+    probe["rssi"] = snapshot[i].rssi;
+    probe["ageMs"] = nowMs - snapshot[i].lastSeenMs;
+    probe["received"] = snapshot[i].received;
+  }
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
+// Puts one command on air for BENCH_CMD_BROADCAST_MS. Returns false if BLE is not up, so the
+// caller can say so rather than silently appearing to work.
+//
+// The counter is monotonic per boot and is what makes a probe act once on a command it will hear
+// dozens of times during the broadcast window. See benchCommandScanCallback()'s replay handling,
+// which also tolerates this counter restarting when the receiver reboots.
+bool benchSendCommand(uint8_t targetSensorId, uint8_t opcode)
+{
+#if !TREEBEARD_ENABLE_BLE
+  (void)targetSensorId;
+  (void)opcode;
+  return false;
+#else
+  BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  if (advertising == nullptr)
+  {
+    return false;
+  }
+
+  if (benchCommandSessionId == 0)
+  {
+    // esp_random() is seeded by the RF/entropy hardware once WiFi or BLE is up, which it is by
+    // the time any command can be sent. Zero is reserved as "not yet drawn", so retry past it.
+    while (benchCommandSessionId == 0)
+    {
+      benchCommandSessionId = (uint16_t)(esp_random() & 0xFFFF);
+    }
+  }
+  benchCommandCounter++;
+  uint8_t payload[BENCH_CMD_PACKET_LEN];
+  payload[0] = (uint8_t)(MSV2_COMPANY_ID & 0xFF);
+  payload[1] = (uint8_t)((MSV2_COMPANY_ID >> 8) & 0xFF);
+  memcpy(&payload[2], BENCH_CMD_MAGIC, sizeof(BENCH_CMD_MAGIC));
+  payload[6] = targetSensorId;
+  payload[7] = opcode;
+  payload[8] = (uint8_t)(benchCommandCounter & 0xFF);
+  payload[9] = (uint8_t)((benchCommandCounter >> 8) & 0xFF);
+  payload[10] = (uint8_t)((benchCommandCounter >> 16) & 0xFF);
+  payload[11] = (uint8_t)((benchCommandCounter >> 24) & 0xFF);
+  payload[12] = (uint8_t)(benchCommandSessionId & 0xFF);
+  payload[13] = (uint8_t)((benchCommandSessionId >> 8) & 0xFF);
+
+  // String(ptr, len), never String(ptr). The counter above routinely contains zero bytes and a
+  // NUL-terminated construction would truncate the payload mid-field - the probe would then see
+  // a short packet and drop it, which looks exactly like a radio problem.
+  BLEAdvertisementData advertisementData;
+  advertisementData.setFlags(0x06);  // LE General Discoverable, BR/EDR not supported
+  advertisementData.setManufacturerData(String((const char*)payload, sizeof(payload)));
+  if (!advertising->setAdvertisementData(advertisementData))
+  {
+    return false;
+  }
+  advertising->setScanResponse(false);
+  // Non-connectable. This receiver has never advertised before and runs no GATT server; the
+  // default connectable type would invite any phone in the room to open a connection to it,
+  // which is both pointless and radio time taken away from scanning.
+  //
+  // BACKEND-DEPENDENT, and NOT interchangeable. setAdvertisementType() forwards its argument to
+  // two different fields: esp_ble_adv_params_t::adv_type under Bluedroid, and
+  // ble_gap_adv_params::conn_mode under NimBLE (see BLEAdvertising.cpp). This build is
+  // NimBLE-backed, where the correct value is BLE_GAP_CONN_MODE_NON (0); passing Bluedroid's
+  // ADV_TYPE_NONCONN_IND (3) there would set an out-of-range connection mode, not a
+  // non-connectable advertisement. Mirroring the library's own #if split is the only way to be
+  // right on both.
+#if defined(CONFIG_NIMBLE_ENABLED)
+  advertising->setAdvertisementType(BLE_GAP_CONN_MODE_NON);
+#elif defined(CONFIG_BLUEDROID_ENABLED)
+  advertising->setAdvertisementType(ADV_TYPE_NONCONN_IND);
+#endif
+  advertising->start();
+  benchCommandAdvertising = true;
+  benchCommandUntilMs = millis() + BENCH_CMD_BROADCAST_MS;
+  return true;
+#endif
+}
+
+// Takes the command back off air once its window closes. Called unconditionally from loop(), so
+// a command's broadcast window ends on time whether or not anyone is still looking at /bench.
+void serviceBenchCommandBroadcast()
+{
+#if TREEBEARD_ENABLE_BLE
+  if (!benchCommandAdvertising)
+  {
+    return;
+  }
+  if ((int32_t)(millis() - benchCommandUntilMs) < 0)
+  {
+    return;
+  }
+  BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  if (advertising != nullptr)
+  {
+    advertising->stop();
+  }
+  benchCommandAdvertising = false;
+#endif
 }
 
 void previewTouchBrightness(int16_t x)
@@ -9431,6 +9714,126 @@ uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv)
 }
 
 #if TREEBEARD_ENABLE_BLE
+// Decodes a bring-up ("MSV3" magic) advertisement into benchProbes[] and NOTHING ELSE.
+//
+// Read MSV3_BENCH_MAGIC's comment before changing this. The one hard rule: this function must
+// never write sensors[], enqueue history, touch the durable outbox, or mark sensorDataDirty. A
+// bench probe is a board on a desk, frequently in air, often mid-experiment; its numbers are
+// real measurements of nothing in particular and must never become a plant's record.
+//
+// Runs on the BLE scan task. `buffer`/`len` have already been checked for company ID and a
+// length of at least 12 by the caller.
+void parseBenchAdvertisement(const uint8_t* buffer, size_t len, int packetRssi)
+{
+  if (len < MSV3_BENCH_PACKET_MIN_LEN)
+  {
+    return;
+  }
+
+  const uint8_t sensorId = buffer[6];
+  const uint32_t wake = ((uint32_t)buffer[7]) |
+                        ((uint32_t)buffer[8] << 8) |
+                        ((uint32_t)buffer[9] << 16);
+  const uint32_t fdcCounts = ((uint32_t)buffer[10]) | ((uint32_t)buffer[11] << 8) |
+                             ((uint32_t)buffer[12] << 16) | ((uint32_t)buffer[13] << 24);
+  const uint16_t batteryMv = buffer[14] | (buffer[15] << 8);
+  const uint8_t flags = buffer[16];
+
+  // Everything below byte 17 exists only in versioned bench firmware. Gate on the version byte
+  // rather than on length alone: length says the bytes are present, version says what they mean.
+  uint8_t formatVersion = 0;
+  uint8_t muxCode = 0;
+  uint16_t fdcStatus = 0;
+  bool boardTempValid = false;
+  int16_t boardTempQuarterC = 0;
+  if (len >= MSV3_BENCH_PACKET_V1_LEN)
+  {
+    const int16_t tempField = (int16_t)(buffer[17] | (buffer[18] << 8));
+    // Independent range check, not just trust of the probe's own validity bit - the same
+    // defence the production path applies to this identical field.
+    boardTempValid = (flags & BENCH_ADV_FLAG_BOARD_TEMP_OK) != 0 &&
+                     tempField >= -160 && tempField <= 340;
+    if (boardTempValid)
+    {
+      boardTempQuarterC = tempField;
+    }
+    if (buffer[19] >= MSV3_BENCH_FORMAT_VERSION_1)
+    {
+      formatVersion = buffer[19];
+      muxCode = buffer[20] & 0x03;
+      fdcStatus = buffer[21] | (buffer[22] << 8);
+    }
+  }
+
+  const uint32_t receivedAtMs = millis();
+
+  portENTER_CRITICAL(&benchMux);
+  // Slot lookup: existing id, then any free slot, then evict the stalest. Five slots scanned
+  // three times is cheaper than keeping a sorted structure, and this runs once per packet.
+  int8_t slot = -1;
+  for (uint8_t i = 0; i < BENCH_SLOT_COUNT; i++)
+  {
+    if (benchProbes[i].seen && benchProbes[i].sensorId == sensorId)
+    {
+      slot = (int8_t)i;
+      break;
+    }
+  }
+  if (slot < 0)
+  {
+    for (uint8_t i = 0; i < BENCH_SLOT_COUNT; i++)
+    {
+      if (!benchProbes[i].seen)
+      {
+        slot = (int8_t)i;
+        break;
+      }
+    }
+  }
+  if (slot < 0)
+  {
+    uint32_t oldestSeenMs = benchProbes[0].lastSeenMs;
+    slot = 0;
+    for (uint8_t i = 1; i < BENCH_SLOT_COUNT; i++)
+    {
+      if ((int32_t)(benchProbes[i].lastSeenMs - oldestSeenMs) < 0)
+      {
+        oldestSeenMs = benchProbes[i].lastSeenMs;
+        slot = (int8_t)i;
+      }
+    }
+  }
+
+  BenchProbe& probe = benchProbes[slot];
+  if (probe.seen && probe.sensorId != sensorId)
+  {
+    // A recycled slot must not inherit the evicted probe's packet count.
+    probe.received = 0;
+  }
+  probe.seen = true;
+  probe.sensorId = sensorId;
+  probe.wake = wake;
+  probe.fdcCounts = fdcCounts;
+  probe.readingValid = (flags & BENCH_ADV_FLAG_READING_INVALID) == 0;
+  probe.batteryMv = batteryMv;
+  probe.charging = (flags & BENCH_ADV_FLAG_CHARGING) != 0;
+  probe.otaPowerOk = (flags & BENCH_ADV_FLAG_OTA_POWER_OK) != 0;
+  probe.liveMode = (flags & BENCH_ADV_FLAG_LIVE_MODE) != 0;
+  probe.boardTempValid = boardTempValid;
+  probe.boardTempQuarterC = boardTempQuarterC;
+  probe.formatVersion = formatVersion;
+  probe.muxCode = muxCode;
+  probe.fdcStatus = fdcStatus;
+  probe.rssi = packetRssi;
+  probe.lastSeenMs = receivedAtMs;
+  probe.received++;
+  portEXIT_CRITICAL(&benchMux);
+
+  // Deliberately NOT sensorDataDirty. That flag drives the dashboard's render gate and the
+  // cloud snapshot; bench traffic must move neither.
+  benchDataDirty = true;
+}
+
 class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
   void onResult(BLEAdvertisedDevice advertisedDevice)
@@ -9452,6 +9855,15 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     uint16_t companyId = buffer[0] | (buffer[1] << 8);
     if (companyId != MSV2_COMPANY_ID)
     {
+      return;
+    }
+
+    // Bring-up firmware first, and it returns unconditionally. The production path below is
+    // reached only by a genuine "MSV2" packet, exactly as before this branch existed - a bench
+    // probe still cannot reach sensors[], history or the cloud by any route.
+    if (memcmp(&buffer[2], MSV3_BENCH_MAGIC, sizeof(MSV3_BENCH_MAGIC)) == 0)
+    {
+      parseBenchAdvertisement(buffer, len, advertisedDevice.getRSSI());
       return;
     }
 
@@ -9956,6 +10368,50 @@ void setupServer()
     Serial.println("[Treebeard web] GET /app-icon.svg");
     server.sendHeader("Cache-Control", "public, max-age=86400");
     server.send_P(200, "image/svg+xml", TREEBEARD_APP_ICON_SVG);
+  });
+
+  // ---- Bench instrument readout, http://<receiver>/bench ----
+  //
+  // Not reachable from the physical display by design; the panel shows plant data only. These
+  // routes serve MSV3 bring-up probes, which the dashboard drops on purpose (see
+  // MSV3_BENCH_MAGIC's comment) - so nothing here can put a bench reading into plant history.
+  // The bench readout is the app's own Bench TAB, not a separate page - one implementation, so
+  // the two cannot drift apart. This route survives only so an existing /bench bookmark still
+  // lands somewhere useful.
+  server.on("/bench", HTTP_GET, []() {
+    Serial.println("[Treebeard web] GET /bench -> /app (Bench tab)");
+    server.sendHeader("Location", "/app");
+    server.send(302, "text/plain", "The bench readout is the Bench tab in the app.\n");
+  });
+
+  server.on("/bench-data", HTTP_GET, []() {
+    server.sendHeader("Cache-Control", "no-store");
+    server.send(200, "application/json", benchDataJson());
+  });
+
+  server.on("/bench-identify", HTTP_POST, []() {
+    Serial.println("[Treebeard web] POST /bench-identify");
+    StaticJsonDocument<128> body;
+    if (deserializeJson(body, server.arg("plain")) != DeserializationError::Ok ||
+        !body["sensorId"].is<int>())
+    {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"sensorId required\"}");
+      return;
+    }
+    const int sensorId = body["sensorId"].as<int>();
+    if (sensorId < 0 || sensorId > 255)
+    {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"sensorId out of range\"}");
+      return;
+    }
+    // Addressed to one probe, never BENCH_CMD_TARGET_ALL. On a bench with several boards on air,
+    // "blink whichever one hears me" is not an identification.
+    if (!benchSendCommand((uint8_t)sensorId, BENCH_CMD_OP_IDENTIFY))
+    {
+      server.send(503, "application/json", "{\"ok\":false,\"error\":\"BLE advertiser unavailable\"}");
+      return;
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
   });
 
   server.on("/ping", HTTP_GET, []() {
@@ -10741,6 +11197,10 @@ void loop()
   }
   recordLoopTaskStackFree();
   serviceBuzzer(now);
+  // Takes an identify command back off air once its window closes. Unconditional and outside the
+  // display guard: the command is triggered over HTTP now, so nothing about it depends on the
+  // panel being present or awake. Returns immediately when no command is in flight.
+  serviceBenchCommandBroadcast();
 
 #if TREEBEARD_ENABLE_WIFI
   maintainWifiConnection(now);

@@ -1,0 +1,52 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -24,6 +24,14 @@
+ 
+ #define MAX_BUFFERS          4u                                                      /**< Maximum number of buffers that can be received queued without being consumed. */
+ 
++/* MSV3 1.0.5: the last serial validate/activate results, which stock 0.11.0 discards outright.
++ * Volatile and never read back here on purpose -- keeping them out of the optimiser is enough to
++ * make them visible to a debugger, and they cost 8 bytes of RAM and no flash logic. They are NOT
++ * retained across reset; if the quiescing fix below turns out to be insufficient, the next step is
++ * to move these into a retained region with a magic word and serve them over the air. */
++volatile uint32_t msv3_serial_validate_rc = 0xFFFFFFFFUL;
++volatile uint32_t msv3_serial_activate_rc = 0xFFFFFFFFUL;
++
+ /**
+  * defgroup Data Packet Queue Access Operation Macros
+  * @{
+@@ -231,8 +239,31 @@
+                         break;
+ 
+                     case STOP_DATA_PACKET:
+-                        (void)dfu_image_validate();
+-                        (void)dfu_image_activate();
++                        /* MSV3_SERIAL_ACTIVATE_QUIESCE
++                         *
++                         * Stock 0.11.0 calls validate then activate back-to-back here and throws
++                         * both return values away. On a BLE-only bootloader that is survivable.
++                         * On MSV3 1.0.4 it is not, because BLE is ADVERTISING THROUGHOUT a wired
++                         * transfer, and dfu_image_activate() ends in bootloader_settings_save(),
++                         * an asynchronous pstorage write that has to share flash with the radio.
++                         *
++                         * The BLE transport never had this problem because it does the quiescing
++                         * itself -- see on_dfu_evt()'s BLE_DFU_ACTIVATE_N_RESET, which calls
++                         * dfu_transport_ble_close() BEFORE dfu_image_activate(). The serial path
++                         * has no equivalent, so on a dual-transport session it activates with the
++                         * radio still live. Measured 2026-09-20 on probe 8: six wired transfers
++                         * delivered every byte, reported success, and left no valid application,
++                         * while the same signed package over BLE worked every time.
++                         *
++                         * Close BLE first, in the same order the BLE path uses. Serial is left
++                         * open: the device resets out of activate anyway, and dropping the wired
++                         * link early would only hide a failure from the host.
++                         */
++                        msv3_serial_validate_rc = dfu_image_validate();
++
++                        (void)dfu_transport_ble_close();
++
++                        msv3_serial_activate_rc = dfu_image_activate();
+ 
+                         led_state(STATE_WRITING_FINISHED);
+ 

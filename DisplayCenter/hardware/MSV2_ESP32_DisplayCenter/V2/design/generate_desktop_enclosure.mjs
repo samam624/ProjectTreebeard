@@ -1,19 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import opencascade from '../../../MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.js';
-import * as replicad from '../../../MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad/dist/replicad.js';
+import opencascade from '../../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.js';
+import * as replicad from '../../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad/dist/replicad.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.dirname(here);
 const outputDir = path.join(projectDir, 'output');
 const wasmPath = path.resolve(
   here,
-  '../../../MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.wasm',
+  '../../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.wasm',
 );
 const sourceEnclosurePath = path.join(projectDir, 'display_enclosure.step');
 const sourcePcbPath = path.join(projectDir, 'MSV3_desktop_display.step');
-const sourceAntennaPath = 'C:/Users/Public/Documents/Altium/MSV2_ESP32_DisplayCenter/antenna_step.stp';
 
 const parameters = {
   // Keep the supplied PCB STEP at its native origin. The legacy bezel and all
@@ -48,16 +47,6 @@ const parameters = {
   usbOpening: { xMin: -36.30, xMax: -25.90, zMin: -11.80, zMax: -6.55 },
   usbCableBay: { xMin: -39.00, xMax: -23.00, yMin: -12.20, yMax: 5.60 },
   bottomFeet: { yMin: -12.00, yMax: -4.00, leftXMin: -62.00, leftXMax: -43.00, rightXMin: 37.00, rightXMax: 56.00 },
-  antennaMount: {
-    x: 50.50, y: 70.00,
-    holeDiameter: 10.00,
-  },
-  antennaFold: {
-    hingeX: 40.40, hingeZ: -2.10, splitX: 45.40,
-    localFoldDegrees: 90.00,
-    globalRotationY: 90.00,
-    translation: [52.90, 70.00, -0.60],
-  },
   kickstandPivot: { y: 41.00, z: -23.80 },
   kickstandFar: { y: -7.50, z: -24.80 },
   kickstandArmThickness: 4.00,
@@ -218,15 +207,6 @@ function buildRearShell() {
       centerX, centerY, 2.60));
   }
 
-  // One unobstructed circular opening for the supplied 9.4 mm hinged antenna
-  // base. The previous D-flat plus 12 mm counterbore looked like two different
-  // holes and clipped one side of the opening.
-  const antennaRadius = p.antennaMount.holeDiameter / 2;
-  shell = shell.cut(cylinderZ(
-    p.shellBackZ - 0.30, 3.40,
-    p.antennaMount.x, p.antennaMount.y, antennaRadius,
-  ));
-
   // Shallow exterior pockets let the folded prop sit flush without thinning
   // the 2.6 mm rear wall below 1.6 mm.
   shell = shell.cut(box(-15.10, -11.60, -21.30, -10.40, 44.70, -20.00));
@@ -280,31 +260,8 @@ function buildKickstand() {
   return stand;
 }
 
-function buildFoldedAntenna(referenceSolids) {
-  const p = parameters.antennaFold;
-  const antennaBody = referenceSolids[1];
-
-  // The vendor STEP is supplied in its straight position as one fused antenna
-  // body. Split at the knuckle, rotate the whip 90 degrees, then orient the
-  // connector through the rear wall. This is a placement reference only; the
-  // printed enclosure contains the mounting hole, not printed antenna parts.
-  const base = antennaBody.clone().intersect(box(
-    -10.00, -20.00, -20.00, p.splitX, 20.00, 20.00,
-  ));
-  const whip = antennaBody.clone().intersect(box(
-    p.splitX, -20.00, -20.00, 150.00, 20.00, 20.00,
-  )).rotate(
-    p.localFoldDegrees,
-    [p.hingeX, 0, p.hingeZ],
-    [0, 1, 0],
-  );
-
-  return [base, whip].map((solid) => solid
-    .rotate(p.globalRotationY, [0, 0, 0], [0, 1, 0])
-    .translate(...p.translation));
-}
-
 fs.mkdirSync(outputDir, { recursive: true });
+fs.rmSync(path.join(outputDir, 'MSV3_display_antenna_positioned.step'), { force: true });
 
 const enclosureReference = await importStep(sourceEnclosurePath);
 const enclosureSolids = solidChildren(enclosureReference);
@@ -314,10 +271,6 @@ const frontBezelReferenceDesign = enclosureSolids
 const frontCoverDesign = buildFrontCover();
 let pcbAssembly = await importStep(sourcePcbPath);
 pcbAssembly = pcbAssembly.translate(parameters.pcbTranslation);
-const antennaReference = await importStep(sourceAntennaPath);
-const antennaSolidsDesign = buildFoldedAntenna(solidChildren(antennaReference));
-const antennaAssemblyDesign = replicad.compoundShapes(antennaSolidsDesign);
-
 const rearShellDesign = buildRearShell();
 const kickstandDesign = buildKickstand();
 const deployedKickstandDesign = kickstandDesign.clone().rotate(
@@ -334,7 +287,6 @@ const frontCover = frontCoverDesign.clone().translate(...outputTranslation);
 const rearShell = rearShellDesign.clone().translate(...outputTranslation);
 const kickstand = kickstandDesign.clone().translate(...outputTranslation);
 const deployedKickstand = deployedKickstandDesign.clone().translate(...outputTranslation);
-const antennaAssembly = antennaAssemblyDesign.clone().translate(...outputTranslation);
 
 const foldedStandOverlap = replicad.measureVolume(
   rearShell.clone().intersect(kickstand.clone()),
@@ -353,14 +305,12 @@ await writeBlob(path.join(outputDir, 'MSV3_display_front_bezel_reference.step'),
 await writeBlob(path.join(outputDir, 'MSV3_display_front_cover.step'), frontCover.blobSTEP());
 await writeBlob(path.join(outputDir, 'MSV3_display_rear_shell.step'), rearShell.blobSTEP());
 await writeBlob(path.join(outputDir, 'MSV3_display_kickstand.step'), kickstand.blobSTEP());
-await writeBlob(path.join(outputDir, 'MSV3_display_antenna_positioned.step'), antennaAssembly.blobSTEP());
 await writeBlob(
   path.join(outputDir, 'MSV3_display_enclosure_assembly.step'),
   replicad.exportSTEP([
     { shape: frontCover, name: 'Extended Front Cover with M2 Inserts', color: '#737a80' },
     { shape: rearShell, name: 'Single Rectangle Rear Shell', color: '#345f78' },
     { shape: kickstand, name: 'Adjustable Folding Kickstand', color: '#d3a64d' },
-    { shape: antennaAssembly, name: 'Folded Rear Antenna Reference', color: '#252a2e' },
   ]),
 );
 await writeBlob(
@@ -369,7 +319,6 @@ await writeBlob(
     { shape: frontCover, name: 'Extended Front Cover with M2 Inserts', color: '#737a80' },
     { shape: rearShell, name: 'Single Rectangle Rear Shell', color: '#345f78' },
     { shape: kickstand, name: 'Adjustable Folding Kickstand', color: '#d3a64d' },
-    { shape: antennaAssembly, name: 'Folded Rear Antenna Reference', color: '#252a2e' },
     { shape: pcbAssembly, name: 'Two-PCB Soldered Assembly Reference', color: '#26733a' },
   ]),
 );
@@ -386,34 +335,49 @@ await writeBlob(
     { shape: frontCover, name: 'Extended Front Cover with M2 Inserts', color: '#737a80' },
     { shape: rearShell, name: 'Single Rectangle Rear Shell', color: '#345f78' },
     { shape: deployedKickstand, name: 'Kickstand at 30 Degrees', color: '#d3a64d' },
-    { shape: antennaAssembly, name: 'Folded Rear Antenna Reference', color: '#252a2e' },
   ]),
 );
 
 const explodedRear = rearShell.clone().translateZ(-18.00);
 const explodedStand = kickstand.clone().translateX(30.00);
-const explodedAntenna = antennaAssembly.clone().translateX(-25.00);
 await writeBlob(
   path.join(outputDir, 'MSV3_display_enclosure_exploded.step'),
   replicad.exportSTEP([
     { shape: frontCover, name: 'Extended Front Cover with M2 Inserts', color: '#737a80' },
     { shape: explodedRear, name: 'Single Rectangle Rear Shell', color: '#345f78' },
     { shape: explodedStand, name: 'Adjustable Folding Kickstand', color: '#d3a64d' },
-    { shape: explodedAntenna, name: 'Folded Rear Antenna', color: '#252a2e' },
   ]),
 );
 
+// Print the front cover with the visible bezel face on the bed.  The previous
+// orientation put the insert bosses on the bed and left the top and bottom
+// bezel rails as floating regions above the LCD opening.  Face-down removes
+// those unsupported bridges and is the stable orientation for a 0.4 mm nozzle.
+let frontCoverForPrint = frontCover.clone().rotate(180, [0, 0, 0], [1, 0, 0]);
+const frontPrintMin = frontCoverForPrint.boundingBox.bounds[0];
+frontCoverForPrint = frontCoverForPrint.translate(
+  -frontPrintMin[0], -frontPrintMin[1], -frontPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_front_cover_print.stl'),
-  frontCover.clone().translateZ(-frontCover.boundingBox.bounds[0][2])
-    .blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
-let rearShellForPrint = rearShell.clone().rotate(90, [0, 0, 0], [1, 0, 0]);
-rearShellForPrint = rearShellForPrint.translateZ(-rearShellForPrint.boundingBox.bounds[0][2]);
+  frontCoverForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+// Stand the rear shell on its continuous right side wall.  Printing it on the
+// lower edge left the center of the shell suspended between the two USB feet.
+// The -90 degree direction also leaves its local X coordinates positive, which
+// Bambu Studio's command-line arranger requires before it places the objects.
+let rearShellForPrint = rearShell.clone().rotate(-90, [0, 0, 0], [0, 1, 0]);
+const rearPrintMin = rearShellForPrint.boundingBox.bounds[0];
+rearShellForPrint = rearShellForPrint.translate(
+  -rearPrintMin[0], -rearPrintMin[1], -rearPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_rear_shell_print.stl'),
   rearShellForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+let kickstandForPrint = kickstand.clone().rotate(90, [0, 0, 0], [1, 0, 0]);
+const kickstandPrintMin = kickstandForPrint.boundingBox.bounds[0];
+kickstandForPrint = kickstandForPrint.translate(
+  -kickstandPrintMin[0], -kickstandPrintMin[1], -kickstandPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_kickstand_print.stl'),
-  kickstand.clone().rotate(90, [0, 0, 0], [0, 1, 0])
-    .translateZ(-kickstand.clone().rotate(90, [0, 0, 0], [0, 1, 0]).boundingBox.bounds[0][2])
-    .blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+  kickstandForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
 
 const activeCenter = [
   (parameters.bezelOpening.xMin + parameters.bezelOpening.xMax) / 2 + outputTranslation[0],
@@ -440,17 +404,13 @@ const outputCoordinates = {
     yMax: parameters.mainOuter.yMax + outputTranslation[1],
   },
   closureHoleCenters: outputClosureHoleCenters,
-  antennaMount: [
-    parameters.antennaMount.x + outputTranslation[0],
-    parameters.antennaMount.y + outputTranslation[1],
-  ],
   kickstandPivot: [
     parameters.kickstandPivot.y + outputTranslation[1],
     parameters.kickstandPivot.z + outputTranslation[2],
   ],
 };
 const designReport = {
-  version: 'prototype-6-native-clean-front',
+  version: 'prototype-8-p1s-0p4-pla',
   units: 'mm',
   parameters,
   outputCoordinates,
@@ -482,10 +442,8 @@ const designReport = {
     rearShellIntersectionVolume: pcbRearShellOverlap,
   },
   antenna: {
-    source: sourceAntennaPath,
-    identifiedStyle: '113 x 10 mm hinged connector-mount whip, shown folded 90 degrees',
-    placement: 'high on the rear wall, folded horizontally inside the front-view silhouette',
-    attachment: 'single 10.0 mm circular through-bore sized around the supplied 9.4 mm hinged antenna base',
+    placement: 'internal antenna; exact location and cable routing to be checked with the ordered part',
+    externalOpening: false,
   },
   usb: {
     connectorDirection: 'downward',
@@ -524,6 +482,22 @@ const designReport = {
     pcbMountingHoleDiameter: 3.20,
     closedBezelIntersectionVolume: bezelShellOverlap,
   },
+  printProfile: {
+    printer: 'Bambu Lab P1S',
+    nozzleDiameter: 0.40,
+    material: 'PLA',
+    layerHeight: 0.20,
+    nominalLineWidth: 0.42,
+    wallLoops: 3,
+    supportPlan: 'front cover and kickstand: none; rear shell: build-plate-only tree supports',
+    frontCoverOrientation: 'visible bezel face on bed',
+    rearShellOrientation: 'continuous right side wall on bed, shell vertical',
+    kickstandOrientation: 'wide foot on bed, arms vertical',
+    minimumWallThickness: parameters.wallThickness,
+    frontFaceThickness: parameters.visibleFrontZ - parameters.frontFaceBackZ,
+    minimumInsertBossRadialWall:
+      parameters.enclosureInsertBossRadius - parameters.enclosureInsertDiameter / 2,
+  },
 };
 fs.writeFileSync(path.join(outputDir, 'design_report.json'), `${JSON.stringify(designReport, null, 2)}\n`);
 
@@ -532,7 +506,6 @@ console.log(JSON.stringify({
   frontCoverBounds: frontCover.boundingBox.bounds,
   rearShellBounds: rearShell.boundingBox.bounds,
   kickstandBounds: kickstand.boundingBox.bounds,
-  antennaBounds: antennaAssembly.boundingBox.bounds,
   pcbBounds: pcbAssembly.boundingBox.bounds,
   foldedStandOverlap,
   bezelShellOverlap,

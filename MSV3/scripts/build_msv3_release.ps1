@@ -29,6 +29,10 @@ param(
   [int]$FdcIdriveCode = 16,
   [ValidateSet(10, 33)]
   [int]$FdcDeglitchMhz = 10,
+  # Also emit a SIGNED SD+BL+APP package tagged 0x3356, for delivering this bootloader release to a
+  # probe already running an MSV3 bootloader. Off by default: an ordinary release is
+  # application-only, and a bootloader must be asked for.
+  [switch]$BootloaderOta,
   # Forwarded to arduino_msv3_probe.ps1. Probe-specific experiment image; see that script.
   [switch]$HybridV12Tank,
   [ValidateSet(0, 2)]
@@ -165,6 +169,253 @@ if ([version]$ReleaseVersion -ge [version]"1.0.4") {
     SentinelIn = "src\main.c"
   }
 }
+if ([version]$ReleaseVersion -ge [version]"1.0.5") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.5-serial-activate-quiesce.patch"
+    # 1.0.4 made BLE advertise THROUGHOUT a wired transfer, and stock's serial STOP_DATA handler
+    # calls dfu_image_activate() -- whose settings write is asynchronous pstorage -- with the radio
+    # still live, throwing the return value away. The BLE transport quiesces itself first
+    # (BLE_DFU_ACTIVATE_N_RESET closes the transport before activating); serial had no equivalent.
+    # Measured 2026-09-20: six wired transfers delivered every byte, reported success, and left no
+    # valid application. A silent failure to apply would restore exactly that, and the symptom is a
+    # wired update that claims success -- the worst shape for a probe with no SWD.
+    Sentinel = "MSV3_SERIAL_ACTIVATE_QUIESCE"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\dfu_transport_serial.c"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.6") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.6-dfu-trace.patch"
+    # A DIAGNOSTIC release. Stock throws away both dfu_image_validate() and dfu_image_activate()
+    # return values on the serial path and the host client sends no validate/activate at all, so a
+    # failed wired update is unattributable from either end. This retains a decision record across
+    # the reset and publishes it as scan-response manufacturer data, which is readable by a passive
+    # scan without touching the USB endpoint under investigation. It changes no security check.
+    Sentinel = "MSV3_DFU_TRACE_MAGIC"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\bootloader_types.h"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.7") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.7-serial-queue-credit.patch"
+    # THE WIRED-UPDATE FIX. Stock sizes the serial packet queue at 4 (3 usable) while the HCI
+    # receive pool is 16, so HCI acknowledges frames the application cannot retain and the
+    # queue-full path discards them AFTER the host has been told they landed. That path does not
+    # discriminate by packet type, so the single STOP_DATA packet is droppable too -- which is how
+    # a wired update completed, reported success, never ran validate or activate, and left a board
+    # with no application. If this patch silently failed to apply, that behaviour would return and
+    # the symptom is a wired flash that CLAIMS SUCCESS, which is the worst possible failure shape
+    # for a probe with no SWD.
+    Sentinel = "MSV3_SERIAL_QUEUE_CREDIT"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\dfu_transport_serial.c"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.8") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.8-serial-rx-gate.patch"
+    # The real flow control, and the fix 1.0.7 only approximated. HCI acknowledges a frame at
+    # receive time, so no queue size can stop an acknowledged frame being discarded -- the fix has
+    # to be upstream of the acknowledgement. This stops draining the USB CDC FIFO while the DFU
+    # packet queue is near capacity, which NAKs the host at the USB layer instead. Requires nothing
+    # of the host, which is the point: the stock Arduino IDE client gets it for free.
+    Sentinel = "MSV3_SERIAL_RX_GATE"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\dfu_transport_serial.c"
+  }
+}
+if ([version]$ReleaseVersion -eq [version]"1.0.9") {
+  # 1.0.9 IS WITHDRAWN. Measured on probe 8, 2026-09-20: it makes the wired path strictly worse --
+  # the transfer now dies on the FIRST write instead of around frame 13, because is_ota() does not
+  # select a transport, it selects whether flash goes through the SoftDevice. With the SoftDevice
+  # enabled the asynchronous pstorage path is MANDATORY and a direct flash_nrf5x_* call faults
+  # immediately. The real defect it was aiming at is real -- pstorage_store() is asynchronous and
+  # reads from the HCI receive buffer that data_queue_element_free() recycles as soon as the
+  # handler returns -- but the fix belongs in BUFFER LIFETIME (free the queue element from the
+  # pstorage completion callback, or bounce-copy before the store), not in forcing the sync path.
+  # The patch is kept only as the record of a disproven approach.
+  throw @"
+MSV3 bootloader 1.0.9 is WITHDRAWN and must not be built or installed.
+It forces the synchronous flash path for wired sessions, which faults immediately when the
+SoftDevice is enabled -- wired updates fail EARLIER on it than on 1.0.8.
+See MSV3/docs/MSV3_USB_BLE_COEXISTENCE_FIRST_HARDWARE_2026-09-20.md. Build 1.0.8 instead, and fix
+the serial transport's buffer lifetime rather than its flash path.
+"@
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.10") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.10-serial-deferred-free.patch"
+    # THE WIRED-UPDATE FIX. Since 1.0.4 runs both transports at once, a wired transfer takes the
+    # ASYNCHRONOUS pstorage path (is_ota() reports the global _ota_dfu, not the transport) -- and
+    # that path is handed a pointer into the HCI receive buffer which process_dfu_packet() then
+    # recycled the instant the handler returned, while the SoftDevice was still reading it. The
+    # buffer is now released from the write-completion callback instead. If this silently failed to
+    # apply, wired updates would resume resetting the board mid-transfer with the COM port
+    # vanishing, which is unattributable from the host.
+    Sentinel = "MSV3_SERIAL_DEFERRED_FREE"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\dfu_transport_serial.c"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.11") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.11-trace-nonce-opcodes.patch"
+    # Makes the 1.0.6 trace trustworthy. Four different bootloaders were once read back
+    # byte-identical, and with no nonce or build id there was no way to tell a failed fix from a
+    # record that had never been re-armed -- so several releases were built on evidence that may
+    # never have been evidence. Adds nonce + build id, rx_seen/queued/dropped separately,
+    # stop_seen_at_rx vs stop_processed, RESETREAS, and the EXACT first
+    # data_queue_element_alloc() return with the packet-type byte that was rejected. That last
+    # value separates queue pressure (NO_MEM) from a type rejection (INVALID_PARAM), which need
+    # opposite fixes.
+    Sentinel = "MSV3_DFU_TRACE_NONCE"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\bootloader_types.h"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.12") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.12-app-page-fingerprint.patch"
+    # Advertises a CRC16 of the FIRST APPLICATION PAGE unconditionally, outside the trace-magic
+    # gate. An absent trace record is ambiguous in the worst way -- it can mean START_PACKET was
+    # never processed (application intact, board merely parked in DFU by the 1200-baud touch) or
+    # that the record was armed and then destroyed, and those need opposite fixes. Comparing the
+    # page fingerprint against the known-good application and against an erased page settles it
+    # without reading any settings state.
+    Sentinel = "MSV3_APP_PAGE_FINGERPRINT"
+    SentinelIn = "lib\sdk11\components\libraries\bootloader_dfu\dfu_transport_ble.c"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.13") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.13-serial-tx-pump.patch"
+    # THE WIRED DFU FIX. transmit_buffer() abandons a frame the moment the CDC TX FIFO refuses a
+    # byte, and the only code that ever resumed it is in that file's non-USB branch. Under
+    # NRF_USBD the SLIP TX state machine therefore sticks at SLIP_TRANSMITTING permanently, every
+    # later acknowledgement is refused with NRF_ERROR_NO_MEM, and ack_transmit() discards that
+    # return by design. The host stops being acknowledged, resets its HCI sequence number, and the
+    # transfer dies with the application already erased. hci_slip_tx_pump() is the missing resume.
+    # A silent failure to apply gives back a bootloader that enumerates, accepts START, erases the
+    # application and then cannot finish -- the exact shape that cost eight diagnostic releases.
+    Sentinel = "MSV3_SERIAL_TX_PUMP"
+    SentinelIn = "lib\sdk\components\libraries\hci\hci_slip.c"
+  }
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.14") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.14-buffer-identity-trace.patch"
+    # A DIAGNOSTIC release, and the one that should end this. 1.0.13 cleared the transmit path
+    # (every frame acknowledged, no FIFO stall, no sequence loss, no pool exhaustion) and a
+    # host-side capture cleared the host (every frame built correctly, correct little-endian type
+    # bytes, valid headers and CRCs). Since the host computes each CRC over the same bytes it
+    # sends, a frame that validates on the device cannot be wrong -- yet 15 of 16 arrive at
+    # data_queue_element_alloc() as type 0x00. This records, for one good frame and for the first
+    # rejected one, WHICH pool slot the SLIP layer filled against WHICH pool slot rx_extract()
+    # returned. It adds two read-only accessors to hci_mem_pool.c and changes no pool behaviour.
+    Sentinel = "MSV3_BUFFER_IDENTITY"
+    SentinelIn = "lib\sdk\components\libraries\hci\hci_transport.c"
+  }
+}
+if ([version]$ReleaseVersion -eq [version]"1.0.15") {
+  # 1.0.15 IS WITHHELD. It identifies the root cause correctly and its fix is the WRONG SHAPE.
+  #
+  # The cause is real and measured: one hci_mem_pool serves both DFU transports, and since 1.0.4
+  # started both, dfu_transport_ble_update_start()'s hci_mem_pool_open() resets the pool AFTER the
+  # serial transport has produced a buffer and registered it with the SLIP layer. All nine values
+  # in the 1.0.14 trace matched that replay exactly.
+  #
+  # But "open the pool once" is the wrong abstraction, and it would BREAK BLE RECOVERY -- the only
+  # way back onto a probe whose SWD pads are coated. That second open is not purely destructive:
+  # it is also what DISCARDS the serial transport's outstanding reservation and hands BLE a clean
+  # pool, which is precisely why BLE OTA has worked all along. Suppress it and the BLE path
+  # inherits serial's produced-but-unfilled slot 0, so BLE's first packet produces slot 1, sets
+  # slot 1's length, and extracts slot 0 -- the identical failure with the transports reversed.
+  # That is not a theory to test on hardware: it is the recovery channel.
+  #
+  # The correct invariant is EXCLUSIVE OWNERSHIP, not single initialisation. Exactly one transport
+  # may own the pool for a session; it claims ownership at first ingress (BLE at its first DFU data
+  # write, serial before the first CDC byte is drained), the claiming transport initialises the
+  # pool for itself, and the loser must never reach rx_produce/rx_data_size_set/rx_extract/
+  # rx_consume at all. A .bss owner byte cleared by the system reset is enough, provided every
+  # serial failure path either keeps serial ownership or forces a reset before BLE is allowed.
+  throw @"
+MSV3 bootloader 1.0.15 is WITHHELD and must not be built or installed.
+Its diagnosis is correct and its fix is not: suppressing the second hci_mem_pool_open() hands the
+BLE transport the serial transport's stale reservation and reproduces the same buffer-identity
+failure on the BLE path -- which is the only recovery channel on a coated probe.
+Implement exclusive pool ownership instead (claim at first ingress, initialise for the winner, and
+keep the loser out of the pool entirely). See
+MSV3/docs/MSV3_USB_BLE_COEXISTENCE_FIRST_HARDWARE_2026-09-20.md.
+"@
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.16") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.16-pool-ownership.patch"
+    # THE WIRED DFU FIX. One hci_mem_pool serves BOTH transports; stock only ever started one, and
+    # 1.0.4 started both, so dfu_transport_ble_update_start()'s hci_mem_pool_open() reset the pool
+    # after the serial transport had produced a buffer and registered it with SLIP. read_index then
+    # ran one ahead of the buffer SLIP was filling and every extract after the first returned a
+    # produced-but-never-written buffer whose first byte reads as INVALID_PACKET. Confirmed on
+    # probe 8: all nine values in the 1.0.14 trace matched the replay exactly.
+    #
+    # The fix is EXCLUSIVE OWNERSHIP, not single initialisation -- see the withheld 1.0.15 above for
+    # why the obvious version would have broken BLE recovery. Also carries the fail-closed guard in
+    # hci_transport_rx_pkt_extract(), so a future desync is refused rather than turned into corrupt
+    # frame data. A silent failure to apply restores a bootloader that accepts START, erases the
+    # application, and can never finish a wired transfer.
+    Sentinel = "MSV3_POOL_OWNER"
+    SentinelIn = "lib\sdk\components\libraries\hci\hci_mem_pool.c"
+  }
+}
+
+if ([version]$ReleaseVersion -ge [version]"1.0.17") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.17-init-ext-bounds.patch"
+    # Bounds the extended-init-packet copy. dfu_init_prevalidate() derived the length by pointer
+    # subtraction from two host-supplied values and memcpy()d it into m_extended_packet[104] with
+    # no upper bound, BEFORE any signature was verified, with the uint8_t length variable declared
+    # immediately after the array. The stock adafruit-nrfutil serial transport appends two padding
+    # bytes to the init packet, so this was reached on every ordinary wired update -- and it is why
+    # the wired path reset the device during the init packet once 1.0.16 let frames through at all.
+    # The BLE transport writes the init packet verbatim, which is the other half of why BLE worked.
+    # Accepted inputs and the signed span are unchanged; padding is ignored rather than trusted.
+    Sentinel = "MSV3_INIT_EXT_BOUNDS"
+    SentinelIn = "src\dfu_init.c"
+  }
+}
+
+
+
+
+if ([version]$ReleaseVersion -ge [version]"1.0.18" -and
+    [version]$ReleaseVersion -le [version]"1.0.20") {
+  # 1.0.18, 1.0.19 and 1.0.20 are WITHDRAWN. They deferred the init packet and retried it while
+  # an ASYNCHRONOUS application-bank erase finished -- machinery that exists only to survive an
+  # asynchrony the stock bootloader does not have. Stock never enables the SoftDevice for a wired
+  # session, so its flash path is synchronous and the erase completes before dfu_start_pkt_handle()
+  # returns; the race cannot occur. 1.0.21 restores that configuration instead. The patches are
+  # kept only as the record of three attempts at the wrong shape.
+  throw @"
+MSV3 bootloader 1.0.18-1.0.20 are WITHDRAWN and must not be built or installed.
+They work around an asynchronous erase that a wired session should never have been running in the
+first place. Build 1.0.21, which restores the stock no-SoftDevice wired configuration.
+See MSV3/docs/MSV3_USB_BLE_COEXISTENCE_FIRST_HARDWARE_2026-09-20.md.
+"@
+}
+if ([version]$ReleaseVersion -ge [version]"1.0.24") {
+  $patches += @{
+    File = Join-Path $msv3Root "bootloader\patches\msv3-1.0.24-serial-stock-mode.patch"
+    # THE WIRED DFU FIX, and it is a restoration rather than an invention. Stock brings up ONE
+    # transport: the wired branch never enables the SoftDevice, so flash is synchronous and the
+    # application-bank erase finishes before dfu_start_pkt_handle() returns. 1.0.4 attached USB
+    # inside the SoftDevice-enabled branch, which made wired DFU asynchronous and caused both
+    # confirmed defects. A serial session now restores the stock shape -- close BLE, disable the
+    # SoftDevice, clear _ota_dfu, in that order and only after the disable succeeds -- and arms a
+    # lease so that losing VBUS or going quiet forces a reset. 1.0.22 adds the watchdog feed the
+    # blocking erase needs: 33 pages at ~85 ms is ~2.8 s with the CPU fully blocked, and nothing
+    # else in the image reloads the WDT across it. That lease is the safety property:
+    # without it a pulled cable leaves the board wired-only with no SoftDevice and no way back, on
+    # hardware with no SWD. A silent failure to apply restores the reboot-on-init behaviour.
+    Sentinel = "MSV3_SERIAL_STOCK_MODE"
+    SentinelIn = "src\main.c"
+  }
+}
 
 foreach ($p in $patches) {
   if (!(Test-Path -LiteralPath $p.File)) {
@@ -256,15 +507,56 @@ if ([version]$ReleaseVersion -ge [version]"1.0.3") {
     throw "Bootloader 1.0.3+ build map is missing: $bootMap"
   }
   $bootMapText = [IO.File]::ReadAllText($bootMap)
-  if ($bootMapText -notmatch '(?m)^MSV3_BOOT_GUARD_RETAINED\s+0x2003fff8\s+0x00000008\b' -or
-      $bootMapText -notmatch '(?m)^\s*0x2003fff8\s+__StackTop\b') {
+
+  # The guard word's address is an ABI with the application linker and never moves. What DOES move
+  # is where the stack has to stop, because 1.0.6 inserts the 64-byte DFU trace underneath the
+  # guard. Check the guard region and the stack top separately, so neither release can quietly
+  # acquire the other's address.
+  if ($bootMapText -notmatch '(?m)^MSV3_BOOT_GUARD_RETAINED\s+0x2003fff8\s+0x00000008\b') {
+    throw @"
+Bootloader 1.0.3+ did not link the retained guard word where the application expects it:
+  $bootMap
+Expected an 8-byte MSV3_BOOT_GUARD_RETAINED region at 0x2003FFF8.
+"@
+  }
+
+  if ([version]$ReleaseVersion -ge [version]"1.0.6") {
+    # 1.0.6 retains a DFU decision record between the stack and the guard word. It is reserved by
+    # EXCLUSION from the RAM region rather than by a section, so the map is the only place that can
+    # prove the stack actually stops below it. Without this the record would be silently
+    # overwritten by the bootloader's own stack and every field it reports would be fiction --
+    # which is worse than having no instrumentation at all.
+    #
+    # 1.0.13 grew the record from 64 to 96 bytes for the TX-stall counters. The guard word above it
+    # is an application ABI and cannot move, so the base moved DOWN instead, taking 32 bytes off
+    # the bootloader stack. Both geometries are checked, and a build must match its own: a 1.0.13
+    # image linked at the old base would put its new counters underneath the stack.
+    if ([version]$ReleaseVersion -ge [version]"1.0.13") {
+      $traceBase = '0x2003ff98'; $traceLen = '0x00000060'; $traceBytes = 96
+    } else {
+      $traceBase = '0x2003ffb8'; $traceLen = '0x00000040'; $traceBytes = 64
+    }
+    if ($bootMapText -notmatch ('(?m)^MSV3_DFU_TRACE\s+' + $traceBase + '\s+' + $traceLen + '\b') -or
+        $bootMapText -notmatch ('(?m)^\s*' + $traceBase + '\s+__StackTop\b')) {
+      throw @"
+Bootloader 1.0.6+ did not link with the DFU trace retention:
+  $bootMap
+Expected a $traceBytes-byte MSV3_DFU_TRACE region at $traceBase and __StackTop at $traceBase, with
+MSV3_BOOT_GUARD_RETAINED still at 0x2003FFF8.
+"@
+    }
+    Write-Host "MSV3 bootloader map check: OK (stack ends at $traceBase; $traceBytes-byte DFU trace, then the guard word)"
+  }
+  elseif ($bootMapText -notmatch '(?m)^\s*0x2003fff8\s+__StackTop\b') {
     throw @"
 Bootloader 1.0.3+ did not link with the required retained-RAM ABI:
   $bootMap
-Expected an 8-byte MSV3_BOOT_GUARD_RETAINED region at 0x2003FFF8 and __StackTop at 0x2003FFF8.
+Expected __StackTop at 0x2003FFF8.
 "@
   }
-  Write-Host "MSV3 bootloader map check: OK (stack ends below retained state at 0x2003FFF8)"
+  else {
+    Write-Host "MSV3 bootloader map check: OK (stack ends below retained state at 0x2003FFF8)"
+  }
 }
 
 if ([version]$ReleaseVersion -ge [version]"1.0.4") {
@@ -459,6 +751,51 @@ if ($LASTEXITCODE -ne 0) { throw "Signed OTA package generation failed" }
   --application-version $ApplicationVersion --sd-req 0xB6 `
   --application $appHex --bootloader $bootOnly --softdevice $requiredSource $initialInstall
 if ($LASTEXITCODE -ne 0) { throw "Initial stock-to-MSV3 package generation failed" }
+
+# SIGNED SD+BL+APP, for delivering a BOOTLOADER to a probe that is ALREADY on MSV3's own 0x3356.
+#
+# The initial-install package above is the same three components, but it is deliberately unsigned
+# and tagged 0x0052 because the generic stock loader cannot parse a signed extended init packet.
+# Once a board is migrated, that package is useless to it and the archive held nothing else that
+# could carry a bootloader -- which is why a bootloader update was described as needing SWD. It
+# does not; it needed this artifact.
+#
+# It carries the APPLICATION as well as SD+BL on purpose. Every wrong-target guard binds a package
+# to a probe through the MSV3-MOISTURE-NNN string inside the application image, so a
+# bootloader-only package would have no identity for msv3_fleet.py to check and would defeat the
+# registry. Shipping all three keeps the binding, at the cost of also replacing the application --
+# which is the safer trade, because the application is the component that CAN be re-sent over BLE.
+#
+# Staging is interruptible-safe (an aborted transfer leaves an invalid application, which
+# DEFAULT_TO_OTA_DFU turns into persistent BLE recovery). The bootloader swap itself is performed
+# by the MBR on the next boot and journals through the MBR params page, so it resumes after a
+# power cut -- PROVIDED UICR.NRFFW[1] is provisioned on that board. ble_ota_update.py enforces
+# that per-probe via mbr_params_page_verified; see MSV3/fleet.json.
+if ($BootloaderOta) {
+  if ($SensorId -lt 0) {
+    throw "-BootloaderOta needs -SensorId: the application half is what binds the package to a probe."
+  }
+  $blOtaName = "msv3-$ReleaseVersion-sensor$('{0:d3}' -f $SensorId)-v$ApplicationVersion-sdbl-app-signed-ota.zip"
+  $blOta = Join-Path $releaseDir $blOtaName
+  $null = Assert-NoSilentOverwrite -Path $blOta -What "signed SD+BL+APP package"
+  & $nrfutil dfu genpkg --dev-type 0x3356 --dev-revision 52840 `
+    --application-version $ApplicationVersion --sd-req 0xB6 `
+    --application $appHex --bootloader $bootOnly --softdevice $requiredSource `
+    --key-file $keyPath $blOta
+  if ($LASTEXITCODE -ne 0) { throw "Signed SD+BL+APP package generation failed" }
+
+  & $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $blOta `
+    --device-type 0x3356 --application-version $ApplicationVersion --key $keyPath
+  if ($LASTEXITCODE -ne 0) { throw "Signed SD+BL+APP package verification failed" }
+
+  $blOtaHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $blOta).Hash.ToLowerInvariant()
+  Write-Host ""
+  Write-Host "Signed SD+BL+APP package: $blOta"
+  Write-Host "  sha256=$blOtaHash"
+  Write-Host "  Carries bootloader $ReleaseVersion. Send with:"
+  Write-Host "    ble_ota_update.py --probe $SensorId <pkg> --bootloader"
+  Write-Host "  That flag additionally requires the probe's mbr_params_page_verified to be set."
+}
 
 & $pythonExe (Join-Path $scriptDir "verify_msv3_dfu_package.py") $signedOta `
   --device-type 0x3356 --application-version $ApplicationVersion --key $keyPath

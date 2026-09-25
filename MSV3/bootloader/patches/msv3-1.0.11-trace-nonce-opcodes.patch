@@ -1,0 +1,165 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,6 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
++#define MSV3_DFU_TRACE_BUILD_ID         0x010BU        /* 1.0.11 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FFB8UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+@@ -157,7 +158,17 @@
+     uint32_t validate_rc;       /**< Raw dfu_image_validate() return. */
+     uint32_t activate_rc;       /**< Raw dfu_image_activate() return, if it returned at all. */
+     uint32_t frames_queued;     /**< DATA frames accepted into the queue by the transport. */
+-    uint32_t frames_dropped;    /**< DATA frames the transport ACKed and then DISCARDED on queue-full. */
++    uint32_t frames_dropped;    /**< Frames the transport ACKed and then DISCARDED. */
++    /* MSV3 1.0.11 -- see MSV3_DFU_TRACE_NONCE. */
++    uint32_t nonce;             /**< Increments on every arm. PROVES THE RECORD IS FRESH. */
++    uint16_t build_id;          /**< Bootloader release, e.g. 0x010B for 1.0.11. */
++    uint16_t rx_seen;           /**< Frames delivered to the transport callback. */
++    uint32_t alloc_fail_rc;     /**< EXACT data_queue_element_alloc() return on FIRST failure. */
++    uint32_t reset_reas;        /**< RESETREAS latched at DFU entry. */
++    uint8_t  alloc_fail_type;   /**< The packet-type byte that was rejected. */
++    uint8_t  sched_fail;        /**< app_sched_event_put() failures, saturating. */
++    uint8_t  stop_seen_at_rx;   /**< STOP reached the transport callback. */
++    uint8_t  stop_processed;    /**< STOP reached process_dfu_packet(). */
+     uint32_t check;             /**< ~magic, written LAST. A torn record fails this. */
+ } msv3_dfu_trace_t;
+ 
+@@ -185,6 +196,18 @@
+     t->activate_rc    = 0xFFFFFFFFUL;
+     t->frames_queued  = 0;
+     t->frames_dropped = 0;
++    /* MSV3_DFU_TRACE_NONCE: the nonce is the ONLY field deliberately NOT reset, so a reader
++     * can tell a fresh record from a stale one. Four different bootloaders were once read back
++     * byte-identical, and without this there was no way to tell whether that meant the fix had
++     * not worked or the record had simply never been re-armed. It had not. */
++    t->nonce++;
++    t->build_id        = MSV3_DFU_TRACE_BUILD_ID;
++    t->rx_seen         = 0;
++    t->alloc_fail_rc   = 0xFFFFFFFFUL;
++    t->alloc_fail_type = 0xFF;
++    t->sched_fail      = 0;
++    t->stop_seen_at_rx = 0;
++    t->stop_processed  = 0;
+     t->check          = ~MSV3_DFU_TRACE_MAGIC;
+ }
+ 
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -350,6 +350,11 @@
+                          * wipe the record on the very reset that makes DFU reachable again, which
+                          * is exactly when the evidence is needed. */
+                         msv3_dfu_trace_arm(MSV3_DFU_TRANSPORT_SERIAL);
++                        /* MSV3 1.0.11: RESETREAS as the bootloader sees it. If the wired transfer
++                         * is ending in a reset -- which the COM port vanishing suggests -- this
++                         * names the cause, and it is read here because nothing else in the
++                         * bootloader preserves it. */
++                        MSV3_DFU_TRACE->reset_reas = NRF_POWER->RESETREAS;
+                         packet->params.start_packet =
+                             (dfu_start_packet_t*)packet->params.data_packet.p_data_packet;
+                         retval = dfu_start_pkt_handle(packet);
+@@ -365,6 +370,7 @@
+                         break;
+ 
+                     case STOP_DATA_PACKET:
++                        MSV3_DFU_TRACE->stop_processed = 1;
+                         /* MSV3_SERIAL_ACTIVATE_QUIESCE
+                          *
+                          * Stock 0.11.0 calls validate then activate back-to-back here and throws
+@@ -462,8 +468,29 @@
+     retval = hci_transport_rx_pkt_extract(&p_rpc_cmd_buffer, &rpc_cmd_length_read);
+     if (NRF_SUCCESS == retval)
+     {
++        /* MSV3 1.0.11: count what ARRIVES, separately from what is accepted. rx_seen versus
++         * frames_queued versus frames_dropped distinguishes "the host never sent it" from "we threw
++         * it away", and stop_seen_at_rx answers that for the one packet whose loss silently ends
++         * the session. */
++        if (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC)
++        {
++            if (MSV3_DFU_TRACE->rx_seen != 0xFFFFU) MSV3_DFU_TRACE->rx_seen++;
++            if (p_rpc_cmd_buffer[0] == STOP_DATA_PACKET) MSV3_DFU_TRACE->stop_seen_at_rx = 1;
++        }
++
+         // Verify if the data queue can buffer the packet.
+         retval = data_queue_element_alloc(&element_index, p_rpc_cmd_buffer[0]);
++
++        /* MSV3 1.0.11: the EXACT return on the FIRST failure, plus the packet-type byte rejected.
++         * NO_MEM means the queue was full; INVALID_PARAM means the type byte was INVALID_PACKET,
++         * which fails however much room there is. Those two have been indistinguishable from
++         * outside, which is why both a capacity increase and an ingress gate changed nothing. */
++        if ((NRF_SUCCESS != retval) && (MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++            (MSV3_DFU_TRACE->alloc_fail_rc == 0xFFFFFFFFUL))
++        {
++            MSV3_DFU_TRACE->alloc_fail_rc   = retval;
++            MSV3_DFU_TRACE->alloc_fail_type = p_rpc_cmd_buffer[0];
++        }
+         if (NRF_SUCCESS == retval)
+         {
+             //subtract 1 since we are interested in payload length and not the type field.
+@@ -480,6 +507,13 @@
+              * later capacity change into a silent memory bug. */
+             if (NRF_SUCCESS != retval)
+             {
++                /* MSV3 1.0.11: distinct from an allocation failure -- the element WAS accepted and
++                 * then lost its drain event. */
++                if ((MSV3_DFU_TRACE->magic == MSV3_DFU_TRACE_MAGIC) &&
++                    (MSV3_DFU_TRACE->sched_fail != 0xFFU))
++                {
++                    MSV3_DFU_TRACE->sched_fail++;
++                }
+                 DATA_QUEUE_ELEMENT_SET_PTYPE(element_index, INVALID_PACKET);
+                 DATA_QUEUE_ELEMENT_COPY_PDATA(element_index, NULL);
+                 DATA_QUEUE_ELEMENT_SET_PLEN(element_index, 0);
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_ble.c
+@@ -732,24 +732,37 @@
+    * spare. frames_dropped is saturated into 16 bits because its only interesting values are 0 and
+    * "not 0"; a full 32-bit counter would not fit alongside both return codes, and the return codes
+    * are what actually name the failing branch. */
++  /* MSV3 1.0.11 payload, 27 bytes -> a 29-byte AD structure inside the 31-byte scan response.
++   *
++   * The field set changed deliberately. The previous one carried sizes and CRCs that were only
++   * meaningful once validate had run -- and validate never ran. What actually needs answering is:
++   * is this record even FRESH (nonce, build_id), did STOP arrive and did it get processed, and
++   * WHY did the first allocation fail. alloc_fail_rc is the single decisive value: NO_MEM means
++   * queue pressure, INVALID_PARAM means the packet-type byte was rejected outright, and those two
++   * demand completely different fixes. */
+   uint8_t payload[27];
+   uint8_t i = 0;
+ 
+   uint16_t dropped = (t->frames_dropped > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_dropped;
++  uint16_t queued  = (t->frames_queued  > 0xFFFFUL) ? 0xFFFFU : (uint16_t)t->frames_queued;
++  uint16_t nonce16 = (uint16_t)(t->nonce & 0xFFFFUL);
+ 
+   payload[i++] = 0xFF;
+   payload[i++] = 0xFF;
+-  payload[i++] = t->format;
++  memcpy(&payload[i], (const void *)&t->build_id, 2);       i += 2;
++  memcpy(&payload[i], &nonce16, 2);                         i += 2;
+   payload[i++] = t->transport;
+   payload[i++] = t->stage;
+-  payload[i++] = t->state_before;
+-  payload[i++] = t->state_after;
+-  memcpy(&payload[i], (const void *)&t->staged_crc16, 2);   i += 2;
+-  memcpy(&payload[i], (const void *)&t->data_received, 4);  i += 4;
+-  memcpy(&payload[i], (const void *)&t->image_size, 4);     i += 4;
+-  memcpy(&payload[i], (const void *)&t->validate_rc, 4);    i += 4;
+-  memcpy(&payload[i], (const void *)&t->activate_rc, 4);    i += 4;
++  payload[i++] = t->stop_seen_at_rx;
++  payload[i++] = t->stop_processed;
++  payload[i++] = t->alloc_fail_type;
++  payload[i++] = t->sched_fail;
++  memcpy(&payload[i], (const void *)&t->rx_seen, 2);        i += 2;
++  memcpy(&payload[i], &queued, 2);                          i += 2;
+   memcpy(&payload[i], &dropped, 2);                         i += 2;
++  memcpy(&payload[i], (const void *)&t->alloc_fail_rc, 4);  i += 4;
++  memcpy(&payload[i], (const void *)&t->validate_rc, 4);    i += 4;
++  memcpy(&payload[i], (const void *)&t->reset_reas, 4);     i += 4;
+ 
+   advertising_add(scan_data, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, payload, i);
+ }

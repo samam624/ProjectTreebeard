@@ -1,0 +1,90 @@
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader_types.h
+@@ -129,7 +129,7 @@
+  * alone can never distinguish from "returned an error".
+  */
+ #define MSV3_DFU_TRACE_MAGIC            0x4D535654UL   /* "MSVT" */
+-#define MSV3_DFU_TRACE_BUILD_ID         0x0112U        /* 1.0.18 */
++#define MSV3_DFU_TRACE_BUILD_ID         0x0113U        /* 1.0.19 */
+ #define MSV3_DFU_TRACE_ADDR             0x2003FF98UL
+ 
+ #define MSV3_DFU_STAGE_ARMED            0x01u
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/dfu_transport_serial.c
+@@ -130,6 +130,18 @@
+  * cannot hang the bootloader forever. See MSV3_SERIAL_INIT_RETRY. */
+ #define MSV3_SERIAL_INIT_DEFER_MAX  20000u
+ static uint32_t m_init_defer_count;
++static volatile bool m_init_retry_pending;
++static void process_dfu_packet(void * p_event_data, uint16_t event_size);
++
++/* MSV3 1.0.19: retry a deferred init packet, at MAIN LOOP pace. See MSV3_SERIAL_INIT_RETRY. */
++void msv3_serial_init_retry_pump(void)
++{
++    if (m_init_retry_pending)
++    {
++        m_init_retry_pending = false;
++        (void)app_sched_event_put(NULL, 0, process_dfu_packet);
++    }
++}
+ 
+ static uint8_t msv3_good_completed_slot = 0xFFu;
+ static uint8_t msv3_good_extracted_slot = 0xFFu;
+@@ -436,12 +448,25 @@
+                                 {
+                                     MSV3_DFU_TRACE->init_retry++;
+                                 }
+-                                /* Leave the element ALLOCATED and come back to it. */
+-                                (void)app_sched_event_put(NULL, 0, process_dfu_packet);
++                                /* MSV3 1.0.19: DO NOT re-schedule from in here. app_sched_execute()
++                                 * drains its queue in a loop, so an event put from inside an event
++                                 * handler is picked straight back up without the main loop ever
++                                 * turning -- which starves the very pstorage pump the erase needs
++                                 * to finish. 1.0.18 did exactly that and span the deferral counter
++                                 * to its 0xFF ceiling in a few milliseconds while the erase made
++                                 * no progress at all.
++                                 *
++                                 * Leave the element ALLOCATED and simply return. bootloader.c's
++                                 * main loop calls msv3_serial_init_retry_pump() once per pass,
++                                 * AFTER app_sched_execute() and the USB service, so each retry
++                                 * costs exactly one main-loop iteration and the erase completes
++                                 * between them. */
++                                m_init_retry_pending = true;
+                                 return;
+                             }
+                         }
+-                        m_init_defer_count = 0;
++                        m_init_defer_count   = 0;
++                        m_init_retry_pending = false;
+                         APP_ERROR_CHECK(retval);
+ 
+                         led_state(STATE_WRITING_STARTED);
+diff --git a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+--- a/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
++++ b/lib/sdk11/components/libraries/bootloader_dfu/bootloader.c
+@@ -14,6 +14,10 @@
+ #include "bootloader.h"
+ #include "bootloader_types.h"
+ #include "hci_slip.h"
++
++/* MSV3 1.0.19: dfu_transport_serial.c. Declared here rather than in a header because the serial
++ * transport has no public header of its own in this SDK. */
++void msv3_serial_init_retry_pump(void);
+ #include "bootloader_util.h"
+ #include "bootloader_settings.h"
+ #include "dfu.h"
+@@ -169,6 +173,12 @@
+       hci_slip_tx_pump();
+ 
+       hci_slip_rx_pump();
++
++      /* MSV3 1.0.19: retry an init packet that arrived before the application-bank erase had
++       * finished. It MUST be pumped from here rather than re-scheduled from inside the scheduler
++       * callback: app_sched_execute() above drains its queue in a loop, so a self-reschedule never
++       * lets this loop turn and pstorage never completes. See MSV3_SERIAL_INIT_RETRY. */
++      msv3_serial_init_retry_pump();
+ 
+       tud_cdc_write_flush();
+     }
