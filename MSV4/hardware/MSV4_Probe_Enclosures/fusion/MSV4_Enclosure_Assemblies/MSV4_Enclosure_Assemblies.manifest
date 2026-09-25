@@ -1,0 +1,11 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "script",
+  "author": "OpenAI Codex",
+  "description": {
+    "": "Imports both checked MSV4 enclosure assemblies and PCB fit checks, adds reference parameters, and exports native Fusion F3D and STEP files."
+  },
+  "supportedOS": "windows|mac",
+  "editEnabled": true,
+  "version": "3.0"
+}

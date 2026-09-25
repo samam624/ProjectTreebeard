@@ -1,0 +1,413 @@
+{
+  "version": "MSV4-enclosures-v5.0-led-window-and-closed-minimum-case",
+  "revisionNote": "Upward-pointing clear-epoxy LED windows over the upper D1 package on all three bases, plus a screwless two-piece minimum-profile enclosure with a thin closed back, PCB-shaped assembly groove, bonded seam, and explicit antenna keepout.",
+  "units": "mm",
+  "source": "..\\MSV4.step",
+  "parameters": {
+    "pcbTopZ": 0,
+    "pcbActualThickness": 1.6,
+    "pcbStepThickness": 0.41148,
+    "pcbSideClearance": 0.35,
+    "boardHeadXMin": -13,
+    "boardHeadXMax": 13,
+    "boardHeadYMin": 98,
+    "boardHeadYMax": 145,
+    "caseXMin": -18.3,
+    "caseXMax": 18.3,
+    "caseYMin": 94.8,
+    "caseYMax": 148.5,
+    "cavityXMin": -13.35,
+    "cavityXMax": 13.35,
+    "cavityYMin": 101.7,
+    "cavityYMax": 145.3,
+    "baseBottomZ": -4.5,
+    "baseFloorTopZ": -3.3,
+    "baseTopZ": 0.25,
+    "lidBottomZ": 0.3,
+    "lidInnerRoofZ": 4,
+    "armLidTopZ": 5,
+    "integratedLidTopZ": 6.4,
+    "pcbClampInterference": 0.1,
+    "frontTransitionEndY": 98.8,
+    "probeOuterBottomZ": -2.3,
+    "probeOuterTopZ": 0.7,
+    "probeSlotXYClearance": 0.25,
+    "probeSlotZClearance": 0.2,
+    "gasketGrooveDepth": 0.55,
+    "gasketGrooveWidth": 0.8,
+    "gasketNominalThickness": 0.8,
+    "screwClearanceDiameter": 2.4,
+    "countersinkTopDiameter": 4.2,
+    "countersinkDepth": 0.9,
+    "insertPocketDiameter": 2.9,
+    "insertPocketDepth": 3.2,
+    "screwTipReliefDiameter": 2.4,
+    "screwTipReliefBottomZ": -3.45,
+    "screwCenters": [
+      {
+        "x": -15.3,
+        "y": 101.5
+      },
+      {
+        "x": 15.3,
+        "y": 101.5
+      },
+      {
+        "x": -13.8,
+        "y": 143.5
+      },
+      {
+        "x": 13.8,
+        "y": 143.5
+      }
+    ],
+    "solarPanelNominalLength": 36,
+    "solarPanelNominalWidth": 30,
+    "solarPanelPocketLength": 36.4,
+    "solarPanelPocketWidth": 30.4,
+    "solarPanelRecessDepth": 1.6,
+    "integratedPanelCenterY": 122,
+    "integratedPanelBackWall": 0.8,
+    "panelWireHoleDiameter": 1.6,
+    "ledCenterX": -10,
+    "ledCenterY": 138.00000113987,
+    "ledWindowRadius": 1.55,
+    "ledWindowTipY": 140.82,
+    "antennaKeepoutYMin": 140.75,
+    "antennaKeepoutYMax": 145,
+    "minimalBaseBottomZ": -4.25,
+    "minimalBaseFloorTopZ": -3.25,
+    "minimalBaseTopZ": 0.25,
+    "minimalLidBottomZ": 0.3,
+    "minimalLidTopZ": 6.4,
+    "minimalGrooveXYClearance": 0.25,
+    "minimalGrooveBottomZ": -1.75,
+    "minimalGrooveTopZ": 0.15,
+    "minimalOuterX": 16.2,
+    "minimalOuterYMin": 96,
+    "minimalOuterYMax": 146.2,
+    "armPivotY": 121.5,
+    "armPivotZ": -2.1,
+    "armPanelPivotY": 149.2,
+    "armPanelPivotZ": 14,
+    "armThickness": 1.6,
+    "armEndRadius": 2.8,
+    "armClearanceDiameter": 2.4,
+    "armInsertPocketDiameter": 2.9,
+    "armInsertPocketDepth": 3.2,
+    "pivotBossRadius": 3,
+    "panelFrameWidth": 32.8,
+    "panelFrameLength": 38.8,
+    "panelFrameBackZ": 12.7,
+    "panelFrameThickness": 2.6,
+    "panelFrameCornerRadius": 1.4,
+    "caseWireEntryDiameter": 1.6,
+    "caseWireEntryCentersZ": [
+      1.35,
+      3.2
+    ],
+    "batteryNominal": [
+      10,
+      20,
+      2
+    ],
+    "batteryReference": [
+      10.4,
+      20.4,
+      2.2
+    ],
+    "batteryCenterX": -7,
+    "batteryCenterY": 113,
+    "batteryBottomZ": 1.7
+  },
+  "boardCorrection": {
+    "sourceSolidCount": 233,
+    "sourceSha256": "FB6F908B6A68777F994BD8389AFAB0775C5DA50249E9B05E7C78606036D5CA77",
+    "footprintMismatchVolume": 0,
+    "exportedBoardThickness": 0.41148,
+    "productionBoardThickness": 1.6,
+    "bottomComponentShift": -1.18852,
+    "reason": "MSV4 fab instruction specifies 1.6 mm FR4; Altium STEP contains the default thin stackup."
+  },
+  "closure": {
+    "fastener": "four M2 90-degree countersunk flat-head screws: 10 mm integrated lid, 8 mm arm lid",
+    "insert": "four M2 heat-set inserts in 2.90 mm x 3.20 mm blind pockets",
+    "screwStations": [
+      {
+        "x": -15.3,
+        "y": 101.5
+      },
+      {
+        "x": 15.3,
+        "y": 101.5
+      },
+      {
+        "x": -13.8,
+        "y": 143.5
+      },
+      {
+        "x": 13.8,
+        "y": 143.5
+      }
+    ],
+    "layout": "unbroken circular lands inside a locally widened front shoulder; flush countersinks and no external ears",
+    "gasket": "0.80 mm wide x 0.55 mm deep PCB-following groove for silicone cord or formed-in-place RTV; optional 0.80 mm TPU gasket supplied",
+    "probeExit": "split close-fit throat with 0.25 mm XY / 0.20 mm Z adhesive clearance"
+  },
+  "commonCase": {
+    "exteriorMaximum": [
+      36.6,
+      53.7
+    ],
+    "centralBodyWidth": 33.2,
+    "neckWidth": 20.4,
+    "noseThickness": 3,
+    "transition": "planform follows the PCB shoulder and both exterior Z faces slope to a 3.0 mm shell around the 1.6 mm blade",
+    "boardSideClearance": 0.35,
+    "internalRoofZ": 4,
+    "baseFloorZ": -3.3,
+    "pcbClampInterference": 0.1,
+    "batteryClearanceReference": [
+      10.4,
+      20.4,
+      2.2
+    ],
+    "batteryPlacementReference": {
+      "center": [
+        -7,
+        113
+      ],
+      "bottomZ": 1.7,
+      "note": "Illustrative top-side 10 x 20 x 2 mm cell position; the user-selected 4.0 mm board-to-roof envelope is the controlling requirement."
+    },
+    "ledWindow": {
+      "shape": "teardrop pointing upward toward the antenna/top edge",
+      "center": [
+        -10,
+        138.00000113987
+      ],
+      "bulbRadius": 1.55,
+      "tipY": 140.82,
+      "sealing": "fill flush with optically clear epoxy after assembly"
+    }
+  },
+  "integratedSolar": {
+    "panelNominal": [
+      36,
+      30
+    ],
+    "panelPocket": [
+      36.4,
+      30.4,
+      1.6
+    ],
+    "panelBackWall": 0.8,
+    "closedCaseThickness": 10.9,
+    "overallBounds": {
+      "base": {
+        "min": [
+          -18.300005000000002,
+          94.799995,
+          -4.500005
+        ],
+        "max": [
+          18.300005000000002,
+          148.500005,
+          0.2500050000000004
+        ],
+        "volume": 3875.5022242785076,
+        "solidCount": 1
+      },
+      "lid": {
+        "min": [
+          -18.300000150000002,
+          94.79999984999999,
+          -0.1000001500000001
+        ],
+        "max": [
+          18.300000150000002,
+          148.50000015,
+          6.40000015
+        ],
+        "volume": 4390.3370573149205,
+        "solidCount": 1
+      },
+      "gasket": {
+        "min": [
+          -13.75000015,
+          97.29999984999999,
+          -1.5e-7
+        ],
+        "max": [
+          13.75000015,
+          145.70000015,
+          0.8000001500000001
+        ],
+        "volume": 79.50505555555529,
+        "solidCount": 1
+      }
+    },
+    "printOrientation": "lid rear edge down; add a 6-8 mm brim"
+  },
+  "armSolar": {
+    "panelNominal": [
+      36,
+      30
+    ],
+    "panelPocket": [
+      36.4,
+      30.4,
+      1.6
+    ],
+    "panelFrame": [
+      38.8,
+      32.8,
+      2.6
+    ],
+    "pivotCenterDistance": 32.039038687201575,
+    "closedCaseThickness": 9.5,
+    "minimumRoofSweepClearance": 1.3211232922441667,
+    "pivotHardware": "four additional M2 x 5-6 mm screws and four 2.90 x 3.20 mm heat-set inserts",
+    "overallBounds": {
+      "base": {
+        "min": [
+          -20.100005000000003,
+          94.799995,
+          -5.1000049999999995
+        ],
+        "max": [
+          20.100005000000003,
+          148.500005,
+          0.9000049999999999
+        ],
+        "volume": 4031.149290415739,
+        "solidCount": 1
+      },
+      "lid": {
+        "min": [
+          -18.300000150000002,
+          94.79999984999999,
+          -0.1000001500000001
+        ],
+        "max": [
+          18.300000150000006,
+          148.50000015,
+          5.00000015
+        ],
+        "volume": 3768.2177328057287,
+        "solidCount": 1
+      },
+      "leftArm": {
+        "min": [
+          -22.00000015,
+          118.69999985,
+          -4.90000015
+        ],
+        "max": [
+          -20.399999849999997,
+          152.00000015,
+          16.800000150000002
+        ],
+        "volume": 270.7616406135167,
+        "solidCount": 1
+      },
+      "rightArm": {
+        "min": [
+          20.39999989999999,
+          118.6999999,
+          -4.9000001000000095
+        ],
+        "max": [
+          22.00000010000001,
+          152.00000010000002,
+          16.80000010000001
+        ],
+        "volume": 312.0014659362151,
+        "solidCount": 1
+      },
+      "panelFrame": {
+        "min": [
+          -20.40000015,
+          129.79999984999998,
+          11.29999985
+        ],
+        "max": [
+          20.40000015,
+          168.60000015,
+          16.70000015
+        ],
+        "volume": 1670.9167303767535,
+        "solidCount": 1
+      }
+    }
+  },
+  "minimumProfileSolar": {
+    "construction": "two-piece closed adhesive enclosure; thin back/base plus solar lid, with no gasket, screws, inserts, or articulated parts",
+    "retention": "PCB head and shoulder seat into a 0.25 mm XY / 0.15 mm Z-clearance groove in the base; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive",
+    "panelNominal": [
+      36,
+      30
+    ],
+    "panelPocket": [
+      36.4,
+      30.4,
+      1.6
+    ],
+    "antennaKeepout": {
+      "x": [
+        -9,
+        9
+      ],
+      "y": [
+        140.75,
+        145
+      ],
+      "panelRearEdgeY": 140,
+      "separation": 0.75
+    },
+    "closedCaseThickness": 10.65,
+    "overallBounds": {
+      "base": {
+        "min": [
+          -16.200005,
+          95.999995,
+          -4.250005
+        ],
+        "max": [
+          16.200005,
+          146.20000499999998,
+          0.2500050000000002
+        ],
+        "volume": 2725.626212299285,
+        "solidCount": 1
+      },
+      "lid": {
+        "min": [
+          -16.20000015,
+          95.99999985,
+          0.29999985
+        ],
+        "max": [
+          16.20000015,
+          146.20000015,
+          6.40000015
+        ],
+        "volume": 3455.211009122722,
+        "solidCount": 1
+      }
+    },
+    "printOrientation": "base floor-down; lid rear edge down with a 6-8 mm brim"
+  },
+  "printGuidance": {
+    "material": [
+      "ASA preferred outdoors",
+      "PETG for first fit print"
+    ],
+    "layerHeight": 0.2,
+    "perimeters": 5,
+    "topBottomLayers": 6,
+    "infill": "25-35%",
+    "seam": "place away from probe throat and gasket land",
+    "dimensionalNote": "print the fit coupons or one complete set before a batch; heat-set insert brands vary"
+  }
+}
