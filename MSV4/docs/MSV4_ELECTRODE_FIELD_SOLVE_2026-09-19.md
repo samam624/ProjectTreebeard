@@ -88,6 +88,17 @@ scales with electrode spacing, independent of frequency (Mamishev et al., Proc. 
 
 ## Multi-frequency `spectrum` fit — validated against the field solve (2026-09-19)
 
+> **SUPERSEDED 2026-09-23 — the four-parameter fit described below was not just unable to
+> resolve `Cs`, it was ill-posed.** `Ye` written as a rational function of `s = jw` has only
+> three observable coefficients, so four unknowns admit an exact one-dimensional family of
+> equally perfect solutions. Measured: `{Cm 671.0 pF, Rsoil 355.0, Cs 14.90 pF, Cd 5.00 pF}` and
+> `{Cm 656.6 pF, Rsoil 370.8, Cs 0.00017 pF, Cd 19.41 pF}` reproduce this same nine-frequency
+> sweep to **0 ppm and 0 millidegrees**, and the `Rsoil` the firmware reported moved up to 5.7%
+> with the LM starting seed alone. **The `Rsoil` and `Cs` sensitivity figures in the table below
+> are therefore one arbitrary point on that family, not the fit's answer.** `Cs` was removed from
+> the firmware and `Rsoil` is now uniquely determined; the `Cm` gap-sensitivity conclusion
+> survives unchanged. Proof and regression test: `MSV4/scripts/test_msv4_spectrum_fit.py`.
+
 Firmware command `spectrum [a|b|ab]` (after `spectrum open` measures the SENSE-node parasitic Cp):
 nine frequencies 250 kHz–4 MHz, both electrode orientations averaged, chopper-phase bin-1 of SENSE
 divided by DRV_OUT, square-wave harmonic aliasing modelled exactly, Levenberg–Marquardt fit of

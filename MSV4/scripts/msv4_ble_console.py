@@ -17,13 +17,16 @@ Windows BLE setup that is known to work with this project's static-random addres
 import argparse
 import asyncio
 import ctypes
+import json
 import sys
+import threading
 
 NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # central -> board (write)
 NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # board -> central (notify)
 NAME_PREFIX = "MSV4-BU-"
 PROMPT = "> "
+MACHINE_PROMPT = "__MSV4_PROMPT__"
 
 
 async def pump_windows_messages() -> None:
@@ -74,6 +77,20 @@ async def find_board(device: str | None, timeout: float):
     return boards[0]
 
 
+async def list_boards(timeout: float) -> int:
+    """Emit one JSON line for the local lab UI; no GATT connection is opened."""
+    if sys.platform == "win32":
+        windows_sta_setup()
+        pump = asyncio.create_task(pump_windows_messages())  # noqa: F841
+    from bleak import BleakScanner
+
+    seen = await BleakScanner.discover(timeout=timeout, service_uuids=[NUS_SERVICE])
+    boards = [{"name": d.name, "address": d.address} for d in seen
+              if d.name and d.name.startswith(NAME_PREFIX)]
+    print(json.dumps(boards), flush=True)
+    return 0
+
+
 async def run(args: argparse.Namespace) -> int:
     if sys.platform == "win32":
         windows_sta_setup()
@@ -95,11 +112,16 @@ async def run(args: argparse.Namespace) -> int:
             if line.strip() == PROMPT.strip():
                 prompt_seen.set()
                 if not args.cmd:
-                    print(PROMPT, end="", flush=True)
+                    if args.machine:
+                        print(MACHINE_PROMPT, flush=True)
+                    else:
+                        print(PROMPT, end="", flush=True)
             else:
                 print(line, flush=True)
 
-    kwargs = {}
+    loop = asyncio.get_running_loop()
+    disconnected = asyncio.Event()
+    kwargs = {"disconnected_callback": lambda _client: loop.call_soon_threadsafe(disconnected.set)}
     if sys.platform == "win32":
         kwargs["winrt"] = {"address_type": "random", "use_cached_services": False}
     async with BleakClient(board, timeout=args.connect_timeout, **kwargs) as client:
@@ -126,9 +148,29 @@ async def run(args: argparse.Namespace) -> int:
                     return 1
             return 0
 
-        loop = asyncio.get_running_loop()
+        input_queue: asyncio.Queue[str] = asyncio.Queue()
+
+        def read_stdin() -> None:
+            # A daemon thread lets the BLE disconnect wake the coroutine even when
+            # stdin has no pending line (the executor would wait for readline).
+            while True:
+                line = sys.stdin.readline()
+                loop.call_soon_threadsafe(input_queue.put_nowait, line)
+                if not line:
+                    return
+
+        threading.Thread(target=read_stdin, daemon=True).start()
         while client.is_connected:
-            line = await loop.run_in_executor(None, sys.stdin.readline)
+            line_task = asyncio.create_task(input_queue.get())
+            disconnect_task = asyncio.create_task(disconnected.wait())
+            done, pending = await asyncio.wait(
+                (line_task, disconnect_task), return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            if disconnect_task in done or not client.is_connected:
+                break
+            line = line_task.result()
             if not line:
                 break
             line = line.rstrip("\r\n")
@@ -142,6 +184,8 @@ async def run(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--device", help=f"Board name ({NAME_PREFIX}XXXX) or BLE address")
+    parser.add_argument("--list", action="store_true", help="Scan and print available boards as JSON")
+    parser.add_argument("--machine", action="store_true", help="Print a newline prompt marker for the local lab UI")
     parser.add_argument("--cmd", action="append", help="Command to run non-interactively (repeatable)")
     parser.add_argument("--scan-timeout", type=float, default=8.0)
     parser.add_argument("--connect-timeout", type=float, default=20.0)
@@ -149,6 +193,8 @@ def main() -> int:
                         help="Seconds to wait for each scripted command's prompt (sweeps take a while)")
     args = parser.parse_args()
     try:
+        if args.list:
+            return asyncio.run(list_boards(args.scan_timeout))
         return asyncio.run(run(args))
     except KeyboardInterrupt:
         return 130

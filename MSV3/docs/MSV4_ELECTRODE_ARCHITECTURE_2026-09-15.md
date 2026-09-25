@@ -25,6 +25,19 @@ capacitance, and paid for it with a 1.5 mm pitch that made the sensor blind belo
 
 ## Why the present electrode fails
 
+> **The penetration row below is superseded (2026-09-23).** Those depths come from `lambda/2pi`,
+> which overstates MSV4 because the plate-to-guard field is shallow — a caveat
+> `MSV4_ELECTRODE_FIELD_SOLVE_2026-09-19.md` already raised for MSV4 but never applied to the v1.2.
+> Solving both geometries the same way **reverses the ranking**: MSV4 as drawn reaches 50 % of its
+> response within **1.0 mm**, the v1.2 within **~1.4 mm**. MSV4 is still ~5x deeper than MSV3,
+> which was the design goal, and the guard ring is the accepted cost of the difference.
+>
+> Also corrected: MSV4 single-sided is **0.75x** the v1.2 per unit length, not the 0.49x below.
+> Mirrored it is **1.21x** the v1.2 lossless and **~1.45x** in real conductive soil at equal
+> inserted length — i.e. the narrower traces are more than paid for, and no capacitance was traded
+> away for depth. Numbers and a reproducible runner:
+> `MSV4/scripts/msv4_electrode_compare.py`, `MSV4/generated/electrode_compare_2026-09-23.json`.
+
 | | MSV3 now | v1.2 | MSV4 |
 |---|---:|---:|---:|
 | pattern | 0.5/1.0 interdigitated | G3.5 / 2 / H9.5 / 2 / G3.5 | A4.9 / 4.2 / B4.9 + guard |

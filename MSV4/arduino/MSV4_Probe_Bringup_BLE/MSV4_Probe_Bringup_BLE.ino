@@ -731,12 +731,45 @@ static void runPhaseSet(uint16_t n, uint16_t m, bool withResidual)
 // ------------------------------------------------------------------------------- spectrum ----
 // Multi-frequency impedance fit. Physics and numbers: MSV4/docs/MSV4_ELECTRODE_FIELD_SOLVE_2026-09-19.md.
 //
-// Electrode model (A hot, B + guard grounded):
-//     Ye(w) = jw*Cd + 1 / ( 1/(jw*Cm) + 1/(Gs + jw*Cs) )
-//   Cm = mask/interface series capacitance, Gs = soil conductance (ions), Cs = soil capacitance
-//   (water dipoles), Cd = direct board/fringe capacitance that never reaches soil.
+// Electrode model (A hot, B + guard grounded). THREE parameters, not four:
+//     Ye(w) = jw*Cd + 1 / ( 1/(jw*Cm) + 1/Gs )
+//   Cm = mask/interface series capacitance, Gs = soil conductance (ions),
+//   Cd = direct board/fringe capacitance that never reaches soil.
+//
+// Cm IS THE SERIES PAIR OF BOTH ELECTRODES' MASKS, not one mask. The physical path is
+//     plate A -> mask A -> soil -> mask B -> plate B
+// so there are two interface capacitances, one at each plate. Series impedances add and
+// commute, 1/(jw*CmA) + Rsoil + 1/(jw*CmB) = Rsoil + 1/(jw*Cm) with 1/Cm = 1/CmA + 1/CmB, so the
+// two-mask topology is bit-identical to this one-mask form (verified: 0.0e+00 difference in |H|
+// at every sweep frequency). No code changes; only the INTERPRETATION of the number does:
+//   - A fitted Cm of ~671 pF means each plate's own mask is ~1342 pF.
+//   - A gap under ONE plate drops Cm by 33 %; a gap under BOTH drops it by 50 %. The size of the
+//     drop is a rough one-face/two-face discriminator.
+//   - Which plate is faulty is NOT recoverable. The series pair is symmetric in CmA/CmB
+//     (CmA 671/CmB 1342 and CmA 1342/CmB 671 give identical |H|), so the A/B swap cannot expose
+//     mask asymmetry either. Do not read an A/B difference as "electrode A is the bad one".
 // Divider node: H(w) = 1 / (1 + Rs*(Ye + jw*Cp)), Rs = R15, Cp = SENSE-node parasitics measured
 // with `spectrum open`.
+//
+// Cs (soil permittivity) WAS a fourth parameter and was removed 2026-09-23. It was not merely
+// unidentifiable -- keeping it made the whole fit ill-posed. Writing the 4-parameter admittance
+// as a rational function of s = jw:
+//     Ye(s) = s*[ Gs*(Cd+Cm) + s*(Cd*Cs + Cd*Cm + Cm*Cs) ] / [ Gs + s*(Cs+Cm) ]
+// and dividing through by Gs leaves only THREE observable combinations --
+//     (Cd+Cm),  (Cd*Cs + Cd*Cm + Cm*Cs)/Gs,  (Cs+Cm)/Gs
+// -- for four unknowns, so an exact one-dimensional family of parameter sets fits any data
+// equally well. Measured, not argued: {Cm 671.0 pF, Rsoil 355.0, Cs 14.90 pF, Cd 5.00 pF} and
+// {Cm 656.6 pF, Rsoil 370.8, Cs 0.00017 pF, Cd 19.41 pF} reproduce the same nine-frequency sweep
+// to 0 ppm in magnitude and 0 millidegrees in phase. Which one the LM returned depended on its
+// starting seed, so the reported Rsoil moved several percent for reasons having nothing to do
+// with soil. Fixing Cs = 0 removes exactly one parameter, leaving three unknowns and three
+// observables, and the map is invertible -- Rsoil becomes uniquely determined and seed-stable.
+//
+// The cost is a small moisture-dependent bias (+1.2 % dry to +9.1 % saturated against a truth
+// that really does have a Cs). That bias is a property of the lumped model, NOT of this change:
+// the old 4-parameter fit carried the same bias, and at the wet end returned bit-identical
+// numbers. Trend steps are preserved to ~3 %, so a per-pot calibration still works.
+// Evidence and the regression test: MSV4/scripts/test_msv4_spectrum_fit.py.
 //
 // What the lock-in actually returns is not H(w). Drive and chopper are both 50 % square waves, so
 // the chopper-phase sweep's first Fourier bin (sampled at M phases) is
@@ -747,7 +780,13 @@ static void runPhaseSet(uint16_t n, uint16_t m, bool withResidual)
 // models the aliasing exactly instead of pretending it is absent.
 constexpr double SPEC_RS = 1000.0;       // R15
 static double g_specCp = 12e-12;          // replaced by `spectrum open`
-static const uint16_t SPEC_N[] = {64, 48, 32, 24, 16, 12, 8, 6, 4};  // 250 kHz .. 4 MHz
+// N = 4 (4 MHz) dropped 2026-09-23 with Cs. It existed to chase permittivity, and it is the
+// worst-conditioned point in the sweep: M = 4 is the fewest phases, so the aliasing correction
+// leans hardest there (3rd harmonic weight 1/9 vs 1/81 at M = 8), and the chopper's 18 ns switch
+// asymmetry contributes its largest phase error at the top of the band. Dropping it changes the
+// recovered Rsoil by 0.0 % across a dry/moist/saturated sweep and leaves noise scatter unchanged
+// (test_msv4_spectrum_fit.py). `drive 4` still reaches 4 MHz by hand.
+static const uint16_t SPEC_N[] = {64, 48, 32, 24, 16, 12, 8, 6};  // 250 kHz .. 2.67 MHz
 constexpr int SPEC_NF = sizeof(SPEC_N) / sizeof(SPEC_N[0]);
 static_assert(SPEC_NF <= SPEC_MAX, "SpecSet too small");
 
@@ -761,11 +800,10 @@ static uint16_t specPhases(uint16_t n)
 
 static cplx specNodeH(double w, const double* p, double cp)
 {
-  // p = {Cm, Gs, Cs, Cd}
+  // p = {Cm, Gs, Cd}
   const cplx j(0.0, 1.0);
   const cplx zm = 1.0 / (j * w * p[0]);
-  const cplx ys = p[1] + j * w * p[2];
-  const cplx ye = j * w * p[3] + 1.0 / (zm + 1.0 / ys);
+  const cplx ye = j * w * p[2] + 1.0 / (zm + 1.0 / p[1]);
   return 1.0 / (1.0 + SPEC_RS * (ye + j * w * cp));
 }
 
@@ -825,11 +863,11 @@ static bool specSweep(SpecSet& s)
   return true;
 }
 
-// Levenberg-Marquardt on ln(parameters) for the free subset `mask` of {Cm, Gs, Cs, Cd}.
+// Levenberg-Marquardt on ln(parameters) for the free subset `mask` of {Cm, Gs, Cd}.
 // Returns RMS residual; fills relative 1-sigma uncertainties (from J^T J) for free parameters.
 static double specFit(const SpecSet& s, double* p, const bool* freeP, double cp, double* relSigma)
 {
-  constexpr int NP = 4;
+  constexpr int NP = 3;
   int idx[NP], nf = 0;
   for (int i = 0; i < NP; i++) if (freeP[i]) idx[nf++] = i;
   const int nr = 2 * s.count;
@@ -965,58 +1003,109 @@ static void cmdSpectrumOpen()
   if (!ok) { out("spectrum open aborted"); return; }
   specPrintPoints(s);
   // Fit Cp alone: model with electrode admittance zero. Reuse the LM with Cd standing in for Cp.
-  double p[4] = {1e-15, 1e-12, 1e-15, g_specCp}, sig[4];
-  const bool freeP[4] = {false, false, false, true};
-  // Cm tiny and Gs tiny make the series branch vanish, so Ye = jw*Cd and Cd plays Cp's role.
+  double p[3] = {1e-15, 1e-12, g_specCp}, sig[3];
+  const bool freeP[3] = {false, false, true};
+  // Cm tiny makes zm huge, so the series branch vanishes: Ye = jw*Cd, and Cd plays Cp's role.
   const double rms = specFit(s, p, freeP, 0.0, sig);
-  g_specCp = p[3];
-  out("Cp = %.2f pF (+/- %.1f %%), fit rms %.5f -- stored for `spectrum`", p[3] * 1e12, sig[3] * 100, rms);
+  g_specCp = p[2];
+  out("Cp = %.2f pF (+/- %.1f %%), fit rms %.5f -- stored for `spectrum`", p[2] * 1e12, sig[2] * 100, rms);
 }
 
 // `spectrum [a|b|ab]`: sweep 250 kHz..4 MHz with one or both electrode orientations, average the
 // complex transfers, and fit {Cm, Gs, Cs, Cd}. 9 frequencies x 2 = 18 equations for 4 unknowns.
-static void cmdSpectrum(const char* which)
+// Soil conductivity rises about 2 %/C, the standard EC correction. The tip NTC is what makes it
+// correctable here, which is the thing MSV3 never had: its die sensor read the dry end.
+constexpr double SPEC_EC_TEMPCO = 0.02;
+
+static inline double specRsoilTo25C(double rsoil, double tC)
 {
-  const bool doA = !which || strchr(which, 'a');
-  const bool doB = !which || strchr(which, 'b');
-  if (!doA && !doB) { out("usage: spectrum [a|b|ab|open]"); return; }
+  return rsoil * (1.0 + SPEC_EC_TEMPCO * (tC - 25.0));
+}
+
+// Sweeps one or both orientations, averages the complex transfers, and fits {Cm, Gs, Cd}.
+// Returns false if the sweep was cancelled or failed. Restores swap/chopper state either way.
+static bool runSpectrumFit(bool doA, bool doB, SpecSet& acc, double* best, double* bestSig,
+                           double& bestRms, bool verbose)
+{
   const SwapState was = g_swap; const bool chopWas = g_chopEnabled;
   setChopEnabled(true);
-  SpecSet acc, s;
+  SpecSet s;
   int runs = 0;
   g_cancel = false;
   for (int o = 0; o < 2; o++)
   {
     if ((o == 0 && !doA) || (o == 1 && !doB)) continue;
     setSwap(o == 0 ? SwapState::A : SwapState::B);
-    if (!specSweep(s)) { setChopEnabled(chopWas); setSwap(was); out("spectrum aborted"); return; }
+    if (!specSweep(s)) { setChopEnabled(chopWas); setSwap(was); return false; }
     if (runs == 0) acc = s;
     else for (int i = 0; i < s.count; i++) acc.h[i] += s.h[i];
-    out("orientation %c done", o == 0 ? 'A' : 'B');
+    if (verbose) out("orientation %c done", o == 0 ? 'A' : 'B');
     runs++;
   }
   setChopEnabled(chopWas); setSwap(was);
+  if (runs == 0) return false;
   for (int i = 0; i < acc.count; i++) acc.h[i] /= (double)runs;
-  specPrintPoints(acc);
 
-  // Several starting points for Gs across four decades; keep the best fit.
-  const bool freeP[4] = {true, true, true, true};
-  double best[4] = {}, bestSig[4] = {}, bestRms = 1e30;
+  // Several starting points for Gs across four decades; keep the best fit. With Cs gone the
+  // optimum is unique, so this is now only insurance against a bad basin, not a tie-break
+  // between equally good answers (which is what it silently was before 2026-09-23).
+  const bool freeP[3] = {true, true, true};
+  bestRms = 1e30;
   static const double gStart[] = {1e-5, 1e-4, 1e-3, 1e-2};
   for (double g0 : gStart)
   {
-    double p[4] = {500e-12, g0, 20e-12, 5e-12}, sig[4];
+    double p[3] = {500e-12, g0, 5e-12}, sig[3];
     const double rms = specFit(acc, p, freeP, g_specCp, sig);
-    if (rms < bestRms) { bestRms = rms; memcpy(best, p, sizeof(best)); memcpy(bestSig, sig, sizeof(bestSig)); }
+    if (rms < bestRms)
+    {
+      bestRms = rms;
+      memcpy(best, p, 3 * sizeof(double));
+      memcpy(bestSig, sig, 3 * sizeof(double));
+    }
   }
+  return true;
+}
+
+static void cmdSpectrum(const char* which)
+{
+  const bool doA = !which || strchr(which, 'a');
+  const bool doB = !which || strchr(which, 'b');
+  if (!doA && !doB) { out("usage: spectrum [a|b|ab|open]"); return; }
+  SpecSet acc;
+  double best[3] = {}, bestSig[3] = {}, bestRms = 0;
+  if (!runSpectrumFit(doA, doB, acc, best, bestSig, bestRms, true)) { out("spectrum aborted"); return; }
+  specPrintPoints(acc);
+
   // +/- figures are statistical only. Validated 2026-09-19 against the field solve: model error
   // (~0.2-1 % of drive) dominates them in moist soil. See MSV4_ELECTRODE_FIELD_SOLVE_2026-09-19.md.
+  const double rsoil = 1.0 / best[1];
   out("fit (Cp %.2f pF, Rs %.0f ohm), rms residual %.5f of drive:", g_specCp * 1e12, SPEC_RS, bestRms);
+  out("  Rsoil 1/Gs    %8.1f ohm +/- %5.1f %%  <- MOISTURE. lower = wetter", rsoil, bestSig[1] * 100);
   out("  Cm interface  %8.2f pF  +/- %5.1f %%  <- contact quality: gaps/crusts move this", best[0] * 1e12, bestSig[0] * 100);
-  out("  Rsoil 1/Gs    %8.1f ohm +/- %5.1f %%  <- moisture proxy (correct to 25C with `temp`)", 1.0 / best[1], bestSig[1] * 100);
-  out("  Cs soil       %8.2f pF  +/- %5.1f %%  <- NOT identifiable <4 MHz in moist soil", best[2] * 1e12, bestSig[2] * 100);
-  out("  Cd direct     %8.2f pF  +/- %5.1f %%", best[3] * 1e12, bestSig[3] * 100);
+  out("  Cd direct     %8.2f pF  +/- %5.1f %%  <- board/fringe, should NOT track moisture", best[2] * 1e12, bestSig[2] * 100);
   out("  interface corner Gs/(2pi Cm) = %.0f kHz", best[1] / (2 * M_PI * best[0]) / 1e3);
+  float tC, rN, tMv, vMv;
+  if (measureTemp(tC, rN, tMv, vMv))
+    out("  Rsoil @25C    %8.1f ohm  (tip %.2f C, %.0f %%/C EC tempco)",
+        specRsoilTo25C(rsoil, tC), tC, SPEC_EC_TEMPCO * 100);
+  else
+    out("  Rsoil @25C    unavailable -- NTC read failed");
+}
+
+// The reading to log over time: temperature-corrected soil conductance, plus the contact-quality
+// channel that says whether to believe it. Cm collapsing while Rsoil climbs means the blade lost
+// contact with the soil, not that the pot dried out.
+static void cmdMoisture()
+{
+  SpecSet acc;
+  double best[3] = {}, bestSig[3] = {}, bestRms = 0;
+  if (!runSpectrumFit(true, true, acc, best, bestSig, bestRms, false)) { out("moisture aborted"); return; }
+  const double rsoil = 1.0 / best[1];
+  float tC, rN, tMv, vMv;
+  const bool haveT = measureTemp(tC, rN, tMv, vMv);
+  out("moisture Rsoil25=%.1f Rsoil=%.1f T=%.2f Cm=%.1f Cd=%.2f rms=%.5f%s",
+      haveT ? specRsoilTo25C(rsoil, tC) : rsoil, rsoil, haveT ? tC : 0.0f,
+      best[0] * 1e12, best[2] * 1e12, bestRms, haveT ? "" : " NO_TEMP");
 }
 
 // -------------------------------------------------------------------------------- commands ----
@@ -1036,8 +1125,9 @@ static void cmdHelp()
   out(" read              SENSE_OUT + DRV_OUT (mV, oversampled)");
   out(" iq [N]            4-phase P/I/Q at N (default current or 16)");
   out(" sweep [N]         all N phases + fit residual (N<=64)");
-  out(" spectrum open     250k-4M sweep, electrodes floating -> SENSE parasitic Cp");
-  out(" spectrum [a|b|ab] 250k-4M sweep, fit Cm (interface) Rsoil Cs (soil) Cd");
+  out(" spectrum open     250k-2.7M sweep, electrodes floating -> SENSE parasitic Cp");
+  out(" spectrum [a|b|ab] 250k-2.7M sweep, fit Rsoil (moisture) Cm (contact) Cd");
+  out(" moisture          one line: temp-corrected Rsoil + contact quality. LOG THIS");
   out(" settle <ms> | os <0..8>   phase settle time / log2 oversample");
   out(" cal               SAADC offset calibration");
   out(" dfu on|off|enter  allow buttonless DFU / reboot into BLE DFU now");
@@ -1224,6 +1314,7 @@ static void handleCommand(char* line)
     if (argc > 1 && !strcmp(argv[1], "open")) cmdSpectrumOpen();
     else cmdSpectrum(argc > 1 ? argv[1] : nullptr);
   }
+  else if (!strcmp(c, "moisture")) cmdMoisture();
   else if (!strcmp(c, "settle"))
   {
     uint32_t ms = 0;
