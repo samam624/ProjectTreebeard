@@ -1,0 +1,624 @@
+{
+  "passed": true,
+  "errors": [],
+  "stepReports": {
+    "originalBezel": {
+      "meshCount": 1,
+      "triangles": 2504,
+      "min": [
+        -70.39,
+        -17.89035214764,
+        -3.076922806106
+      ],
+      "max": [
+        51.610000925348,
+        52.112203636965,
+        6.100176686134
+      ]
+    },
+    "frontCover": {
+      "meshCount": 1,
+      "triangles": 1700,
+      "min": [
+        -70.39,
+        -17.903,
+        -4.54
+      ],
+      "max": [
+        51.61,
+        64.097,
+        6.1
+      ]
+    },
+    "rearShell": {
+      "meshCount": 1,
+      "triangles": 3512,
+      "min": [
+        -70.39,
+        -25.903,
+        -24.8
+      ],
+      "max": [
+        51.61,
+        64.097,
+        -1
+      ]
+    },
+    "kickstand": {
+      "meshCount": 1,
+      "triangles": 1256,
+      "min": [
+        -21.14,
+        -24.903,
+        -25.3
+      ],
+      "max": [
+        2.36,
+        30.594033745461537,
+        -17.30005211028082
+      ]
+    },
+    "foldedAssembly": {
+      "meshCount": 3,
+      "triangles": 6468,
+      "min": [
+        -70.39,
+        -25.903,
+        -25.3
+      ],
+      "max": [
+        51.61,
+        64.097,
+        6.1
+      ]
+    },
+    "deployedAssembly": {
+      "meshCount": 3,
+      "triangles": 6468,
+      "min": [
+        -70.39,
+        -25.903,
+        -49.41289114860666
+      ],
+      "max": [
+        51.61,
+        64.097,
+        6.1
+      ]
+    },
+    "fitCheckAssembly": {
+      "meshCount": 341,
+      "triangles": 96147,
+      "min": [
+        -70.39,
+        -25.903,
+        -25.3
+      ],
+      "max": [
+        51.61,
+        64.097,
+        6.1
+      ]
+    },
+    "pcbAlignmentCheck": {
+      "meshCount": 339,
+      "triangles": 91379,
+      "min": [
+        -70.39,
+        -17.903,
+        -14.531
+      ],
+      "max": [
+        51.61,
+        64.097,
+        6.1
+      ]
+    }
+  },
+  "stlReports": {
+    "frontCover": {
+      "triangleCount": 1700,
+      "byteLength": 85084,
+      "min": [
+        1.500000053056283e-7,
+        1.50000019516483e-7,
+        1.500000053056283e-7
+      ],
+      "max": [
+        122,
+        82,
+        10.640000343322754
+      ],
+      "bedContactVertexCount": 48,
+      "degenerateTriangleCount": 0,
+      "boundaryEdgeCount": 0,
+      "nonManifoldEdgeCount": 0,
+      "watertight": true
+    },
+    "rearShell": {
+      "triangleCount": 3512,
+      "byteLength": 175684,
+      "min": [
+        1.500000053056283e-7,
+        1.500000053056283e-7,
+        1.500000053056283e-7
+      ],
+      "max": [
+        23.799999237060547,
+        90,
+        122
+      ],
+      "bedContactVertexCount": 52,
+      "degenerateTriangleCount": 0,
+      "boundaryEdgeCount": 0,
+      "nonManifoldEdgeCount": 0,
+      "watertight": true
+    },
+    "kickstand": {
+      "triangleCount": 1260,
+      "byteLength": 63084,
+      "min": [
+        1.500000053056283e-7,
+        0.000052260282245697454,
+        1.500000053056283e-7
+      ],
+      "max": [
+        23.5,
+        8,
+        55.497032165527344
+      ],
+      "bedContactVertexCount": 56,
+      "degenerateTriangleCount": 0,
+      "boundaryEdgeCount": 0,
+      "nonManifoldEdgeCount": 0,
+      "watertight": true
+    }
+  },
+  "pcbFit": {
+    "sourceMeshCount": 338,
+    "translation": [
+      0,
+      0,
+      0
+    ],
+    "fittedBounds": {
+      "min": [
+        -66.27000000000018,
+        -13.760000000000161,
+        -14.530999999999995
+      ],
+      "max": [
+        41.769999999999904,
+        61.5,
+        4.932500000000001
+      ]
+    },
+    "bezelOpeningCenter": [
+      -9.39,
+      17.11
+    ],
+    "activeCenter": [
+      -9.39000000000014,
+      17.109999999999914
+    ],
+    "glassRecess": 0.14749999999999908,
+    "outsideCavityVertexCount": 0,
+    "backComponentClearance": 0.8690000000000051,
+    "controllerFrontMostZ": -0.9999999999999911,
+    "controllerFrontCapClearance": 1.9999999999999911,
+    "usbBounds": {
+      "min": [
+        -41.97000459185476,
+        -9.100001650510123,
+        -8.260188790352881
+      ],
+      "max": [
+        -33.02999927875871,
+        -1.502303133119021,
+        -4.099999995130847
+      ]
+    },
+    "usbFits": true,
+    "usbCableBay": {
+      "xMin": -45.39,
+      "xMax": -29.39,
+      "yMin": -26.103,
+      "yMax": -8.303
+    },
+    "usbBaySurroundsTunnel": true,
+    "controllerSupportPostClearance": 0.25,
+    "rearShellIntersectionVolume": 0,
+    "originalReferenceIntersectionVolume": 691.9625611842908,
+    "frontCoverIntersectionVolume": 0.06980226177118348,
+    "addedFrontContact": -691.8927589225196
+  },
+  "closure": {
+    "type": "four rear M2 screws through real PCB mounting holes into front-cover heat-set inserts",
+    "closureCenters": [
+      [
+        -63.27,
+        -10.3385
+      ],
+      [
+        38.769999999999996,
+        -10.3385
+      ],
+      [
+        38.769999999999996,
+        44.56
+      ],
+      [
+        -60.5,
+        58.49700000000001
+      ]
+    ],
+    "closureCentersMatch": true,
+    "screwClearanceDiameter": 2.4,
+    "heatSetInsertPocket": {
+      "diameter": 2.9,
+      "depth": 3.2
+    },
+    "screwCount": 4,
+    "minimumInsertBlindWall": 2.05,
+    "controllerInsertFaceClearance": 0.0485199999999999,
+    "controllerRearPostClearance": 0.08000000000000007,
+    "blindInsertChecks": [
+      {
+        "center": [
+          -63.27,
+          -10.3385
+        ],
+        "z": [
+          3.95,
+          6.1
+        ]
+      },
+      {
+        "center": [
+          38.77,
+          -10.3385
+        ],
+        "z": [
+          3.95,
+          6.1
+        ]
+      },
+      {
+        "center": [
+          38.77,
+          44.56
+        ],
+        "z": [
+          3.95,
+          6.1
+        ]
+      },
+      {
+        "center": [
+          -60.5,
+          58.497
+        ],
+        "z": [
+          -1.44,
+          6.1
+        ]
+      }
+    ],
+    "formerFastenerAreaChecks": [
+      {
+        "center": [
+          -57.16,
+          -10.533
+        ],
+        "z": [
+          5.08,
+          6.1
+        ],
+        "thickness": 1.0199999999999996
+      },
+      {
+        "center": [
+          -57.16,
+          44.367
+        ],
+        "z": [
+          5.08,
+          6.1
+        ],
+        "thickness": 1.0199999999999996
+      },
+      {
+        "center": [
+          44.88,
+          -10.533
+        ],
+        "z": [
+          5.08,
+          6.1
+        ],
+        "thickness": 1.0199999999999996
+      },
+      {
+        "center": [
+          44.88,
+          44.367
+        ],
+        "z": [
+          5.08,
+          6.1
+        ],
+        "thickness": 1.0199999999999996
+      }
+    ],
+    "cleanFrontFaceChecks": {
+      "left": [
+        5.08,
+        6.1
+      ],
+      "right": [
+        5.08,
+        6.1
+      ],
+      "top": [
+        5.08,
+        6.1
+      ],
+      "bottom": [
+        5.08,
+        6.1
+      ],
+      "screenOpening": []
+    },
+    "frontRearIntersectionVolume": 0
+  },
+  "stand": {
+    "foldedWithinMainXYFootprint": true,
+    "foldedIntersectionVolume": 0,
+    "pivotClearanceHoleDiameter": 2.4,
+    "heatSetInsertPocket": {
+      "diameter": 2.9,
+      "depth": 3.2
+    },
+    "deployedPreviewAngle": 30
+  },
+  "antenna": {
+    "externalOpening": false,
+    "formerAntennaBoreIsSolid": true,
+    "formerAntennaBoreChecks": [
+      {
+        "x": 44.11,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 39.31,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 48.91,
+        "y": 56.097,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 44.11,
+        "y": 51.297000000000004,
+        "z": [
+          -18,
+          -15.4
+        ]
+      },
+      {
+        "x": 44.11,
+        "y": 60.897,
+        "z": [
+          -18,
+          -15.4
+        ]
+      }
+    ]
+  },
+  "enclosure": {
+    "unifiedRectangle": true,
+    "leftWallIsContinuous": true,
+    "leftWallContinuityChecks": [
+      {
+        "y": -14,
+        "z": -2,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": -14,
+        "z": 0,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": -14,
+        "z": 3,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 0,
+        "z": -2,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 0,
+        "z": 0,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 0,
+        "z": 3,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 30,
+        "z": -2,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 30,
+        "z": 0,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 30,
+        "z": 3,
+        "x": [
+          -70.39,
+          -68.19,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 56,
+        "z": -2,
+        "x": [
+          -70.39,
+          -68.19,
+          -62.495,
+          -58.5064,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 56,
+        "z": 0,
+        "x": [
+          -70.39,
+          -68.19,
+          -62.4949,
+          -58.5065,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 56,
+        "z": 3,
+        "x": [
+          -70.39,
+          -68.19,
+          -62.4947,
+          -58.5066,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 60,
+        "z": -2,
+        "x": [
+          -70.39,
+          -57.6758,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 60,
+        "z": 0,
+        "x": [
+          -70.39,
+          -57.6758,
+          49.41,
+          51.61
+        ]
+      },
+      {
+        "y": 60,
+        "z": 3,
+        "x": [
+          -70.39,
+          -68.19,
+          -63.3184,
+          -57.6758,
+          49.41,
+          51.61
+        ]
+      }
+    ],
+    "bodyEnvelope": {
+      "xMin": -70.39,
+      "xMax": 51.61,
+      "yMin": -17.903,
+      "yMax": 64.097
+    },
+    "bottomFeetYMin": -25.903
+  },
+  "printability": {
+    "printer": "Bambu Lab P1S",
+    "nozzleDiameter": 0.4,
+    "material": "PLA",
+    "layerHeight": 0.2,
+    "nominalLineWidth": 0.42,
+    "wallLoops": 3,
+    "supportPlan": "front cover and kickstand: none; rear shell: build-plate-only tree supports",
+    "frontCoverOrientation": "visible bezel face on bed",
+    "rearShellOrientation": "continuous right side wall on bed, shell vertical",
+    "kickstandOrientation": "wide foot on bed, arms vertical",
+    "minimumWallThickness": 2.2,
+    "frontFaceThickness": 1.02,
+    "minimumInsertBossRadialWall": 1.7500000000000002,
+    "bedEnvelope": [
+      256,
+      256,
+      256
+    ],
+    "allPartsFitP1SBedIndividually": true,
+    "allMeshesWatertight": true,
+    "allMeshesNonDegenerate": true
+  }
+}

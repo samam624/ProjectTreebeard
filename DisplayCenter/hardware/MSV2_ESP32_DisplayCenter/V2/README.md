@@ -78,10 +78,25 @@ The deployed STEP shows a 30-degree example position.
 - matching `*_print.stl` files for the three printed parts
 - `design_report.json` and `validation_report.json`
 
-The STEP files import directly into Fusion 360 as solid bodies. PETG is a good
-first-prototype material. Use approximately 0.25 mm foam or TPU pads on the two
-controller support posts and verify the internal antenna, screw lengths, USB
-plug overmold, and heat-set-insert length before final production.
+The printer-ready P1S/PLA release is under `output/p1s_0p4_pla_v1`. It is split
+into two Bambu Studio projects so the rear shell can use its own tree-support
+settings without adding support to the bezel or kickstand:
+
+- `MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v1.3mf`
+- `MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v1.3mf`
+- `PRINT_IN_BAMBU_STUDIO.md`
+
+Both 3MF projects are pre-sliced for a Bambu Lab P1S, 0.4 mm nozzle, generic
+PLA, Textured PEI Plate, 0.20 mm layers, three walls, 20% gyroid infill, and a
+5 mm outer brim. The bezel prints visible-face-down; the kickstand prints on
+its wide foot; the rear shell stands on its continuous right side wall with
+build-plate-only tree supports. Bambu Studio 02.07.01.62 sliced both projects
+without warnings.
+
+The STEP files import directly into Fusion 360 as solid bodies. Use
+approximately 0.25 mm foam or TPU pads on the two controller support posts and
+verify the internal antenna, screw lengths, USB plug overmold, and heat-set-
+insert length before final production.
 
 ## Regeneration
 

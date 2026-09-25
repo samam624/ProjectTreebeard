@@ -349,17 +349,35 @@ await writeBlob(
   ]),
 );
 
+// Print the front cover with the visible bezel face on the bed.  The previous
+// orientation put the insert bosses on the bed and left the top and bottom
+// bezel rails as floating regions above the LCD opening.  Face-down removes
+// those unsupported bridges and is the stable orientation for a 0.4 mm nozzle.
+let frontCoverForPrint = frontCover.clone().rotate(180, [0, 0, 0], [1, 0, 0]);
+const frontPrintMin = frontCoverForPrint.boundingBox.bounds[0];
+frontCoverForPrint = frontCoverForPrint.translate(
+  -frontPrintMin[0], -frontPrintMin[1], -frontPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_front_cover_print.stl'),
-  frontCover.clone().translateZ(-frontCover.boundingBox.bounds[0][2])
-    .blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
-let rearShellForPrint = rearShell.clone().rotate(90, [0, 0, 0], [1, 0, 0]);
-rearShellForPrint = rearShellForPrint.translateZ(-rearShellForPrint.boundingBox.bounds[0][2]);
+  frontCoverForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+// Stand the rear shell on its continuous right side wall.  Printing it on the
+// lower edge left the center of the shell suspended between the two USB feet.
+// The -90 degree direction also leaves its local X coordinates positive, which
+// Bambu Studio's command-line arranger requires before it places the objects.
+let rearShellForPrint = rearShell.clone().rotate(-90, [0, 0, 0], [0, 1, 0]);
+const rearPrintMin = rearShellForPrint.boundingBox.bounds[0];
+rearShellForPrint = rearShellForPrint.translate(
+  -rearPrintMin[0], -rearPrintMin[1], -rearPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_rear_shell_print.stl'),
   rearShellForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+let kickstandForPrint = kickstand.clone().rotate(90, [0, 0, 0], [1, 0, 0]);
+const kickstandPrintMin = kickstandForPrint.boundingBox.bounds[0];
+kickstandForPrint = kickstandForPrint.translate(
+  -kickstandPrintMin[0], -kickstandPrintMin[1], -kickstandPrintMin[2],
+);
 await writeBlob(path.join(outputDir, 'MSV3_display_kickstand_print.stl'),
-  kickstand.clone().rotate(90, [0, 0, 0], [0, 1, 0])
-    .translateZ(-kickstand.clone().rotate(90, [0, 0, 0], [0, 1, 0]).boundingBox.bounds[0][2])
-    .blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+  kickstandForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
 
 const activeCenter = [
   (parameters.bezelOpening.xMin + parameters.bezelOpening.xMax) / 2 + outputTranslation[0],
@@ -392,7 +410,7 @@ const outputCoordinates = {
   ],
 };
 const designReport = {
-  version: 'prototype-7-internal-antenna',
+  version: 'prototype-8-p1s-0p4-pla',
   units: 'mm',
   parameters,
   outputCoordinates,
@@ -463,6 +481,22 @@ const designReport = {
     ),
     pcbMountingHoleDiameter: 3.20,
     closedBezelIntersectionVolume: bezelShellOverlap,
+  },
+  printProfile: {
+    printer: 'Bambu Lab P1S',
+    nozzleDiameter: 0.40,
+    material: 'PLA',
+    layerHeight: 0.20,
+    nominalLineWidth: 0.42,
+    wallLoops: 3,
+    supportPlan: 'front cover and kickstand: none; rear shell: build-plate-only tree supports',
+    frontCoverOrientation: 'visible bezel face on bed',
+    rearShellOrientation: 'continuous right side wall on bed, shell vertical',
+    kickstandOrientation: 'wide foot on bed, arms vertical',
+    minimumWallThickness: parameters.wallThickness,
+    frontFaceThickness: parameters.visibleFrontZ - parameters.frontFaceBackZ,
+    minimumInsertBossRadialWall:
+      parameters.enclosureInsertBossRadius - parameters.enclosureInsertDiameter / 2,
   },
 };
 fs.writeFileSync(path.join(outputDir, 'design_report.json'), `${JSON.stringify(designReport, null, 2)}\n`);

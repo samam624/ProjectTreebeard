@@ -54,17 +54,55 @@ function inspectBinaryStl(filename) {
   }
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
+  const edgeUses = new Map();
+  let degenerateTriangleCount = 0;
+  let bedContactVertexCount = 0;
+  const vertexKey = (point) => point.map((value) => value.toFixed(5)).join(',');
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const base = 84 + triangle * 50 + 12;
+    const points = [];
     for (let vertex = 0; vertex < 3; vertex += 1) {
+      const point = [];
       for (let axis = 0; axis < 3; axis += 1) {
         const value = data.readFloatLE(base + vertex * 12 + axis * 4);
+        point.push(value);
         min[axis] = Math.min(min[axis], value);
         max[axis] = Math.max(max[axis], value);
       }
+      if (Math.abs(point[2]) <= 0.02) bedContactVertexCount += 1;
+      points.push(point);
+    }
+    const ab = points[1].map((value, axis) => value - points[0][axis]);
+    const ac = points[2].map((value, axis) => value - points[0][axis]);
+    const cross = [
+      ab[1] * ac[2] - ab[2] * ac[1],
+      ab[2] * ac[0] - ab[0] * ac[2],
+      ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    if (Math.hypot(...cross) <= 1e-10) degenerateTriangleCount += 1;
+    for (const [from, to] of [[0, 1], [1, 2], [2, 0]]) {
+      const ends = [vertexKey(points[from]), vertexKey(points[to])].sort();
+      const key = `${ends[0]}|${ends[1]}`;
+      edgeUses.set(key, (edgeUses.get(key) || 0) + 1);
     }
   }
-  return { triangleCount, byteLength: data.length, min, max };
+  let boundaryEdgeCount = 0;
+  let nonManifoldEdgeCount = 0;
+  for (const uses of edgeUses.values()) {
+    if (uses === 1) boundaryEdgeCount += 1;
+    else if (uses !== 2) nonManifoldEdgeCount += 1;
+  }
+  return {
+    triangleCount,
+    byteLength: data.length,
+    min,
+    max,
+    bedContactVertexCount,
+    degenerateTriangleCount,
+    boundaryEdgeCount,
+    nonManifoldEdgeCount,
+    watertight: boundaryEdgeCount === 0 && nonManifoldEdgeCount === 0,
+  };
 }
 
 function approx(value, expected, tolerance = 0.05) {
@@ -171,6 +209,16 @@ occtimportjs.then((occt) => {
     const report = inspectBinaryStl(path.join(outputDir, basename));
     stlReports[name] = report;
     if (Math.abs(report.min[2]) > 0.08) errors.push(`${name} STL is not on the print bed.`);
+    if (report.triangleCount < 100) errors.push(`${name} STL has too few triangles to be useful.`);
+    if (report.degenerateTriangleCount !== 0) {
+      errors.push(`${name} STL contains ${report.degenerateTriangleCount} degenerate triangles.`);
+    }
+    if (!report.watertight) {
+      errors.push(`${name} STL is not watertight (${report.boundaryEdgeCount} boundary edges, ${report.nonManifoldEdgeCount} non-manifold edges).`);
+    }
+    if (report.bedContactVertexCount < 6) {
+      errors.push(`${name} STL has insufficient contact with the print bed.`);
+    }
   }
 
   const pcb = readStep(occt, sourcePcb);
@@ -257,6 +305,21 @@ occtimportjs.then((occt) => {
   }
 
   const reportData = JSON.parse(fs.readFileSync(path.join(outputDir, 'design_report.json'), 'utf8'));
+  const printProfile = reportData.printProfile;
+  if (printProfile?.printer !== 'Bambu Lab P1S'
+      || !approx(printProfile?.nozzleDiameter, 0.40, 0.001)
+      || printProfile?.material !== 'PLA') {
+    errors.push('Design report does not identify the required P1S / 0.4 mm / PLA target.');
+  }
+  if (printProfile?.minimumWallThickness < 4 * printProfile?.nozzleDiameter) {
+    errors.push('Main wall is thinner than four 0.4 mm nozzle widths.');
+  }
+  if (printProfile?.frontFaceThickness < 4 * printProfile?.layerHeight) {
+    errors.push('Front face is thinner than four 0.20 mm layers.');
+  }
+  if (printProfile?.minimumInsertBossRadialWall < 3 * printProfile?.nominalLineWidth) {
+    errors.push('Insert-boss radial wall is thinner than three nominal extrusion lines.');
+  }
   if (reportData.frontCoverConstruction.visibleFrontFaceCount !== 1
       || reportData.frontCoverConstruction.visibleFrontFaces[0]?.innerWireCount !== 1) {
     errors.push('The visible front is split into multiple B-rep faces or contains an opening besides the LCD.');
@@ -422,6 +485,18 @@ occtimportjs.then((occt) => {
       leftWallContinuityChecks,
       bodyEnvelope: { xMin: -70.39, xMax: 51.61, yMin: -17.903, yMax: 64.097 },
       bottomFeetYMin: -25.903,
+    },
+    printability: {
+      ...printProfile,
+      bedEnvelope: [256, 256, 256],
+      allPartsFitP1SBedIndividually: Object.values(stlReports).every((item) => (
+        item.max[0] - item.min[0] <= 256
+          && item.max[1] - item.min[1] <= 256
+          && item.max[2] - item.min[2] <= 256
+      )),
+      allMeshesWatertight: Object.values(stlReports).every((item) => item.watertight),
+      allMeshesNonDegenerate: Object.values(stlReports)
+        .every((item) => item.degenerateTriangleCount === 0),
     },
   };
   fs.writeFileSync(path.join(outputDir, 'validation_report.json'), `${JSON.stringify(report, null, 2)}\n`);

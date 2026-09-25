@@ -1,5 +1,5 @@
 {
-  "version": "prototype-7-internal-antenna",
+  "version": "prototype-8-p1s-0p4-pla",
   "units": "mm",
   "parameters": {
     "pcbTranslation": [
@@ -244,5 +244,20 @@
     "controllerRearPostClearance": 0.08000000000000007,
     "pcbMountingHoleDiameter": 3.2,
     "closedBezelIntersectionVolume": 0
+  },
+  "printProfile": {
+    "printer": "Bambu Lab P1S",
+    "nozzleDiameter": 0.4,
+    "material": "PLA",
+    "layerHeight": 0.2,
+    "nominalLineWidth": 0.42,
+    "wallLoops": 3,
+    "supportPlan": "front cover and kickstand: none; rear shell: build-plate-only tree supports",
+    "frontCoverOrientation": "visible bezel face on bed",
+    "rearShellOrientation": "continuous right side wall on bed, shell vertical",
+    "kickstandOrientation": "wide foot on bed, arms vertical",
+    "minimumWallThickness": 2.2,
+    "frontFaceThickness": 1.02,
+    "minimumInsertBossRadialWall": 1.7500000000000002
   }
 }
