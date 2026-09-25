@@ -128,6 +128,9 @@ before reporting success; a status string from the adapter is not evidence.
 
 ## Working in this repository as an automated agent
 
+- **Always push to `main`.** Never push a feature, topic, or working branch to GitHub. If work was
+  created on another branch, integrate only the intended task commits onto the latest
+  `origin/main`, verify them there, and push `main` while preserving unrelated local changes.
 - This is a real, working hardware/firmware/cloud project (MSV1/MSV2/MSV3 plant moisture sensors, a shared DisplayCenter receiver, and a shared cloud backend), not a toy repo -- prefer reading the owning subsystem's `docs/` and existing code over guessing conventions.
 - If this file was loaded by the `agent-supervisor` Claude-Codex collaboration harness, that tool is NOT part of this repository -- it lives externally (as of 2026-08-29, `Desktop\agent-supervisor` on the maintainer's machine) and was pointed at this repo via `--root`/`--config`. Do not edit its own billing-safety guards (`src/billing-safety.ts`) as part of an unrelated task -- that file lives in the harness's own repo, not here.
 - When an automated or sandboxed host starts that harness's `src/live-server.ts`, launch the server process with outbound network access. A workspace-sandboxed parent can still serve the local UI but its Codex child fails every WebSocket and HTTPS attempt with Windows socket error 10013. Keep the agents' own read-only sandbox settings unchanged; they are separate from the provider transport's network access.
