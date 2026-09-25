@@ -1,0 +1,64 @@
+{
+    "release": "1.0.8",
+    "application_version": 65573,
+    "device_type": "0x3356",
+    "softdevice_requirement": "0x00B6 (S140 6.1.1)",
+    "application_configuration": {
+        "fdc_settle_count": 100,
+        "wake_discard_conversions": 2,
+        "fdc_idrive_code": 16,
+        "fdc_deglitch_mhz": 10
+    },
+    "bootloader": {
+        "upstream": "Adafruit_nRF52_Bootloader 0.11.0",
+        "dual_bank": false,
+        "default_to_ble_recovery": true,
+        "signed_dfu_required": true,
+        "uf2_enabled": false
+    },
+    "public_verification_key": "Verification key Qx: b062ce0539b9fcd771422ee91eb22f8eb7d04d5f3149fc97511f1208a253bb94\r\nVerification key Qy: 7264a85105292cc182c99ca7a0005ffc87dfe7460e2819014931c48a89f59530",
+    "files": [
+        {
+            "name": "msv3-e73-recovery-signed-s140-6.1.1.hex",
+            "sha256": "cc999859cd7051274595761534e8cf500024491a38182ee8f966bb128f527487",
+            "bytes": 528776
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65571-signed-ota.zip",
+            "sha256": "831d2824014650f8cd5c1d9d93a4f22a38c13f748ade285028d86b642e6be758",
+            "bytes": 134016
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65571-initial-install-from-stock.zip",
+            "sha256": "f0c75c95ebada5d9da01c993fd067d1f94773875d4072d870fb630cd0a4a4cf9",
+            "bytes": 324305
+        },
+        {
+            "name": "MSV3_Moisture_BLE_Sleep.ino.hex",
+            "sha256": "675c7d7dd0267d24d86c91b7d08d3a2980535535e70aaf68656111e3a4e9c054",
+            "bytes": 373238,
+            "provenance_only": true,
+            "note": "hash of the application hex this release was built from; it lives in the gitignored build cache and is deliberately not archived here"
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65571-sdbl-app-signed-ota.zip",
+            "sha256": "3b21066115f562c027b05b1f2ba28bdf3ad63ba07cd662e6c7f4bc1213f6f701",
+            "bytes": 325135
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65573-initial-install-from-stock.zip",
+            "sha256": "c153a9a8a3561a6e5a849817d54a11d422a15712d48bb42e7bb5e2442bfed32c",
+            "bytes": 324305
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65573-sdbl-app-signed-ota.zip",
+            "sha256": "150d2ca2d5e674a0548bdb5d191787cf7393c0cf0626a005959ae19be0cb1564",
+            "bytes": 325135
+        },
+        {
+            "name": "msv3-1.0.8-sensor008-v65573-signed-ota.zip",
+            "sha256": "ab30563adeec1a32db40e7c2cfc907b4c6c61e5653b25d55494ae3822fad1c1a",
+            "bytes": 134016
+        }
+    ]
+}

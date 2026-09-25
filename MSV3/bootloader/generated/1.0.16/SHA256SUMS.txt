@@ -1,0 +1,7 @@
+9a772878d29c0203843934d3fbf8864fea8e6a39fd4a0d63dbd4bce67810694a *msv3-1.0.16-sensor008-v65580-initial-install-from-stock.zip
+e7698ca967db26a2511a33e4ef7364058dde36fcd77d95199d8199c23551b008 *msv3-1.0.16-sensor008-v65580-sdbl-app-signed-ota.zip
+d7ab56ea4225708831b9b8a693db75cf1d168e804d30ef41575b6af64173f8cc *msv3-1.0.16-sensor008-v65580-signed-ota.zip
+ead73c98bacf91502d7154c55e538882d3f45a7a15323dafaae03579c3ca4826 *msv3-1.0.16-sensor008-v65581-initial-install-from-stock.zip
+1e24fd76c1fc52dceb52fb8474ab8d7dad0a3f26a967298d9de414bf571d6c4c *msv3-1.0.16-sensor008-v65581-sdbl-app-signed-ota.zip
+9e5ed5e19211acf86252fd9e0fd285aa3b6fbc2fe1cb6865f4d0a51c428f6b7c *msv3-1.0.16-sensor008-v65581-signed-ota.zip
+c5fd1e7036cddf2a9ac6832bf5eb74b1c84ae48536e268cba3a5ced82dc4e0f8 *msv3-e73-recovery-signed-s140-6.1.1.hex

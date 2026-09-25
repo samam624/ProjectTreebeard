@@ -1,0 +1,49 @@
+{
+    "release": "1.0.14",
+    "application_version": 65578,
+    "device_type": "0x3356",
+    "softdevice_requirement": "0x00B6 (S140 6.1.1)",
+    "application_configuration": {
+        "fdc_settle_count": 100,
+        "wake_discard_conversions": 2,
+        "fdc_idrive_code": 16,
+        "fdc_deglitch_mhz": 10
+    },
+    "bootloader": {
+        "upstream": "Adafruit_nRF52_Bootloader 0.11.0",
+        "dual_bank": false,
+        "default_to_ble_recovery": true,
+        "signed_dfu_required": true,
+        "uf2_enabled": false
+    },
+    "public_verification_key": "Verification key Qx: b062ce0539b9fcd771422ee91eb22f8eb7d04d5f3149fc97511f1208a253bb94\r\nVerification key Qy: 7264a85105292cc182c99ca7a0005ffc87dfe7460e2819014931c48a89f59530",
+    "files": [
+        {
+            "name": "msv3-e73-recovery-signed-s140-6.1.1.hex",
+            "sha256": "cb2a8c2b5f6c5ba50681e79549060f49008815914a6ec38a9dee08dc0ea5a9b7",
+            "bytes": 532593
+        },
+        {
+            "name": "msv3-1.0.14-sensor008-v65578-signed-ota.zip",
+            "sha256": "1658cfc36e24099dba82af28f5cd5e47d2920129fc39483a2b4d405a82f9ca63",
+            "bytes": 133584
+        },
+        {
+            "name": "msv3-1.0.14-sensor008-v65578-initial-install-from-stock.zip",
+            "sha256": "1c87cd93e9f7559d54c203420f1c3390d7218965ffd7e8dd21be4c0b7b9d3541",
+            "bytes": 323873
+        },
+        {
+            "name": "MSV3_Moisture_BLE_Sleep.ino.hex",
+            "sha256": "c6bd06dd41beb23b1185a27cf231d0aab6014be684dd16d214ad185b32dfc6d1",
+            "bytes": 372023,
+            "provenance_only": true,
+            "note": "hash of the application hex this release was built from; it lives in the gitignored build cache and is deliberately not archived here"
+        },
+        {
+            "name": "msv3-1.0.14-sensor008-v65578-sdbl-app-signed-ota.zip",
+            "sha256": "6cb93b1c1f1bf7eba498d200f6ffd19aea6bceceed0b08a68267f629594358a4",
+            "bytes": 324703
+        }
+    ]
+}
