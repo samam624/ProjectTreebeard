@@ -97,7 +97,8 @@
       "physical_state": {
         "verified": "2026-09-21",
         "source": "maintainer confirmed 2026-09-21 that no Alocasia sensors, electrodes, power connections, or pot changed since 2026-09-19; clarified that probe 5 has no battery and only its battery-mV chart rises when the PC sleeps",
-        "location": "shared Alocasia pot",
+        "location": "shared Alocasia pot, on the OPPOSITE SIDE of the pot from the sun (maintainer, 2026-09-24: placed there because it is hardwired to the computer over USB). Every other Alocasia probe is on the sun side.",
+        "position_confound": "Probe 5 is the only Alocasia rig on the shaded side, so any comparison of probe 5's thermal response against probes 2, 3, 4 or 9 confounds electrode/readout with pot position. Its die swings less than probe 4's on the same days. This includes the 2026-09-24 watering review's 'blade is net better through the FDC' (probe 4 vs probe 5).",
         "pot": "shared-alocasia",
         "room": "desk room, shelf",
         "power": "USB from the computer, which is on the shared mains outlet; NO battery attached",
@@ -165,14 +166,19 @@
       "installed_application_version": 65565,
       "diagnostic_state": "2026-09-16 production restore: the fleet scan first saw the v65565 bring-up heartbeat ('MSV3' magic, DATA_CH0 0, 3999-4043 mV, charge bit clear, OTA gate open). Signed capless production v65565 was then installed application-only over BLE through the resident 1.0.3 bootloader in 49 s (2.62 kB/s, -60 dBm); DIS read 2026-09-14-probe7-mux-diag immediately before the jump. A same-package re-run was refused by the running-build guard before any jump, with DIS reporting 2026-09-14-capless-prod7-restore. A 300 s scan observed 80 packets, wake 6 advancing +3, flags 0x56 (capless bit 6 set, reading-invalid bit 5 clear, bareValid clear), DATA_CH0 37,978,831, phase 0 mean 37,979,235 (n=2) against phase 1 mean 37,978,055 (n=2) -- a 1,180-count gap, so the repaired TMUX shows no phase asymmetry -- die 20.75 C, 4021 mV, OTA gate open. Evidence: dumps/probe7-prod65565-postrestore.json. || PRIOR: BENCH-READY, NOT DEPLOYED: the phase-dependent TMUX fault was repaired on 2026-09-14. Static codes 2/3 proved both mux select GPIOs and EC-side routes. Targeted hotcoldstream initially showed code 0 near 38.69M and code 1 near 53.89M; pressing the TMUX restored code 1 to the normal region, identifying a pressure-sensitive code-1 analog-path solder joint rather than an A1/decoder failure. After reflow and bridge cleanup, i2cscan found 0x2A, fdcid returned 0x5449/0x3055, fdctest passed 10/10, and repeated code-0/code-1 flips overlapped near 36.73M with STATUS 0x8 and no errors. Signed targeted bring-up v65565 (MSV3-BUILD:2026-09-14-probe7-mux-diag) is currently installed, so the on-device rollback floor is 65565. Restore only with the paired signed capless production v65565 package (SHA-256 2ed999de3cb189f2f353fb562de615b2b9db5afc29e766ee086d423f69f5b456) or later; do not use the older v65556 rescue. The v65565 diagnostic OTA package SHA-256 is 3f7e0d5f3361159388edc9683e63a19baded6a2ba71e49a732581a07d3c2dfb3. A required post-flash BLE fleet scan was interrupted for serial diagnosis, but the diagnostic build identity and repaired sensing path were verified over its USB console.",
       "physical_state": {
-        "verified": "2026-09-21",
-        "source": "maintainer confirmed 2026-09-21 that probe 7 remains in the Begonia pot on the same shelf as Alocasia, powered by battery and solar, unchanged since 2026-09-19",
+        "verified": "2026-09-24",
+        "source": "maintainer stated 2026-09-24 23:19 PDT that probe 7 has been flipped; otherwise unchanged since the 2026-09-21 confirmation (Begonia pot, same shelf as Alocasia, battery + solar)",
         "location": "begonia pot, same room and SAME SHELF as probe 4, different pot",
         "pot": "begonia",
         "room": "desk room, shelf",
         "power": "battery + solar panel",
         "electrode_in_soil": "MSV3 blade",
-        "electrode_notes": "standard MSV3 blade in soil",
+        "electrode_notes": "standard MSV3 blade in soil. FLIPPED 2026-09-24 ~23:17 PDT so the one-sided sensing face points INTO THE SOIL (maintainer). Before the flip it appeared, by eye, to face the pot edge/wall.",
+        "orientation_change": {
+          "when": "2026-09-24 ~23:17 PDT",
+          "source": "maintainer said 'its flipped now' at 23:19 PDT. Telemetry corroborates: an off-cadence wake (10205) at 23:17:18 with phase-1 counts stepping 34.36M -> 36.84M (about -14 logC%, reinsertion air gaps). The last pre-flip row is 23:16:38.",
+          "rule": "Data before 2026-09-24 23:17 PDT is a DIFFERENT ORIENTATION. Never pool it with post-flip data. The first ~24 h after the flip are settling. Test write-up: MSV3/docs/MSV3_PROBE7_FLIP_TEST_2026-09-24.md."
+        },
         "readout": "MSV3 FDC2214",
         "mods": [
           "VBAT_OV divider NOT swapped -- as-built R11 5.62M / R14 4.42M, ceiling ~4.26 V",
@@ -290,6 +296,7 @@
         9
       ],
       "notes": "The electrode x readout 2x2 lives here: sensor 9 = MSV3 blade + AM, sensor 3 = v1.2 + AM, probe 5 = MSV3 blade + FDC, probe 4 = v1.2 + FDC. Sensor 2 is also here but is quantization-limited.",
+      "spacing": "Maintainer, 2026-09-24: all of the Alocasia probes are VERY CLOSE to each other, EXCEPT probe 5, which sits on the opposite side of the pot from the sun (its USB cable). Sun side: sensors 2, 3, 9 and probe 4. Shade side: probe 5. The facing direction of each one-sided blade within the pot is NOT recorded.",
       "insertion_dates": {
         "_comment": [
           "When each sensor entered THIS pot. Data before a sensor's own date is a different",
@@ -304,6 +311,24 @@
         "sensor_9": "2026-09-14 ~18:30 PDT. Data before this is a different location. Front-end doc's 2026-09-16 note that 'sensor 9 was not clean, it had not run long enough' is consistent with post-insertion settling.",
         "probe_4": "2026-09-18 20:53 PDT, confirmed independently by a 1.6M-count step with no wake reset.",
         "probe_5": "2026-09-19 ~20:24 PDT."
+      },
+      "watering_events": {
+        "_comment": [
+          "Waterings are the only common physical input every rig in a pot sees at once, so they",
+          "are the transfer calibration that makes AM millivolts, FDC counts and MSV2 RC counts",
+          "comparable. Record every one. A watering day must be excluded from thermal fits."
+        ],
+        "verified": "2026-09-24",
+        "source": "maintainer stated 2026-09-24 that there has been exactly one watering since the test began; the time is located from the simultaneous step in all four in-pot rigs",
+        "uniform_saturation": "MAINTAINER, stated directly 2026-09-24: the pot is small, so treat a watering as UNIFORM SATURATION throughout. Every Alocasia sensor sees the same amount of water, and each rig's watering step is a valid common calibration. Do not attribute differences in step size between Alocasia rigs to uneven water delivery. Differences in later drying rates between rigs are NOT evidence against this.",
+        "events": [
+          {
+            "when": "2026-09-22 10:50-10:55 PDT",
+            "amount": "not recorded",
+            "detected_by": "sensors 2, 3, 9, probe 4 and probe 5 all step within one 5-minute bin; probe 6 on the desk does not",
+            "probe_5_spike": "Probe 5's single-bin spike at 10:50 (count 36.5M -> 18.5M, +136 log-cap %, then ~+72 from 11:00) is the watering itself, per the maintainer 2026-09-24: a probe transmitting as the water goes in sees the whole blade momentarily saturated, and it lasts only while the water saturates and drains through the rest of the pot. NOT handling and NOT a fault."
+          }
+        ]
       }
     },
     "begonia": {
@@ -311,7 +336,18 @@
       "sensors": [
         7
       ],
-      "notes": "Same room and same shelf as the shared Alocasia pot, so insolation is comparable to probe 4."
+      "notes": "Same room and same shelf as the shared Alocasia pot, so insolation is comparable to probe 4.",
+      "watering_events": {
+        "verified": "2026-09-24",
+        "source": "maintainer, stated directly 2026-09-24 and re-stated 2026-09-24: watered at the same time as the Alocasia pot. This is settled -- do not question whether the Begonia was watered.",
+        "events": [
+          {
+            "when": "2026-09-22, same time as the shared Alocasia pot",
+            "amount": "not recorded",
+            "detected_by": "Not visible by inspection: it is buried under probe 7's own daily swing of 12-14 log-cap % after watering (7-10 before). With the sun and room terms modelled out, probe 7 shows a +5.1 logC% step at the watering time, above every placebo day (-13.5..+2.5) -- MSV3/docs/MSV3_MULTIPROBE_DATA_FINDINGS_2026-09-24.md section 3. Measured before probe 7 was flipped on 2026-09-24 23:17."
+          }
+        ]
+      }
     },
     "thaumatophilum": {
       "plant": "Thaumatophilum",
@@ -360,7 +396,8 @@
       "Therefore 'probe 4 is quiet because it is battery-isolated' is a WEAK alternative, not a co-equal explanation. The v1.2 electrode is quiet hardwired (s3) and quiet on battery (probe 4); the blade is noisy hardwired (s9).",
       "STILL CLEAN and now doing double duty: the within-AM comparison (s3 vs s9) is both the load-bearing electrode result and the control that demotes this confound.",
       "STILL WORTH REMOVING: the topology asymmetry is real even if it is not the explanation. Moving probe 5 to battery makes the FDC row power-matched.",
-      "OPEN PREDICTION: if the electrode is the variable, probe 5 (blade + FDC, on USB) should be NOISY like sensor 9 despite sharing probe 4's readout. If probe 5 is quiet like probe 4, the readout is the variable instead. Cheapest remaining discriminator; needs only clean days."
+      "RESOLVED 2026-09-24: probe 5 is QUIET like probe 4, not noisy like sensor 9 -- 0.09% of its watering step in 10-minute noise and 4.75% in daily thermal artifact, against sensor 9's 26.7%. Probe 5 is on USB on the shared outlet, so mains topology does not explain sensor 9 either. But the prediction's own dichotomy (electrode OR readout) was wrong: the blade is net BETTER through the FDC and 10.7x WORSE through the AM, so the two interact. See measurement_model.tested_2026_09_24 and MSV3/docs/MSV3_ALOCASIA_WATERING_REVIEW_2026-09-24.md.",
+    "STILL WORTH REMOVING nonetheless: moving probe 5 to battery would power-match the FDC row. Nothing measured so far is explained by the topology, but the asymmetry is real."
     ]
   },
   "measurement_model": {
@@ -403,9 +440,39 @@
       "Probe 5 is MSV3 blade + FDC in the shared pot. As of 2026-09-19 it has ~1.5 hours of data, all overnight, so there is NO thermal excursion in it yet. One clean sunny day resolves this.",
       "If the terms add: -0.041 + (-0.346) = -0.387 %/C capacitance, drier when warm, ~2.6% daily swing.",
       "Outcomes: strongly thermal and DRIER when warm -> model holds. Strongly thermal and WETTER -> matches probe 8, so the blade's SIGN is board- or contact-dependent. Near-flat like probe 4 -> the blade term is not an electrode property and an interaction term is needed.",
-      "HONEST CAVEAT: existing blade measurements bracket +0.064 to -0.387 %/C, so almost any probe 5 result lands inside that range. One day tests the sign and rough magnitude, NOT the additive form. Establishing additivity needs the electrode crossover (thermal doc, next steps A2)."
+      "HONEST CAVEAT: existing blade measurements bracket +0.064 to -0.387 %/C, so almost any probe 5 result lands inside that range. One day tests the sign and rough magnitude, NOT the additive form. Establishing additivity needs the electrode crossover (thermal doc, next steps A2).",
+      "ANSWERED 2026-09-24, and none of the three listed outcomes was right. Probe 5 measured -0.111 %/C (slightly DRIER when warm) while the soil was dry and +0.545 %/C (strongly WETTER when warm) after the 09-22 watering -- it landed on two different branches of the prediction four days apart. The prediction was mis-specified because it omitted soil water content, which turns out to set both the sign and the magnitude. See tested_2026_09_24."
     ],
-    "status": "HYPOTHESIS, stated by the maintainer and explicitly not yet established. Partially tested 2026-09-19, see MSV3/docs/MSV3_THERMAL_DECOMPOSITION_2026-09-19.md.",
+    "status": "PARTLY SUPERSEDED 2026-09-24. Readout and electrode both contribute, and they INTERACT: the additive form is refuted (tested correctly on differences, see audit). The 'soil water content dominates the temperature term' entry below did NOT survive audit. The dominant daily artifact is the noon sun on the shelf acting on specific installations (sensor 9, probe 7). See tested_2026_09_24.audit below.",
+    "tested_2026_09_24": {
+      "audit": {
+        "_comment": "READ THIS BEFORE THE ENTRIES BELOW. They were written earlier the same day, then audited against the raw data and a direct, model-free look at it.",
+        "verified": "2026-09-24",
+        "source": "MSV3/docs/MSV3_ALOCASIA_WATERING_REVIEW_AUDIT_2026-09-24.md (scripts/audit_alocasia_watering.py) and MSV3/docs/MSV3_MULTIPROBE_DATA_FINDINGS_2026-09-24.md (scripts/analyze_multiprobe_sun_response.py)",
+        "STANDS": "Watering-step normalization (the maintainer states the pot saturates uniformly). Blade + AM (sensor 9) is the worst Alocasia rig. Readout and electrode interact: blade minus v1.2 is -2.49 pp via the FDC and +24.25 pp via the AM. SNR ordering, from one event.",
+        "CONFOUNDED": "'REFRAMED -- the blade is not a net liability' (x0.66 through the FDC) compares probe 4 with probe 5, and probe 5 is the only Alocasia rig on the SHADE side of the pot (maintainer). Its die swings 5.3-6.0 C against probe 4's 7.5-9.5 C.",
+        "DOES NOT STAND": "'soil water is the dominant temperature factor' and 'the sign inversion is a moisture effect'. Both used a per-day linear detrend that the post-watering dry-down contaminates. In a joint fit: probe 5 PRE +0.041 (no sign flip) and POST +0.433. Probe 4 rose no more than the no-soil control (+0.10 vs +0.12). Probe 7 rose x1.2 only. The AM rigs read DRIER when warm before and after. The probe 4 (-0.387) vs probe 8 puzzle is NOT retired.",
+        "DOES NOT STAND 2": "Probe 7's '+2.99 step' and the 90x / 427.6% / SNR 0.27 ratios built on it. The +2.99 is inside probe 7's night-to-night scatter (sd 4.2). With sun and room modelled out, probe 7's watering step is +5.1 logC%, above every placebo day, so it DID see the watering.",
+        "NEW": "The daily artifact is the NOON SUN reaching the shelf (~11:50-12:10 PDT). The +2 h response as % of each rig's watering step: sensor 9 -17%, probe 7 larger than its watering, probes 4/5 and sensor 3 ~0.8%, sensor 2 1.8%. Sensor 9 follows room air with little lag; probe 7 follows the sun with a 2-4 h lag. Probe 7 was flipped to face the soil 2026-09-24 ~23:17 PDT to test the maintainer's facing-direction theory: MSV3/docs/MSV3_PROBE7_FLIP_TEST_2026-09-24.md."
+      },
+      "_comment": [
+        "The 2026-09-22 watering gave every rig in a pot one common physical input, which is the",
+        "transfer calibration all earlier work lacked. Dividing each rig's thermal artifact by its",
+        "OWN watering step makes AM mV, FDC counts and MSV2 LSB comparable for the first time.",
+        "READ THIS BEFORE RANKING ELECTRODES OR READOUTS ON A RAW THERMAL COEFFICIENT."
+      ],
+      "verified": "2026-09-24",
+      "source": "MSV3/scripts/analyze_alocasia_watering.py over 190 h of raw cloud history, receiver MSV2088A3104A7AC",
+      "REFUTED -- the additive form": "The blade's normalized thermal penalty is x0.66 through the FDC readout (probe 4 vs probe 5, shared pot, 09-23/24) and x10.73 through the AM readout (sensors 3 vs 9, shared pot, four days). Same two electrode types, same soil, same days, 16x apart. The readout and electrode INTERACT. Any compensation using one signed coefficient per readout plus one per electrode will fail.",
+      "NEW -- soil water is the dominant temperature factor": "Every probe with an electrode in soil got a LARGER coefficient across the watering (probe 4 x2.2, probe 7 x1.8, probe 5 flipped sign from -0.111 to +0.545 %/C). Probe 6, in no soil, did not move: +0.066 -> +0.070 -> +0.088 %/C, which is also the board's own floor. Post-watering every in-soil rig reads WETTER WHEN WARM, consistent with ionic conductivity reaching the FDC as Maxwell-Wagner apparent capacitance.",
+      "RESOLVED -- the sign inversion is a moisture effect": "Probe 5 read -0.111 %/C dry and +0.545 %/C wet: same board, same electrode, same pot, four days apart. The sign is NOT a board or contact property. Retire the 'the blade inverts the sign and it is board-dependent' hypothesis, and with it the probe 4 (-0.387) vs probe 8 (+0.064) puzzle.",
+      "NEW -- installation dominates electrode and readout": "Probe 5 and probe 7 are both MSV3 blade + FDC2214. Normalized artifact 4.75% of a watering step versus 427.6% -- a 90x spread with electrode and readout held fixed, at comparable die excursions. 'MSV3 blade + FDC' is not one thing, and no coefficient measured on one installation transfers to another.",
+      "REFRAMED -- the blade is not a net liability": "Through the FDC the blade costs x1.87 thermal artifact but buys x2.85 signal, so it is net BETTER. The earlier framing judged the blade on its raw coefficient without dividing by what that coefficient pays for.",
+      "WORST PAIRING -- blade + AM": "Sensor 9 loses signal (x0.45) AND gains artifact (x4.81) against sensor 3. The only pairing bad on both counts; SNR 3.7 against sensor 3's 40.2. Do not carry blade + AM into MSV4.",
+      "SNR ranking, step divided by one day of diurnal artifact": "sensor 3 v1.2+AM 40.2; probe 5 blade+FDC 22.1; probe 4 v1.2+FDC 18.3; sensor 2 MSV2 RC 9.6; sensor 9 blade+AM 3.7; probe 7 blade+FDC Begonia 0.27.",
+      "INFERRED, not measured": "That the blade OVER-LOADS the AM detector. Supporting evidence: sensor 9 sits at 1864 mV predawn against sensor 3's 2422 mV, and its relative gain is 0.85 over the 6-day dry-down but 0.45 over the watering -- gain collapsing at the wet, heavily-loaded end. Two regimes is evidence, not proof; a swept-load bench measurement of detector gain would settle it.",
+      "SAMPLE SIZE": "ONE watering event. The spread between rigs is far larger than any plausible error, but every normalized figure rests on one step per rig. Re-derive at the next watering, and RECORD THE WATER VOLUME and pot mass -- without them no step here is a calibrated sensitivity."
+    },
     "tested_2026_09_19": [
       "SUPPORTED -- 'FDC readout is temperature-susceptible': probe 4's BARE TANK, with the electrode physically disconnected, is r=-0.994 at -0.041 %/C. Real and almost perfectly thermal, but ~8x smaller than the blade's contribution.",
       "WITHDRAWN as cross-pot (maintainer, 2026-09-19) -- the 3.7x blade-vs-v1.2 ratio subtracted probe 4's blade term (its OWN pot, 09-05..09-09) from its v1.2 term (SHARED pot, 09-19). Different soil on each side. This also re-explains the probe 4 vs probe 8 blade disagreement as two POTS, not two boards. What survives: the within-AM 2.9x (sensors 3 and 9, same pot, same days), and the readout term below which touches no soil.",
@@ -419,7 +486,9 @@
       "WITHDRAWN: any ratio built by subtracting probe 4's own-pot blade data from its shared-pot v1.2 data. Different soil on each side.",
       "SETTLING CAVEAT: probe 4 entered 2026-09-18 20:53 and its +0.053 %/C v1.2 figure comes from the FIRST ~18 HOURS after insertion. Probe 5 entered 2026-09-19 ~20:24. Neither is at steady state yet; re-measure both after several days before treating either number as the electrode's property.",
       "The REAL electrode measurement is probe 4 vs probe 5 once both have settled: same pot, same soil, same FDC readout, same days, one variable.",
-      "Bare-tank figures are pot-independent (electrode disconnected, no soil contact) and are the only ones safe to carry across pot changes."
+      "Bare-tank figures are pot-independent (electrode disconnected, no soil contact) and are the only ones safe to carry across pot changes.",
+      "ADDED 2026-09-24: NEVER rank electrodes or readouts on a raw thermal coefficient. Divide each rig's artifact by its OWN watering step first. Doing so reverses the blade verdict through the FDC readout, because the blade's larger coefficient buys more than it costs. The step is the only common calibration between AM mV, FDC counts and MSV2 LSB.",
+      "ADDED 2026-09-24: a thermal coefficient is only comparable between rigs AT THE SAME SOIL WATER CONTENT. Probe 5 moved from -0.111 to +0.545 %/C across one watering. Never compare a pre-watering coefficient with a post-watering one, and never pool days across a watering in one fit."
     ]
   }
 }

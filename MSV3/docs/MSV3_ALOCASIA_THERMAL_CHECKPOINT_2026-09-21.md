@@ -1,5 +1,16 @@
 # Alocasia pot thermal checkpoint — 2026-09-21
 
+> **Superseded in part by
+> [`MSV3_ALOCASIA_WATERING_REVIEW_2026-09-24.md`](MSV3_ALOCASIA_WATERING_REVIEW_2026-09-24.md).**
+> The watering this document asked for happened on 2026-09-22 10:50 PDT and supplies the
+> transfer calibration this one says it lacks ("today's data do not identify additive
+> coefficients, because AM mV and FDC counts lack a common transfer calibration"). With it,
+> the additive form is refuted. "The blade is net better through the FDC" is confounded,
+> because probe 5 sits on the shade side of the pot; see
+> [`MSV3_ALOCASIA_WATERING_REVIEW_AUDIT_2026-09-24.md`](MSV3_ALOCASIA_WATERING_REVIEW_AUDIT_2026-09-24.md)
+> and [`MSV3_MULTIPROBE_DATA_FINDINGS_2026-09-24.md`](MSV3_MULTIPROBE_DATA_FINDINGS_2026-09-24.md).
+> The measurements below remain valid for their date.
+
 Initial data end: **2026-09-21 17:15 PDT** (2026-09-22 00:15 UTC); a probe 7
 follow-up below extends probes 4, 5 and 7 to **18:15 PDT**, and the PC-state
 correction includes probe 5 through **18:28 PDT**. The maintainer confirmed on
