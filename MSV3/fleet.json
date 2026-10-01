@@ -61,13 +61,13 @@
       "diagnostic_state": "2026-09-19 CLOUD-HISTORY CORRECTION AND BLOCK MAP. The v65566 telemetry cited further down NO LONGER EXISTS in public.msv2_sensor_history: its 18 rows (2026-09-18 23:39:31.07-23:59:21.101 UTC, wake 1-18, DATA_CH0 65,219,312-65,270,261) were deleted on 2026-09-19 as out-of-FDC-range, backed up to data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv (all 21 columns including id and observation_id, so they are re-insertable). Zero rows with raw_fdc_counts > 50,000,000 remain for sensor 4 at any date. CORRECT 2026-09-18 BLOCK MAP, PDT, boundaries fixed by wake-counter resets: (A) ..16:26:40 pre-rig production, old build, phases 0/1 alternating, ~37.43M. (B) 16:26:49-16:29:56 FOUR physical-handling rows logged while the v1.2 sensor was being wired on, 22.8-37.5M with nonsense moisture values -- RETAINED in the database but physically meaningless, exclude them in analysis. (C) 16:30:36-16:38:46 old build resumes, ~37.63M. (D) 16:39:31-16:59:21 v65566 on mux code 2 -- DELETED, see above. (E) 17:00:10-20:52:20, 199 rows, v65567 airpad on mux code 0, in range at ~38.2M, but ON THE BENCH and NOT in the pot. (F) 20:53:20 onward, in the shared Alocasia pot -- THIS IS THE REVERSE-HYBRID SERIES PROPER, ~36.5-36.9M. ANALYSE FROM 2026-09-18 20:53:20 PDT. The 16:38 split point recorded in earlier notes is WRONG: it pulls the deleted block D and the entire bench block E into the series and produces nonsense slopes (+9.0 %/C, r2=0.21). || 2026-09-18 16:55 SUPERSEDED BY v65567 (MSV3-BUILD:2026-09-18-hybridv12-airpad, -HybridV12Tank -HybridMuxCode 0), installed over BLE in 41 s; archived msv3-1.0.1-sensor004-v65567-signed-ota.zip. Measures on mux code 0 only (also the sleep code, so the mux never moves): tank = L + board + MSV3 electrode as padding + the v1.2 sensor (sense trace to TANK_HOT, its ground U to TANK_COLD, jumpers, no solder). The MSV3 electrode MUST be held in AIR for this to be valid: the 2026-09-15 glass-of-water test read it flat in air for a full day. DIS read back hybridv12-airpad; 200 s scan wake +1, flags 0x54, 4028 mV, die 24.00 C, DATA_CH0 38,277,081 (~6.2 MHz, ~98 pF, in range). || EARLIER SAME DAY: INVERTED HYBRID TEST. The maintainer wired an external v1.2 capacitive sensor to the C17 pads (C17 already removed), so it sits directly across the FDC tank. Signed v65566 (MSV3-BUILD:2026-09-18-hybridv12, -HybridV12Tank, IDRIVE 16, Guard 2 off) installed over BLE in 37 s through the resident 1.0.1 bootloader; archived as MSV3/bootloader/generated/1.0.1/msv3-1.0.1-sensor004-v65566-signed-ota.zip. Before the jump DIS reported the previous build as 2026-09-10-p4-settle1024, NOT 2026-09-05-guard1 as the notes above say. Post-install: DIS read back 2026-09-18-hybridv12; a 200 s scan saw wake +2, flags 0x54 (capless bit 6 set, phase 0 only, bareValid clear), 4028 mV, die 25.25 C, DATA_CH0 65,234,409, OTA gate open. The image measures ONLY on mux code 2 (electrodes disconnected; tank = L + TMUX off-capacitance + v1.2 sensor) and parks on code 0 in sleep. 65.2M counts is about 10.5 MHz, ABOVE the FDC2214's 10 MHz sensor ceiling and the 8.75 MHz FIN_SEL=01 range, so readings are out of datasheet range until fixed capacitance is added across the tank; the image rejects the 0x0FFFFFFF over-range sentinel. To return to production afterwards, build a new capless production image above 65567; the archived capless v65564 is below it and ble_ota_update.py will refuse it (bootloader 1.0.1 has no on-device floor, but --allow-downgrade is not for ordinary updates).",
       "installed_application_version": 65567,
       "physical_state": {
-        "verified": "2026-09-21",
-        "source": "maintainer confirmed 2026-09-21 that no Alocasia sensors, electrodes, power connections, or pot changed since 2026-09-19",
-        "location": "shared Alocasia pot",
-        "pot": "shared-alocasia",
+        "verified": "2026-09-30",
+        "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
+        "location": "REMOVED from the shared Alocasia pot 2026-09-30; current whereabouts not stated",
+        "pot": null,
         "room": "desk room, shelf",
-        "power": "battery ONLY (+ solar panel). NOT mains/USB -- galvanically isolated, unlike every other rig in the shared pot.",
-        "electrode_in_soil": "v1.2",
+        "power": "NOT STATED since removal 2026-09-30 (was: battery ONLY (+ solar panel). NOT mains/USB -- galvanically isolated, unlike every other rig in the shared pot.)",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "electrode_notes": "v1.2 sensor wired across the FDC tank; the MSV3 blade is held in AIR as tank padding",
         "readout": "MSV3 FDC2214",
         "mods": [
@@ -75,7 +75,15 @@
           "SP+ shunt zener fitted",
           "C17 removed"
         ],
-        "deployed_state": "live"
+        "deployed_state": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated",
+        "last_soil_installation": {
+          "location": "shared Alocasia pot",
+          "pot": "shared-alocasia",
+          "room": "desk room, shelf",
+          "power": "battery ONLY (+ solar panel). NOT mains/USB -- galvanically isolated, unlike every other rig in the shared pot.",
+          "electrode_in_soil": "v1.2",
+          "until": "2026-09-30"
+        }
       }
     },
     {
@@ -95,22 +103,36 @@
       "notes": "Bootloader 1.0.3 installed over SWD on 2026-09-08. Signed application v65555 (MSV3-BUILD:2026-09-08-prod5; Guard 1 and Guard 2 on; serial logs off) installed over BLE from recovery address F9:18:9B:CA:10:B3 in 28 s. DIS read back the exact build ID. A 150-second scan observed 29 packets across two advancing wakes (+1), valid sensor data, 4411 mV, flags 0x1c, and an open OTA gate. The 4411 mV observation was while USB-powered with no battery attached, so it is not a cell-voltage measurement. Equality-version rescue package SHA-256: 0198dd469cbc2ba411b73f310c5d0054e84abe9a5bd7c0dc1db60faf46ddf735. || 2026-09-19 CAPLESS TRANSITION AND REDEPLOYMENT INTO THE SHARED ALOCASIA POT. The maintainer placed this probe in the shared pot as the MSV3-blade + FDC arm of the electrode/readout comparison (it was mistaken for probe 8 at the time; probe 8 remains deployed=false and unseen). It came back on the air after six days dark (last prior row 2026-09-14 03:05 UTC) still running pre-capless v65555, and its first rows were UNUSABLE: moisture computed to 0 on moisture_scale 2, with bare_tank_fdc_counts 65,456,050-65,562,392 -- above the FDC2214 10 MHz ceiling, the same out-of-range failure as probe 4's deleted v65566 block, because a pre-capless image still measures a bare-tank reference that C17-removed hardware no longer has. C17 REMOVAL IS CONFIRMED BY MEASUREMENT on this board: raw_fdc_counts moved from ~19.85M on 2026-09-14 (C17-installed regime) to ~36.2M now (C17-removed regime), matching probe 8's ~20.49M / ~39.41M split. FIX: signed capless v65564 (MSV3-BUILD:2026-09-14-capless-prod5) installed over BLE in 32 s through the resident 1.0.3 bootloader; the package had been built 2026-09-14 alongside probe 6's and never installed. Preflight passed integrity, boot-guard and identity. DIS PROVEN by a deliberate same-package re-run, which the already-running-build guard REFUSED before any jump, reading back 2026-09-14-capless-prod5 -- the probe was never taken off the air to prove it. A 200 s scan then saw 34 packets at -71 dBm, wake advancing +1, 4310 mV (USB, NOT a cell measurement), flags 0x54 (capless bit 6 SET, bareValid CLEAR), die 21.75 C, DATA_CH0 35,490,875, OTA gate open. Cloud rows confirm the switch in place: moisture_scale 2 -> 3, bare_tank_fdc_counts 65.5M -> NULL, moisture 0 -> ~44,500. PHASE GAP RESOLVED: a scan taken WHILE the probe was being inserted reported phase 1 at 152,328,492 against phase 0 at 36,335,033, a 115,993,458 gap that tripped the analog-path warning. After settling the gap is 47,934, far under the 1,200,000 threshold. That alarm was insertion transients, NOT a probe-7-style cracked TMUX joint -- do not scan this board while handling it. OPEN CAUTION: it is running on USB in the same pot whose AM rig (sensor 3) showed cyclic mains-coupling noise bands traced to the receiver PSU sharing an outlet. The thermal signal being measured here is a sub-1% daily wobble, so move it to battery, or at least a different outlet from the receiver, before its data is used for the electrode-versus-readout comparison. SWD ACCESS RE-VERIFIED 2026-09-20 (maintainer, direct statement): this probe's SWD pads are reachable RIGHT NOW. The earlier false value recorded a potted/deployed board, not a coated one; that reason is superseded. Probe 6 remains the ONLY probe whose pads are inaccessible (conformal coating, 2026-09-12). Note this is pad accessibility only -- as of 2026-09-20 the maintainer has no SWD flasher rig configured, so no SWD operation is currently available in practice.",
       "installed_application_version": 65564,
       "physical_state": {
-        "verified": "2026-09-21",
-        "source": "maintainer confirmed 2026-09-21 that no Alocasia sensors, electrodes, power connections, or pot changed since 2026-09-19; clarified that probe 5 has no battery and only its battery-mV chart rises when the PC sleeps",
-        "location": "shared Alocasia pot, on the OPPOSITE SIDE of the pot from the sun (maintainer, 2026-09-24: placed there because it is hardwired to the computer over USB). Every other Alocasia probe is on the sun side.",
+        "verified": "2026-09-30",
+        "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
+        "location": "REMOVED from the shared Alocasia pot 2026-09-30; current whereabouts not stated",
         "position_confound": "Probe 5 is the only Alocasia rig on the shaded side, so any comparison of probe 5's thermal response against probes 2, 3, 4 or 9 confounds electrode/readout with pot position. Its die swings less than probe 4's on the same days. This includes the 2026-09-24 watering review's 'blade is net better through the FDC' (probe 4 vs probe 5).",
-        "pot": "shared-alocasia",
+        "pot": null,
         "room": "desk room, shelf",
-        "power": "USB from the computer, which is on the shared mains outlet; NO battery attached",
+        "power": "NOT STATED since removal 2026-09-30 (was: USB from the computer, which is on the shared mains outlet; NO battery attached)",
         "power_state_telemetry": "Maintainer observed 2026-09-21: the battery-mV chart reads high when the computer sleeps and low when it is on, despite no battery being attached. The roughly 4.38 V and 4.29 V bands describe only this telemetry field; no corresponding FDC-count step was established.",
-        "electrode_in_soil": "MSV3 blade",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "electrode_notes": "standard MSV3 blade in soil",
         "readout": "MSV3 FDC2214",
         "mods": [
           "VBAT_OV divider swapped 2026-09-14 (R11 4.42M / R14 4.12M)",
           "C17 removed"
         ],
-        "deployed_state": "live"
+        "deployed_state": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated",
+        "last_soil_installation": {
+          "location": "shared Alocasia pot, on the OPPOSITE SIDE of the pot from the sun (maintainer, 2026-09-24: placed there because it is hardwired to the computer over USB). Every other Alocasia probe is on the sun side.",
+          "pot": "shared-alocasia",
+          "room": "desk room, shelf",
+          "power": "USB from the computer, which is on the shared mains outlet; NO battery attached",
+          "electrode_in_soil": "MSV3 blade",
+          "until": "2026-09-30",
+          "removal_fit_2026_09_30": {
+            "when": "2026-09-30, during the Alocasia teardown",
+            "source": "maintainer stated 2026-09-30: 'the raw hardwired MSV3 probe that was giving the good data out of alocasia had the TIGHTEST fit out of any of them, it was difficult to pull out while many of the other ones came out super easily'. Identified as probe 5: the only hardwired (USB) MSV3 probe in the pot.",
+            "observation": "Tightest soil grip of every Alocasia sensor on removal; hard to pull out. Several others came out very easily (which ones not itemised).",
+            "relevance": "Probe 5 was the quiet blade (3.8 % of a watering per day vs sensor 9's 29.7 %). Tight soil contact is a candidate explanation for why the same blade geometry was quiet here and noisy elsewhere: a shallow sensor (MSV3 comb, ~0.2 mm median depth by field solve) reads mostly the soil-blade interface. Qualitative, one probe, and confounded with probe 5's shade-side position."
+          }
+        }
       }
     },
     {
@@ -134,6 +156,7 @@
         "verified": "2026-09-19",
         "source": "maintainer, answered directly 2026-09-19",
         "location": "on the maintainer's desk, NOT in any pot, NO sun",
+        "position_2026_09_29": "UNVERIFIED AFTER 2026-09-24: maintainer said 2026-09-29 it is very possible probes 6 and 7 were moved at times during 09-24..09-29 (not itemised). Telemetry shows handling signatures on probe 7 at 09-28 ~13:06 and on BOTH probes 6 and 7 at 09-29 ~12:49 PDT (off-cadence wakes, RSSI drop). Do not use probe 6's die as a room-air reference, or probe 7 as a fixed installation, after 09-24 without re-confirming.",
         "pot": null,
         "room": "desk room",
         "power": "battery only",
@@ -166,13 +189,14 @@
       "installed_application_version": 65565,
       "diagnostic_state": "2026-09-16 production restore: the fleet scan first saw the v65565 bring-up heartbeat ('MSV3' magic, DATA_CH0 0, 3999-4043 mV, charge bit clear, OTA gate open). Signed capless production v65565 was then installed application-only over BLE through the resident 1.0.3 bootloader in 49 s (2.62 kB/s, -60 dBm); DIS read 2026-09-14-probe7-mux-diag immediately before the jump. A same-package re-run was refused by the running-build guard before any jump, with DIS reporting 2026-09-14-capless-prod7-restore. A 300 s scan observed 80 packets, wake 6 advancing +3, flags 0x56 (capless bit 6 set, reading-invalid bit 5 clear, bareValid clear), DATA_CH0 37,978,831, phase 0 mean 37,979,235 (n=2) against phase 1 mean 37,978,055 (n=2) -- a 1,180-count gap, so the repaired TMUX shows no phase asymmetry -- die 20.75 C, 4021 mV, OTA gate open. Evidence: dumps/probe7-prod65565-postrestore.json. || PRIOR: BENCH-READY, NOT DEPLOYED: the phase-dependent TMUX fault was repaired on 2026-09-14. Static codes 2/3 proved both mux select GPIOs and EC-side routes. Targeted hotcoldstream initially showed code 0 near 38.69M and code 1 near 53.89M; pressing the TMUX restored code 1 to the normal region, identifying a pressure-sensitive code-1 analog-path solder joint rather than an A1/decoder failure. After reflow and bridge cleanup, i2cscan found 0x2A, fdcid returned 0x5449/0x3055, fdctest passed 10/10, and repeated code-0/code-1 flips overlapped near 36.73M with STATUS 0x8 and no errors. Signed targeted bring-up v65565 (MSV3-BUILD:2026-09-14-probe7-mux-diag) is currently installed, so the on-device rollback floor is 65565. Restore only with the paired signed capless production v65565 package (SHA-256 2ed999de3cb189f2f353fb562de615b2b9db5afc29e766ee086d423f69f5b456) or later; do not use the older v65556 rescue. The v65565 diagnostic OTA package SHA-256 is 3f7e0d5f3361159388edc9683e63a19baded6a2ba71e49a732581a07d3c2dfb3. A required post-flash BLE fleet scan was interrupted for serial diagnosis, but the diagnostic build identity and repaired sensing path were verified over its USB console.",
       "physical_state": {
-        "verified": "2026-09-24",
-        "source": "maintainer stated 2026-09-24 23:19 PDT that probe 7 has been flipped; otherwise unchanged since the 2026-09-21 confirmation (Begonia pot, same shelf as Alocasia, battery + solar)",
-        "location": "begonia pot, same room and SAME SHELF as probe 4, different pot",
-        "pot": "begonia",
+        "verified": "2026-09-30",
+        "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
+        "location": "REMOVED from the Begonia pot 2026-09-30; current whereabouts not stated",
+        "position_2026_09_29": "UNVERIFIED AFTER 2026-09-24: maintainer said 2026-09-29 it is very possible probes 6 and 7 were moved at times during 09-24..09-29 (not itemised). Telemetry shows handling signatures on probe 7 at 09-28 ~13:06 and on BOTH probes 6 and 7 at 09-29 ~12:49 PDT (off-cadence wakes, RSSI drop). Do not use probe 6's die as a room-air reference, or probe 7 as a fixed installation, after 09-24 without re-confirming.",
+        "pot": null,
         "room": "desk room, shelf",
-        "power": "battery + solar panel",
-        "electrode_in_soil": "MSV3 blade",
+        "power": "NOT STATED since removal 2026-09-30 (was: battery + solar panel)",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "electrode_notes": "standard MSV3 blade in soil. FLIPPED 2026-09-24 ~23:17 PDT so the one-sided sensing face points INTO THE SOIL (maintainer). Before the flip it appeared, by eye, to face the pot edge/wall.",
         "orientation_change": {
           "when": "2026-09-24 ~23:17 PDT",
@@ -186,7 +210,15 @@
           "potted",
           "C17 removed"
         ],
-        "deployed_state": "live"
+        "deployed_state": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated",
+        "last_soil_installation": {
+          "location": "begonia pot, same room and SAME SHELF as probe 4, different pot",
+          "pot": "begonia",
+          "room": "desk room, shelf",
+          "power": "battery + solar panel",
+          "electrode_in_soil": "MSV3 blade",
+          "until": "2026-09-30"
+        }
       }
     },
     {
@@ -233,8 +265,8 @@
     ],
     "verified": "2026-09-19",
     "source": "maintainer, answered directly 2026-09-19",
-    "alocasia_nodes_verified": "2026-09-21",
-    "alocasia_nodes_source": "maintainer confirmed sensors 2, 3, and 9 unchanged since 2026-09-19; sensor 1 was not re-verified",
+    "alocasia_nodes_verified": "2026-09-30",
+    "alocasia_nodes_source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
     "nodes": [
       {
         "sensor_id": 1,
@@ -243,37 +275,65 @@
         "pot": "thaumatophilum",
         "power": "battery",
         "electrode_in_soil": "MSV2 interdigitated",
-        "readout": "MSV2 RC"
+        "readout": "MSV2 RC",
+        "location_verified": "2026-09-30",
+        "location_source": "maintainer 2026-09-30: sensor 1 is the ONLY sensor staying in soil when the indoor tests are torn down; maintainer adds it 'isn't really even working anyways'"
       },
       {
         "sensor_id": 2,
         "generation": "MSV2",
-        "location": "shared Alocasia pot",
-        "pot": "shared-alocasia",
-        "power": "battery",
-        "electrode_in_soil": "MSV2 interdigitated",
+        "location": "REMOVED from the shared Alocasia pot 2026-09-30; current whereabouts not stated",
+        "pot": null,
+        "power": "NOT STATED since removal 2026-09-30 (was: battery)",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "readout": "MSV2 RC",
-        "notes": "quantization-limited: ~3 LSB of daily swing, cannot support a thermal coefficient"
+        "notes": "quantization-limited: ~3 LSB of daily swing, cannot support a thermal coefficient",
+        "last_soil_installation": {
+          "location": "shared Alocasia pot",
+          "pot": "shared-alocasia",
+          "power": "battery",
+          "electrode_in_soil": "MSV2 interdigitated",
+          "until": "2026-09-30"
+        },
+        "status": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated"
       },
       {
         "sensor_id": 3,
         "generation": "AM bench rig",
-        "location": "shared Alocasia pot",
-        "pot": "shared-alocasia",
-        "power": "mains -- ESP32-powered, shared outlet",
-        "electrode_in_soil": "v1.2",
+        "location": "REMOVED from the shared Alocasia pot 2026-09-30; current whereabouts not stated",
+        "pot": null,
+        "power": "NOT STATED since removal 2026-09-30 (was: mains -- ESP32-powered, shared outlet)",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "readout": "AM detector",
-        "notes": "the original AFE rig. Has a documented history of mains-coupling noise bands traced to the receiver PSU sharing an outlet."
+        "notes": "the original AFE rig. Has a documented history of mains-coupling noise bands traced to the receiver PSU sharing an outlet.",
+        "last_soil_installation": {
+          "location": "shared Alocasia pot",
+          "pot": "shared-alocasia",
+          "power": "mains -- ESP32-powered, shared outlet",
+          "electrode_in_soil": "v1.2",
+          "until": "2026-09-30"
+        },
+        "status": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated",
+        "esp32_reclaimed_note": "maintainer 2026-09-30: 'both of the ESP32s' are being reclaimed for a presentation. NOT stated whether that means the AM rigs' ESP32s (sensors 3 and 9) or the DisplayCenter receivers -- ask before assuming either this rig or a receiver is running."
       },
       {
         "sensor_id": 9,
         "generation": "AM bench rig",
-        "location": "shared Alocasia pot",
-        "pot": "shared-alocasia",
-        "power": "mains -- ESP32-powered, shared outlet",
-        "electrode_in_soil": "MSV3 blade",
+        "location": "REMOVED from the shared Alocasia pot 2026-09-30; current whereabouts not stated",
+        "pot": null,
+        "power": "NOT STATED since removal 2026-09-30 (was: mains -- ESP32-powered, shared outlet)",
+        "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "readout": "AM detector",
-        "notes": "the hybrid rig: MSV3 blade read by the AM front end"
+        "notes": "the hybrid rig: MSV3 blade read by the AM front end",
+        "last_soil_installation": {
+          "location": "shared Alocasia pot",
+          "pot": "shared-alocasia",
+          "power": "mains -- ESP32-powered, shared outlet",
+          "electrode_in_soil": "MSV3 blade",
+          "until": "2026-09-30"
+        },
+        "status": "OUT OF SOIL from 2026-09-30 -- any telemetry after this is NOT soil data; whereabouts and power after removal not stated",
+        "esp32_reclaimed_note": "maintainer 2026-09-30: 'both of the ESP32s' are being reclaimed for a presentation. NOT stated whether that means the AM rigs' ESP32s (sensors 3 and 9) or the DisplayCenter receivers -- ask before assuming either this rig or a receiver is running."
       }
     ]
   },
@@ -282,19 +342,13 @@
       "Which sensors share soil. Two sensors in the same pot see the same water;",
       "two in different pots do not, and must not be compared as if they did."
     ],
-    "verified": "2026-09-19",
-    "source": "maintainer, answered directly 2026-09-19",
+    "verified": "2026-09-30",
+    "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
     "shared-alocasia": {
-      "verified": "2026-09-21",
-      "source": "maintainer confirmed no Alocasia pot or sensor changes since 2026-09-19",
+      "verified": "2026-09-30",
+      "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
       "plant": "Alocasia",
-      "sensors": [
-        2,
-        3,
-        4,
-        5,
-        9
-      ],
+      "sensors": [],
       "notes": "The electrode x readout 2x2 lives here: sensor 9 = MSV3 blade + AM, sensor 3 = v1.2 + AM, probe 5 = MSV3 blade + FDC, probe 4 = v1.2 + FDC. Sensor 2 is also here but is quantization-limited.",
       "spacing": "Maintainer, 2026-09-24: all of the Alocasia probes are VERY CLOSE to each other, EXCEPT probe 5, which sits on the opposite side of the pot from the sun (its USB cable). Sun side: sensors 2, 3, 9 and probe 4. Shade side: probe 5. The facing direction of each one-sided blade within the pot is NOT recorded.",
       "insertion_dates": {
@@ -318,8 +372,8 @@
           "are the transfer calibration that makes AM millivolts, FDC counts and MSV2 RC counts",
           "comparable. Record every one. A watering day must be excluded from thermal fits."
         ],
-        "verified": "2026-09-24",
-        "source": "maintainer stated 2026-09-24 that there has been exactly one watering since the test began; the time is located from the simultaneous step in all four in-pot rigs",
+        "verified": "2026-09-29",
+        "source": "maintainer stated 2026-09-24 that there has been exactly one watering since the test began, and confirmed 2026-09-29 no watering since (all rigs dry down continuously 09-22 -> 09-29); the time is located from the simultaneous step in all four in-pot rigs",
         "uniform_saturation": "MAINTAINER, stated directly 2026-09-24: the pot is small, so treat a watering as UNIFORM SATURATION throughout. Every Alocasia sensor sees the same amount of water, and each rig's watering step is a valid common calibration. Do not attribute differences in step size between Alocasia rigs to uneven water delivery. Differences in later drying rates between rigs are NOT evidence against this.",
         "events": [
           {
@@ -329,13 +383,20 @@
             "probe_5_spike": "Probe 5's single-bin spike at 10:50 (count 36.5M -> 18.5M, +136 log-cap %, then ~+72 from 11:00) is the watering itself, per the maintainer 2026-09-24: a probe transmitting as the water goes in sees the whole blade momentarily saturated, and it lasts only while the water saturates and drains through the rest of the pot. NOT handling and NOT a fault."
           }
         ]
-      }
+      },
+      "status": "DISASSEMBLED 2026-09-30 -- every sensor removed (maintainer). No sensor is in this pot now.",
+      "sensors_until_2026_09_30": [
+        2,
+        3,
+        4,
+        5,
+        9
+      ],
+      "removal_observations_2026_09_30": "maintainer: probe 5 (hardwired MSV3 blade + FDC) had the tightest fit of all and was hard to pull out; many of the others came out very easily (not itemised). See probes[5].physical_state.last_soil_installation."
     },
     "begonia": {
       "plant": "Begonia",
-      "sensors": [
-        7
-      ],
+      "sensors": [],
       "notes": "Same room and same shelf as the shared Alocasia pot, so insolation is comparable to probe 4.",
       "watering_events": {
         "verified": "2026-09-24",
@@ -347,21 +408,34 @@
             "detected_by": "Not visible by inspection: it is buried under probe 7's own daily swing of 12-14 log-cap % after watering (7-10 before). With the sun and room terms modelled out, probe 7 shows a +5.1 logC% step at the watering time, above every placebo day (-13.5..+2.5) -- MSV3/docs/MSV3_MULTIPROBE_DATA_FINDINGS_2026-09-24.md section 3. Measured before probe 7 was flipped on 2026-09-24 23:17."
           }
         ]
-      }
+      },
+      "status": "DISASSEMBLED 2026-09-30 -- every sensor removed (maintainer). No sensor is in this pot now.",
+      "sensors_until_2026_09_30": [
+        7
+      ],
+      "verified": "2026-09-30",
+      "source": "maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation"
     },
     "thaumatophilum": {
       "plant": "Thaumatophilum",
       "sensors": [
         1
       ],
-      "notes": "OUTDOORS, far from the desk. Not comparable to anything indoors."
+      "notes": "OUTDOORS, far from the desk. Not comparable to anything indoors. 2026-09-30: the only pot still holding a sensor; maintainer says sensor 1 isn't really working.",
+      "verified": "2026-09-30"
     },
     "not-in-soil": {
       "sensors": [
+        2,
+        3,
+        4,
+        5,
         6,
-        8
+        7,
+        8,
+        9
       ],
-      "notes": "Probe 6 sits on the desk with no sun; probe 8 is unplugged and unpowered."
+      "notes": "Probe 6 sits on the desk with no sun; probe 8 is unplugged and unpowered. From 2026-09-30: sensors 2, 3, 4, 5, 7 and 9 were also removed from their pots (whereabouts and power not stated)."
     }
   },
   "power_topology": {
@@ -397,8 +471,9 @@
       "STILL CLEAN and now doing double duty: the within-AM comparison (s3 vs s9) is both the load-bearing electrode result and the control that demotes this confound.",
       "STILL WORTH REMOVING: the topology asymmetry is real even if it is not the explanation. Moving probe 5 to battery makes the FDC row power-matched.",
       "RESOLVED 2026-09-24: probe 5 is QUIET like probe 4, not noisy like sensor 9 -- 0.09% of its watering step in 10-minute noise and 4.75% in daily thermal artifact, against sensor 9's 26.7%. Probe 5 is on USB on the shared outlet, so mains topology does not explain sensor 9 either. But the prediction's own dichotomy (electrode OR readout) was wrong: the blade is net BETTER through the FDC and 10.7x WORSE through the AM, so the two interact. See measurement_model.tested_2026_09_24 and MSV3/docs/MSV3_ALOCASIA_WATERING_REVIEW_2026-09-24.md.",
-    "STILL WORTH REMOVING nonetheless: moving probe 5 to battery would power-match the FDC row. Nothing measured so far is explained by the topology, but the asymmetry is real."
-    ]
+      "STILL WORTH REMOVING nonetheless: moving probe 5 to battery would power-match the FDC row. Nothing measured so far is explained by the topology, but the asymmetry is real."
+    ],
+    "status": "MOOT from 2026-09-30: the Alocasia test is disassembled, so the shared-outlet confound applies only to data before then."
   },
   "measurement_model": {
     "_comment": [
@@ -444,6 +519,15 @@
       "ANSWERED 2026-09-24, and none of the three listed outcomes was right. Probe 5 measured -0.111 %/C (slightly DRIER when warm) while the soil was dry and +0.545 %/C (strongly WETTER when warm) after the 09-22 watering -- it landed on two different branches of the prediction four days apart. The prediction was mis-specified because it omitted soil water content, which turns out to set both the sign and the magnitude. See tested_2026_09_24."
     ],
     "status": "PARTLY SUPERSEDED 2026-09-24. Readout and electrode both contribute, and they INTERACT: the additive form is refuted (tested correctly on differences, see audit). The 'soil water content dominates the temperature term' entry below did NOT survive audit. The dominant daily artifact is the noon sun on the shelf acting on specific installations (sensor 9, probe 7). See tested_2026_09_24.audit below.",
+    "tested_2026_09_29": {
+      "_comment": "READ BEFORE tested_2026_09_24. Two weeks of the Alocasia pot (09-16..09-29), each rig's daily swing divided by its own 09-22 watering step, plus two independent bounds on the circuit's own term.",
+      "verified": "2026-09-29",
+      "source": "MSV3/docs/MSV3_ALOCASIA_ELECTRODE_VS_CIRCUIT_2026-09-29.md (scripts/analyze_alocasia_electrode_vs_circuit.py), data through 2026-09-29 22:50 PDT",
+      "ELECTRODE, NOT CIRCUIT": "Same AM detector design, same outlet, same pot and days: the MSV3 blade (sensor 9) swings 29.7% of a watering per day against the v1.2's (sensor 3) 2.6% -- x10.7 paired by day, never below x7.9 on any of 10 days.",
+      "CIRCUIT BOUNDED TWICE": "FDC: probe 8's bare reference tank on the same chip at the same instants is 23% of its blade channel's swing (0.21 vs 0.90 logC%/day, 09-10..09-13, this pot), and of opposite sign. AM: crediting ALL of sensor 3's 13.2 mV/day to the shared detector design bounds the circuit at <=21% of sensor 9's 67.3 mV/day (worst day 28%). The MSV3 board in full sun (probe 4, die ~8 C, battery + solar in circuit) driving a v1.2 swings only 6.6% of a watering.",
+      "QUALIFICATION": "The blade's swing is an installation property, not a fixed blade coefficient: probe 5 (blade + FDC, the only SHADE-side rig) is 3.8%, no worse than the v1.2s (per C of own die range: p5 0.70, p4 0.77 % of a watering). Every large blade swing on record is a sunlit installation. The 09-24 'electrode x readout interaction' compares sun-side s9 with shade-side p5, so pot side is confounded with readout there.",
+      "NOT EXCLUDED": "Sensor 9's AM board could sit hotter than sensor 3's (placement unrecorded); the <=21% AM bound assumes they see the same temperature. Swapping the two electrodes at the AM connectors would close it."
+    },
     "tested_2026_09_24": {
       "audit": {
         "_comment": "READ THIS BEFORE THE ENTRIES BELOW. They were written earlier the same day, then audited against the raw data and a direct, model-free look at it.",
