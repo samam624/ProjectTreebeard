@@ -127,7 +127,8 @@ permanently bonded after the electronics pass their functional test.
    bow. The roof is 4.0 mm above the PCB; secure the cell with thin VHB or a
    polyimide strap so it cannot chafe components.
 3. Route the panel wires and seal each passage with neutral-cure RTV or
-   electronics-compatible epoxy.
+   electronics-compatible epoxy. Both 1.6 mm passages are centered beneath
+   the new 2.5 V panel terminals and spaced 4.0 mm center-to-center.
 4. Bond the solar panel around its complete perimeter. On the integrated
    version, the panel is part of the weather barrier.
 5. On the arm version, leave a drip loop in the wire between frame and case.

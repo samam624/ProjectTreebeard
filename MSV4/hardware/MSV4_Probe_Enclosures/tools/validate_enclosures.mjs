@@ -581,6 +581,30 @@ checks.openings = {
     imported.panelFrame,
     box(-15.15, 131.05, 13.75, 15.15, 167.35, 15.25),
   ),
+  integratedPanelWireLeft: intersectionVolume(
+    imported.integratedLid,
+    cylinderZ(3.85, 2.70, -2.00, 122.00, 0.75),
+  ),
+  integratedPanelWireRight: intersectionVolume(
+    imported.integratedLid,
+    cylinderZ(3.85, 2.70, 2.00, 122.00, 0.75),
+  ),
+  minimalPanelWireLeft: intersectionVolume(
+    imported.minimalLid,
+    cylinderZ(3.85, 2.70, -2.00, 122.00, 0.75),
+  ),
+  minimalPanelWireRight: intersectionVolume(
+    imported.minimalLid,
+    cylinderZ(3.85, 2.70, 2.00, 122.00, 0.75),
+  ),
+  panelFrameWireLeft: intersectionVolume(
+    imported.panelFrame,
+    cylinderZ(12.55, 2.90, -2.00, 149.20, 0.75),
+  ),
+  panelFrameWireRight: intersectionVolume(
+    imported.panelFrame,
+    cylinderZ(12.55, 2.90, 2.00, 149.20, 0.75),
+  ),
   armCaseWireLow: intersectionVolume(
     imported.armLid,
     cylinderX(-16.70, 3.40, 121.50, 1.35, 0.75),

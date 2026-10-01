@@ -1,6 +1,6 @@
 {
-  "version": "MSV4-enclosures-v5.0-led-window-and-closed-minimum-case",
-  "revisionNote": "Upward-pointing clear-epoxy LED windows over the upper D1 package on all three bases, plus a screwless two-piece minimum-profile enclosure with a thin closed back, PCB-shaped assembly groove, bonded seam, and explicit antenna keepout.",
+  "version": "MSV4-enclosures-v5.1-centered-2p5v-panel-leads",
+  "revisionNote": "Moves both 1.6 mm solar lead passages to a centered pair matching the new 2.5 V panel on the integrated lid, minimum-profile lid, and articulated panel frame.",
   "units": "mm",
   "source": "..\\MSV4.step",
   "parameters": {
@@ -69,6 +69,7 @@
     "integratedPanelCenterY": 122,
     "integratedPanelBackWall": 0.8,
     "panelWireHoleDiameter": 1.6,
+    "panelWireHoleCenterOffsetX": 2,
     "ledCenterX": -10,
     "ledCenterY": 138.00000113987,
     "ledWindowRadius": 1.55,
@@ -202,6 +203,16 @@
       1.6
     ],
     "panelBackWall": 0.8,
+    "panelWireHoleCenters": [
+      [
+        -2,
+        122
+      ],
+      [
+        2,
+        122
+      ]
+    ],
     "closedCaseThickness": 10.9,
     "overallBounds": {
       "base": {
@@ -229,7 +240,7 @@
           148.50000015,
           6.40000015
         ],
-        "volume": 4390.3370573149205,
+        "volume": 4390.337057314921,
         "solidCount": 1
       },
       "gasket": {
@@ -263,6 +274,16 @@
       38.8,
       32.8,
       2.6
+    ],
+    "panelWireHoleCenters": [
+      [
+        -2,
+        149.2
+      ],
+      [
+        2,
+        149.2
+      ]
     ],
     "pivotCenterDistance": 32.039038687201575,
     "closedCaseThickness": 9.5,
@@ -336,7 +357,7 @@
           168.60000015,
           16.70000015
         ],
-        "volume": 1670.9167303767535,
+        "volume": 1670.9167303767538,
         "solidCount": 1
       }
     }
@@ -352,6 +373,16 @@
       36.4,
       30.4,
       1.6
+    ],
+    "panelWireHoleCenters": [
+      [
+        -2,
+        122
+      ],
+      [
+        2,
+        122
+      ]
     ],
     "antennaKeepout": {
       "x": [

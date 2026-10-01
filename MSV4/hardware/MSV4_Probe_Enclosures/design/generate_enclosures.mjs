@@ -83,6 +83,7 @@ const p = {
   integratedPanelCenterY: 122.00,
   integratedPanelBackWall: 0.80,
   panelWireHoleDiameter: 1.60,
+  panelWireHoleCenterOffsetX: 2.00,
 
   // D1 is the upper of the two visible bottom-side packages in MSV4.step. The
   // modeled LED lens is centered at Y=138.0. The teardrop point faces upward,
@@ -471,12 +472,12 @@ function buildMinimalSolarLid() {
     pocketMaxY,
     p.minimalLidTopZ + 0.25,
   ));
-  for (const x of [-2.00, 2.00]) {
+  for (const x of [-p.panelWireHoleCenterOffsetX, p.panelWireHoleCenterOffsetX]) {
     lid = lid.cut(cylinderZ(
       p.lidInnerRoofZ - 0.20,
       p.minimalLidTopZ - p.lidInnerRoofZ + 0.40,
       x,
-      pocketMinY + 2.20,
+      p.integratedPanelCenterY,
       p.panelWireHoleDiameter / 2,
     ));
   }
@@ -541,13 +542,14 @@ function buildLidShell(kind) {
       p.integratedLidTopZ + 0.25,
     ));
 
-    // Covered by the bonded panel; pot both lead passages after soldering.
-    for (const x of [-2.00, 2.00]) {
+    // The 2.5 V panel's terminals are centered on its back. Keep the paired
+    // passages centered under the bonded panel and pot them after soldering.
+    for (const x of [-p.panelWireHoleCenterOffsetX, p.panelWireHoleCenterOffsetX]) {
       lid = lid.cut(cylinderZ(
         p.lidInnerRoofZ - 0.20,
         p.integratedLidTopZ - p.lidInnerRoofZ + 0.40,
         x,
-        pocketMinY + 2.20,
+        p.integratedPanelCenterY,
         p.panelWireHoleDiameter / 2,
       ));
     }
@@ -639,12 +641,13 @@ function buildPanelFrame() {
     frontZ + 0.25,
   ));
 
-  for (const wireY of [centerY - 14.00, centerY + 14.00]) {
+  // Match the centered terminal pair on the new 2.5 V panel.
+  for (const wireX of [-p.panelWireHoleCenterOffsetX, p.panelWireHoleCenterOffsetX]) {
     frame = frame.cut(cylinderZ(
       p.panelFrameBackZ - 0.20,
       p.panelFrameThickness + 0.40,
-      0.0,
-      wireY,
+      wireX,
+      centerY,
       p.panelWireHoleDiameter / 2,
     ));
   }
@@ -971,8 +974,8 @@ const roofCornerDistance = Math.hypot(
   p.armLidTopZ - p.armPivotZ,
 );
 const report = {
-  version: 'MSV4-enclosures-v5.0-led-window-and-closed-minimum-case',
-  revisionNote: 'Upward-pointing clear-epoxy LED windows over the upper D1 package on all three bases, plus a screwless two-piece minimum-profile enclosure with a thin closed back, PCB-shaped assembly groove, bonded seam, and explicit antenna keepout.',
+  version: 'MSV4-enclosures-v5.1-centered-2p5v-panel-leads',
+  revisionNote: 'Moves both 1.6 mm solar lead passages to a centered pair matching the new 2.5 V panel on the integrated lid, minimum-profile lid, and articulated panel frame.',
   units: 'mm',
   source: path.relative(projectDir, sourcePcbPath),
   parameters: p,
@@ -1021,6 +1024,10 @@ const report = {
     panelNominal: [p.solarPanelNominalLength, p.solarPanelNominalWidth],
     panelPocket: [p.solarPanelPocketLength, p.solarPanelPocketWidth, p.solarPanelRecessDepth],
     panelBackWall: p.integratedPanelBackWall,
+    panelWireHoleCenters: [
+      [-p.panelWireHoleCenterOffsetX, p.integratedPanelCenterY],
+      [p.panelWireHoleCenterOffsetX, p.integratedPanelCenterY],
+    ],
     closedCaseThickness: p.integratedLidTopZ - p.baseBottomZ,
     overallBounds: {
       base: measure(integratedBase),
@@ -1033,6 +1040,10 @@ const report = {
     panelNominal: [p.solarPanelNominalLength, p.solarPanelNominalWidth],
     panelPocket: [p.solarPanelPocketLength, p.solarPanelPocketWidth, p.solarPanelRecessDepth],
     panelFrame: [p.panelFrameLength, p.panelFrameWidth, p.panelFrameThickness],
+    panelWireHoleCenters: [
+      [-p.panelWireHoleCenterOffsetX, p.armPanelPivotY],
+      [p.panelWireHoleCenterOffsetX, p.armPanelPivotY],
+    ],
     pivotCenterDistance: armCenterDistance,
     closedCaseThickness: p.armLidTopZ - p.baseBottomZ,
     minimumRoofSweepClearance: armCenterDistance - p.armEndRadius - roofCornerDistance,
@@ -1050,6 +1061,10 @@ const report = {
     retention: 'PCB head and shoulder seat into a 0.25 mm XY / 0.15 mm Z-clearance groove in the base; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive',
     panelNominal: [p.solarPanelNominalLength, p.solarPanelNominalWidth],
     panelPocket: [p.solarPanelPocketLength, p.solarPanelPocketWidth, p.solarPanelRecessDepth],
+    panelWireHoleCenters: [
+      [-p.panelWireHoleCenterOffsetX, p.integratedPanelCenterY],
+      [p.panelWireHoleCenterOffsetX, p.integratedPanelCenterY],
+    ],
     antennaKeepout: {
       x: [-9.00, 9.00],
       y: [p.antennaKeepoutYMin, p.antennaKeepoutYMax],

@@ -117,6 +117,9 @@ Y = 140.75 mm, giving a checked 0.75 mm plan-view separation.
 The solar-panel pocket is 36.4 x 30.4 x 1.6 mm. The physical panel thickness
 was not supplied. Measure it before committing to a final print and change
 `solarPanelRecessDepth` in `design/generate_enclosures.mjs` if necessary.
+Version 5.1 places the two 1.6 mm lead passages as a centered pair, 4.0 mm
+apart, to match the rear terminals on the new 2.5 V panels. This centered
+layout is shared by the integrated lid, minimum-profile lid, and arm frame.
 
 ## Water resistance
 
