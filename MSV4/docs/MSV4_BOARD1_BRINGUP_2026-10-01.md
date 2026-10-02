@@ -145,4 +145,9 @@ patches. The first real soil test will establish board 1's actual Cm and Rsoil r
 - [ ] MSV4 needs its own DFU device type before fleet use; today it shares MSV3's (`-AcceptSharedMsv3DeviceType`)
 - [ ] Bootloader or app should restore `PSELRESET` so RST works straight after a mass erase, or the
       flash procedure should end with `swd_enter_dfu.py` instead of relying on the nRESET pulse
+      — *flash half done later on 2026-10-01: `swd_flash_hex.py` now resets over SWD
+      (SYSRESETREQ) and verifies DHCSR shows the core reset and running. Not yet run on hardware.
+      `PSELRESET` is still open, and what re-armed it is unexplained: neither Adafruit core 1.7.0
+      nor the pinned bootloader defines `CONFIG_GPIO_AS_PINRESET`, the only code found that writes
+      it. Read `0x10001200`/`0x10001204` over SWD before assuming the app restores it.*
 - [ ] Update the documented commands that point at the missing portable Python

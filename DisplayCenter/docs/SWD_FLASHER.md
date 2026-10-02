@@ -67,7 +67,8 @@ help                    - list commands
 id                      - connect (read-only) and report DPIDR / AP IDR / flash geometry
 probe                   - loop checking for SWD contact, for hand-held wiring bring-up
 halt                    - hardware-reset target, then halt the core
-run                     - resume core execution, release debug
+run                     - SYSRESETREQ over SWD, then release the halted core
+                          (needs no RESET wire and no UICR.PSELRESET)
 reset                   - pulse nRESET only, no SWD traffic
 rd <hexaddr>            - read one 32-bit word
 wr <hexaddr> <hexval>   - write one 32-bit word (raw, expert use — this is a

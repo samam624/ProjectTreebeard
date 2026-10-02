@@ -161,6 +161,10 @@ pulled away." That one is inferred from the lumped model, not yet measured.
   ceiling it contributes ~13 % as much as conduction at the very top of the sweep and ~1 % at the
   bottom, against 0.2-1 % model error. This matches the literature: 50-70 MHz for EC-independent
   permittivity (TEROS 12, CS616).
+  *Annotation 2026-10-01: within this lumped topology Cs is not identifiable at ANY frequency —
+  every four-element set has an exact three-element equivalent (identical to 1e-16 at 30 and
+  100 MHz). "Visible at ~30 MHz" holds only if Cd is pinned independently, e.g. by an air
+  calibration. See [MSV4_LOCKIN_MEASUREMENT_NOTES_2026-10-01.md](MSV4_LOCKIN_MEASUREMENT_NOTES_2026-10-01.md).*
 - **Which plate has a gap** — see the symmetry note above.
 - **Absolute water content.** `Rsoil` is a proxy and needs a per-pot calibration, and it carries
   the +1.2 % to +9.1 % model bias across its range.

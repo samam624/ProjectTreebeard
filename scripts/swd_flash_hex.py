@@ -92,6 +92,16 @@ def resolve_msv3_release(version):
 
 PROGRESS_RE = re.compile(r"^progress: (.+?) (\d+)/(\d+)\b")
 
+# Cortex-M4 Debug Halting Control and Status Register, read back after the post-flash reset to
+# prove it happened. S_RESET_ST is sticky and clears when DHCSR is read, so the first read after
+# the reset is the only one that can show it.
+DHCSR = 0xE000EDF0
+DHCSR_S_HALT = 1 << 17
+DHCSR_S_LOCKUP = 1 << 19
+DHCSR_S_RESET_ST = 1 << 25
+DHCSR_RELEASE = 0xA05F0001  # DBGKEY | C_DEBUGEN with C_HALT clear: let a halted core run
+RD_RE = re.compile(r"0x([0-9A-Fa-f]+) = 0x([0-9A-Fa-f]+)")
+
 
 def render_progress_bar(line, bar_width=30):
     """Turn a 'progress: <label> <n>/<m> ...' line from the device into an
@@ -308,6 +318,87 @@ def send_segment(ser, reader, addr, data, verbose=True):
     return ok
 
 
+def adapter_command(ser, reader, text, prefix, timeout_s=3.0):
+    """Send one adapter command and return its reply lines, up to the first line starting with
+    `prefix` (the adapter's own name for the command, e.g. "run:")."""
+    ser.write((text + "\n").encode())
+    lines = []
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        line = reader.read_line(timeout_s=0.5)
+        if line is None:
+            continue
+        lines.append(line)
+        if line.startswith(prefix) or RD_RE.match(line):
+            break
+    return lines
+
+
+def read_dhcsr(ser, reader):
+    for line in adapter_command(ser, reader, f"rd {DHCSR:X}", "rd:"):
+        m = RD_RE.match(line)
+        if m and int(m.group(1), 16) == DHCSR:
+            return int(m.group(2), 16)
+    return None
+
+
+def reset_and_verify(ser, reader):
+    """Reset the target over SWD and prove from the core's own debug registers that it restarted
+    and is running. Returns True only when DHCSR shows both.
+
+    SYSRESETREQ (the adapter's `run`) rather than the nRESET pulse (`reset`), because the pulse
+    depends on two things the flash itself can take away:
+      - a GPIO7 -> RESET wire, which the adapter cannot sense (it printed "nRESET pulsed" with no
+        wire attached on 2026-09-07), and
+      - UICR.PSELRESET routing P0.18 to the reset circuit. Mass erase clears UICR, so straight
+        after `--msv3` the RST pad is an ordinary GPIO until an application's SystemInit writes it
+        back. MSV4 board 1, 2026-10-01: the pulse and a tweezer short of RST to GND both did
+        nothing; SYSRESETREQ over SWD (swd_enter_dfu.py) started it at once.
+    SYSRESETREQ travels over SWDIO/SWCLK, so it works whenever the flash itself just worked.
+    """
+    print("Resetting target over SWD (SYSRESETREQ) so the newly written image starts...")
+    reply = adapter_command(ser, reader, "run", "run:")
+    for line in reply:
+        print(f"  {line}")
+    if not any("run: core reset and resumed" in line for line in reply):
+        # Fallback only. If the SWD reset could not be sent, the pulse may still reach a board
+        # that has both the GPIO7 wire and a programmed PSELRESET.
+        print("  SWD reset not confirmed by the adapter; trying the nRESET pulse instead...")
+        for line in adapter_command(ser, reader, "reset", "reset:"):
+            print(f"  {line}")
+        return False
+
+    # `run` writes the reset request and then clears C_HALT. If that second write landed while
+    # the core was still coming out of reset, the core can sit halted at the reset vector.
+    time.sleep(0.3)
+    first = read_dhcsr(ser, reader)
+    if first is None:
+        print("  could not read DHCSR back after the reset (contact lost?)")
+        return False
+    reset_seen = bool(first & DHCSR_S_RESET_ST)
+    latest = first
+    if latest & DHCSR_S_HALT:
+        print(f"  DHCSR = 0x{latest:08X}: core still halted after the reset, releasing it...")
+        adapter_command(ser, reader, f"wr {DHCSR:X} {DHCSR_RELEASE:X}", "wr:")
+        latest = read_dhcsr(ser, reader)
+        if latest is None:
+            print("  could not read DHCSR back after releasing the core")
+            return False
+
+    print(f"  DHCSR = 0x{first:08X}" + (f" -> 0x{latest:08X}" if latest != first else ""))
+    if not reset_seen:
+        print("  S_RESET_ST is clear: the core has NOT been reset since the flash.")
+        return False
+    if latest & DHCSR_S_LOCKUP:
+        print("  S_LOCKUP is set: the core reset, then faulted straight into lockup.")
+        return False
+    if latest & DHCSR_S_HALT:
+        print("  S_HALT is still set: the core reset but is halted.")
+        return False
+    print("  verified: the core reset (S_RESET_ST) and is running (S_HALT clear).")
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", required=True, help="Serial port of the ESP32-S3 SWD flasher, e.g. COM3")
@@ -322,8 +413,8 @@ def main():
                           "that release's manifest, then waits for solid contact and mass-erases "
                           "exactly as --bootloader does. This is the correct flag for a fleet probe.")
     ap.add_argument("--no-reset", action="store_true",
-                     help="Leave the target halted after a successful flash instead of pulsing "
-                          "nRESET. Only useful when you intend to attach a debugger to the "
+                     help="Leave the target halted after a successful flash instead of resetting "
+                          "it over SWD. Only useful when you intend to attach a debugger to the "
                           "halted core; a halted board does not enumerate or advertise.")
     ap.add_argument("--stock-bootloader", action="store_true",
                      help="Confirm that bare --bootloader really should install the generic "
@@ -447,38 +538,17 @@ def main():
     # NOT resume it, so without this the board sits halted after a completely successful flash:
     # no USB enumeration, no BLE advertising, nothing. Measured on probe 99, 2026-09-07 -- every
     # segment verified, and then the follow-on BLE seed failed with "Bootloader never advertised"
-    # because the bootloader had never been given the chance to start.
-    #
-    # `reset` (pulse nRESET) rather than `run` (resume from the halt point): after a mass erase
-    # and a fresh bootloader write, the halted PC is not a state worth resuming from. A reset
-    # boots from the reset vector, which is what the freshly written image expects.
-    #
-    # This needs a separate GPIO7 -> target RESET wire. SWDIO/SWCLK contact does not imply that
-    # wire exists, and the adapter cannot sense it: the 2026-09-07 session proved it could print
-    # "nRESET pulsed" while the target saw nothing. A power cycle achieves the same post-flash
-    # start if the reset wire is absent, and the message below states that explicitly.
+    # because the bootloader had never been given the chance to start. It runs inside the same
+    # contact hold as the flash, so keep the pins on until the verdict prints.
     if args.no_reset:
-        print("--no-reset given: target left halted. Power-cycle it or send `reset` to start it.")
+        print("--no-reset given: target left halted. Power-cycle it or send `run` to start it.")
         return 0
 
-    print("Resetting target so the newly written image starts...")
-    ser.write(b"reset\n")
-    deadline = time.time() + 5
-    saw_reset_pulse = False
-    while time.time() < deadline:
-        line = reader.read_line(timeout_s=2)
-        if line is None:
-            continue
-        print(f"  {line}")
-        if "nreset pulse emitted" in line.lower():
-            saw_reset_pulse = True
-            break
-    if not saw_reset_pulse:
-        print("  no reset confirmation from the adapter -- if the board does not come up,")
-        print("  power-cycle it. The image is written and verified either way.")
-    else:
-        print("  adapter pulse emitted; target reset is not electrically verified.")
-        print("  GPIO7 must be wired to target RESET, or power-cycle the target now.")
+    if not reset_and_verify(ser, reader):
+        print("The image is written and verified, but the reset was NOT confirmed.")
+        print("Power-cycle the board (or run scripts\\swd_enter_dfu.py) to start it.")
+        return 2
+    print("You can let go of the pads now.")
     return 0
 
 

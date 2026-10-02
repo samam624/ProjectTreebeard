@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSV4 Lock-in Measurement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: masthead, a settings rail, the seven pipeline steps as a numbered strip, then one
+   stage: explanation on the left, an oscilloscope-style figure on the right (stacks below 900px).
+   Trace colours follow bench-scope channel convention: CH1 yellow = DRV, CH2 cyan = SENSE,
+   CH3 magenta = READ_CNTL, CH4 green = TIMER3. */
+:root {
+  --bg: #edf0f2; --panel: #fafbfb; --ink: #15202b; --muted: #55636f; --line: #cfd7dd; --grid: #e1e6ea;
+  --ch1: #946f00; --ch2: #007b94; --ch3: #a1318a; --ch4: #2d7a4c; --accent: #1b5a84; --accent-ink: #ffffff;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1216; --panel: #131a20; --ink: #e1e7ec; --muted: #8b9aa7; --line: #29353f; --grid: #1b252d;
+    --ch1: #f0c53c; --ch2: #3fcde6; --ch3: #e070cc; --ch4: #5fcf8b; --accent: #6db6e6; --accent-ink: #0d1216;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1216; --panel: #131a20; --ink: #e1e7ec; --muted: #8b9aa7; --line: #29353f; --grid: #1b252d;
+  --ch1: #f0c53c; --ch2: #3fcde6; --ch3: #e070cc; --ch4: #5fcf8b; --accent: #6db6e6; --accent-ink: #0d1216;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1220px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 22px; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+h1 { font-size: clamp(1.6rem, 3.2vw, 2.25rem); line-height: 1.15; font-weight: 650; letter-spacing: -0.015em; margin: 6px 0 10px; text-wrap: balance; }
+h2 { font-size: 1.3rem; line-height: 1.25; font-weight: 650; margin: 0 0 12px; text-wrap: balance; }
+.lede { max-width: 72ch; color: var(--muted); margin: 0; }
+.c1 { color: var(--ch1); } .c2 { color: var(--ch2); } .c3 { color: var(--ch3); } .c4 { color: var(--ch4); }
+
+.rig { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding-block: 14px; border-block: 1px solid var(--line); }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field.grow { flex: 1 1 420px; }
+.label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button, .btn, select {
+  font: 500 14px/1 var(--sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 12px; cursor: pointer;
+}
+select { padding-right: 28px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.seg button .tag { font-family: var(--mono); font-size: 10px; opacity: 0.8; margin-left: 4px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { margin: 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
+
+.steps { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.steps button {
+  display: grid; gap: 2px; text-align: left; padding: 9px 10px 10px; border-radius: 7px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); color: var(--muted); font: 500 13px/1.2 var(--sans);
+}
+.steps button .n { font-family: var(--mono); font-size: 11px; }
+.steps button[aria-current="step"] { background: var(--panel); color: var(--ink); border-color: var(--accent); box-shadow: inset 0 -3px 0 var(--accent); }
+
+.stage { display: grid; grid-template-columns: minmax(0, 370px) minmax(0, 1fr); gap: 34px; align-items: start; }
+.copy { min-width: 0; max-width: 65ch; }
+.copy p, .copy ul { margin: 0 0 12px; }
+.copy ul { padding-left: 1.1em; }
+.copy li { margin-bottom: 6px; }
+.copy .src { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.copy .aside { font-size: 13.5px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; }
+.formula { font-family: var(--mono); font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: nowrap; }
+.schem { width: 100%; max-width: 380px; height: auto; color: var(--ink); margin: 2px 0 12px; display: block; }
+.schem text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+.schem .t-ink { fill: var(--ink); }
+.schem .t1 { fill: var(--ch1); } .schem .t2 { fill: var(--ch2); }
+
+.fig { margin: 0; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.figbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); min-height: 52px; }
+.figbar .ctl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.figbar input[type=range] { width: min(260px, 52vw); accent-color: var(--accent); }
+.figbar output { font-family: var(--mono); font-size: 13px; min-width: 9ch; }
+.canvas-wrap { padding: 10px 12px 4px; }
+canvas { display: block; width: 100%; }
+.readout { display: flex; flex-wrap: wrap; gap: 6px 8px; padding: 8px 14px 12px; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.readout span { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; }
+.readout b { font-weight: 500; color: var(--muted); margin-right: 6px; }
+.event { padding: 0 14px 10px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); min-height: 1.6em; }
+.console { margin: 0; padding: 10px 14px 14px; border-top: 1px solid var(--line); background: var(--bg); font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow-x: auto; max-height: 300px; overflow-y: auto; color: var(--ink); }
+.console:empty { display: none; }
+
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pager span { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+footer { border-top: 1px solid var(--line); padding-top: 14px; color: var(--muted); font-size: 13px; display: grid; gap: 8px; max-width: 95ch; }
+footer p { margin: 0; }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .wrap { padding-inline: 16px; }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .canvas-wrap { padding-inline: 6px; }
+}
+body { margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Project Treebeard · MSV4 bring-up firmware · board 1</p>
+    <h1>From two square waves to R<sub>soil</sub></h1>
+    <p class="lede">How <code>iq</code>, <code>spectrum</code> and <code>moisture</code> actually measure the electrode. Every trace below is simulated from the real circuit (R15 = 1 kΩ, Cp = 8.8 pF, 100 kΩ / 1 nF filters, 16 MHz timer) using media measured on board 1, and processed by the firmware's own fitting code ported line for line.</p>
+  </header>
+
+  <section class="rig" aria-label="Simulation settings">
+    <div class="field grow">
+      <span class="label" id="medium-label">Between the plates</span>
+      <div class="seg" id="medium" role="group" aria-labelledby="medium-label"></div>
+      <p class="note" id="medium-note"></p>
+    </div>
+    <div class="field">
+      <label class="label" for="freq">Excitation (timer period N)</label>
+      <select id="freq"></select>
+    </div>
+    <div class="field">
+      <span class="label">Animation</span>
+      <button class="btn" id="play" type="button">Pause</button>
+    </div>
+  </section>
+
+  <nav class="steps" id="steps" aria-label="Measurement pipeline"></nav>
+
+  <main class="stage">
+    <div class="copy">
+      <article data-stage="0">
+        <h2>One timer makes both square waves</h2>
+        <p>TIMER3 counts 16 MHz ticks and wraps every N ticks, so the drive runs at 16 MHz ÷ N. Four compare registers watch the count. Each match fires a PPI channel that toggles a pin through GPIOTE. The CPU is not involved, so every edge lands on an exact tick.</p>
+        <ul>
+          <li><b class="c1">DRV</b> (P0.07): CC0 at N/2 and CC5 at N. High for the first half of every period. CC5 also clears the count.</li>
+          <li><b class="c3">READ_CNTL</b> (P0.17), the chopper: CC1 at k and CC2 at k + N/2. High for half a period starting at tick k.</li>
+        </ul>
+        <p>Moving k slides the chopper against the drive in steps of 360°/N. That one number is the phase control. <code>drive N k</code> sets it by hand; <code>iq</code>, <code>sweep</code> and <code>spectrum</code> step it for you.</p>
+        <p class="src">Firmware: frontEndStart(), lines 542–606.</p>
+      </article>
+
+      <article data-stage="1" hidden>
+        <h2>The electrode bends the wave</h2>
+        <p>DRV feeds the SENSE node through R15. U3 connects one plate to SENSE and grounds the other. Whatever is between the plates loads SENSE, together with Cp, the node's own 8.8 pF.</p>
+        <svg class="schem" viewBox="0 0 360 112" role="img" aria-label="DRV through R15 to the SENSE node, loaded by Cp and the electrode admittance Ye">
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="26" cy="40" r="14"/>
+            <path d="M17 45 h5 v-10 h8 v10 h5"/>
+            <path d="M40 40 H66"/>
+            <path d="M66 40 l5 -8 l9 16 l9 -16 l9 16 l9 -16 l9 16 l5 -8"/>
+            <path d="M121 40 H214"/>
+            <path d="M168 40 V64 M156 64 H180 M156 71 H180 M168 71 V88 M158 88 H178 M162 93 H174 M166 98 H170"/>
+            <rect x="214" y="24" width="92" height="32" rx="4"/>
+            <path d="M306 40 H334 V88 M324 88 H344 M328 93 H340 M332 98 H336"/>
+          </g>
+          <circle cx="168" cy="40" r="3.5" fill="currentColor"/>
+          <text x="26" y="72" text-anchor="middle" class="t1">DRV</text>
+          <text x="26" y="86" text-anchor="middle">P0.07</text>
+          <text x="93" y="22" text-anchor="middle">R15 1 kΩ</text>
+          <text x="168" y="28" text-anchor="middle" class="t2">SENSE</text>
+          <text x="186" y="72">Cp</text>
+          <text x="260" y="44" text-anchor="middle" class="t-ink">Ye</text>
+          <text x="260" y="72" text-anchor="middle">plates + medium</text>
+        </svg>
+        <p>So SENSE is DRV through a divider:</p>
+        <p class="formula">H(f) = 1 / (1 + R15 · (Ye + j2πf·Cp))</p>
+        <p>A wetter or more capacitive medium does two things to SENSE. It shrinks it (|H| below 1) and delays it (∠H below 0). Those two numbers, at eight frequencies, are everything the firmware measures.</p>
+        <p>Switch the medium above to watch the waveform change.</p>
+      </article>
+
+      <article data-stage="2" hidden>
+        <h2>The chopper turns the wave into one DC voltage</h2>
+        <p>U4 sits between SENSE and a 100 kΩ / 1 nF filter. While READ_CNTL is low the filter sees SENSE; while it is high, the filter input is parked on ground. The filter's 100 µs time constant spans about a hundred drive periods, so it settles to the average of that chopped wave.</p>
+        <p>That average is the overlap between SENSE and the chopper's low half. Slide k and the overlap changes.</p>
+        <p>After each phase change the firmware waits 5 ms (50 time constants). Then the SAADC averages 64 samples of SENSE_OUT and 64 of DRV_OUT.</p>
+        <p>U4's second channel does the same to DRV itself. DRV_OUT is the same measurement with nothing in the way: H = 1.</p>
+        <p class="src">Firmware: runPhaseSet() and readFrontEnd(), lines 647–729.</p>
+      </article>
+
+      <article data-stage="3" hidden>
+        <h2>Step the phase, then fit I and Q</h2>
+        <p>One DC reading is one point. Step k around the period and the readings trace a wave. DRV_OUT traces a triangle, two square waves sliding past each other. SENSE traces a smaller, rounder, shifted copy.</p>
+        <p>The firmware fits V(θ) = P + I·cos θ + Q·sin θ, with θ = 360°·k/N. With evenly spaced phases the fit is just sums: P is the mean, I = (2/M)·ΣV·cos θ, Q = (2/M)·ΣV·sin θ. Amplitude A = √(I² + Q²), phase φ = atan2(Q, I).</p>
+        <ul>
+          <li><code>iq</code>: 4 phases.</li>
+          <li><code>spectrum</code>: M phases per frequency, the largest of 16, 12, 8 or 6 that divides N.</li>
+          <li><code>sweep</code>: all N phases, printing every reading and the fit residual.</li>
+        </ul>
+        <p>φ sits near 180° because the filter only sees SENSE during the chopper's low half. That offset is a convention; step 5 removes it.</p>
+        <p class="aside">With 4 phases DRV_OUT reads A = 825 mV; with 16 it reads 677 mV. Four points cannot tell the triangle's 3rd, 5th and 7th harmonics from its fundamental, so they fold in. More phases, less folding.</p>
+      </article>
+
+      <article data-stage="4" hidden>
+        <h2>Divide SENSE by DRV_OUT</h2>
+        <p>Inside <code>spectrum</code>, each channel's M readings become one complex number, X1 = Σ V·e<sup>−jθ</sup> = (M/2)·(I − jQ). The measured transfer is H = X1(SENSE) ÷ X1(DRV_OUT).</p>
+        <p>Both channels share the U4 switch, the filter design, the SAADC, the drive amplitude and the phase steps. Dividing cancels all of it: ADC scale, VDD, the 180° window offset, and any delay both paths see. What remains is the electrode divider.</p>
+        <p>On the plot the division is a rotation and rescale that puts DRV_OUT at 1∠0°. SENSE lands on H.</p>
+        <p class="aside">Inferred, not measured: board 1's <code>iq</code> phases sit 2–4° below this simulation in every medium (towel 190.5° vs 193.3°, hand 221.5° vs 223.4°). If that offset is switch or edge timing that DRV_OUT shares, this division cancels it.</p>
+        <p class="src">Firmware: specMeasure(), lines 830–850.</p>
+      </article>
+
+      <article data-stage="5" hidden>
+        <h2>Repeat at eight frequencies, both ways round</h2>
+        <p><code>spectrum ab</code> runs that measurement at N = 64, 48, 32, 24, 16, 12, 8 and 6: 250 kHz to 2.67 MHz. Each phase costs the 5 ms settle plus about 1.5 ms of ADC reads, so one orientation (102 phases) takes about 0.7 s.</p>
+        <p>Then U3 swaps the plates (B hot, A grounded) and the sweep runs again. The two complex results are averaged at each frequency. On board 1 the whole command, with fitting and BLE output, takes about 5 s.</p>
+        <p>At low frequency the solder masks block the medium. Higher frequencies pass through the masks and see the medium's resistance. Where that change happens, and how deep it goes, is what the fit reads.</p>
+        <p class="aside" id="open-sweep-note">With Open selected this is <code>spectrum open</code>: one sweep with both plates floating, which measures Cp.</p>
+        <p class="src">Firmware: specSweep() and runSpectrumFit(), lines 852–1067.</p>
+      </article>
+
+      <article data-stage="6" hidden>
+        <h2>Fit R<sub>soil</sub>, Cm and Cd</h2>
+        <svg class="schem" viewBox="0 0 360 124" role="img" aria-label="Electrode model: Cd in parallel with Cm in series with Rsoil, between plate A and plate B">
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 62 H44 M44 26 V98 M316 26 V98 M316 62 H342"/>
+            <path d="M44 26 H174 M174 14 V38 M182 14 V38 M182 26 H316"/>
+            <path d="M44 98 H104 M104 86 V110 M112 86 V110 M112 98 H190"/>
+            <path d="M190 98 l5 -8 l9 16 l9 -16 l9 16 l9 -16 l9 16 l5 -8 H316"/>
+          </g>
+          <circle cx="18" cy="62" r="3.5" fill="currentColor"/>
+          <circle cx="342" cy="62" r="3.5" fill="currentColor"/>
+          <text x="18" y="50" text-anchor="middle">A</text>
+          <text x="342" y="50" text-anchor="middle">B</text>
+          <text x="178" y="10" text-anchor="middle" class="t-ink">Cd</text>
+          <text x="108" y="122" text-anchor="middle" class="t-ink">Cm</text>
+          <text x="226" y="122" text-anchor="middle" class="t-ink">Rsoil = 1/Gs</text>
+        </svg>
+        <p>The firmware fits three numbers to the eight averaged points (16 equations):</p>
+        <ul>
+          <li><b>Rsoil</b> (1/Gs): the ionic path through the medium. Lower means wetter, or saltier.</li>
+          <li><b>Cm</b>: both solder masks in series. The board fixes it, so a change means contact changed.</li>
+          <li><b>Cd</b>: capacitance that never reaches the medium, such as board fringe or a hand around the board.</li>
+        </ul>
+        <p>It runs Levenberg–Marquardt on the logarithms of the parameters from four starting guesses for Gs (10 µS to 10 mS) and keeps the best. The model includes the harmonic folding from step 4, so the high-frequency points do not have to be pure H(f).</p>
+        <p>The ± is the fit's own statistical spread. This simulation has only ADC noise; on board 1, model error widened it to ±11 % in the towel and ±17 % for the hand.</p>
+        <p><code>moisture</code> runs the same fit and corrects to 25 °C with the tip NTC: Rsoil25 = Rsoil × (1 + 0.02·(T − 25)).</p>
+        <p class="src">Firmware: specModel(), specFit(), cmdSpectrum(), lines 801–1109.</p>
+      </article>
+    </div>
+
+    <figure class="fig">
+      <div class="figbar" id="figbar">
+        <div class="ctl" data-stages="0,2">
+          <label class="label" for="k">Chopper phase k</label>
+          <input type="range" id="k" min="0" max="15" step="1" value="4">
+          <output id="kout" for="k"></output>
+        </div>
+        <div class="ctl" data-stages="3">
+          <span class="label" id="mode-label">Command</span>
+          <div class="seg" id="mode" role="group" aria-labelledby="mode-label"></div>
+        </div>
+        <div class="ctl" data-stages="1">
+          <span class="label">Legend</span>
+          <span class="mono c1">━ DRV</span><span class="mono c2">━ SENSE</span>
+        </div>
+        <div class="ctl" data-stages="2,3,4,5,6">
+          <button class="btn" id="replay" type="button">Replay</button>
+        </div>
+      </div>
+      <div class="canvas-wrap"><canvas id="cv" aria-label="Animated measurement figure"></canvas></div>
+      <div class="event" id="event"></div>
+      <div class="readout" id="readout"></div>
+      <pre class="console" id="console" aria-label="Console output in firmware format"></pre>
+    </figure>
+  </main>
+
+  <div class="pager">
+    <button class="btn" id="prev" type="button">← Previous</button>
+    <span id="where">Step 1 of 7</span>
+    <button class="btn primary" id="next" type="button">Next →</button>
+  </div>
+
+  <footer>
+    <p><b>How this is simulated.</b> Waveforms and per-phase readings come from a time-domain simulation of the SENSE node (RK4, ideal square edges, 0.5 mV of ADC noise per reading). The sweep points in steps 6 and 7 use the firmware's own lock-in model (specModel) at each medium's parameters, with the same reading noise pushed through the same phase sums.</p>
+    <p>Why not the raw simulation there: specModel keeps harmonics only up to |h| = 63. Against ideal square edges that leaves a 0.2–0.5 % error, which the fit absorbs as a false ~390 kΩ in air. Board 1 reads open in air, so real edge rates evidently keep that from mattering. This is a finding from the simulation, not a hardware measurement.</p>
+    <p>Media: board 1 bring-up, 2026-10-01 (open, air, damp towel, hand). Moist soil is the 2026-09-19 field-solve prediction and has not been measured.</p>
+  </footer>
+</div>
+
+<script>
+// ---- physics: MSV4 front end, ported from MSV4_Probe_Bringup_BLE.ino ----
+const FCLK = 16e6, VD = 3300, RS = 1000, CP = 8.8e-12, TAU_F = 100e-6;
+const SETTLE_MS = 5, NOISE_MV = 0.5;
+const SPEC_N = [64, 48, 32, 24, 16, 12, 8, 6];
+const MEDIA = {
+  open:  { label: 'Open', open: true, Cm: 1, Gs: 0, Cd: 0,
+           note: 'U3 /OE high: both plates float. Only the SENSE node\'s own Cp (8.8 pF, measured) loads the divider.' },
+  air:   { label: 'Air', Cm: 20e-12, Gs: 1e-14, Cd: 17e-12,
+           note: 'Board 1 in air: no conduction (fit Rsoil 10¹⁴–10¹⁷ Ω), Cd 14–20 pF.' },
+  towel: { label: 'Damp towel', Cm: 26.7e-12, Gs: 1 / 5900, Cd: 29e-12,
+           note: 'Board 1 in a damp paper towel: Rsoil 5.9 kΩ, Cm 26.7 pF, Cd 29 pF.' },
+  hand:  { label: 'Hand grip', Cm: 53e-12, Gs: 1 / 1750, Cd: 140e-12,
+           note: 'Board 1 gripped by hand: Rsoil 1.6–1.9 kΩ, Cm 51–55 pF, Cd 134–147 pF.' },
+  soil:  { label: 'Moist soil', Cm: 671e-12, Gs: 1 / 355, Cd: 5e-12, predicted: true,
+           note: 'Field-solve prediction for moist soil (Cm 671 pF, Rsoil 355 Ω). Not yet measured on hardware.' },
+};
+
+const cx = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1]],
+  mul: (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]],
+  div: (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; },
+  scale: (k, a) => [k * a[0], k * a[1]],
+  conj: a => [a[0], -a[1]],
+  abs: a => Math.hypot(a[0], a[1]),
+  arg: a => Math.atan2(a[1], a[0]),
+};
+
+function specPhases(n) { for (const m of [16, 12, 8, 6, 4]) if (m <= n && n % m === 0) return m; return 0; }
+
+// Firmware specNodeH: p = [Cm, Gs, Cd]
+function nodeH(w, p, cp) {
+  const zm = [0, -1 / (w * p[0])];
+  const br = cx.div([1, 0], cx.add(zm, [1 / p[1], 0]));
+  return cx.div([1, 0], [1 + RS * br[0], RS * (br[1] + w * p[2] + w * cp)]);
+}
+function mediumH(w, m) {
+  if (m.open) return cx.div([1, 0], [1, RS * w * CP]);
+  return nodeH(w, [m.Cm, m.Gs, m.Cd], CP);
+}
+// Firmware specModel: predicted normalised bin-1 with harmonic aliasing.
+function specModel(n, m, p, cp) {
+  const w1 = 2 * Math.PI * FCLK / n;
+  let num = [0, 0], den = 0;
+  for (let k = -8; k <= 8; k++) {
+    const h = 1 + k * m;
+    if ((h & 1) === 0 || h === 0 || h > 63 || h < -63) continue;
+    const wt = 1 / (h * h);
+    let hv = nodeH(w1 * Math.abs(h), p, cp);
+    if (h < 0) hv = cx.conj(hv);
+    num = cx.add(num, cx.scale(wt, hv));
+    den += wt;
+  }
+  return cx.scale(1 / den, num);
+}
+
+// Time-domain steady state of one period: DRV square (0/3300 mV) -> R15 -> SENSE node loaded by
+// Cp + Cd and the series Cm-Gs branch. RK4 with sample edges aligned to timer ticks.
+const simCache = new Map();
+function simulate(mkey, N) {
+  const key = mkey + ':' + N;
+  if (simCache.has(key)) return simCache.get(key);
+  const m = MEDIA[mkey];
+  const SPT = Math.max(8, Math.ceil(960 / N)), P = N * SPT, T = N / FCLK, dt = T / P;
+  const nsub = Math.max(1, Math.ceil(dt / 0.4e-9)), h = dt / nsub;
+  const Ct = CP + (m.open ? 0 : m.Cd), Gs = m.open ? 0 : m.Gs, Cm = m.open ? 1 : m.Cm;
+  const periods = Math.max(6, Math.ceil(16e-6 / T));
+  const sense = new Float64Array(P), drv = new Float64Array(P);
+  let v = VD / 2, vc = VD / 2;
+  const dv = (u, v, vc) => ((u - v) / RS - Gs * (v - vc)) / Ct;
+  const dvc = (v, vc) => Gs * (v - vc) / Cm;
+  for (let per = 0; per < periods; per++) {
+    for (let i = 0; i < P; i++) {
+      const u = Math.floor(i / SPT) < N / 2 ? VD : 0;
+      const v0 = v;
+      for (let s = 0; s < nsub; s++) {
+        const k1 = dv(u, v, vc), l1 = dvc(v, vc);
+        const k2 = dv(u, v + h / 2 * k1, vc + h / 2 * l1), l2 = dvc(v + h / 2 * k1, vc + h / 2 * l1);
+        const k3 = dv(u, v + h / 2 * k2, vc + h / 2 * l2), l3 = dvc(v + h / 2 * k2, vc + h / 2 * l2);
+        const k4 = dv(u, v + h * k3, vc + h * l3), l4 = dvc(v + h * k3, vc + h * l3);
+        v += h / 6 * (k1 + 2 * k2 + 2 * k3 + k4);
+        vc += h / 6 * (l1 + 2 * l2 + 2 * l3 + l4);
+      }
+      // Trapezoid value over the sample interval, so the chopper integral is second-order.
+      if (per === periods - 1) { sense[i] = (v0 + v) / 2; drv[i] = u; }
+    }
+  }
+  const out = { N, SPT, P, sense, drv };
+  simCache.set(key, out);
+  return out;
+}
+
+// Chopper (READ_CNTL) is HIGH on ticks [k, k+N/2) mod N, which parks U4 on GND. The filter sees the
+// signal only while READ_CNTL is LOW, so its DC value is the mean of signal x (READ_CNTL low).
+function chopHigh(tick, k, N) { return (((tick - k) % N) + N) % N < N / 2; }
+function lockin(sim, k, ch) {
+  const arr = ch === 's' ? sim.sense : sim.drv;
+  let acc = 0;
+  for (let i = 0; i < sim.P; i++) if (!chopHigh(Math.floor(i / sim.SPT), k, sim.N)) acc += arr[i];
+  return acc / sim.P;
+}
+
+function rng(seed) {
+  let a = seed >>> 0;
+  const u = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  return () => { let s = 0; for (let i = 0; i < 6; i++) s += u(); return (s - 3) * Math.SQRT2; };  // ~N(0,1)
+}
+
+// Firmware fitPhases
+function fitPhases(v, ks, n) {
+  const m = v.length; let p = 0, c = 0, s = 0;
+  for (let i = 0; i < m; i++) { const th = 2 * Math.PI * ks[i] / n; p += v[i]; c += v[i] * Math.cos(th); s += v[i] * Math.sin(th); }
+  p /= m; c *= 2 / m; s *= 2 / m;
+  let ss = 0;
+  for (let i = 0; i < m; i++) { const th = 2 * Math.PI * ks[i] / n; const e = v[i] - (p + c * Math.cos(th) + s * Math.sin(th)); ss += e * e; }
+  const a = Math.hypot(c, s);
+  let phi = Math.atan2(s, c) * 180 / Math.PI; if (phi < 0) phi += 360;
+  return { p, c, s, a, phi, resid: Math.sqrt(ss / m) };
+}
+
+// One spectrum point (firmware specMeasure): X1 = sum V e^{-j theta}, H = X1(SENSE)/X1(DRV_OUT)
+function specPoint(mkey, n, noise) {
+  const sim = simulate(mkey, n), m = specPhases(n);
+  let xs = [0, 0], xd = [0, 0];
+  const vs = [], vd = [], ks = [];
+  for (let i = 0; i < m; i++) {
+    const k = (i * n / m) | 0;
+    const a = lockin(sim, k, 's') + (noise ? noise() * NOISE_MV : 0);
+    const b = lockin(sim, k, 'd') + (noise ? noise() * NOISE_MV : 0);
+    const th = 2 * Math.PI * i / m, e = [Math.cos(th), -Math.sin(th)];
+    xs = cx.add(xs, cx.scale(a, e)); xd = cx.add(xd, cx.scale(b, e));
+    vs.push(a); vd.push(b); ks.push(k);
+  }
+  return { n, m, h: cx.div(xs, xd), xs, xd, vs, vd, ks };
+}
+
+// Firmware specFit (Levenberg-Marquardt on ln-parameters), plus an iteration history for animation.
+function specFit(S, p0, freeP, cp) {
+  const NP = 3, p = p0.slice(), idx = [0, 1, 2].filter(i => freeP[i]), nf = idx.length, nr = 2 * S.length;
+  const resid = q => { const r = new Float64Array(nr); S.forEach((s, i) => { const d = cx.sub(specModel(s.n, s.m, q, cp), s.h); r[2 * i] = d[0]; r[2 * i + 1] = d[1]; }); return r; };
+  const sumsq = r => r.reduce((a, x) => a + x * x, 0);
+  const jac = (q, r) => idx.map(pi => { const qq = q.slice(); qq[pi] *= Math.exp(1e-4); const rt = resid(qq); return Array.from(rt, (x, i) => (x - r[i]) / 1e-4); });
+  let r = resid(p), ss = sumsq(r), lambda = 1e-3;
+  const hist = [{ p: p.slice(), ss }];
+  for (let it = 0; it < 60; it++) {
+    const J = jac(p, r);  // J[a][i]
+    const A = [], g = [];
+    for (let a = 0; a < nf; a++) { A.push([]); g.push(0); for (let b = 0; b < nf; b++) { let s = 0; for (let i = 0; i < nr; i++) s += J[a][i] * J[b][i]; A[a].push(s); } for (let i = 0; i < nr; i++) g[a] -= J[a][i] * r[i]; }
+    let improved = false;
+    for (let tries = 0; tries < 8 && !improved; tries++) {
+      const M = A.map((row, a) => row.map((x, b) => x * (a === b ? 1 + lambda : 1)).concat([g[a]]));
+      for (let c = 0; c < nf; c++) {
+        let pv = c; for (let r2 = c + 1; r2 < nf; r2++) if (Math.abs(M[r2][c]) > Math.abs(M[pv][c])) pv = r2;
+        [M[c], M[pv]] = [M[pv], M[c]];
+        if (Math.abs(M[c][c]) < 1e-300) break;
+        for (let r2 = c + 1; r2 < nf; r2++) { const f = M[r2][c] / M[c][c]; for (let k = c; k <= nf; k++) M[r2][k] -= f * M[c][k]; }
+      }
+      const dx = new Array(nf).fill(0);
+      for (let c = nf - 1; c >= 0; c--) { let v = M[c][nf]; for (let k = c + 1; k < nf; k++) v -= M[c][k] * dx[k]; dx[c] = Math.abs(M[c][c]) > 1e-300 ? v / M[c][c] : 0; }
+      const q = p.slice();
+      for (let a = 0; a < nf; a++) q[idx[a]] *= Math.exp(Math.max(-3, Math.min(3, dx[a])));
+      const rt = resid(q), ss2 = sumsq(rt);
+      if (ss2 < ss) {
+        for (let i = 0; i < NP; i++) p[i] = q[i];
+        r = rt; const done = (ss - ss2) < 1e-12 * ss; ss = ss2; lambda *= 0.3; improved = true;
+        hist.push({ p: p.slice(), ss });
+        if (done) it = 1000;
+      } else lambda *= 10;
+    }
+    if (!improved) break;
+  }
+  const dof = nr - nf, s2 = dof > 0 ? ss / dof : 0;
+  const J = jac(p, r);
+  const A = [], Inv = [];
+  for (let a = 0; a < nf; a++) { A.push([]); Inv.push([]); for (let b = 0; b < nf; b++) { let s = 0; for (let i = 0; i < nr; i++) s += J[a][i] * J[b][i]; A[a].push(s); Inv[a].push(a === b ? 1 : 0); } }
+  for (let c = 0; c < nf; c++) {
+    let pv = c; for (let r2 = c + 1; r2 < nf; r2++) if (Math.abs(A[r2][c]) > Math.abs(A[pv][c])) pv = r2;
+    [A[c], A[pv]] = [A[pv], A[c]]; [Inv[c], Inv[pv]] = [Inv[pv], Inv[c]];
+    const d = A[c][c]; if (Math.abs(d) < 1e-300) continue;
+    for (let k = 0; k < nf; k++) { A[c][k] /= d; Inv[c][k] /= d; }
+    for (let r2 = 0; r2 < nf; r2++) { if (r2 === c) continue; const f = A[r2][c]; for (let k = 0; k < nf; k++) { A[r2][k] -= f * A[c][k]; Inv[r2][k] -= f * Inv[c][k]; } }
+  }
+  const relSigma = [0, 0, 0];
+  for (let a = 0; a < nf; a++) relSigma[idx[a]] = Math.sqrt(Math.abs(Inv[a][a] * s2));
+  return { p, ss, rms: Math.sqrt(ss / nr), relSigma, hist };
+}
+
+// Full `spectrum ab` (or `spectrum open`) on simulated data: sweep, average, multi-start fit.
+function runSpectrum(mkey, seed) {
+  const noise = rng(seed);
+  const m = MEDIA[mkey];
+  const orient = m.open ? ['open'] : ['A', 'B'];
+  // Deterministic part: the firmware's own lock-in model at the medium's parameters. Noise part: ADC
+  // noise on every reading, pushed through the same phase sums (noisy minus clean simulated point).
+  const truth = m.open ? [1e-15, 1e-12, CP] : [m.Cm, m.Gs, m.Cd], tcp = m.open ? 0 : CP;
+  const sweeps = orient.map(() => SPEC_N.map(n => {
+    const noisy = specPoint(mkey, n, noise), clean = specPoint(mkey, n, null);
+    const model = specModel(n, specPhases(n), truth, tcp);
+    return { ...noisy, h: cx.add(model, cx.sub(noisy.h, clean.h)) };
+  }));
+  const avg = SPEC_N.map((n, i) => ({ n, m: specPhases(n), h: cx.scale(1 / sweeps.length, sweeps.reduce((acc, sw) => cx.add(acc, sw[i].h), [0, 0])) }));
+  let best = null;
+  if (m.open) {
+    best = specFit(avg, [1e-15, 1e-12, 12e-12], [false, false, true], 0);
+    best.seed = 12e-12;
+  } else {
+    for (const g0 of [1e-5, 1e-4, 1e-3, 1e-2]) {
+      const f = specFit(avg, [500e-12, g0, 5e-12], [true, true, true], CP);
+      f.seed = g0;
+      if (!best || f.rms < best.rms) best = f;
+    }
+  }
+  return { orient, sweeps, avg, fit: best };
+}
+
+if (typeof module !== 'undefined') module.exports = { FCLK, VD, RS, CP, SPEC_N, MEDIA, cx, specPhases, nodeH, mediumH, specModel, simulate, lockin, fitPhases, specPoint, specFit, runSpectrum, rng };
+
+// ---- page ----
+const $ = s => document.querySelector(s);
+const cv = $('#cv'), ctx = cv.getContext('2d');
+const STEPS = ['Timer', 'Divider', 'Chopper', 'I and Q', 'Normalise', 'Sweep', 'Fit'];
+const reduceMotion = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
+const state = { medium: 'towel', N: 16, k: 4, prevK: 0, mode: 'iq', step: 0, playing: !reduceMotion, still: reduceMotion, clock: 0, t0: 0 };
+
+const css = {};
+function readTheme() {
+  const s = getComputedStyle(document.documentElement);
+  for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'grid', 'ch1', 'ch2', 'ch3', 'ch4', 'accent']) css[k] = s.getPropertyValue('--' + k).trim() || '#888';
+}
+readTheme();
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme); } catch (e) { }
+new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+const MONO = (sz, w = 400) => `${w} ${sz}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+const SANS = (sz, w = 600) => `${w} ${sz}px "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif`;
+
+// ---- formatting ----
+const fmtHz = f => f >= 1e6 ? (f / 1e6).toFixed(3).replace(/\.?0+$/, '') + ' MHz' : (f / 1e3).toFixed(Math.abs(f % 1e3) > 1 ? 1 : 0) + ' kHz';
+const fmtShortHz = f => f >= 1e6 ? (f / 1e6).toFixed(f % 1e6 ? 2 : 0).replace(/\.?0+$/, '') + 'M' : Math.round(f / 1e3) + 'k';
+const fmtT = s => s >= 1e-6 ? (s * 1e6).toFixed(s * 1e6 >= 10 ? 1 : 2).replace(/\.?0+$/, '') + ' µs' : Math.round(s * 1e9) + ' ns';
+const fmtOhm = r => !(r > 1) ? 'no fit' : r >= 1e6 ? 'open (dry)' : r >= 1e3 ? (r / 1e3).toFixed(r >= 1e5 ? 0 : 2) + ' kΩ' : r.toFixed(0) + ' Ω';
+const deg = rad => rad * 180 / Math.PI;
+const wrap180 = d => { d = ((d + 180) % 360 + 360) % 360 - 180; return d === -180 ? 180 : d; };
+const f2 = (v, d = 2) => v.toFixed(d);
+const pad = (s, n) => String(s).padStart(n);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = u => u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+function hashSeed(s) { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
+
+// ---- canvas helpers ----
+function fit(h) {
+  const w = Math.max(260, cv.clientWidth || 260);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv._w !== w || cv._h !== h || cv._d !== dpr) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+    cv._w = w; cv._h = h; cv._d = dpr;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { W: w, H: h };
+}
+function txt(s, x, y, o = {}) {
+  ctx.fillStyle = o.color || css.muted; ctx.font = o.font || MONO(11);
+  ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic';
+  ctx.fillText(s, x, y);
+}
+function line(x1, y1, x2, y2, color, w = 1, dash) {
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash || []);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+}
+function poly(pts, color, w = 1.6, dash, alpha = 1) {
+  if (!pts.length) return;
+  ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash || []); ctx.lineJoin = 'round';
+  ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+function dot(x, y, r, color, hollow) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
+  if (hollow) { ctx.fillStyle = css.panel; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke(); }
+  else { ctx.fillStyle = color; ctx.fill(); }
+}
+function square(x, y, r, color) { ctx.fillStyle = css.panel; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.strokeRect(x - r, y - r, 2 * r, 2 * r); }
+function arrow(x0, y0, x1, y1, color, w = 2.2) {
+  line(x0, y0, x1, y1, color, w);
+  const a = Math.atan2(y1 - y0, x1 - x0), L = 9;
+  if (Math.hypot(x1 - x0, y1 - y0) < 4) return;
+  ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - L * Math.cos(a - 0.4), y1 - L * Math.sin(a - 0.4));
+  ctx.lineTo(x1 - L * Math.cos(a + 0.4), y1 - L * Math.sin(a + 0.4)); ctx.closePath(); ctx.fill();
+}
+function clipBox(b) { ctx.save(); ctx.beginPath(); ctx.rect(b.x0, b.y0 - 2, b.x1 - b.x0, b.y1 - b.y0 + 4); ctx.clip(); }
+
+// ---- outputs ----
+let lastRO = null, lastCon = null, lastEv = null;
+function readout(items) {
+  const html = items.map(([k, v]) => `<span><b>${k}</b>${v}</span>`).join('');
+  if (html !== lastRO) { $('#readout').innerHTML = html; lastRO = html; }
+}
+function consoleOut(lines) {
+  const s = lines.join('\n');
+  if (s !== lastCon) { const el = $('#console'); el.textContent = s; el.scrollTop = el.scrollHeight; lastCon = s; }
+}
+function eventLine(s) { if (s !== lastEv) { $('#event').textContent = s; lastEv = s; } }
+
+// ---- cached measurements ----
+const cache = new Map();
+function memo(key, fn) { if (!cache.has(key)) cache.set(key, fn()); return cache.get(key); }
+const phaseCurve = (mk, N) => memo(`curve|${mk}|${N}`, () => {
+  const sim = simulate(mk, N), s = [], d = [];
+  for (let k = 0; k < N; k++) { s.push(lockin(sim, k, 's')); d.push(lockin(sim, k, 'd')); }
+  return { s, d };
+});
+function phaseSet(mode) {
+  const { medium: mk, N } = state;
+  return memo(`set|${mk}|${N}|${mode}`, () => {
+    let ks;
+    if (mode === 'iq' || mode === 'sweep') {
+      if (N % 4) return { err: 'ERR N must be a multiple of 4, 4..16000' };
+      ks = mode === 'iq' ? [0, N / 4, N / 2, 3 * N / 4] : [...Array(N).keys()];
+    } else { const M = specPhases(N); ks = [...Array(M).keys()].map(i => (i * N / M) | 0); }
+    const sim = simulate(mk, N), noise = rng(hashSeed(mk + N + mode));
+    const vs = ks.map(k => lockin(sim, k, 's') + noise() * NOISE_MV);
+    const vd = ks.map(k => lockin(sim, k, 'd') + noise() * NOISE_MV);
+    let xs = [0, 0], xd = [0, 0];
+    ks.forEach((k, i) => { const th = 2 * Math.PI * k / N, e = [Math.cos(th), -Math.sin(th)]; xs = cx.add(xs, cx.scale(vs[i], e)); xd = cx.add(xd, cx.scale(vd[i], e)); });
+    return { ks, vs, vd, M: ks.length, fs: fitPhases(vs, ks, N), fd: fitPhases(vd, ks, N), xs, xd, h: cx.div(xs, xd) };
+  });
+}
+const spectrumRun = mk => memo(`spec|${mk}`, () => runSpectrum(mk, 11));
+
+// =========================================================================== step 1: timer
+function drawTimer(T) {
+  const narrow = cv.clientWidth < 560;
+  const { W } = fit(318);
+  const { N, k } = state, span = 2 * N;
+  const L = narrow ? 82 : 108, R = 14, top = 48;
+  const lanes = [[top, 84], [top + 106, 44], [top + 172, 44]];
+  const bottom = lanes[2][0] + lanes[2][1];
+  const x = t => L + (W - L - R) * t / span;
+  if (N <= 32) for (let t = 0; t <= span; t++) line(x(t), top, x(t), bottom, css.grid);
+  [0, N, 2 * N].forEach(t => line(x(t), top - 6, x(t), bottom + 6, css.line));
+  const lab = [['TIMER3', 'count', css.ch4], ['DRV', 'P0.07', css.ch1], ['READ_CNTL', 'P0.17', css.ch3]];
+  lanes.forEach(([y, h], i) => { txt(lab[i][0], 0, y + h / 2 - 1, { color: lab[i][2], font: MONO(narrow ? 10 : 11, 600) }); txt(lab[i][1], 0, y + h / 2 + 13, { font: MONO(10) }); });
+
+  const [cy, chh] = lanes[0];
+  const yc = v => cy + chh - 4 - (chh - 8) * v / (N - 1);
+  txt(String(N - 1), L - 6, yc(N - 1) + 4, { align: 'right', font: MONO(10) });
+  txt('0', L - 6, yc(0) + 4, { align: 'right', font: MONO(10) });
+  const cnt = [];
+  for (let t = 0; t < span; t++) { const v = t % N; cnt.push([x(t), yc(v)], [x(t + 1), yc(v)]); }
+  poly(cnt, css.ch4, 1.5);
+  const sq = (hi, [y, h]) => { const p = []; for (let t = 0; t < span; t++) { const yy = hi(t) ? y + 5 : y + h - 5; p.push([x(t), yy], [x(t + 1), yy]); } return p; };
+  poly(sq(t => (t % N) < N / 2, lanes[1]), css.ch1, 2.2);
+  poly(sq(t => chopHigh(t % N, k, N), lanes[2]), css.ch3, 2.2);
+
+  const a = k === 0 ? N : k, bRaw = (k + N / 2) % N, b = bRaw === 0 ? N : bRaw;
+  const ev = [];
+  for (let p = -1; p < 2; p++) {
+    ev.push({ t: p * N + N / 2, cc: 'CC0', val: N / 2, pin: 'DRV', ppi: 8, gp: 6, color: css.ch1, row: 0, lane: 1 });
+    ev.push({ t: p * N + N, cc: 'CC5', val: N, pin: 'DRV', ppi: 9, gp: 6, color: css.ch1, row: 0, lane: 1, wrap: true });
+    ev.push({ t: p * N + a, cc: 'CC1', val: a, pin: 'READ_CNTL', ppi: 10, gp: 7, color: css.ch3, row: 1, lane: 2 });
+    ev.push({ t: p * N + b, cc: 'CC2', val: b, pin: 'READ_CNTL', ppi: 11, gp: 7, color: css.ch3, row: 1, lane: 2 });
+  }
+  const events = ev.filter(e => e.t >= 0 && e.t <= span);
+  const pos = state.still ? -1 : ((T % 4) / 4) * span;
+  let activeT = -1;
+  for (const e of events) if (e.t <= pos && e.t > activeT) activeT = e.t;
+  for (const e of events) {
+    const on = e.t === activeT, xx = x(e.t), yb = lanes[e.lane][0] + lanes[e.lane][1];
+    ctx.globalAlpha = on ? 1 : 0.45;
+    line(xx, 14 + e.row * 14, xx, yb, e.color, on ? 2 : 1, on ? null : [3, 3]);
+    ctx.globalAlpha = 1;
+    txt(e.cc, clamp(xx, L + 12, W - R - 12), 10 + e.row * 14, { color: e.color, align: 'center', font: MONO(10, on ? 600 : 400) });
+  }
+  if (pos >= 0) line(x(pos), top - 6, x(pos), bottom + 6, css.ink, 1.2, [2, 3]);
+  for (let t = 0; t <= span; t += N / 2) txt(fmtT(t / FCLK), clamp(x(t), L + 18, W - R - 18), bottom + 22, { align: 'center', font: MONO(10) });
+
+  const act = events.filter(e => e.t === activeT);
+  if (pos < 0 || !act.length) eventLine('Each compare match fires a PPI channel; GPIOTE toggles the pin. No interrupt, no CPU.');
+  else eventLine(act.map(e => `count = ${e.val}: ${e.cc} → PPI ch ${e.ppi} → GPIOTE ${e.gp} toggles ${e.pin}` + (e.wrap ? ', and the count clears' : '')).join('   ·   '));
+  readout([['f', `16 MHz ÷ ${N} = ${fmtHz(FCLK / N)}`], ['tick', '62.5 ns'], ['k', `${k} → ${(360 * k / N).toFixed(1)}°`], ['step', `360°/N = ${(360 / N).toFixed(1)}°`]]);
+  consoleOut([`> drive ${N} ${k}`, `OK DRV ${FCLK / N | 0} Hz (N=${N}), chopper phase k=${k} = ${(360 * k / N).toFixed(1)} deg`]);
+}
+
+// =========================================================================== step 2: divider
+function drawDivider(T) {
+  const { W, H } = fit(300);
+  const { N } = state, sim = simulate(state.medium, N), P = sim.P;
+  const L = 58, R = 14, top = 16, bot = 40;
+  const x = j => L + (W - L - R) * j / (2 * P), y = mv => top + (H - top - bot) * (1 - mv / VD);
+  [0, 825, 1650, 2475, 3300].forEach(v => { line(L, y(v), W - R, y(v), css.grid); txt(String(v), L - 6, y(v) + 4, { align: 'right', font: MONO(10) }); });
+  txt('mV', 0, top + 8, { font: MONO(10) });
+  const d = [], s = [];
+  for (let j = 0; j <= 2 * P; j++) { d.push([x(j), y(sim.drv[j % P])]); s.push([x(j), y(sim.sense[j % P])]); }
+  poly(d, css.ch1, 1.8);
+  poly(s, css.ch2, 2.2);
+  for (let i = 0; i <= 4; i++) { const j = i * P / 2; txt(fmtT(j / P * N / FCLK), clamp(x(j), L + 18, W - R - 18), H - 14, { align: 'center', font: MONO(10) }); }
+  if (!state.still) { const j = Math.floor(((T % 3) / 3) * 2 * P); dot(x(j), y(sim.sense[j % P]), 4.5, css.ch2); }
+  const h = mediumH(2 * Math.PI * FCLK / N, MEDIA[state.medium]);
+  let mn = Infinity, mx = -Infinity; for (const v of sim.sense) { mn = Math.min(mn, v); mx = Math.max(mx, v); }
+  eventLine(`${MEDIA[state.medium].label}: SENSE is DRV seen through the divider. Edges round off and the swing shrinks.`);
+  readout([['|H|', f2(cx.abs(h), 3)], ['∠H', `${f2(deg(cx.arg(h)), 1)}°`], ['at', fmtHz(FCLK / N)], ['SENSE swing', `${mn.toFixed(0)}–${mx.toFixed(0)} mV`]]);
+  consoleOut([]);
+}
+
+// =========================================================================== step 3: chopper
+function drawChopper(T) {
+  const narrow = cv.clientWidth < 560;
+  const { W } = fit(470);
+  const { N, k } = state, sim = simulate(state.medium, N), P = sim.P;
+  const L = narrow ? 76 : 96, R = 14;
+  const lanes = [[14, 62], [92, 30], [138, 62]];
+  const x = j => L + (W - L - R) * j / (2 * P);
+  const ymv = ([y, h], mv) => y + h - 3 - (h - 6) * mv / VD;
+  const lab = [['SENSE', css.ch2, ''], ['READ_CNTL', css.ch3, 'high = parked'], ['U4 → filter', css.ch2, 'SENSE or GND']];
+  lanes.forEach(([y, h], i) => { txt(lab[i][0], 0, y + h / 2, { color: lab[i][1], font: MONO(narrow ? 10 : 11, 600) }); if (lab[i][2]) txt(lab[i][2], 0, y + h / 2 + 13, { font: MONO(9) }); });
+  const s = [], c = [], u = [];
+  for (let j = 0; j <= 2 * P; j++) {
+    const i = j % P, tick = Math.floor(i / sim.SPT), hi = chopHigh(tick, k, N);
+    s.push([x(j), ymv(lanes[0], sim.sense[i])]);
+    c.push([x(j), hi ? lanes[1][0] + 4 : lanes[1][0] + lanes[1][1] - 4]);
+    u.push([x(j), ymv(lanes[2], hi ? 0 : sim.sense[i])]);
+  }
+  poly(s, css.ch2, 1.6);
+  poly(c, css.ch3, 2);
+  ctx.globalAlpha = 0.16; ctx.fillStyle = css.ch2; ctx.beginPath();
+  ctx.moveTo(u[0][0], ymv(lanes[2], 0)); u.forEach(([a, b]) => ctx.lineTo(a, b)); ctx.lineTo(u[u.length - 1][0], ymv(lanes[2], 0)); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  poly(u, css.ch2, 1.6);
+  const vsNew = lockin(sim, k, 's'), vdNew = lockin(sim, k, 'd');
+  const vsOld = lockin(sim, state.prevK, 's'), vdOld = lockin(sim, state.prevK, 'd');
+  line(L, ymv(lanes[2], vsNew), W - R, ymv(lanes[2], vsNew), css.ink, 1.2, [5, 4]);
+  txt(`average ${vsNew.toFixed(0)} mV`, W - R, ymv(lanes[2], vsNew) - 5, { align: 'right', color: css.ink, font: MONO(10, 500) });
+  txt(`two drive periods (${fmtT(2 * N / FCLK)})`, W - R, lanes[2][0] + lanes[2][1] + 16, { align: 'right', font: MONO(10) });
+
+  // settle plot
+  const box = { x0: L, x1: W - R, y0: 248, y1: 432 }, TMAX = 7;
+  const vals = [vsNew, vsOld, vdNew, vdOld];
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 120) { const m = (hi + lo) / 2; lo = m - 60; hi = m + 60; }
+  const padv = (hi - lo) * 0.12; lo -= padv; hi += padv;
+  const sx = ms => box.x0 + (box.x1 - box.x0) * ms / TMAX, sy = v => box.y1 - (box.y1 - box.y0) * (v - lo) / (hi - lo);
+  txt('Filter outputs after the phase change', 0, box.y0 - 14, { color: css.ink, font: SANS(13) });
+  txt(`k ${state.prevK} → ${k}`, W - R, box.y0 - 14, { align: 'right', font: MONO(11, 500), color: css.ink });
+  [0, 1, 2, 3, 4, 5, 6, 7].forEach(ms => { line(sx(ms), box.y0, sx(ms), box.y1, css.grid); txt(ms + (ms === 7 ? ' ms' : ''), sx(ms), box.y1 + 16, { align: ms === 7 ? 'right' : 'center', font: MONO(10) }); });
+  [lo + padv, hi - padv].forEach(v => txt(v.toFixed(0), box.x0 - 6, sy(v) + 4, { align: 'right', font: MONO(10) }));
+  txt('mV', 0, box.y0 + 10, { font: MONO(10) });
+  const adc = 64 * 12e-3;  // 64 x (10 us TACQ + ~2 us conversion), in ms
+  const bands = [[SETTLE_MS, SETTLE_MS + adc, css.ch2, 'SENSE_OUT'], [SETTLE_MS + adc, SETTLE_MS + 2 * adc, css.ch1, 'DRV_OUT']];
+  bands.forEach(([a, b, col]) => { ctx.globalAlpha = 0.13; ctx.fillStyle = col; ctx.fillRect(sx(a), box.y0, sx(b) - sx(a), box.y1 - box.y0); ctx.globalAlpha = 1; });
+  line(sx(SETTLE_MS), box.y0, sx(SETTLE_MS), box.y1, css.ink, 1, [4, 3]);
+  txt('5 ms settle = 50 τ', sx(SETTLE_MS) - 6, box.y0 + 12, { align: 'right', font: MONO(10), color: css.ink });
+  txt('64× ADC', sx(SETTLE_MS + adc), box.y0 + 12, { align: 'center', font: MONO(9) });
+  const tR = state.still ? TMAX : clamp(T * 2, 0, TMAX);
+  const curve = (v0, v1) => { const p = []; for (let ms = 0; ms <= tR + 1e-9; ms += 0.02) p.push([sx(ms), sy(v1 + (v0 - v1) * Math.exp(-ms / (TAU_F * 1e3)))]); return p; };
+  poly(curve(vdOld, vdNew), css.ch1, 2);
+  poly(curve(vsOld, vsNew), css.ch2, 2);
+  const shown = [];
+  bands.forEach(([a, b, col, name], i) => {
+    if (tR >= b) {
+      const v = i === 0 ? vsNew : vdNew;
+      dot(sx((a + b) / 2), sy(v), 4.5, col);
+      shown.push([name, `${v.toFixed(1)} mV`]);
+    }
+  });
+  eventLine(tR < SETTLE_MS ? `Settling: the 1 nF caps charge toward the new average with τ = 100 µs.` : tR < SETTLE_MS + 2 * adc ? 'SAADC: 64 samples in one burst, averaged in hardware (BURST + OVERSAMPLE).' : `One phase done: ${(SETTLE_MS + 2 * adc).toFixed(1)} ms. The next phase step starts here.`);
+  readout([['k', `${k} (${(360 * k / N).toFixed(1)}°)`], ...shown, ['τ', '100 kΩ × 1 nF = 100 µs']]);
+  consoleOut([]);
+}
+
+// =========================================================================== step 4: I and Q
+function drawIQ(T) {
+  const wide = cv.clientWidth >= 620;
+  const { W, H } = fit(wide ? 390 : 640);
+  const { N, medium } = state, ps = phaseSet(state.mode);
+  const cmd = `${state.mode} ${N}`;
+  const pre = MEDIA[medium].open ? ['> swap open', 'OK'] : ['> swap a', 'OK'];
+  if (ps.err) {
+    txt(`${state.mode} needs N to be a multiple of 4.`, W / 2, H / 2 - 8, { align: 'center', color: css.ink, font: SANS(15) });
+    txt('Pick spectrum, or a different frequency.', W / 2, H / 2 + 16, { align: 'center', font: SANS(13, 400) });
+    eventLine(''); readout([]); consoleOut([...pre, `> ${cmd}`, ps.err]);
+    return;
+  }
+  const M = ps.M;
+  const box = wide ? { x0: 56, x1: W * 0.6 - 16, y0: 18, y1: H - 40 } : { x0: 50, x1: W - 10, y0: 18, y1: 330 };
+  const pc = wide ? { x: W * 0.8 + 6, y: H / 2 - 4, r: Math.min(W * 0.18, H / 2 - 44) } : { x: W / 2, y: 330 + 50 + Math.min(W / 2 - 50, 120), r: Math.min(W / 2 - 50, 120) };
+  const VMAX = 1800;
+  const sx = th => box.x0 + (box.x1 - box.x0) * th / 360, sy = v => box.y1 - (box.y1 - box.y0) * v / VMAX;
+  for (let v = 0; v <= VMAX; v += 450) { line(box.x0, sy(v), box.x1, sy(v), css.grid); txt(String(v), box.x0 - 6, sy(v) + 4, { align: 'right', font: MONO(10) }); }
+  for (let th = 0; th <= 360; th += 90) { line(sx(th), box.y0, sx(th), box.y1, css.grid); txt(th + '°', sx(th), box.y1 + 16, { align: 'center', font: MONO(10) }); }
+  txt('chopper phase θ = 360°·k/N', box.x1, box.y1 + 32, { align: 'right', font: MONO(10) });
+  txt('mV', 0, box.y0 + 8, { font: MONO(10) });
+  const cur = phaseCurve(medium, N);
+  const tr = arr => { const p = []; for (let kk = 0; kk <= N; kk++) p.push([sx(360 * kk / N), sy(arr[kk % N])]); return p; };
+  poly(tr(cur.d), css.ch1, 1.2, null, 0.35);
+  poly(tr(cur.s), css.ch2, 1.2, null, 0.35);
+
+  const dtp = M <= 4 ? 0.55 : M <= 16 ? 0.22 : 0.09;
+  const n = state.still ? M : clamp(Math.floor(T / dtp) + 1, 0, M);
+  const done = state.still || (n === M && T > M * dtp + 0.35);
+  for (let i = 0; i < n; i++) {
+    const th = 360 * ps.ks[i] / N;
+    dot(sx(th), sy(ps.vd[i]), 4.2, css.ch1);
+    dot(sx(th), sy(ps.vs[i]), 4.2, css.ch2);
+  }
+  if (n > 0 && !done) { const th = 360 * ps.ks[n - 1] / N; line(sx(th), box.y0, sx(th), box.y1, css.ink, 1, [2, 3]); }
+  const fitCurve = f => { const p = []; for (let th = 0; th <= 360; th += 3) { const r = th * Math.PI / 180; p.push([sx(th), sy(f.p + f.c * Math.cos(r) + f.s * Math.sin(r))]); } return p; };
+  if (done) { poly(fitCurve(ps.fd), css.ch1, 1.8, [6, 4]); poly(fitCurve(ps.fs), css.ch2, 1.8, [6, 4]); }
+
+  // phasor plane
+  const sc = pc.r / 900;
+  line(pc.x - pc.r - 8, pc.y, pc.x + pc.r + 8, pc.y, css.line); line(pc.x, pc.y - pc.r - 8, pc.x, pc.y + pc.r + 8, css.line);
+  ctx.strokeStyle = css.grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.r, 0, 2 * Math.PI); ctx.stroke();
+  txt('I', pc.x + pc.r + 12, pc.y + 4, { font: MONO(11, 600), color: css.ink });
+  txt('Q', pc.x, pc.y - pc.r - 14, { font: MONO(11, 600), color: css.ink, align: 'center' });
+  txt('900 mV', pc.x + pc.r * 0.71 + 4, pc.y - pc.r * 0.71 - 4, { font: MONO(9) });
+  if (done) {
+    const g = state.still ? 1 : ease(clamp((T - M * dtp - 0.35) / 0.8, 0, 1));
+    const vec = (f, col, name) => {
+      const ex = pc.x + f.c * sc * g, ey = pc.y - f.s * sc * g;
+      arrow(pc.x, pc.y, ex, ey, col);
+      if (g === 1) txt(`${name} ${f.a.toFixed(0)} mV`, ex, ey + (f.s < -15 ? 18 : -9), { align: f.c < 0 ? 'left' : 'right', color: col, font: MONO(10, 600) });
+    };
+    vec(ps.fd, css.ch1, 'DRV_OUT'); vec(ps.fs, css.ch2, 'SENSE');
+    if (g === 1) {
+      ctx.strokeStyle = css.ch2; ctx.lineWidth = 1; ctx.beginPath();
+      const ang = -ps.fs.phi * Math.PI / 180;
+      ctx.arc(pc.x, pc.y, pc.r * 0.28, Math.min(0, ang), Math.max(0, ang)); ctx.stroke();
+      // Label at the arc's midpoint, outside it, so it never meets the arrow-tip labels.
+      const mid = -ps.fs.phi * Math.PI / 360, rr = pc.r * 0.28 + 14;
+      txt(`φ = ${ps.fs.phi.toFixed(1)}°`, pc.x + rr * Math.cos(mid), pc.y + rr * Math.sin(mid) + 4,
+          { color: css.ch2, font: SANS(12, 600), align: Math.cos(mid) < -0.2 ? 'right' : Math.cos(mid) > 0.2 ? 'left' : 'center' });
+    }
+  }
+  eventLine(done ? 'Dashed: the fitted P + I·cos θ + Q·sin θ. Faint: what all N phases would show.' : `Reading phase ${n} of ${M}: set k, wait 5 ms, read SENSE_OUT and DRV_OUT.`);
+  if (done) readout([['SENSE', `A ${ps.fs.a.toFixed(1)} mV, φ ${ps.fs.phi.toFixed(1)}°`], ['DRV_OUT', `A ${ps.fd.a.toFixed(1)} mV, φ ${ps.fd.phi.toFixed(1)}°`], ['phases', `M = ${M}`]]);
+  else readout([['phases', `${n} / ${M}`]]);
+
+  const con = [...pre];
+  if (state.mode === 'spectrum') {
+    con.push(`# inside spectrum: one of eight frequencies, N=${N}, M=${M} phases`);
+    for (let i = 0; i < n; i++) con.push(`#   k=${pad(ps.ks[i], 2)}  sense=${f2(ps.vs[i])}  drv=${f2(ps.vd[i])} mV`);
+    if (done) {
+      const a = cx.scale(2 / M, ps.xs), b = cx.scale(2 / M, ps.xd);
+      con.push(`#   X1(SENSE)·2/M  = ${cx.abs(a).toFixed(1)} mV at ${f2(deg(cx.arg(a)), 1)} deg`, `#   X1(DRV_OUT)·2/M = ${cx.abs(b).toFixed(1)} mV at ${f2(deg(cx.arg(b)), 1)} deg   -> step 5`);
+    }
+  } else {
+    con.push(`> ${cmd}`);
+    if (MEDIA[medium].open) con.push('note: swap is OPEN (reference measurement)');
+    if (state.mode === 'sweep') for (let i = 0; i < n; i++) con.push(`k=${ps.ks[i]} sense=${f2(ps.vs[i])} drv=${f2(ps.vd[i])} mV`);
+    if (done) {
+      const sw = state.mode === 'sweep';
+      con.push(`N=${N} f=${FCLK / N | 0} Hz phases=${M} settle=5ms os=64`);
+      const line1 = (lab, f) => `${lab} P=${f2(f.p)} I=${f2(f.c)} Q=${f2(f.s)} A=${f2(f.a)} phi=${f2(wrap180(f.phi), 1)}deg` + (sw ? ` resid=${f.resid.toFixed(3)} mV` : ' mV');
+      con.push(line1('sense', ps.fs), line1('drv  ', ps.fd));
+    }
+  }
+  consoleOut(con);
+}
+
+// =========================================================================== step 5: normalise
+function drawNormalise(T) {
+  const wide = cv.clientWidth >= 620;
+  const { W, H } = fit(wide ? 380 : 620);
+  const { N, medium } = state, ps = phaseSet('spectrum'), M = ps.M;
+  const box = wide ? { x0: 50, x1: W * 0.42, y0: 34, y1: H - 44 } : { x0: 50, x1: W - 10, y0: 34, y1: 230 };
+  const VMAX = 1800;
+  const sx = th => box.x0 + (box.x1 - box.x0) * th / 360, sy = v => box.y1 - (box.y1 - box.y0) * v / VMAX;
+  txt(`spectrum at ${fmtHz(FCLK / N)}: ${M} phases`, box.x0, 14, { color: css.ink, font: SANS(13) });
+  for (let v = 0; v <= VMAX; v += 600) { line(box.x0, sy(v), box.x1, sy(v), css.grid); txt(String(v), box.x0 - 6, sy(v) + 4, { align: 'right', font: MONO(10) }); }
+  for (let th = 0; th <= 360; th += 180) txt(th + '°', sx(th), box.y1 + 16, { align: 'center', font: MONO(10) });
+  const cur = phaseCurve(medium, N);
+  const tr = arr => { const p = []; for (let kk = 0; kk <= N; kk++) p.push([sx(360 * kk / N), sy(arr[kk % N])]); return p; };
+  poly(tr(cur.d), css.ch1, 1.2, null, 0.35); poly(tr(cur.s), css.ch2, 1.2, null, 0.35);
+  ps.ks.forEach((k, i) => { dot(sx(360 * k / N), sy(ps.vd[i]), 3.6, css.ch1); dot(sx(360 * k / N), sy(ps.vs[i]), 3.6, css.ch2); });
+
+  const pc = wide ? { x: W * 0.73, y: H / 2 + 6, r: Math.min(W * 0.2, H / 2 - 52) } : { x: W / 2, y: 230 + 70 + Math.min(W / 2 - 60, 130), r: Math.min(W / 2 - 60, 130) };
+  line(pc.x - pc.r - 14, pc.y, pc.x + pc.r + 14, pc.y, css.line); line(pc.x, pc.y - pc.r - 14, pc.x, pc.y + pc.r + 14, css.line);
+  ctx.strokeStyle = css.grid; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.r, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+  txt('Re', pc.x + pc.r + 16, pc.y + 4, { font: MONO(11, 600), color: css.ink });
+  txt('Im', pc.x, pc.y - pc.r - 18, { font: MONO(11, 600), color: css.ink, align: 'center' });
+  txt('|z| = 1', pc.x + pc.r * 0.71 + 4, pc.y + pc.r * 0.71 + 12, { font: MONO(9) });
+  const dmag = cx.abs(ps.xd), dn = cx.scale(1 / dmag, ps.xd), sn = cx.scale(1 / dmag, ps.xs);
+  const u = state.still ? 1 : ease(clamp((T - 1.4) / 1.8, 0, 1));
+  const rot = -cx.arg(dn) * u, e = [Math.cos(rot), Math.sin(rot)];
+  const P = z => { const r = cx.mul(z, e); return [pc.x + r[0] * pc.r, pc.y - r[1] * pc.r]; };
+  const [dx, dy] = P(dn), [qx, qy] = P(sn);
+  arrow(pc.x, pc.y, dx, dy, css.ch1); arrow(pc.x, pc.y, qx, qy, css.ch2);
+  txt(u === 1 ? 'DRV_OUT → 1∠0°' : 'X1(DRV_OUT)', dx + (dx < pc.x ? -6 : 6), dy - 10, { align: dx < pc.x ? 'right' : 'left', color: css.ch1, font: MONO(10, 600) });
+  txt(u === 1 ? 'SENSE → H' : 'X1(SENSE)', qx + (qx < pc.x ? -6 : 6), qy + (qy > pc.y ? 18 : -10), { align: qx < pc.x ? 'right' : 'left', color: css.ch2, font: MONO(10, 600) });
+  const hf = mediumH(2 * Math.PI * FCLK / N, MEDIA[medium]);
+  if (u === 1) {
+    const hx = pc.x + hf[0] * pc.r, hy = pc.y - hf[1] * pc.r;
+    ctx.strokeStyle = css.muted; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(hx, hy, 7, 0, 2 * Math.PI); ctx.stroke();
+  }
+  const a = cx.scale(2 / M, ps.xs), b = cx.scale(2 / M, ps.xd);
+  eventLine(u === 0 ? 'Both X1 vectors point left: that is the 180° window offset, shared by both channels.' : u < 1 ? 'Dividing by X1(DRV_OUT): rotate by −∠X1(DRV_OUT) and scale by 1/|X1(DRV_OUT)|.' : 'Grey ring: H at the fundamental alone. The small gap is harmonic folding, which the fit models.');
+  readout([['X1(SENSE)·2/M', `${cx.abs(a).toFixed(1)} mV ∠ ${f2(deg(cx.arg(a)), 1)}°`], ['X1(DRV_OUT)·2/M', `${cx.abs(b).toFixed(1)} mV ∠ ${f2(deg(cx.arg(b)), 1)}°`], ['H', `${cx.abs(ps.h).toFixed(4)} ∠ ${f2(deg(cx.arg(ps.h)), 2)}°`]]);
+  consoleOut([]);
+}
+
+// =========================================================================== steps 6 and 7: sweep and fit
+const FMIN = 200e3, FMAX = 3.2e6;
+function freqPlots(W, yTop, H, run) {
+  const L = 54, R = 12, gap = 30, ph = (H - yTop - gap - 34) / 2;
+  const mag = { x0: L, x1: W - R, y0: yTop, y1: yTop + ph };
+  const pha = { x0: L, x1: W - R, y0: yTop + ph + gap, y1: yTop + 2 * ph + gap };
+  const fx = f => L + (W - R - L) * Math.log(f / FMIN) / Math.log(FMAX / FMIN);
+  const m = MEDIA[state.medium];
+  const pure = []; for (let i = 0; i <= 120; i++) { const f = FMIN * (FMAX / FMIN) ** (i / 120); pure.push([f, mediumH(2 * Math.PI * f, m)]); }
+  let pmin = 0; run.avg.forEach(a => pmin = Math.min(pmin, deg(cx.arg(a.h)))); pure.forEach(([, h]) => pmin = Math.min(pmin, deg(cx.arg(h))));
+  const plo = Math.min(-10, Math.floor((pmin - 4) / 10) * 10), phi = 5;
+  const my = v => mag.y1 - (mag.y1 - mag.y0) * v / 1.05, py = d => pha.y1 - (pha.y1 - pha.y0) * (d - plo) / (phi - plo);
+  const xt = [250e3, 500e3, 1e6, 2e6];
+  [[mag, '|H|'], [pha, '∠H']].forEach(([b, name]) => {
+    SPEC_N.forEach(n => line(fx(FCLK / n), b.y0, fx(FCLK / n), b.y1, css.grid));
+    line(b.x0, b.y1, b.x1, b.y1, css.line);
+    txt(name, 0, b.y0 + 10, { font: MONO(11, 600), color: css.ink });
+  });
+  [0, 0.5, 1].forEach(v => { line(mag.x0, my(v), mag.x1, my(v), css.grid); txt(v.toFixed(1), mag.x0 - 6, my(v) + 4, { align: 'right', font: MONO(10) }); });
+  for (let d = plo; d <= 0; d += (plo <= -40 ? 20 : 10)) { line(pha.x0, py(d), pha.x1, py(d), css.grid); txt(d + '°', pha.x0 - 6, py(d) + 4, { align: 'right', font: MONO(10) }); }
+  xt.forEach(f => txt(fmtShortHz(f) + 'Hz', fx(f), pha.y1 + 16, { align: 'center', font: MONO(10) }));
+  poly(pure.map(([f, h]) => [fx(f), my(cx.abs(h))]), css.muted, 1.2, [2, 3], 0.8);
+  poly(pure.map(([f, h]) => [fx(f), py(deg(cx.arg(h)))]), css.muted, 1.2, [2, 3], 0.8);
+  return { mag, pha, fx, my, py };
+}
+const pt = (pl, f, h) => [[pl.fx(f), pl.my(cx.abs(h))], [pl.fx(f), pl.py(deg(cx.arg(h)))]];
+
+function drawSweep(T) {
+  const narrow = cv.clientWidth < 560;
+  const { W, H } = fit(narrow ? 560 : 500);
+  const run = spectrumRun(state.medium), orient = run.orient;
+  const L = 54, R = 12, rowH = 24, cells = SPEC_N.length, cw = (W - L - R) / cells;
+  const PH_REAL = 6.5e-3, SLOW = 4, per = SPEC_N.reduce((a, n) => a + specPhases(n), 0), total = per * orient.length;
+  const gp = state.still ? total : Math.floor(T / (PH_REAL * SLOW));
+  orient.forEach((o, r) => {
+    const y = 6 + r * (rowH + 6);
+    txt(o === 'open' ? 'open' : o, 0, y + 15, { font: MONO(11, 600), color: css.ink });
+    txt(o === 'open' ? '' : `swap ${o.toLowerCase()}`, 22, y + 15, { font: MONO(9) });
+    let off = r * per;
+    SPEC_N.forEach((n, i) => {
+      const Mi = specPhases(n), doneN = clamp(gp - off, 0, Mi), x0 = L + i * cw + 2, tw = (cw - 6) / Mi;
+      for (let j = 0; j < Mi; j++) { ctx.fillStyle = j < doneN ? css.ch2 : css.grid; ctx.fillRect(x0 + j * tw, y + 14, Math.max(1, tw - 1), 8); }
+      if (r === 0) txt(fmtShortHz(FCLK / n), x0, y + 9, { font: MONO(9) });
+      off += Mi;
+    });
+  });
+  const stripH = 6 + orient.length * (rowH + 6) + 18;
+  const pl = freqPlots(W, stripH, H, run);
+  let off = 0;
+  orient.forEach((o, r) => {
+    SPEC_N.forEach((n, i) => {
+      off += specPhases(n);
+      if (gp >= off) {
+        const [a, b] = pt(pl, FCLK / n, run.sweeps[r][i].h);
+        const draw = (x, y) => o === 'B' ? square(x, y, 3.6, css.ch2) : dot(x, y, 4, css.ch2, true);
+        draw(...a); draw(...b);
+      }
+    });
+  });
+  const avgOn = state.still || (gp >= total && T > total * PH_REAL * SLOW + 0.5);
+  if (avgOn && orient.length > 1) {
+    const pa = run.avg.map(a => pt(pl, FCLK / a.n, a.h));
+    poly(pa.map(p => p[0]), css.ch2, 1.3); poly(pa.map(p => p[1]), css.ch2, 1.3);
+    pa.forEach(([a, b]) => { dot(...a, 4.4, css.ch2); dot(...b, 4.4, css.ch2); });
+  }
+  const g = Math.min(gp, total);
+  let o = Math.min(orient.length - 1, Math.floor(g / per)), rem = g - o * per, fi = 0;
+  while (fi < cells - 1 && rem >= specPhases(SPEC_N[fi])) { rem -= specPhases(SPEC_N[fi]); fi++; }
+  eventLine(gp >= total ? (orient.length > 1 ? 'Filled: A and B averaged as complex numbers at each frequency. Dotted grey: H(f) at the fundamental alone.' : 'Dotted grey: H(f) at the fundamental alone.') : `orientation ${orient[o]}, ${fmtHz(FCLK / SPEC_N[fi])}, phase ${rem + 1} of ${specPhases(SPEC_N[fi])}`);
+  readout([['measurement time', `${(g * PH_REAL).toFixed(2)} s`], ['shown at', '1/4 speed'], ['phases', `${g} / ${total}`]]);
+  const con = [MEDIA[state.medium].open ? '> spectrum open' : '> spectrum ab'];
+  if (orient.length > 1) orient.forEach((oo, r) => { if (gp >= (r + 1) * per) con.push(`orientation ${oo} done`); });
+  consoleOut(con);
+}
+
+function drawFit(T) {
+  const narrow = cv.clientWidth < 560;
+  const { W, H } = fit(narrow ? 520 : 460);
+  const run = spectrumRun(state.medium), fitR = run.fit, m = MEDIA[state.medium];
+  const pl = freqPlots(W, 14, H, run);
+  const pa = run.avg.map(a => pt(pl, FCLK / a.n, a.h));
+  pa.forEach(([a, b]) => { dot(...a, 4.4, css.ch2); dot(...b, 4.4, css.ch2); });
+  const hist = fitR.hist, last = hist.length - 1;
+  const it = state.still ? last : clamp(Math.floor((T - 0.6) / 0.42), 0, last);
+  const p = hist[it].p, cp = m.open ? 0 : CP;
+  const mp = run.avg.map(a => pt(pl, FCLK / a.n, specModel(a.n, a.m, p, cp)));
+  const cross = ([xx, yy]) => { line(xx - 4, yy - 4, xx + 4, yy + 4, css.ink, 1.4); line(xx - 4, yy + 4, xx + 4, yy - 4, css.ink, 1.4); };
+  clipBox(pl.mag); poly(mp.map(q => q[0]), css.ink, 1.6); mp.forEach(q => cross(q[0])); ctx.restore();
+  clipBox(pl.pha); poly(mp.map(q => q[1]), css.ink, 1.6); mp.forEach(q => cross(q[1])); ctx.restore();
+  const final = it === last && (state.still || T > 0.6 + last * 0.42 + 0.3);
+  const rms = Math.sqrt(hist[it].ss / (2 * run.avg.length));
+  const sig = (i, d = 1) => final ? ` ± ${(fitR.relSigma[i] * 100).toFixed(d)} %` : '';
+  if (m.open) {
+    readout([['iteration', `${it} / ${last}`], ['Cp', `${(p[2] * 1e12).toFixed(2)} pF${sig(2)}`], ['rms', rms.toFixed(5)]]);
+  } else {
+    const rs = 1 / p[1];
+    readout([['iteration', `${it} / ${last}`], ['Rsoil', fmtOhm(rs) + (final && rs < 1e6 ? sig(1) : '')], ['Cm', `${(p[0] * 1e12).toFixed(1)} pF${sig(0)}`], ['Cd', `${(p[2] * 1e12).toFixed(1)} pF${sig(2)}`], ['rms', rms.toFixed(5)]]);
+  }
+  eventLine(final ? (m.open ? 'Converged. Cp is stored and used by every later spectrum fit.' : `Converged. Best of 4 starts (Gs seed ${fitR.seed >= 1e-3 ? Math.round(fitR.seed * 1e3) + ' mS' : Math.round(fitR.seed * 1e6) + ' µS'}). Crosses: model at each sweep point. Dots: measured.`) : it === 0 ? 'Start: Cm 500 pF, Cd 5 pF, and one of four Gs guesses.' : `Levenberg–Marquardt step ${it}: each step moves ln(Cm), ln(Gs), ln(Cd) to cut the residual.`);
+  const con = [m.open ? '> spectrum open' : '> spectrum ab'];
+  if (final) {
+    if (!m.open) con.push('orientation A done', 'orientation B done');
+    run.avg.forEach(a => con.push(`  ${pad((FCLK / a.n).toFixed(0), 7)} Hz M=${pad(a.m, 2)} |H| ${cx.abs(a.h).toFixed(4)} ph ${pad((deg(cx.arg(a.h)) >= 0 ? '+' : '') + deg(cx.arg(a.h)).toFixed(2), 7)} deg`));
+    if (m.open) con.push(`Cp = ${(p[2] * 1e12).toFixed(2)} pF (+/- ${(fitR.relSigma[2] * 100).toFixed(1)} %), fit rms ${fitR.rms.toFixed(5)} -- stored for \`spectrum\``);
+    else {
+      const rs = 1 / p[1];
+      con.push(`fit (Cp ${(CP * 1e12).toFixed(2)} pF, Rs 1000 ohm), rms residual ${fitR.rms.toFixed(5)} of drive:`);
+      con.push(`  Rsoil 1/Gs    ${pad(rs.toFixed(1), 8)} ohm +/- ${pad((fitR.relSigma[1] * 100).toFixed(1), 5)} %  <- MOISTURE. lower = wetter`);
+      con.push(`  Cm interface  ${pad((p[0] * 1e12).toFixed(2), 8)} pF  +/- ${pad((fitR.relSigma[0] * 100).toFixed(1), 5)} %  <- contact quality: gaps/crusts move this`);
+      con.push(`  Cd direct     ${pad((p[2] * 1e12).toFixed(2), 8)} pF  +/- ${pad((fitR.relSigma[2] * 100).toFixed(1), 5)} %  <- board/fringe, should NOT track moisture`);
+      con.push(`  interface corner Gs/(2pi Cm) = ${(p[1] / (2 * Math.PI * p[0]) / 1e3).toFixed(0)} kHz`);
+      if (rs >= 1e6) con.push('# MSV4 Lab shows this Rsoil as "open (dry)": no conductive path.');
+    }
+  }
+  consoleOut(con);
+}
+
+const DRAW = [drawTimer, drawDivider, drawChopper, drawIQ, drawNormalise, drawSweep, drawFit];
+
+// ---- controls ----
+function restart() { state.t0 = state.clock; }
+function buildControls() {
+  const med = $('#medium');
+  for (const [key, m] of Object.entries(MEDIA)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.key = key;
+    b.innerHTML = m.label + (m.predicted ? '<span class="tag">predicted</span>' : '');
+    b.addEventListener('click', () => { state.medium = key; restart(); syncControls(); });
+    med.appendChild(b);
+  }
+  const sel = $('#freq');
+  SPEC_N.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = `N = ${n} → ${fmtHz(FCLK / n)}`; sel.appendChild(o); });
+  sel.value = state.N;
+  sel.addEventListener('change', () => {
+    const n = +sel.value;
+    state.k = Math.round(state.k / state.N * n) % n; state.prevK = Math.round(state.prevK / state.N * n) % n;
+    state.N = n; restart(); syncControls();
+  });
+  const ki = $('#k');
+  ki.addEventListener('input', () => { state.prevK = state.k; state.k = +ki.value; if (state.step === 2) { restart(); if (state.still) { state.still = false; state.playing = true; } } syncControls(); });
+  const mode = $('#mode');
+  [['iq', 'iq'], ['spectrum', 'spectrum point'], ['sweep', 'sweep']].forEach(([key, label]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.key = key; b.textContent = label;
+    b.addEventListener('click', () => { state.mode = key; restart(); syncControls(); });
+    mode.appendChild(b);
+  });
+  const steps = $('#steps');
+  STEPS.forEach((name, i) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.innerHTML = `<span class="n">${i + 1}</span><span>${name}</span>`;
+    b.addEventListener('click', () => goStep(i));
+    steps.appendChild(b);
+  });
+  $('#prev').addEventListener('click', () => goStep(Math.max(0, state.step - 1)));
+  $('#next').addEventListener('click', () => goStep(Math.min(STEPS.length - 1, state.step + 1)));
+  $('#play').addEventListener('click', () => { state.playing = !state.playing; if (state.playing && state.still) { state.still = false; restart(); } syncControls(); });
+  $('#replay').addEventListener('click', () => { state.still = false; state.playing = true; restart(); syncControls(); });
+}
+function goStep(i) { state.step = i; restart(); syncControls(); }
+function syncControls() {
+  document.querySelectorAll('#medium button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === state.medium)));
+  $('#medium-note').textContent = MEDIA[state.medium].note;
+  document.querySelectorAll('#mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === state.mode)));
+  document.querySelectorAll('#steps button').forEach((b, i) => { if (i === state.step) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('article[data-stage]').forEach(a => a.hidden = +a.dataset.stage !== state.step);
+  document.querySelectorAll('#figbar .ctl').forEach(c => c.hidden = !c.dataset.stages.split(',').includes(String(state.step)));
+  const ki = $('#k'); ki.max = state.N - 1; ki.value = state.k;
+  $('#kout').textContent = `k = ${state.k} · ${(360 * state.k / state.N).toFixed(1)}°`;
+  $('#play').textContent = state.playing ? 'Pause' : 'Play';
+  $('#where').textContent = `Step ${state.step + 1} of ${STEPS.length}`;
+  $('#prev').disabled = state.step === 0; $('#next').disabled = state.step === STEPS.length - 1;
+  $('#open-sweep-note').hidden = !MEDIA[state.medium].open;
+  lastRO = lastCon = lastEv = null;
+}
+
+// ---- loop ----
+let lastNow = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now;
+  if (state.playing) state.clock += dt;
+  try { DRAW[state.step](state.clock - state.t0); } catch (e) { console.error(e); }
+  requestAnimationFrame(frame);
+}
+buildControls();
+syncControls();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

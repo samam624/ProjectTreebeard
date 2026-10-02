@@ -719,7 +719,7 @@ static void printHelp() {
   Serial.println(F("  id                 - connect (read-only) and report target identity"));
   Serial.println(F("  probe              - loop checking for SWD contact (for hand-held wiring)"));
   Serial.println(F("  halt               - hardware-reset target then halt the core"));
-  Serial.println(F("  run                - resume core execution, release debug"));
+  Serial.println(F("  run                - SYSRESETREQ over SWD, then release the halted core"));
   Serial.println(F("  reset              - pulse nRESET only (no SWD)"));
   Serial.println(F("  rd <hexaddr>       - read one 32-bit word"));
   Serial.println(F("  rdblk <hexaddr> <declen> - bulk read, replies with declen raw bytes"));
