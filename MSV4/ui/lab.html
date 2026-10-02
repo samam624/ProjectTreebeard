@@ -57,6 +57,7 @@
           <div class="panel-heading wide"><div><span class="eyebrow">LIVE / LATEST REPLIES</span><h2>Measurements</h2></div><span id="last-reading" class="muted">Waiting for data</span></div>
           <div class="metric-grid">
             <div class="metric"><span>TIP TEMPERATURE</span><strong id="metric-temp_c">—</strong><small>°C</small></div>
+            <div class="metric"><span>CHIP TEMPERATURE</span><strong id="metric-die_c">—</strong><small>°C · nRF die</small></div>
             <div class="metric"><span>SENSE OUT</span><strong id="metric-sense_mv">—</strong><small>mV</small></div>
             <div class="metric"><span>DRIVE OUT</span><strong id="metric-drv_mv">—</strong><small>mV</small></div>
             <div class="metric"><span>RSOIL</span><strong id="metric-rsoil_ohm">—</strong><small>Ω · spectrum fit</small></div>
@@ -67,7 +68,7 @@
         </section>
 
         <section class="panel chart-panel">
-          <div class="panel-heading wide"><div><span class="eyebrow">SESSION HISTORY</span><h2>Trend</h2></div><select id="chart-metric" aria-label="Chart metric"><option value="temp_c">Tip temperature · °C</option><option value="sense_mv">Sense output · mV</option><option value="drv_mv">Drive output · mV</option><option value="rsoil_ohm">Soil resistance · Ω</option><option value="cm_pf">Interface Cm · pF</option><option value="vbat_mv">VBAT · mV</option></select></div>
+          <div class="panel-heading wide"><div><span class="eyebrow">SESSION HISTORY</span><h2>Trend</h2></div><select id="chart-metric" aria-label="Chart metric"><option value="temp_c">Tip temperature · °C</option><option value="die_c">Chip temperature · °C</option><option value="sense_mv">Sense output · mV</option><option value="drv_mv">Drive output · mV</option><option value="rsoil_ohm">Soil resistance · Ω</option><option value="cm_pf">Interface Cm · pF</option><option value="vbat_mv">VBAT · mV</option></select></div>
           <div class="chart-frame"><canvas id="trend-chart" aria-label="Selected measurement trend"></canvas><div id="chart-empty">Run a measurement to begin a trend.</div></div>
         </section>
 

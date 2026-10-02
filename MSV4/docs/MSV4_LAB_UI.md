@@ -40,7 +40,21 @@ for initial power, SWD, and signed BLE installation.
   sequence on a timer. Capture runs in the local server, so it continues if
   the browser tab closes. It stops on disconnection or when you click Stop.
   Commands and replies appear in the transcript and are written to the active
-  session as they arrive.
+  session as they arrive. The capture list is `read`, `temp`, `vbat`, `vdd`,
+  `iq 16` and `spectrum ab` — `moisture` is not offered, so use **Spectrum A + B**
+  for a live moisture trend. A spectrum takes about 5 s, so set **Seconds between
+  sets** to 10 or more or the sets queue behind each other (measured on board 1,
+  2026-10-01).
+- `temp` also reports the nRF52840 die temperature (`DIE=`, firmware v262147+),
+  shown on the **Chip temperature** card. The die sits at the board end and
+  reads several °C above the tip NTC from self-heating; the gap is the
+  tip-to-board gradient, not an NTC error. Restart the Lab server after
+  updating `msv4_lab.py`, since it only loads its parsers at start.
+- **Rsoil** is shown as `open (dry)` at ≥ 1 MΩ and charted on a log axis capped
+  there. In air the fit drives the soil conductance to zero and reports
+  10¹⁴–10¹⁷ Ω; occasionally it fails outright and reports `0.0 ohm` with a
+  multi-million-% uncertainty. Those 0 Ω fits show as `no fit` and are left
+  off the chart rather than drawn as "very wet".
 - The cards show the most recent replies. The trend chart shows one numeric
   field from the session. Add a note to mark a physical change, scope result,
   watering event, or electrode position. A spectrum fit's `Rsoil` is the

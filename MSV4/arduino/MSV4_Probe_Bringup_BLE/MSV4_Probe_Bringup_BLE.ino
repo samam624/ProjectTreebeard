@@ -1252,8 +1252,18 @@ static void handleCommand(char* line)
   else if (!strcmp(c, "temp"))
   {
     float t, r, tm, vdd;
+    // Die temperature from the nRF52840 TEMP peripheral, read through the SoftDevice (it owns
+    // TEMP while enabled). 0.25 C steps. It sits at the board end, not the blade tip, so the
+    // difference from the NTC is the tip-vs-board gradient, not a calibration error.
+    int32_t dieQuarterC = 0;
+    const bool dieOk = sd_temp_get(&dieQuarterC) == NRF_SUCCESS;
     if (measureTemp(t, r, tm, vdd))
-      out("TEMP=%.2f C (NTC %.0f ohm, node %.0f mV, VDD %.0f mV)", t, r, tm, vdd);
+    {
+      if (dieOk)
+        out("TEMP=%.2f C (NTC %.0f ohm, node %.0f mV, VDD %.0f mV) DIE=%.2f C", t, r, tm, vdd,
+            dieQuarterC * 0.25f);
+      else out("TEMP=%.2f C (NTC %.0f ohm, node %.0f mV, VDD %.0f mV) DIE=ERR", t, r, tm, vdd);
+    }
     else out("ERR temp read failed (SAADC timeout or divider out of range)");
   }
   else if (!strcmp(c, "drive"))

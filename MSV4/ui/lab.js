@@ -1,6 +1,15 @@
 const $ = id => document.getElementById(id);
 const state = { token: '', sessionId: '', events: [], lastSeq: 0, connection: 'disconnected', busy: false, capturing: false, polling: false };
-const metricIds = ['temp_c', 'sense_mv', 'drv_mv', 'rsoil_ohm', 'cm_pf', 'vbat_mv'];
+// Above this the electrode sees no conductive path (open air, or bone-dry media).
+const RSOIL_OPEN_OHM = 1e6;
+
+function formatOhms(v) {
+  if (v >= RSOIL_OPEN_OHM) return '≥1 MΩ';
+  if (v >= 1e3) return `${(v / 1e3).toFixed(v >= 1e5 ? 0 : 1)} kΩ`;
+  return `${Math.round(v)} Ω`;
+}
+
+const metricIds = ['temp_c', 'die_c', 'sense_mv', 'drv_mv', 'rsoil_ohm', 'cm_pf', 'vbat_mv'];
 let toastTimer;
 
 function toast(message) {
@@ -83,7 +92,8 @@ function renderMetrics() {
   for (const key of metricIds) {
     const value = latest[key];
     $(`metric-${key}`).textContent = value === undefined ? '—' :
-      (key === 'temp_c' || key === 'sense_mv' || key === 'drv_mv' || key === 'cm_pf'
+      key === 'rsoil_ohm' ? (value <= 1 ? 'no fit' : value >= RSOIL_OPEN_OHM ? 'open (dry)' : formatOhms(value)) :
+      (key === 'temp_c' || key === 'die_c' || key === 'sense_mv' || key === 'drv_mv' || key === 'cm_pf'
         ? Number(value).toFixed(2) : Math.round(value).toLocaleString());
   }
   if (lastTime) $('last-reading').textContent = `Last reading ${formatTime(lastTime)}`;
@@ -135,8 +145,14 @@ function drawChart() {
   const ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
   const key = $('chart-metric').value;
-  const points = state.events.filter(e => e.metrics && Number.isFinite(e.metrics[key]))
-    .map(e => ({ x: new Date(e.time).valueOf(), y: e.metrics[key] })).slice(-700);
+  // Rsoil spans ~1 kOhm (wet) to "no conduction" (the fit runs Gs -> 0 and reports 1e14+ Ohm in
+  // air), so plot it on a log axis clamped at RSOIL_OPEN_OHM. Fits at <= 1 Ohm are degenerate
+  // (Gs unbounded, uncertainty in the millions of %) and are dropped rather than drawn as "wet".
+  const logAxis = key === 'rsoil_ohm';
+  const points = state.events.filter(e => e.metrics && Number.isFinite(e.metrics[key])
+      && !(logAxis && e.metrics[key] <= 1))
+    .map(e => ({ x: new Date(e.time).valueOf(),
+      y: logAxis ? Math.log10(Math.min(e.metrics[key], RSOIL_OPEN_OHM)) : e.metrics[key] })).slice(-700);
   $('chart-empty').style.display = points.length ? 'none' : 'grid';
   if (!points.length) return;
   const w = box.width, h = box.height, left = 58, right = 17, top = 20, bottom = 34;
@@ -153,7 +169,9 @@ function drawChart() {
   for (let i = 0; i <= 4; i++) {
     const y = top + i * (h - top - bottom) / 4;
     ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
-    ctx.textAlign = 'right'; ctx.fillText((y1 - i * (y1 - y0) / 4).toFixed(y1 - y0 > 100 ? 0 : 2), left - 8, y + 3);
+    const tick = y1 - i * (y1 - y0) / 4;
+    ctx.textAlign = 'right';
+    ctx.fillText(logAxis ? formatOhms(10 ** tick) : tick.toFixed(y1 - y0 > 100 ? 0 : 2), left - 8, y + 3);
   }
   ctx.textAlign = 'left';
   ctx.fillText(formatTime(new Date(x0).toISOString()), left, h - 11);

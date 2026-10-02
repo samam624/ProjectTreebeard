@@ -30,6 +30,7 @@ SCRIPT = ROOT / "ui" / "lab.js"
 SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
 METRIC_PATTERNS = {
     "temp_c": re.compile(r"\bTEMP=([-+\d.]+) C"),
+    "die_c": re.compile(r"\bDIE=([-+\d.]+) C"),
     "vbat_mv": re.compile(r"\bVBAT=([-+\d.]+) mV"),
     "vdd_mv": re.compile(r"\bVDD=([-+\d.]+) mV"),
     "sense_mv": re.compile(r"\bSENSE_OUT=([-+\d.]+) mV"),
