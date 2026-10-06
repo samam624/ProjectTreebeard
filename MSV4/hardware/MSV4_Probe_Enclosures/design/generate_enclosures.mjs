@@ -4,10 +4,14 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import opencascade from '../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.js';
 import * as replicad from '../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad/dist/replicad.js';
+import { buildThreeMf, meshStats, weldMesh } from '../tools/threemf.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.dirname(here);
+// output/ holds only the drag-and-drop print files; everything else (STEP,
+// reports, optional gasket) goes to output/reference/.
 const outputDir = path.join(projectDir, 'output');
+const referenceDir = path.join(outputDir, 'reference');
 const sourcePcbPath = path.resolve(projectDir, '..', 'MSV4.step');
 const wasmPath = path.resolve(
   projectDir,
@@ -47,9 +51,9 @@ const p = {
   baseFloorTopZ: -3.30,
   baseTopZ: 0.25,
   lidBottomZ: 0.30,
-  lidInnerRoofZ: 4.00,
-  armLidTopZ: 5.00,
-  integratedLidTopZ: 6.40,
+  lidInnerRoofZ: 7.00,
+  armLidTopZ: 8.00,
+  integratedLidTopZ: 9.40,
   pcbClampInterference: 0.10,
   frontTransitionEndY: 98.80,
   probeOuterBottomZ: -2.30,
@@ -104,7 +108,7 @@ const p = {
   minimalBaseFloorTopZ: -3.25,
   minimalBaseTopZ: 0.25,
   minimalLidBottomZ: 0.30,
-  minimalLidTopZ: 6.40,
+  minimalLidTopZ: 9.40,
   minimalGrooveXYClearance: 0.25,
   minimalGrooveBottomZ: -1.75,
   minimalGrooveTopZ: 0.15,
@@ -115,7 +119,7 @@ const p = {
   armPivotY: 121.50,
   armPivotZ: -2.10,
   armPanelPivotY: 149.20,
-  armPanelPivotZ: 14.00,
+  armPanelPivotZ: 17.00,
   armThickness: 1.60,
   armEndRadius: 2.80,
   armClearanceDiameter: 2.40,
@@ -124,14 +128,17 @@ const p = {
   pivotBossRadius: 3.00,
   panelFrameWidth: 32.80,
   panelFrameLength: 38.80,
-  panelFrameBackZ: 12.70,
+  panelFrameBackZ: 15.70,
   panelFrameThickness: 2.60,
   panelFrameCornerRadius: 1.40,
-  caseWireEntryDiameter: 1.60,
-  caseWireEntryCentersZ: [1.35, 3.20],
+  // One side exit shared by both panel leads, as on MSV3. It sits above the
+  // gasket groove and below the roof, on the wire-channel (left) arm side.
+  caseWireEntryDiameter: 3.00,
+  caseWireEntryCenterZ: 4.00,
 
-  batteryNominal: [10.0, 20.0, 2.0],
-  batteryReference: [10.4, 20.4, 2.2],
+  // 301020-class LiPo (MSV4 BOM BT1): 3.0 mm thick, resting on top-side parts.
+  batteryNominal: [10.0, 20.0, 3.0],
+  batteryReference: [10.4, 20.4, 3.2],
   batteryCenterX: -7.00,
   batteryCenterY: 113.00,
   batteryBottomZ: 1.70,
@@ -501,7 +508,8 @@ function buildLidShell(kind) {
 
   // Compression rails provide 0.10 mm nominal pinch on the PCB edge. They
   // remain inside the gasket and rise to the roof, so the sealing groove does
-  // not isolate them as loose solids.
+  // not isolate them as loose solids. Above the groove each rail is tied back
+  // into the cavity wall; a free 0.20 mm fin is not printable at this height.
   lid = lid
     .fuse(box(
       -12.95,
@@ -519,6 +527,10 @@ function buildLidShell(kind) {
       139.00,
       p.lidInnerRoofZ + 0.05,
     ));
+  const railTieBottomZ = p.lidBottomZ + p.gasketGrooveDepth;
+  lid = lid
+    .fuse(box(-13.40, 105.00, railTieBottomZ, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
+    .fuse(box(12.75, 105.00, railTieBottomZ, 13.40, 139.00, p.lidInnerRoofZ + 0.05));
 
   // A shallow cord/formed-in-place gasket groove follows the cavity. It is
   // deliberately open only at the probe throat, which is epoxy/RTV sealed.
@@ -554,15 +566,15 @@ function buildLidShell(kind) {
       ));
     }
   } else {
-    for (const centerZ of p.caseWireEntryCentersZ) {
-      lid = lid.cut(cylinderX(
-        -16.80,
-        3.80,
-        p.armPivotY,
-        centerZ,
-        p.caseWireEntryDiameter / 2,
-      ));
-    }
+    // Runs from the outside face through the wall and the compression rail
+    // into the cavity.
+    lid = lid.cut(cylinderX(
+      -16.80,
+      4.30,
+      p.armPivotY,
+      p.caseWireEntryCenterZ,
+      p.caseWireEntryDiameter / 2,
+    ));
   }
   return lid;
 }
@@ -804,8 +816,28 @@ async function writeBlob(filename, blob) {
   fs.writeFileSync(filename, Buffer.from(await blob.arrayBuffer()));
 }
 
-function stlOptions() {
-  return { tolerance: 0.04, angularTolerance: 0.18, binary: true };
+function meshOptions() {
+  return { tolerance: 0.04, angularTolerance: 0.18 };
+}
+
+// Lays the already-oriented bodies out in one row centered on a 256 mm bed
+// and writes them as separate named objects in a single 3MF.
+function writePrintFile(filename, title, bodies) {
+  const gap = 6.0;
+  // Bounds come from the mesh itself; the CAD bounding box is padded and is
+  // not tight around curved faces.
+  const meshes = bodies.map(([name, shape]) => {
+    const mesh = weldMesh(shape.mesh(meshOptions()));
+    return { name, ...mesh, ...meshStats(mesh) };
+  });
+  const widths = meshes.map(({ min, max }) => max[0] - min[0]);
+  let cursorX = 128.0 - (widths.reduce((sum, width) => sum + width, 0) + gap * (meshes.length - 1)) / 2;
+  const objects = meshes.map(({ name, vertices, triangles, min, max }, index) => {
+    const shift = [cursorX - min[0], 128.0 - (min[1] + max[1]) / 2, -min[2]];
+    cursorX += widths[index] + gap;
+    return { name, triangles, vertices: vertices.map((value, i) => value + shift[i % 3]) };
+  });
+  fs.writeFileSync(filename, buildThreeMf(title, objects));
 }
 
 function placeOnBed(shape) {
@@ -813,8 +845,10 @@ function placeOnBed(shape) {
   return clone.translateZ(-clone.boundingBox.bounds[0][2]);
 }
 
+// A rotation, not a mirror: mirroring would print the opposite-handed lid and
+// put the wire exit on the wrong side.
 function flipRoofDown(shape, topZ) {
-  const clone = shape.clone().mirror('XY', [0, 0, topZ]);
+  const clone = shape.clone().rotate(180, [0, 0, topZ], [0, 1, 0]);
   return clone.translateZ(-clone.boundingBox.bounds[0][2]);
 }
 
@@ -828,7 +862,7 @@ function armOnBed(shape) {
   return clone.translateZ(-clone.boundingBox.bounds[0][2]);
 }
 
-fs.mkdirSync(outputDir, { recursive: true });
+fs.mkdirSync(referenceDir, { recursive: true });
 
 let integratedBase = buildCommonBase(false);
 let integratedLid = buildLidShell('integrated');
@@ -878,11 +912,11 @@ const individualSteps = [
   ['MSV4_minimum_profile_integrated_solar_lid.step', minimalLid],
 ];
 for (const [filename, shape] of individualSteps) {
-  await writeBlob(path.join(outputDir, filename), shape.blobSTEP());
+  await writeBlob(path.join(referenceDir, filename), shape.blobSTEP());
 }
 
 await writeBlob(
-  path.join(outputDir, 'MSV4_integrated_solar_enclosure_assembly.step'),
+  path.join(referenceDir, 'MSV4_integrated_solar_enclosure_assembly.step'),
   replicad.exportSTEP([
     { shape: integratedBase, name: 'MSV4 Integrated Solar Base', color: colors.base },
     { shape: integratedLid, name: 'MSV4 Integrated Solar Lid', color: colors.lid },
@@ -891,19 +925,19 @@ await writeBlob(
   ]),
 );
 await writeBlob(
-  path.join(outputDir, 'MSV4_integrated_solar_enclosure_fit_check.step'),
+  path.join(referenceDir, 'MSV4_integrated_solar_enclosure_fit_check.step'),
   replicad.exportSTEP([
     { shape: integratedBase, name: 'MSV4 Integrated Solar Base', color: colors.base },
     { shape: integratedLid, name: 'MSV4 Integrated Solar Lid', color: colors.lid },
     { shape: gasket.clone().translateZ(p.baseTopZ), name: 'MSV4 Case Gasket', color: colors.gasket },
     { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
-    { shape: battery, name: '10 x 20 x 2 mm Top-Side Battery Placement Reference', color: colors.battery },
+    { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
     { shape: integratedPanel, name: '36 x 30 mm Solar Panel Reference', color: colors.panel },
   ]),
 );
 
 await writeBlob(
-  path.join(outputDir, 'MSV4_arm_solar_enclosure_assembly.step'),
+  path.join(referenceDir, 'MSV4_arm_solar_enclosure_assembly.step'),
   replicad.exportSTEP([
     { shape: armBase, name: 'MSV4 Arm Solar Base', color: colors.base },
     { shape: armLid, name: 'MSV4 Arm Solar Lid', color: colors.lid },
@@ -915,7 +949,7 @@ await writeBlob(
   ]),
 );
 await writeBlob(
-  path.join(outputDir, 'MSV4_arm_solar_enclosure_fit_check.step'),
+  path.join(referenceDir, 'MSV4_arm_solar_enclosure_fit_check.step'),
   replicad.exportSTEP([
     { shape: armBase, name: 'MSV4 Arm Solar Base', color: colors.base },
     { shape: armLid, name: 'MSV4 Arm Solar Lid', color: colors.lid },
@@ -924,13 +958,13 @@ await writeBlob(
     { shape: rightArm, name: 'MSV4 Solar Arm Right', color: colors.arm },
     { shape: panelFrame, name: 'MSV4 36 x 30 Solar Panel Frame', color: colors.frame },
     { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
-    { shape: battery, name: '10 x 20 x 2 mm Top-Side Battery Placement Reference', color: colors.battery },
+    { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
     { shape: detachedPanel, name: '36 x 30 mm Solar Panel Reference', color: colors.panel },
   ]),
 );
 
 await writeBlob(
-  path.join(outputDir, 'MSV4_minimum_profile_integrated_solar_assembly.step'),
+  path.join(referenceDir, 'MSV4_minimum_profile_integrated_solar_assembly.step'),
   replicad.exportSTEP([
     { shape: minimalBase, name: 'MSV4 Minimum Profile Adhesive Base', color: colors.base },
     { shape: minimalLid, name: 'MSV4 Minimum Profile Adhesive Solar Lid', color: colors.lid },
@@ -938,32 +972,43 @@ await writeBlob(
   ]),
 );
 await writeBlob(
-  path.join(outputDir, 'MSV4_minimum_profile_integrated_solar_fit_check.step'),
+  path.join(referenceDir, 'MSV4_minimum_profile_integrated_solar_fit_check.step'),
   replicad.exportSTEP([
     { shape: minimalBase, name: 'MSV4 Minimum Profile Adhesive Base', color: colors.base },
     { shape: minimalLid, name: 'MSV4 Minimum Profile Adhesive Solar Lid', color: colors.lid },
     { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
-    { shape: battery, name: '10 x 20 x 2 mm Top-Side Battery Placement Reference', color: colors.battery },
+    { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
     { shape: integratedPanel, name: '36 x 30 mm Solar Panel Reference', color: colors.panel },
     { shape: antennaKeepout, name: 'E73 Antenna Keepout Reference - No Solar Panel', color: colors.keepout },
   ]),
 );
 
-const printBodies = [
-  ['MSV4_integrated_solar_base_print.stl', placeOnBed(integratedBase)],
-  ['MSV4_integrated_solar_lid_rear_edge_print.stl', rearEdgeDown(integratedLid, p.caseYMax)],
-  ['MSV4_arm_solar_base_print.stl', placeOnBed(armBase)],
-  ['MSV4_arm_solar_lid_print.stl', flipRoofDown(armLid, p.armLidTopZ)],
-  ['MSV4_solar_arm_left_print.stl', armOnBed(leftArm)],
-  ['MSV4_solar_arm_right_print.stl', armOnBed(rightArm)],
-  ['MSV4_solar_panel_frame_print.stl', placeOnBed(panelFrame)],
-  ['MSV4_case_gasket_TPU_print.stl', placeOnBed(gasket)],
-  ['MSV4_minimum_profile_integrated_solar_base_print.stl', placeOnBed(minimalBase)],
-  ['MSV4_minimum_profile_integrated_solar_lid_rear_edge_print.stl', rearEdgeDown(minimalLid, p.minimalOuterYMax)],
-];
-for (const [filename, shape] of printBodies) {
-  await writeBlob(path.join(outputDir, filename), shape.blobSTL(stlOptions()));
+const printFiles = {
+  'MSV4_arm_solar_PRINT.3mf': ['MSV4 arm solar enclosure', [
+    ['Base', placeOnBed(armBase)],
+    ['Lid', flipRoofDown(armLid, p.armLidTopZ)],
+    ['Solar Arm Left', armOnBed(leftArm)],
+    ['Solar Arm Right', armOnBed(rightArm)],
+    ['Solar Panel Frame', placeOnBed(panelFrame)],
+  ]],
+  'MSV4_integrated_solar_PRINT.3mf': ['MSV4 integrated solar enclosure', [
+    ['Base', placeOnBed(integratedBase)],
+    ['Lid', rearEdgeDown(integratedLid, p.caseYMax)],
+  ]],
+  'MSV4_minimum_profile_solar_PRINT.3mf': ['MSV4 minimum-profile solar enclosure', [
+    ['Base', placeOnBed(minimalBase)],
+    ['Lid', rearEdgeDown(minimalLid, p.minimalOuterYMax)],
+  ]],
+};
+for (const [filename, [title, bodies]] of Object.entries(printFiles)) {
+  writePrintFile(path.join(outputDir, filename), title, bodies);
 }
+// TPU, so it is kept off the rigid-material plates.
+writePrintFile(
+  path.join(referenceDir, 'MSV4_case_gasket_TPU_optional.3mf'),
+  'MSV4 case gasket (TPU, optional)',
+  [['Case Gasket TPU', placeOnBed(gasket)]],
+);
 
 const armCenterDistance = Math.hypot(
   p.armPanelPivotY - p.armPivotY,
@@ -974,8 +1019,8 @@ const roofCornerDistance = Math.hypot(
   p.armLidTopZ - p.armPivotZ,
 );
 const report = {
-  version: 'MSV4-enclosures-v5.1-centered-2p5v-panel-leads',
-  revisionNote: 'Moves both 1.6 mm solar lead passages to a centered pair matching the new 2.5 V panel on the integrated lid, minimum-profile lid, and articulated panel frame.',
+  version: 'MSV4-enclosures-v5.2-tall-cavity-single-wire-exit',
+  revisionNote: 'Raises the board-to-roof cavity from 4.0 to 7.0 mm on all three variants for the thicker battery, raises the arm panel pivot to match, replaces the two blocked arm-lid wire holes with one 3.0 mm side exit, and ships one multi-object 3MF per variant instead of loose STLs.',
   units: 'mm',
   source: path.relative(projectDir, sourcePcbPath),
   parameters: p,
@@ -989,7 +1034,7 @@ const report = {
     reason: 'MSV4 fab instruction specifies 1.6 mm FR4; Altium STEP contains the default thin stackup.',
   },
   closure: {
-    fastener: 'four M2 90-degree countersunk flat-head screws: 10 mm integrated lid, 8 mm arm lid',
+    fastener: 'four M2 90-degree countersunk flat-head screws: 12 mm integrated lid, 10 mm arm lid',
     insert: 'four M2 heat-set inserts in 2.90 mm x 3.20 mm blind pockets',
     screwStations: p.screwCenters,
     layout: 'unbroken circular lands inside a locally widened front shoulder; flush countersinks and no external ears',
@@ -1010,7 +1055,7 @@ const report = {
     batteryPlacementReference: {
       center: [p.batteryCenterX, p.batteryCenterY],
       bottomZ: p.batteryBottomZ,
-      note: 'Illustrative top-side 10 x 20 x 2 mm cell position; the user-selected 4.0 mm board-to-roof envelope is the controlling requirement.',
+      note: 'Illustrative top-side 10 x 20 x 3 mm (301020-class) cell position resting just above the local components; the 7.0 mm board-to-roof envelope leaves deliberate spare headroom to be trimmed after a fit print.',
     },
     ledWindow: {
       shape: 'teardrop pointing upward toward the antenna/top edge',
@@ -1044,6 +1089,12 @@ const report = {
       [-p.panelWireHoleCenterOffsetX, p.armPanelPivotY],
       [p.panelWireHoleCenterOffsetX, p.armPanelPivotY],
     ],
+    caseWireEntry: {
+      count: 1,
+      diameter: p.caseWireEntryDiameter,
+      center: [p.caseXMin + 1.70, p.armPivotY, p.caseWireEntryCenterZ],
+      side: 'negative-X lid wall, same side as the wire-channel arm',
+    },
     pivotCenterDistance: armCenterDistance,
     closedCaseThickness: p.armLidTopZ - p.baseBottomZ,
     minimumRoofSweepClearance: armCenterDistance - p.armEndRadius - roofCornerDistance,
@@ -1088,11 +1139,12 @@ const report = {
     dimensionalNote: 'print the fit coupons or one complete set before a batch; heat-set insert brands vary',
   },
 };
-fs.writeFileSync(path.join(outputDir, 'MSV4_enclosure_design_report.json'), `${JSON.stringify(report, null, 2)}\n`);
+fs.writeFileSync(path.join(referenceDir, 'MSV4_enclosure_design_report.json'), `${JSON.stringify(report, null, 2)}\n`);
 
 console.log(JSON.stringify({
   outputDir,
-  generatedFiles: fs.readdirSync(outputDir).sort(),
+  printFiles: Object.keys(printFiles),
+  referenceFiles: fs.readdirSync(referenceDir).sort(),
   integratedBase: measure(integratedBase),
   integratedLid: measure(integratedLid),
   armBase: measure(armBase),

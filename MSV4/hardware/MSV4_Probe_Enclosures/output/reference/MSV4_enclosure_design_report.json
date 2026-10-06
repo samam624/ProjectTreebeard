@@ -1,6 +1,6 @@
 {
-  "version": "MSV4-enclosures-v5.1-centered-2p5v-panel-leads",
-  "revisionNote": "Moves both 1.6 mm solar lead passages to a centered pair matching the new 2.5 V panel on the integrated lid, minimum-profile lid, and articulated panel frame.",
+  "version": "MSV4-enclosures-v5.2-tall-cavity-single-wire-exit",
+  "revisionNote": "Raises the board-to-roof cavity from 4.0 to 7.0 mm on all three variants for the thicker battery, raises the arm panel pivot to match, replaces the two blocked arm-lid wire holes with one 3.0 mm side exit, and ships one multi-object 3MF per variant instead of loose STLs.",
   "units": "mm",
   "source": "..\\MSV4.step",
   "parameters": {
@@ -24,9 +24,9 @@
     "baseFloorTopZ": -3.3,
     "baseTopZ": 0.25,
     "lidBottomZ": 0.3,
-    "lidInnerRoofZ": 4,
-    "armLidTopZ": 5,
-    "integratedLidTopZ": 6.4,
+    "lidInnerRoofZ": 7,
+    "armLidTopZ": 8,
+    "integratedLidTopZ": 9.4,
     "pcbClampInterference": 0.1,
     "frontTransitionEndY": 98.8,
     "probeOuterBottomZ": -2.3,
@@ -80,7 +80,7 @@
     "minimalBaseFloorTopZ": -3.25,
     "minimalBaseTopZ": 0.25,
     "minimalLidBottomZ": 0.3,
-    "minimalLidTopZ": 6.4,
+    "minimalLidTopZ": 9.4,
     "minimalGrooveXYClearance": 0.25,
     "minimalGrooveBottomZ": -1.75,
     "minimalGrooveTopZ": 0.15,
@@ -90,7 +90,7 @@
     "armPivotY": 121.5,
     "armPivotZ": -2.1,
     "armPanelPivotY": 149.2,
-    "armPanelPivotZ": 14,
+    "armPanelPivotZ": 17,
     "armThickness": 1.6,
     "armEndRadius": 2.8,
     "armClearanceDiameter": 2.4,
@@ -99,23 +99,20 @@
     "pivotBossRadius": 3,
     "panelFrameWidth": 32.8,
     "panelFrameLength": 38.8,
-    "panelFrameBackZ": 12.7,
+    "panelFrameBackZ": 15.7,
     "panelFrameThickness": 2.6,
     "panelFrameCornerRadius": 1.4,
-    "caseWireEntryDiameter": 1.6,
-    "caseWireEntryCentersZ": [
-      1.35,
-      3.2
-    ],
+    "caseWireEntryDiameter": 3,
+    "caseWireEntryCenterZ": 4,
     "batteryNominal": [
       10,
       20,
-      2
+      3
     ],
     "batteryReference": [
       10.4,
       20.4,
-      2.2
+      3.2
     ],
     "batteryCenterX": -7,
     "batteryCenterY": 113,
@@ -131,7 +128,7 @@
     "reason": "MSV4 fab instruction specifies 1.6 mm FR4; Altium STEP contains the default thin stackup."
   },
   "closure": {
-    "fastener": "four M2 90-degree countersunk flat-head screws: 10 mm integrated lid, 8 mm arm lid",
+    "fastener": "four M2 90-degree countersunk flat-head screws: 12 mm integrated lid, 10 mm arm lid",
     "insert": "four M2 heat-set inserts in 2.90 mm x 3.20 mm blind pockets",
     "screwStations": [
       {
@@ -165,13 +162,13 @@
     "noseThickness": 3,
     "transition": "planform follows the PCB shoulder and both exterior Z faces slope to a 3.0 mm shell around the 1.6 mm blade",
     "boardSideClearance": 0.35,
-    "internalRoofZ": 4,
+    "internalRoofZ": 7,
     "baseFloorZ": -3.3,
     "pcbClampInterference": 0.1,
     "batteryClearanceReference": [
       10.4,
       20.4,
-      2.2
+      3.2
     ],
     "batteryPlacementReference": {
       "center": [
@@ -179,7 +176,7 @@
         113
       ],
       "bottomZ": 1.7,
-      "note": "Illustrative top-side 10 x 20 x 2 mm cell position; the user-selected 4.0 mm board-to-roof envelope is the controlling requirement."
+      "note": "Illustrative top-side 10 x 20 x 3 mm (301020-class) cell position resting just above the local components; the 7.0 mm board-to-roof envelope leaves deliberate spare headroom to be trimmed after a fit print."
     },
     "ledWindow": {
       "shape": "teardrop pointing upward toward the antenna/top edge",
@@ -213,7 +210,7 @@
         122
       ]
     ],
-    "closedCaseThickness": 10.9,
+    "closedCaseThickness": 13.9,
     "overallBounds": {
       "base": {
         "min": [
@@ -233,14 +230,14 @@
         "min": [
           -18.300000150000002,
           94.79999984999999,
-          -0.1000001500000001
+          -0.10000015000000001
         ],
         "max": [
-          18.300000150000002,
+          18.300000150000006,
           148.50000015,
-          6.40000015
+          9.400000150000002
         ],
-        "volume": 4390.337057314921,
+        "volume": 6260.802086260892,
         "solidCount": 1
       },
       "gasket": {
@@ -285,9 +282,19 @@
         149.2
       ]
     ],
-    "pivotCenterDistance": 32.039038687201575,
-    "closedCaseThickness": 9.5,
-    "minimumRoofSweepClearance": 1.3211232922441667,
+    "caseWireEntry": {
+      "count": 1,
+      "diameter": 3,
+      "center": [
+        -16.6,
+        121.5,
+        4
+      ],
+      "side": "negative-X lid wall, same side as the wire-channel arm"
+    },
+    "pivotCenterDistance": 33.646693745448445,
+    "closedCaseThickness": 12.5,
+    "minimumRoofSweepClearance": 2.0194496870928162,
     "pivotHardware": "four additional M2 x 5-6 mm screws and four 2.90 x 3.20 mm heat-set inserts",
     "overallBounds": {
       "base": {
@@ -308,14 +315,14 @@
         "min": [
           -18.300000150000002,
           94.79999984999999,
-          -0.1000001500000001
+          -0.10000015000000001
         ],
         "max": [
-          18.300000150000006,
+          18.300000150000002,
           148.50000015,
-          5.00000015
+          8.000000150000005
         ],
-        "volume": 3768.2177328057287,
+        "volume": 5624.433350601661,
         "solidCount": 1
       },
       "leftArm": {
@@ -327,37 +334,37 @@
         "max": [
           -20.399999849999997,
           152.00000015,
-          16.800000150000002
+          19.800000150000002
         ],
-        "volume": 270.7616406135167,
+        "volume": 282.8672832021153,
         "solidCount": 1
       },
       "rightArm": {
         "min": [
           20.39999989999999,
           118.6999999,
-          -4.9000001000000095
+          -4.900000100000008
         ],
         "max": [
           22.00000010000001,
-          152.00000010000002,
-          16.80000010000001
+          152.0000001,
+          19.80000010000001
         ],
-        "volume": 312.0014659362151,
+        "volume": 326.4060552581066,
         "solidCount": 1
       },
       "panelFrame": {
         "min": [
           -20.40000015,
           129.79999984999998,
-          11.29999985
+          14.29999985
         ],
         "max": [
           20.40000015,
           168.60000015,
-          16.70000015
+          19.70000015
         ],
-        "volume": 1670.9167303767538,
+        "volume": 1670.9167303767542,
         "solidCount": 1
       }
     }
@@ -396,7 +403,7 @@
       "panelRearEdgeY": 140,
       "separation": 0.75
     },
-    "closedCaseThickness": 10.65,
+    "closedCaseThickness": 13.65,
     "overallBounds": {
       "base": {
         "min": [
@@ -421,9 +428,9 @@
         "max": [
           16.20000015,
           146.20000015,
-          6.40000015
+          9.40000015
         ],
-        "volume": 3455.211009122722,
+        "volume": 4671.891009122719,
         "solidCount": 1
       }
     },

@@ -24,10 +24,14 @@ instead of ending in a full-thickness rectangular wall. The central body is
 33.2 mm wide; only the front screw shoulder reaches 36.6 mm so every M2
 countersink has a complete circular land. Overall length is 53.7 mm.
 
-The top-side cavity roof is fixed at 4.0 mm above the PCB. The base is no longer
-sized around the battery: its floor follows the actual bottom-side component
-envelope from `MSV4.step`, with 0.354 mm clearance below the lowest SWD/LED
-geometry and a 1.2 mm closed floor. The battery belongs above the PCB.
+The top-side cavity roof is 7.0 mm above the PCB. Version 5.2 raised it from
+4.0 mm because the battery actually fitted is a 3 mm-thick 301020-class cell
+that rests on top-side components, not the 2 mm cell first assumed. The base is not sized around the battery: its floor follows the actual
+bottom-side component envelope from `MSV4.step`, with 0.354 mm clearance below
+the lowest SWD/LED geometry and a 1.2 mm closed floor. The battery belongs
+above the PCB.
+
+The renders below are from version 5 and show the earlier, 3 mm lower lids.
 
 ![Low-profile integrated solar enclosure](renders/integrated_v5_top.png)
 
@@ -37,16 +41,18 @@ geometry and a 1.2 mm closed floor. The battery belongs above the PCB.
 
 ## Deliverables
 
-The source STEP assemblies and individual bodies are in `output/`. Files ending
-in `_print.stl` are oriented and ready for OrcaSlicer or Bambu Studio. See
-`output/PRINT_IN_BAMBU_OR_ORCA.md` before printing.
+`output/` holds one drag-and-drop print file per enclosure and nothing else:
 
-Convenience packages:
+- `MSV4_arm_solar_PRINT.3mf`
+- `MSV4_integrated_solar_PRINT.3mf`
+- `MSV4_minimum_profile_solar_PRINT.3mf`
 
-- `MSV4_v5_integrated_solar_slicer_pack.zip`
-- `MSV4_v5_arm_solar_slicer_pack.zip`
-- `MSV4_v5_minimum_profile_solar_slicer_pack.zip`
-- `MSV4_v5_three_enclosure_CAD_pack.zip`
+Each imports into Bambu Studio or OrcaSlicer as separate, named, pre-oriented
+objects. See `PRINTING.md` before printing.
+
+`output/reference/` holds everything else: the STEP bodies and assemblies, the
+fit-check assemblies, the design and validation reports, and the optional TPU
+gasket.
 
 ## Recommended development workflow
 
@@ -68,11 +74,11 @@ still being developed:
 A future arm-mounted enclosure with a glued base-to-lid seam and no body screws
 may be worthwhile if testing shows that adjustable solar angle is valuable but
 the case fasteners are not. That version is intentionally deferred; it is not
-part of the current v5 release.
+part of the current release.
 
 The normal assemblies contain the enclosure parts plus a clearly named
 do-not-print solar-panel reference. The fit-check assemblies additionally
-contain the corrected PCB and an illustrative 10 x 20 x 2 mm top-side battery
+contain the corrected PCB and an illustrative 10 x 20 x 3 mm top-side battery
 placement reference. The minimum-profile fit check also includes a red E73
 antenna keepout reference. The STEP assemblies open directly in Fusion 360
 and preserve separate assembly solids; no Fusion conversion is required.
@@ -89,25 +95,28 @@ original STEP footprint. The mismatch volume is 0 mm3. The validator also
 checks the complete straight blade through both halves of the split throat;
 the collision volume is 0 mm3 in both variants.
 
-Measured and checked version 5 clearances are:
+Measured and checked version 5.2 clearances are:
 
 - 0.35 mm at each PCB side
-- 0.898 mm above the tallest top component within the 4.0 mm roof envelope
+- 3.898 mm above the tallest top component within the 7.0 mm roof envelope
 - 0.354 mm below the lowest corrected bottom component
 - 0.250 mm below the illustrative top-side battery placement
-- 0.100 mm between that 2.2 mm battery reference and the internal roof
+- 2.100 mm between that 3.2 mm battery reference and the internal roof; this
+  spare headroom is intentional for the first fit print and is expected to be
+  reduced afterwards
 - 0.10 mm nominal PCB rail clamp interference
-- 1.321 mm minimum arm sweep clearance over the lid
+- 2.019 mm minimum arm sweep clearance over the lid
 - 0 mm3 battery-to-component, panel-to-pocket, and reference-to-shell collision
 - 100% of the validated perimeter ring present around all eight case countersinks
 
-The integrated-panel central case is 10.90 mm thick and the arm-mount central
-case is 9.50 mm thick. The arm pivot bosses are local features and bring that
-variant to 10.10 mm only at the pivots. These stacks retain a 1.2 mm closed
-floor and a 0.8 mm solar-pocket back wall while holding the user-selected
-4.0 mm board-to-roof space.
+The integrated-panel central case is 13.90 mm thick and the arm-mount central
+case is 12.50 mm thick. The arm pivot bosses are local features and bring that
+variant to 13.10 mm only at the pivots. These stacks retain a 1.2 mm closed
+floor, a 1.0 mm arm-lid roof, and a 0.8 mm solar-pocket back wall, so the
+extra battery room comes entirely from height: none of those skins had 3 mm
+to give.
 
-The minimum-profile enclosure is 10.65 mm thick overall and 32.4 x 50.2 mm in
+The minimum-profile enclosure is 13.65 mm thick overall and 32.4 x 50.2 mm in
 plan. Its base provides a 1.0 mm closed back below the component cavity. The
 groove follows the real PCB head and shoulder with 0.25 mm XY and 0.15 mm Z
 clearance, while the lowest corrected back-side component has 0.304 mm floor
@@ -120,6 +129,12 @@ was not supplied. Measure it before committing to a final print and change
 Version 5.1 places the two 1.6 mm lead passages as a centered pair, 4.0 mm
 apart, to match the rear terminals on the new 2.5 V panels. This centered
 layout is shared by the integrated lid, minimum-profile lid, and arm frame.
+
+On the arm variant, both leads enter the case through a single 3.0 mm hole in
+the negative-X side wall of the lid at the pivot station, as on MSV3. It
+replaces two 1.6 mm holes that stopped 0.05 mm short of the PCB compression
+rail and so never opened into the cavity. The arm panel pivot is 3 mm higher
+than in version 5.1 so the panel keeps its height above the taller lid.
 
 ## Water resistance
 
@@ -147,8 +162,8 @@ and LED window before leak testing.
 
 The integrated and arm cases use:
 
-- integrated version: 4 x M2 x 10 mm, 90-degree countersunk flat-head screws
-- arm version: 4 x M2 x 8 mm, 90-degree countersunk flat-head screws
+- integrated version: 4 x M2 x 12 mm, 90-degree countersunk flat-head screws
+- arm version: 4 x M2 x 10 mm, 90-degree countersunk flat-head screws
 - 4 x M2 heat-set inserts, nominally 3 mm OD x 3 mm long
 
 The insert pilots are blind, 2.90 mm diameter x 3.20 mm deep. The arm variant
@@ -167,10 +182,12 @@ node tools/validate_enclosures.mjs
 ```
 
 The validator checks solid counts, source-PCB fidelity, component collisions,
-fastener openings, arm sweep, assembly overlap, and STL manifoldness. The
-current report is `output/MSV4_enclosure_validation_report.json`.
+fastener openings, arm sweep, assembly overlap, and that every object in each
+print file is a watertight mesh sitting on the bed. The current report is
+`output/reference/MSV4_enclosure_validation_report.json`.
 
 If native Fusion archives are desired later, run
 `fusion/MSV4_Enclosure_Assemblies/MSV4_Enclosure_Assemblies.py` from Fusion's
 Utilities > Scripts and Add-Ins dialog. It imports the checked STEP assemblies
-and writes F3D plus Fusion-translated STEP files to `output/fusion_exports/`.
+and writes F3D plus Fusion-translated STEP files to
+`output/reference/fusion_exports/`.

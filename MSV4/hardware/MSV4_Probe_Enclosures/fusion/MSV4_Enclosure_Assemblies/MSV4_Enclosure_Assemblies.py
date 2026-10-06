@@ -107,7 +107,7 @@ def _resolve_project_dir(script_dir):
 
     required = 'MSV4_integrated_solar_enclosure_assembly.step'
     for candidate in candidates:
-        if os.path.isfile(os.path.join(candidate, 'output', required)):
+        if os.path.isfile(os.path.join(candidate, 'output', 'reference', required)):
             return os.path.abspath(candidate)
     raise RuntimeError(
         'Could not locate MSV4_Probe_Enclosures. Checked: {}'.format(
@@ -119,7 +119,7 @@ def run(_context):
     ui = app.userInterface
     script_dir = os.path.dirname(os.path.realpath(__file__))
     project_dir = _resolve_project_dir(script_dir)
-    output_dir = os.path.join(project_dir, 'output')
+    output_dir = os.path.join(project_dir, 'output', 'reference')
     fusion_dir = os.path.join(output_dir, 'fusion_exports')
     os.makedirs(fusion_dir, exist_ok=True)
 

@@ -4,7 +4,8 @@ First MSV4 board built, flashed and brought up end to end. This is a dated recor
 true on this date; it is not a description of the board's current state.
 
 **Result:** every console-reachable item in the checklist's "Bring-up checks" stage passed after
-three solder faults were reworked. Still open: scope timing of DRV/READ_CNTL (`phase 0/4/8/12`), a
+three solder faults were reworked. Still open: scope timing of DRV/READ_CNTL (`phase 0/4/8/12`;
+closed 2026-10-06, see Open items), a
 real soil test (waiting on thermistor epoxy), and an MSV4-specific DFU device type.
 
 | | |
@@ -139,7 +140,29 @@ patches. The first real soil test will establish board 1's actual Cm and Rsoil r
 
 ## Open items
 
-- [ ] Scope DRV and READ_CNTL at `phase 0/4/8/12` against the bring-up doc's timing table
+- [x] Scope DRV and READ_CNTL at `phase 0/4/8/12` against the bring-up doc's timing table
+      — *done by the maintainer on 2026-10-06, as reported from the bench (no captures saved):
+      `drive 16` gives 1.00 MHz, 0 to 3.3 V on `DRV` with a compensated ×10 probe; `SNS` shows the
+      RC divider waveform on both `swap a` and `swap b` and its amplitude drops with a hand on the
+      blade; `READ_CNTL` shifted by the correct amount against `DRV` for each single step
+      `phase 0` to `phase 5` per the Lab console log (62.5 ns per step at N = 16; k = 8 and 12
+      were not stepped separately); with `chop on`, `SNSO` moves with a thumb on the blade and `DRVO` does not.
+      Ringing of about 200 ns on the `DRV` edges was seen through long flying leads and an
+      initially over-compensated probe; its source on the board itself was not isolated.*
+
+      *Console `iq` at 1 MHz, `swap a`, scope probe removed, same session (2026-10-06, measured):*
+
+      | | `sense` A | `sense` phi | `drv` A |
+      |---|---|---|---|
+      | Air | 761.45 mV | −177.5° | 777.94 mV |
+      | Hand on blade | 445.48 mV | −145.0° | 763.43 mV |
+      | Air again | 761.92 mV | −177.4° | 778.79 mV |
+
+      *Air repeats to 0.5 mV and 0.1°, and agrees with the 2026-10-01 air row above (760 mV,
+      182.3° = −177.7°). `drv` sags about 1.9 % under the hand load, more than the "770–776 mV
+      throughout" noted above; `spectrum` normalises by it. With `swap open` (the state `safe`
+      leaves) `iq` reads the reference only: sense 787.7–788.1 mV at 178.8°, drv 778.5–779.8 mV,
+      unaffected by a hand — seven runs, all within that range.*
 - [ ] Epoxy the tip NTC, then run the soil test (`spectrum open`, `spectrum ab`, `moisture` in damp mix)
 - [ ] Show the charger actually charging, then stopping at ~3.89 V, using a cell below 3.85 V
 - [ ] MSV4 needs its own DFU device type before fleet use; today it shares MSV3's (`-AcceptSharedMsv3DeviceType`)
