@@ -114,20 +114,59 @@ for current instead, which is why the specification's 32.7 mA at +8 dBm becomes 
 6.3 mA of CPU becomes 3.3 mA. It needs an inductor between the chip's DCC and DEC4 pins. In
 sleep it makes no difference.
 
-Whether the E73-2G4M08S1C module has that inductor is **not established**:
+**The E73-2G4M08S1C module almost certainly has that inductor inside it. This is inferred from
+four independent sources; nothing has been measured on a Treebeard board.** (Researched later
+on 2026-10-06; the first version of this section said "not established".) The module does *not*
+have the separate inductor for the high-voltage stage (REG0, pin DCCH), which does not matter
+here: MSV4 ties VDD and VDDH to the same 3.3 V rail, so that stage is bypassed.
 
-- For: Ebyte's manual quotes the module's own transmit currents "(DC/DC, 3 V)" as 17.05, 12.68
-  and 7.63 mA at +8, +4 and 0 dBm, which are not Nordic's chip figures, so Ebyte appears to have
-  measured the module in DC/DC mode. The module exposes only the high-voltage stage's DCCH pin,
-  so the inductor for the main stage would have to be inside it.
-- Against: a Nordic DevZone report of this exact module drawing 30 mA after
-  `sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE)`. It was never resolved; the poster suspected
-  their measurement setup.
+1. **Ebyte's current table can only have been taken in DC/DC mode.** Module figures from the
+   manual against the nRF52840 specification, mA at 3 V:
 
-It was not tried on board 1. If the inductor is missing, enabling the converter can brown the
-chip out at every boot, and a brownout does not advance the boot counter, so the board would not
-escape to DFU on its own. It needs a bench test with a current meter and SWD at hand. Modelled
-saving if it works: about 0.4 mAh/day on top of 262154.
+   | | Ebyte module | Nordic, radio only, DC/DC | Nordic, CPU + radio, DC/DC | Nordic, radio only, linear |
+   |---|---:|---:|---:|---:|
+   | TX +8 dBm | 17.05 | 14.8 | – | 32.7 |
+   | TX +4 dBm | 12.68 | 9.6 | – | 21.4 |
+   | TX 0 dBm | 7.63 | 4.8 | 8.1 | 10.6 |
+   | RX 1 Mbps | 7.71 | 4.6 | 8.6 | 9.9 |
+   | RX 2 Mbps | 8.27 | 5.2 | – | 11.1 |
+
+   Every Ebyte figure is below the linear-regulator figure for the radio alone, and they are not
+   copies of Nordic's numbers. Ebyte's 5 V figure at 0 dBm is 7.25 mA, almost the same as at 3 V,
+   which is what a working main-stage converter behind a *linear* high-voltage stage gives
+   (Nordic's figure with both stages converting is 3.0 mA). That matches item 3.
+2. **The inductor has nowhere else to be.** The module's 43 pads include VDD, VDDH and DCCH but
+   neither DCC nor DEC4, so a main-stage inductor cannot be added from outside.
+3. **The designer of the nRFMicro**, a board built on this module, writes in its wiki that the
+   E73 uses Nordic's reference configuration with DC/DC on the main stage, and that the 10 µH on
+   DCCH for the high-voltage stage has to be added on the carrier board.
+4. **ZMK turns the main-stage converter on by default on two boards built on this module**
+   (`nrfmicro_nrf52840.dts`: `&reg1 { regulator-initial-mode = <NRF5X_REG_MODE_DCDC>; }`;
+   `bluemicro840/Kconfig`: `BOARD_ENABLE_DCDC ... default y`). The nRF52840 specification says
+   enabling it with no LC filter "will inhibit device operation, including debug access", so
+   those keyboards would not run if the inductor were missing.
+
+Two reports that look like the opposite and are not:
+
+- A MySensors forum thread (September 2017) measured that Ebyte's module has no DC/DC inductors:
+  with `DCDCEN` set it sat in a boot loop until two inductors were soldered between DCC and
+  DEC4. That was Ebyte's **nRF52832** module, a different part. It is the origin of most "the
+  Ebyte module has no inductor" statements, and it is a measured example of what a missing
+  inductor looks like.
+- A Nordic DevZone report of the E73-2G4M08S1C drawing 30 mA after
+  `sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE)`. Never resolved; the poster suspected their
+  measurement setup. The chip was running, which is not what a missing inductor does.
+
+No photograph or X-ray of the module with its shield off was found, and Ebyte publishes no
+schematic of it, so the last step is still a test on our own hardware. Nothing in this project
+has ever exercised the converter: the Arduino core does not set `DCDCEN` (its only power call
+passes a zeroed configuration) and the MSV3 bootloader leaves `ENABLE_DCDC_1` at 0, so the MSV3
+fleet running on the same module proves nothing either way.
+
+It was not tried on board 1. If the inductor were missing after all, the chip would stop or
+loop through resets (the 2017 nRF52832 measurement was a boot loop), and the application would
+switch the converter on again after every reset, so the board would stay silent until it was
+reflashed over SWD. Modelled saving once enabled: about 0.4 mAh/day on top of 262154.
 
 ## The battery reading depended on the boot (found and fixed 2026-10-06)
 
@@ -393,6 +432,8 @@ rows and its script parses, but nobody has looked at the rendered charts yet.
 - [ ] MSV4 still shares MSV3's DFU device type `0x3356`. `msv4_ble_ota.py` refuses an MSV3 image
       by its identity string, but the bootloader itself would accept one
 - [ ] Measure sleep current and per-wake charge
-- [ ] Bench-test the nRF52840 DC/DC regulator on an E73 module, with a current meter and SWD
+- [ ] Enable the nRF52840 DC/DC regulator on a board that is on the bench with SWD at hand (the
+      inductor is inferred present, see "The chip's DC/DC regulator"); a current meter would
+      also give the first measured supply current
 - [ ] Time the fit with the blade in soil; if it is still slow, stop iterating once the
       conductance has fallen below what the packet can report
