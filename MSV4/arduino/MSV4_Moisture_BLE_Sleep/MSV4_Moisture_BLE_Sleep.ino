@@ -109,6 +109,7 @@ struct MoistureReading
   uint32_t rsoilDeciOhm;
   uint16_t cmDeciPf;
   uint8_t rmsE4;
+  uint16_t cdCentiPf;
 };
 
 struct RetainedRecord
@@ -241,7 +242,8 @@ static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
 static uint32_t g_advertCount = 0;
 static uint32_t g_lastAdvertOkMs = 0;
 
-static MoistureReading g_reading = {false, 0, 0, 0};
+static MoistureReading g_reading = {false, 0, 0, 0, 0};
+static char g_hardwareRev[24];
 static uint8_t g_wakesUntilMoisture = 0;   // 0 = measure on this wake
 
 // ------------------------------------------------------------------------- low-level utils ---
@@ -716,7 +718,7 @@ constexpr double SPEC_RS = 1000.0;       // R15
 // Replaced at boot by calibrateCp(). Board 1 measured 8.8 pF through the console on 2026-10-01.
 constexpr double SPEC_CP_DEFAULT = 12e-12;
 constexpr double SPEC_CP_MIN = 2e-12;
-constexpr double SPEC_CP_MAX = 25.5e-12;  // the wire field is one byte of 0.1 pF
+constexpr double SPEC_CP_MAX = 25.5e-12;  // plausibility bound for the boot calibration
 static double g_specCp = SPEC_CP_DEFAULT;
 static const uint16_t SPEC_N[] = {64, 48, 32, 24, 16, 12, 8, 6};  // 250 kHz .. 2.67 MHz
 constexpr int SPEC_NF = sizeof(SPEC_N) / sizeof(SPEC_N[0]);
@@ -912,22 +914,25 @@ static double specFit(const SpecSet& s, double* p, const bool* freeP, double cp,
 
 // Electrodes floating (U3 /OE high), so Ye = 0 and the sweep sees only the SENSE node's own
 // parasitics. Runs once per boot, whatever the blade is standing in, and keeps the result in RAM.
-// A failed sweep or an out-of-range fit leaves the default in place; the packet reports which Cp
-// was used. NOT YET MEASURED: whether Cp taken with the blade in soil differs from Cp in air.
-static void calibrateCp()
+// A failed sweep or an out-of-range fit leaves the default in place and returns false; the DIS
+// hardware revision string says which Cp is in use. NOT YET MEASURED: whether Cp taken with the
+// blade in soil differs from Cp in air.
+static bool calibrateCp()
 {
   setSwap(SwapState::Open);
   setChopEnabled(true);
   SpecSet s;
   const bool ok = specSweep(s);
   allSafe();
-  if (!ok) return;
+  if (!ok) return false;
   // Fit Cp alone: Cm tiny makes zm huge, so the series branch vanishes, Ye = jw*Cd, and Cd plays
   // Cp's role.
   double p[3] = {1e-15, 1e-12, g_specCp}, sig[3];
   const bool freeP[3] = {false, false, true};
   specFit(s, p, freeP, 0.0, sig);
-  if (p[2] >= SPEC_CP_MIN && p[2] <= SPEC_CP_MAX) g_specCp = p[2];
+  if (p[2] < SPEC_CP_MIN || p[2] > SPEC_CP_MAX) return false;
+  g_specCp = p[2];
+  return true;
 }
 
 // Sweeps both orientations, averages the complex transfers, and fits {Cm, Gs, Cd}.
@@ -968,20 +973,22 @@ static bool runSpectrumFit(double* best, double& bestRms)
 // 5,000,000-count floor the receiver applies to an MSV3 FDC count, so a receiver that does not yet
 // know this packet treats it as a failed reading instead of storing ohms as counts.
 constexpr uint32_t RSOIL_DECIOHM_MAX = 4000000UL;
+// Rsoil therefore needs only three of its four bytes; the fourth carries the fit residual.
+static_assert(RSOIL_DECIOHM_MAX < (1UL << 24), "Rsoil must fit 24 bits: mfg[13] is the residual");
 // The fit occasionally collapses to ~0 ohm with an enormous uncertainty when there is nothing to
 // conduct. That is "no fit", not "very wet".
 constexpr double RSOIL_MIN_VALID_OHM = 1.0;
 
 static MoistureReading takeMoistureReading()
 {
-  MoistureReading out = {false, 0, 0, 0};
+  MoistureReading out = {false, 0, 0, 0, 0};
   double best[3] = {}, bestRms = 0;
   const bool swept = runSpectrumFit(best, bestRms);
   allSafe();
   if (!swept) return out;
 
-  const double cm = best[0], gs = best[1];
-  if (!(gs > 0.0) || !(cm > 0.0) || !isfinite(bestRms)) return out;
+  const double cm = best[0], gs = best[1], cd = best[2];
+  if (!(gs > 0.0) || !(cm > 0.0) || !(cd > 0.0) || !isfinite(bestRms)) return out;
   const double rsoil = 1.0 / gs;
   if (!isfinite(rsoil) || rsoil < RSOIL_MIN_VALID_OHM) return out;
 
@@ -991,6 +998,10 @@ static MoistureReading takeMoistureReading()
   out.cmDeciPf = cmDeci >= 65535.0 ? 65535 : (uint16_t)cmDeci;
   const double rmsE4 = bestRms * 1e4 + 0.5;
   out.rmsE4 = rmsE4 >= 255.0 ? 255 : (uint8_t)rmsE4;
+  // 0.01 pF units: console repeats on board 1 in air were 12.98-13.03 pF, so anything coarser
+  // would hide the measurement's own scatter. 0 is reserved for "not sent".
+  const double cdCenti = cd * 1e14 + 0.5;
+  out.cdCentiPf = cdCenti >= 65535.0 ? 65535 : (cdCenti < 1.0 ? 1 : (uint16_t)cdCenti);
   out.valid = true;
   return out;
 }
@@ -1003,8 +1014,12 @@ static MoistureReading takeMoistureReading()
 // [2-5]   magic "MSV2"
 // [6]     sensorId
 // [7-9]   advertisement counter, 24-bit LE (the receiver's "wake")
-// [10-13] Rsoil, uint32 LE, units of 0.1 ohm, NOT temperature-corrected. Saturates at
-//         RSOIL_DECIOHM_MAX. Zero when bit5 is set.
+// [10-12] Rsoil, 24-bit LE, units of 0.1 ohm, NOT temperature-corrected. Saturates at
+//         RSOIL_DECIOHM_MAX, which means nothing is conducting (blade in air, or no soil
+//         contact); it is a ceiling, not a measured 400 kohm. Zero when bit5 is set.
+// [13]    fit RMS residual, units of 1e-4 of drive, saturating (layout B, see [25]). This byte
+//         was Rsoil's always-zero top byte before, so a reader that still takes [10-13] as one
+//         uint32 sees an out-of-range resistance and rejects the reading rather than misreading it.
 // [14-15] battery mV, 16-bit LE
 // [16]    flags: bit0 = 0 (this board has no charger status line)
 //                bit1 = the moisture fields were measured on this wake (0 = repeated)
@@ -1015,12 +1030,20 @@ static MoistureReading takeMoistureReading()
 //                bit6 = 0 (MSV3 capless tank)
 //                bit7 = MSV4 conductance packet
 // [17-18] blade-tip NTC temperature, signed int16 LE, quarter-degrees C (0 when bit2 is clear)
-// [19-20] Cm, uint16 LE, units of 0.1 pF, saturating. Contact quality, not moisture.
-// [21]    Cp the fit used, units of 0.1 pF. 120 means the boot calibration fell back to default.
-// [22]    fit RMS residual, units of 1e-4 of drive, saturating
+// [19-20] Cm, uint16 LE, units of 0.1 pF, saturating. Contact quality, not moisture, and only
+//         meaningful while something conducts: it reads 0 with the blade in air.
+// [21-22] Cd, uint16 LE, units of 0.01 pF, saturating; 0 = not sent (layout B). The direct plate
+//         capacitance, and the one fitted quantity that is still a live measurement with the
+//         blade in air: 12.98-13.03 pF on board 1 through the console, 2026-10-06.
 // [23-24] nRF52840 die temperature, signed int16 LE, quarter-degrees C (0 when flags2 bit0 is
 //         clear). The board end of the probe, NOT the soil: [17-18] is the soil.
-// [25]    flags2: bit0 = die temperature valid; bits 1-7 = 0
+// [25]    flags2: bit0 = die temperature valid
+//                 bit1 = layout B: [13] is the residual and [21-22] are Cd. Clear in packets
+//                        from application versions 262148/262150 (layout A), where [13] was 0,
+//                        [21] was Cp in 0.1 pF and [22] was the residual.
+//                 bits 2-7 = 0
+// Cp is no longer in the packet: it is a per-boot calibration constant, and it is published as
+// the DIS hardware revision string instead ("Cp 8.76 pF").
 //
 // Bytes 23-25 were added in application version 262150. A 23-byte packet from 262148 is still
 // valid; readers must treat the tail as optional. The three bytes came from dropping the TX Power
@@ -1035,6 +1058,7 @@ static MoistureReading takeMoistureReading()
 #define ADV_FLAG_MSV4            (1U << 7)
 
 #define ADV_FLAG2_DIE_TEMP_OK    (1U << 0)
+#define ADV_FLAG2_LAYOUT_B       (1U << 1)
 
 constexpr size_t MFG_LEN = 26;
 static_assert(3 /* Flags */ + 2 /* manufacturer-data header */ + MFG_LEN <= 31,
@@ -1075,7 +1099,7 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
   const int16_t dieQ4 = dieTempOk ? dieTempQ4 : 0;
   const uint32_t rsoil = reading.valid ? reading.rsoilDeciOhm : 0;
   const uint16_t cm = reading.valid ? reading.cmDeciPf : 0;
-  const double cpDeci = g_specCp * 1e13 + 0.5;
+  const uint16_t cd = reading.valid ? reading.cdCentiPf : 0;
 
   uint8_t mfg[MFG_LEN];
   mfg[0] = lowByte(BLE_COMPANY_ID);
@@ -1088,7 +1112,7 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
   mfg[10] = (uint8_t)(rsoil & 0xFF);
   mfg[11] = (uint8_t)((rsoil >> 8) & 0xFF);
   mfg[12] = (uint8_t)((rsoil >> 16) & 0xFF);
-  mfg[13] = (uint8_t)((rsoil >> 24) & 0xFF);
+  mfg[13] = reading.valid ? reading.rmsE4 : 0;
   mfg[14] = (uint8_t)(batteryMv & 0xFF);
   mfg[15] = (uint8_t)((batteryMv >> 8) & 0xFF);
   mfg[16] = ADV_FLAG_MSV4 |
@@ -1100,11 +1124,11 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
   mfg[18] = (uint8_t)(((uint16_t)tempQ4 >> 8) & 0xFF);
   mfg[19] = (uint8_t)(cm & 0xFF);
   mfg[20] = (uint8_t)((cm >> 8) & 0xFF);
-  mfg[21] = cpDeci >= 255.0 ? 255 : (uint8_t)cpDeci;
-  mfg[22] = reading.valid ? reading.rmsE4 : 0;
+  mfg[21] = (uint8_t)(cd & 0xFF);
+  mfg[22] = (uint8_t)((cd >> 8) & 0xFF);
   mfg[23] = (uint8_t)((uint16_t)dieQ4 & 0xFF);
   mfg[24] = (uint8_t)(((uint16_t)dieQ4 >> 8) & 0xFF);
-  mfg[25] = dieTempOk ? ADV_FLAG2_DIE_TEMP_OK : 0;
+  mfg[25] = ADV_FLAG2_LAYOUT_B | (dieTempOk ? ADV_FLAG2_DIE_TEMP_OK : 0);
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
@@ -1221,17 +1245,6 @@ void setup()
   Bluefruit.setTxPower(8);
   Bluefruit.setName(DEVICE_NAME);
 
-  bledis.setManufacturer("Treebeard");
-  bledis.setModel("MSV4");
-  bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
-  bledis.setSoftwareRev(MSV4_STRINGIFY(MSV4_APP_VERSION));
-  bledis.begin();
-
-  g_otaServiceReady = bledfu.begin() == ERROR_NONE;
-  Bluefruit.Periph.setConnectCallback(otaConnectCallback);
-  Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
-  Bluefruit.Advertising.setFastTimeout(ADV_FAST_TIMEOUT_SECONDS);
-
   // LFCLK after SoftDevice enable is the source that matters. Off the crystal here means the
   // SoftDevice could not hold it: fail closed into DFU rather than run on a clock nobody chose.
   if (!lfclkOnXtal())
@@ -1240,15 +1253,32 @@ void setup()
     armDfuAndReset();
   }
 
+  // The front end needs only the SoftDevice (for HFXO), not the GATT services, so Cp is
+  // calibrated here and its value goes into the DIS: a per-boot constant has no business taking
+  // a byte of every advertisement. " default" marks a calibration that fell back to 12 pF.
   uint32_t ppiEnabled = 0;
   g_feResourcesFree = sd_ppi_channel_enable_get(&ppiEnabled) == NRF_SUCCESS &&
                       (ppiEnabled & PPI_MASK) == 0 &&
                       (NRF_GPIOTE->CONFIG[GPIOTE_CH_DRV] & GPIOTE_CONFIG_MODE_Msk) == 0 &&
                       (NRF_GPIOTE->CONFIG[GPIOTE_CH_CHOP] & GPIOTE_CONFIG_MODE_Msk) == 0;
-
   saadcCalibrate();
-  calibrateCp();
+  const bool cpCalibrated = calibrateCp();
   feedWatchdog();
+  const unsigned cpCenti = (unsigned)(g_specCp * 1e14 + 0.5);
+  snprintf(g_hardwareRev, sizeof(g_hardwareRev), "Cp %u.%02u pF%s", cpCenti / 100, cpCenti % 100,
+           cpCalibrated ? "" : " default");
+
+  bledis.setManufacturer("Treebeard");
+  bledis.setModel("MSV4");
+  bledis.setHardwareRev(g_hardwareRev);
+  bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
+  bledis.setSoftwareRev(MSV4_STRINGIFY(MSV4_APP_VERSION));
+  bledis.begin();
+
+  g_otaServiceReady = bledfu.begin() == ERROR_NONE;
+  Bluefruit.Periph.setConnectCallback(otaConnectCallback);
+  Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
+  Bluefruit.Advertising.setFastTimeout(ADV_FAST_TIMEOUT_SECONDS);
 
   // One blip so a person holding the board can see the application started. (3 and 5 slow blinks
   // before a reset are the boot-counter and dead-crystal DFU escapes.)

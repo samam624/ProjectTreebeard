@@ -10,7 +10,8 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 |---|---|
 | Sketch | `MSV4/arduino/MSV4_Moisture_BLE_Sleep/MSV4_Moisture_BLE_Sleep.ino` |
 | First build | `MSV4-BUILD:prod-2026-10-06`, application version 262148, sensor ID 10 (23-byte packet) |
-| Second build, same day | `MSV4-BUILD:prod-2026-10-06b`, application version 262150: adds die temperature (26-byte packet). On board 1 since 21:20 PDT |
+| Second build, same day | `MSV4-BUILD:prod-2026-10-06b`, application version 262150: adds die temperature (26-byte packet, layout A) |
+| Third build, same day | `MSV4-BUILD:prod-2026-10-06c`, application version 262152: layout B, which adds `Cd` and moves `Cp` out of the packet. On board 1 since 21:55 PDT |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -65,7 +66,7 @@ Deliberate differences from the two parents:
 |---|---|
 | No BLE UART console; DIS and buttonless DFU only | The console is unauthenticated: anyone in range could drive the front end |
 | Sensor ID is a required build parameter (`-SensorId`) | Same rule as MSV3: (commit, sensor id) must reproduce an image |
-| `Cp` is measured at every boot with the electrodes floating | `spectrum open` was RAM-only and manual. The sweep opens U3, so it does not depend on what the blade is in |
+| `Cp` is measured at every boot with the electrodes floating | `spectrum open` was RAM-only and manual. The sweep opens U3, so it does not depend on what the blade is in. From 262152 the value is published as the DIS hardware revision string (`Cp 8.75 pF`), not in the packet |
 | Moisture sweep every 10th wake, not every wake | A sweep and fit keeps the CPU and HFXO up for about 5 s (console, board 1, 2026-10-01) |
 | `TIMER3 TASKS_SHUTDOWN` once per wake, after the last sweep | A TIMER that has run and is only stopped keeps drawing current (nRF52 anomaly 78) |
 | Boot counter carries only across watchdog, software and lockup resets, and clears after two completed advertising cycles | MSV3's guard rules. A pin reset or power-on starts at zero |
@@ -87,34 +88,81 @@ Every 60 s:
 
 ## Packet
 
-Manufacturer data, 26 bytes from application version 262150 (23 bytes in 262148; the last three
-rows below are the addition and every reader treats them as optional). Bytes 0–18 keep the MSV3
-production layout; flag bit 7 marks an MSV4 packet. The three extra bytes came from dropping the
-TX Power structure from the advertisement, which nothing reads: Flags (3) + this (2 + 26) = 31.
+Manufacturer data. Three forms exist; every reader accepts all of them.
 
-| Bytes | Field |
-|---|---|
-| 0–1 | Company ID `0xFFFF` |
-| 2–5 | Magic `MSV2` |
-| 6 | Sensor ID |
-| 7–9 | Advertisement counter, 24-bit LE |
-| 10–13 | `Rsoil`, uint32 LE, units of 0.1 Ω, **not** temperature-corrected. Saturates at 4,000,000 (400 kΩ). Zero when bit 5 is set |
-| 14–15 | Battery mV |
-| 16 | Flags: bit1 moisture measured on this wake, bit2 tip temperature valid, bit4 OTA allowed, bit5 moisture invalid, bit7 MSV4. Bits 0, 3 and 6 are always 0 |
-| 17–18 | Tip NTC temperature, int16 LE, quarter-°C |
-| 19–20 | `Cm`, uint16 LE, units of 0.1 pF |
-| 21 | `Cp` the fit used, units of 0.1 pF. 120 means the boot calibration fell back to the 12 pF default |
-| 22 | Fit RMS residual, units of 1e-4 of drive |
-| 23–24 | nRF52840 die temperature, int16 LE, quarter-°C. The board end of the probe, not the soil |
-| 25 | Flags 2: bit0 die temperature valid |
+| Application | Length | Notes |
+|---|---|---|
+| 262148 | 23 bytes | Layout A |
+| 262150 | 26 bytes | Layout A plus die temperature |
+| 262152 onward | 26 bytes | **Layout B** (flags 2 bit 1): adds `Cd`, moves the residual, drops `Cp` |
+
+Bytes 0–18 keep the MSV3 production layout; flag bit 7 marks an MSV4 packet. The three extra bytes
+came from dropping the TX Power structure from the advertisement, which nothing reads: Flags (3)
++ this (2 + 26) = 31.
+
+| Bytes | Layout B (current) | Layout A |
+|---|---|---|
+| 0–1 | Company ID `0xFFFF` | same |
+| 2–5 | Magic `MSV2` | same |
+| 6 | Sensor ID | same |
+| 7–9 | Advertisement counter, 24-bit LE | same |
+| 10–12 | `Rsoil`, 24-bit LE, units of 0.1 Ω, **not** temperature-corrected. Saturates at 4,000,000, which means nothing is conducting; it is a ceiling, not a measured 400 kΩ. Zero when bit 5 is set | same |
+| 13 | Fit RMS residual, units of 1e-4 of drive | always 0 |
+| 14–15 | Battery mV | same |
+| 16 | Flags: bit1 moisture measured on this wake, bit2 tip temperature valid, bit4 OTA allowed, bit5 moisture invalid, bit7 MSV4. Bits 0, 3 and 6 are always 0 | same |
+| 17–18 | Tip NTC temperature, int16 LE, quarter-°C | same |
+| 19–20 | `Cm`, uint16 LE, units of 0.1 pF. Reads 0 while nothing conducts | same |
+| 21–22 | `Cd`, uint16 LE, units of 0.01 pF; 0 = not sent | 21: `Cp` in 0.1 pF (120 = default). 22: residual |
+| 23–24 | nRF52840 die temperature, int16 LE, quarter-°C. The board end, not the soil | same (absent in 262148) |
+| 25 | Flags 2: bit0 die temperature valid, bit1 layout B | bit0 only |
+
+`Rsoil` never needs more than 22 bits, which is where byte 13 came from. A reader that still takes
+bytes 10–13 as one 32-bit number sees an out-of-range resistance on a layout B packet and rejects
+the reading rather than misreading it.
 
 The layout is an ABI between `startAdv()` in the sketch, `MSV4/scripts/msv4_adv_scan.py`, the
 receiver, the cloud function and the receiver's History page.
 `DisplayCenter/scripts/verify_msv4_packet_abi.mjs` checks all five against each other in the
-receiver's build gate.
+receiver's build gate, and `verify_msv4_history_decode.mjs` runs the page's decoding on synthetic
+rows.
 
 `Rsoil` is sent raw, with the tip temperature beside it, so the 2 %/°C conductivity correction
 stays off the probe like every other calibration in this project.
+
+## Which values are live measurements
+
+Prompted by the History page showing flat lines at 0 and 400,000 on the evening of 2026-10-06.
+The bring-up console was put back on the probe for fourteen minutes (21:41–21:55) to read the raw
+sweep where the board sat. All measured:
+
+| Console, board as left for the solar test | Result |
+|---|---|
+| `spectrum open` (electrodes floating) | `Cp` 8.76 pF ± 10.3 %, fit RMS 0.0206. Phase −0.9° at 250 kHz to −8.6° at 2.67 MHz |
+| `spectrum ab` (electrodes connected) | Phase −2.1° to −20.1°, `\|H\|` 0.994 to 0.946: clearly not the open sweep, so the electrodes are switched in and measured |
+| Fit of that sweep | `Cd` **13.00 pF** ± 9 %, `Cm` 0.00 pF, `Rsoil` 1.0e17 Ω, RMS 0.0230 |
+| `moisture`, four repeats | `Cd` 12.98, 13.01, 13.03, 13.01 pF. `Rsoil` 9.4e13, 8.2e15, 1.6e17, 9.5e13 Ω |
+| Electrode A alone / B alone | `Cd` 12.98 / 13.05 pF |
+
+What that says:
+
+- **The transport is not losing anything.** The production packets before and after agree with
+  the console to the last digit sent: residual 0.0228–0.0231, `Cm` 0, `Cp` 8.8 pF, and after
+  262152 `Cd` 13.03 pF.
+- **The blade had nothing conductive on it.** 13 pF of capacitance and no conduction is the
+  bring-up record's result for air.
+- **In that state most of the packet is not a measurement.** `Rsoil` in air is numerical noise
+  spanning three decades, which is why the probe reports a ceiling instead. Moisture is 0 because
+  it is derived from that ceiling. `Cm` is 0 because nothing touches the plates. `Cp` is a
+  once-per-boot calibration.
+- **`Cd` is the live one,** repeatable to about 0.02 pF, and layouts before B did not send it.
+
+Changes made because of it: layout B carries `Cd` at 0.01 pF; the History page no longer draws
+the ceiling as a resistance or `Cm` for an open reading, and says "OPEN, nothing conducting"
+instead; `Cp` is labelled as a calibration constant.
+
+**The residual floor is in the instrument, not the soil.** The floating-electrode sweep already
+fits no better than 2.06 % RMS, and its `|H|` reads above 1 at the top two frequencies (1.003 and
+1.011), which no RC divider can do. Its cause has not been looked for.
 
 ## What a receiver without the port does with it
 
@@ -159,7 +207,8 @@ which meaning applies.
 | `Rsoil`, 0.1 Ω | `rawFdcCounts` | `raw_fdc_counts` (`raw.fdcCounts`) |
 | Tip temperature | `rawBoardTempQuarterC` | `board_temp_quarter_c` |
 | Measured on this wake (1) or repeated (0) | `tankPhase` | `tank_phase` |
-| `Cm`, `Cp`, fit residual | `rawBareTankFdcCounts`, packed, `bareTankValid` false | `raw.msv4.{cmDeciPf,cpDeciPf,fitRmsE4}` → `bare_tank_fdc_counts`, repacked as one word: bits 0–15 `Cm`, 16–23 `Cp`, 24–31 residual |
+| `Cm`, `Cd` | `rawBareTankFdcCounts` = `Cm` \| `Cd` << 16, `bareTankValid` false | `raw.msv4.{cmDeciPf,cdCentiPf}` → `bare_tank_fdc_counts`, one word: bits 0–15 `Cm`, 16–23 `Cp` (layout A rows only), 24–31 residual, 32–47 `Cd` in 0.01 pF |
+| Fit residual | `msv4FitRmsE4`; in the history record, the top byte of `rawFdcCounts`, masked off before upload | `raw.msv4.fitRmsE4` → same word |
 | Die temperature | `msv4DieTempQuarterC`; in the history record, the `rawMoistureKHz` slot offset by 1000 so 0 stays "absent" | `raw.msv4.dieTempQuarterC` → `raw_moisture_khz`, plain quarter-°C |
 | Scale | `msv4` → `moistureScale` 4 | `moisture_scale` |
 
@@ -179,10 +228,12 @@ build if the probe sketch, the receiver and `msv4_adv_scan.py` stop agreeing on 
 
 ### Cloud and History page (same evening)
 
-- `receiver-snapshot` v28 stores the `Cm`/`Cp`/residual word, v29 the die temperature. No database
-  migration: both go into existing columns that a scale-4 row otherwise leaves null.
-- Receiver builds `msv4-history-charts` (21:10) and `msv4-die-temp-v3` (21:19) add MSV4 cards to
-  the History page: tip thermistor temperature (relabelled; it had been showing under "Board (die)
+- `receiver-snapshot` v28 stores the `Cm`/`Cp`/residual word, v29 the die temperature, v30 `Cd`.
+  No database migration: all of it goes into existing columns that a scale-4 row otherwise leaves
+  null.
+- Receiver builds `msv4-history-charts` (21:10), `msv4-die-temp-v3` (21:19) and
+  `msv4-layout-b-v4` (21:53) add MSV4 cards to the History page, the last adding the `Cd` card
+  and the open-circuit handling described above: tip thermistor temperature (relabelled; it had been showing under "Board (die)
   temperature"), die temperature, soil resistance as measured and at 25 °C, `Cm`, fit residual,
   `Cp`, and signal strength (every probe). The MSV3 FDC cards skip MSV4 rows, battery percent uses
   the MSV4 window, and chart axes show decimals when the grid step is below 1.
@@ -194,6 +245,10 @@ Read back from the database after the second probe build went on (measured):
 | 1 | 3820 mV | 22.75 °C | 24.0 °C | open | yes | 8.8 pF | 2.28 % |
 | 2 | 3825 mV | 22.75 °C | 23.5 °C | open | no | 8.8 pF | 2.28 % |
 | 3 | 3821 mV | 23.0 °C | 23.5 °C | open | no | 8.8 pF | 2.28 % |
+
+After 262152 (measured, counters 1–3 at 21:55–21:57): 3829–3839 mV, tip 23.0 °C, die
+23.5–24.0 °C, open, `Cd` 13.03 pF, residual 2.29 %, and the DIS hardware revision reads
+`Cp 8.75 pF`.
 
 Rows uploaded before v28 (20:03–21:06) have battery, `Rsoil`, tip temperature and signal strength
 only. **Not seen:** the History page itself in a browser. Its decoding was run against synthetic

@@ -15,10 +15,11 @@ export const MSV3_FDC_COUNT_MAX = 2 ** 28 - 1;
 // MSV4 probes (moisture scale 4) reuse these same columns for different quantities: raw_fdc_counts
 // is soil resistance in 0.1 ohm, board_temp_quarter_c is the blade-tip NTC, tank_phase is 1 on the
 // wake the probe measured and 0 on the wakes that repeat it. They have no tank at all, so the
-// bare-tank column carries their three fit diagnostics as one word, laid out exactly as packet
-// bytes 19-22 are: bits 0-15 Cm in 0.1 pF, bits 16-23 Cp in 0.1 pF, bits 24-31 the fit RMS
-// residual in 1e-4 of drive. The column is bigint, so all 32 bits fit. See
-// MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md.
+// bare-tank column carries their fit diagnostics as one word: bits 0-15 Cm in 0.1 pF, bits 16-23
+// Cp in 0.1 pF (0 = not sent), bits 24-31 the fit RMS residual in 1e-4 of drive, bits 32-47 Cd,
+// the direct plate capacitance, in 0.01 pF (0 = not sent). The column is bigint, so 48 bits fit.
+// Which of Cp and Cd a row has depends on the probe's firmware: application 262148/262150 send
+// Cp, 262152 onward sends Cd. See MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md.
 export const MSV4_MOISTURE_SCALE = 4;
 
 export type Msv4DiagnosticsInput = {
@@ -26,6 +27,7 @@ export type Msv4DiagnosticsInput = {
   cpDeciPf?: unknown;
   fitRmsE4?: unknown;
   dieTempQuarterC?: unknown;
+  cdCentiPf?: unknown;
 };
 
 // Number(null) is 0, which would turn an explicit null into a plausible reading.
@@ -33,17 +35,21 @@ function integerOrNaN(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) ? value : NaN;
 }
 
-// All three or nothing: a word with one field silently zeroed would read as a real measurement.
+// Cm and the residual come from every fit and are both required: a word with one of them silently
+// zeroed would read as a real measurement. Cp and Cd are each optional, and for each a stored
+// zero already means "not sent".
 export function packMsv4Diagnostics(msv4: Msv4DiagnosticsInput | null | undefined): number | null {
   const cm = integerOrNaN(msv4?.cmDeciPf);
-  const cp = integerOrNaN(msv4?.cpDeciPf);
   const rms = integerOrNaN(msv4?.fitRmsE4);
   if (!(cm >= 0 && cm <= 0xFFFF)) return null;
-  if (!(cp >= 0 && cp <= 0xFF)) return null;
   if (!(rms >= 0 && rms <= 0xFF)) return null;
+  const cpRaw = integerOrNaN(msv4?.cpDeciPf);
+  const cp = cpRaw >= 1 && cpRaw <= 0xFF ? cpRaw : 0;
   // Arithmetic, not bit operators: JavaScript's are 32-bit signed and would turn a residual of
   // 0x80 or more into a negative number.
-  return cm + cp * 0x10000 + rms * 0x1000000;
+  const cdRaw = integerOrNaN(msv4?.cdCentiPf);
+  const cd = cdRaw >= 1 && cdRaw <= 0xFFFF ? cdRaw : 0;
+  return cm + cp * 0x10000 + rms * 0x1000000 + cd * 0x100000000;
 }
 
 // MSV4 packets from application version 262150 also carry the nRF52840 die temperature, in the

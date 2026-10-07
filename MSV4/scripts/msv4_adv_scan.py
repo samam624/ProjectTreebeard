@@ -38,6 +38,10 @@ FLAG_OTA_OK = 1 << 4
 FLAG_INVALID = 1 << 5
 FLAG_MSV4 = 1 << 7
 FLAG2_DIE_TEMP_OK = 1 << 0
+# Layout B (application version 262152): the fit residual moved into what was Rsoil's always-zero
+# top byte, and the two bytes that held Cp and the residual now hold Cd in 0.01 pF. Cp left the
+# packet; it is in the DIS hardware revision string (--read-build).
+FLAG2_LAYOUT_B = 1 << 1
 
 RSOIL_DECIOHM_MAX = 4_000_000
 CP_DEFAULT_DECI_PF = 120
@@ -47,7 +51,7 @@ EC_TEMPCO_PER_C = 0.02
 
 CSV_FIELDS = ["time", "sensor", "counter", "rssi", "battery_mv", "tip_c", "moisture_valid",
               "fresh", "rsoil_ohm", "rsoil_open", "rsoil25_ohm", "cm_pf", "cp_pf", "cp_default",
-              "fit_rms", "ota_ok", "die_c"]
+              "fit_rms", "ota_ok", "die_c", "cd_pf"]
 
 
 def decode(payload: bytes) -> dict | None:
@@ -59,12 +63,18 @@ def decode(payload: bytes) -> dict | None:
         return None
     sensor = payload[4]
     counter = payload[5] | (payload[6] << 8) | (payload[7] << 16)
-    rsoil_deci, battery_mv = struct.unpack_from("<IH", payload, 8)
+    rsoil_word, battery_mv = struct.unpack_from("<IH", payload, 8)
+    rsoil_deci = rsoil_word & 0xFFFFFF
     temp_q4, cm_deci = struct.unpack_from("<hH", payload, 15)
-    cp_deci, rms_e4 = payload[19], payload[20]
+    flags2 = payload[23] if len(payload) >= EXTENDED_LEN else 0
+    if flags2 & FLAG2_LAYOUT_B:
+        rms_e4, cp_deci = rsoil_word >> 24, None
+        cd_centi = struct.unpack_from("<H", payload, 19)[0]
+    else:
+        cp_deci, rms_e4, cd_centi = payload[19], payload[20], 0
 
     die_c = None
-    if len(payload) >= EXTENDED_LEN and payload[23] & FLAG2_DIE_TEMP_OK:
+    if flags2 & FLAG2_DIE_TEMP_OK:
         die_c = struct.unpack_from("<h", payload, 21)[0] / 4.0
 
     valid = not flags & FLAG_INVALID
@@ -85,7 +95,8 @@ def decode(payload: bytes) -> dict | None:
         "rsoil_open": valid and rsoil_deci >= RSOIL_DECIOHM_MAX,
         "rsoil25_ohm": rsoil25,
         "cm_pf": cm_deci / 10.0 if valid else None,
-        "cp_pf": cp_deci / 10.0,
+        "cd_pf": cd_centi / 100.0 if valid and cd_centi else None,
+        "cp_pf": cp_deci / 10.0 if cp_deci is not None else None,
         "cp_default": cp_deci == CP_DEFAULT_DECI_PF,
         "fit_rms": rms_e4 / 1e4 if valid else None,
         "ota_ok": bool(flags & FLAG_OTA_OK),
@@ -98,27 +109,33 @@ def describe(row: dict) -> str:
     tip = f"tip {row['tip_c']:.2f} C" if row["tip_c"] is not None else "tip ?"
     if row["die_c"] is not None:
         tip += f" die {row['die_c']:.2f} C"
+    cd = f"Cd {row['cd_pf']:.2f} pF " if row["cd_pf"] is not None else ""
     if not row["moisture_valid"]:
         moisture = "moisture INVALID"
     elif row["rsoil_open"]:
-        moisture = f"Rsoil open (>= 400 kohm) Cm {row['cm_pf']:.1f} pF rms {row['fit_rms']:.4f}"
+        moisture = f"OPEN, nothing conducting | {cd}rms {row['fit_rms']:.4f}"
     else:
         r25 = f" ({row['rsoil25_ohm']:.1f} @25C)" if row["rsoil25_ohm"] is not None else ""
         moisture = (f"Rsoil {row['rsoil_ohm']:.1f} ohm{r25} Cm {row['cm_pf']:.1f} pF "
-                    f"rms {row['fit_rms']:.4f}")
-    cp = f"Cp {row['cp_pf']:.1f} pF" + (" (DEFAULT)" if row["cp_default"] else "")
+                    f"{cd}rms {row['fit_rms']:.4f}")
+    cp = ""
+    if row["cp_pf"] is not None:
+        cp = f" | Cp {row['cp_pf']:.1f} pF" + (" (DEFAULT)" if row["cp_default"] else "")
     marks = ("fresh" if row["fresh"] else "repeat") + ("" if row["ota_ok"] else ", OTA closed")
-    return (f"sensor {row['sensor']} #{row['counter']} {battery} {tip} | {moisture} | {cp} "
-            f"| {marks}")
+    return f"sensor {row['sensor']} #{row['counter']} {battery} {tip} | {moisture}{cp} | {marks}"
 
 
 # --------------------------------------------------------------------------------- self-test --
 def _encode(sensor, counter, rsoil_deci, battery_mv, flags, temp_q4, cm_deci, cp_deci, rms_e4,
-            die_q4=None, flags2=None):
+            die_q4=None, flags2=None, cd_centi=None):
     """Written from the firmware's layout comment, independently of decode().
 
-    Without die_q4/flags2 this is the 23-byte packet of application version 262148.
+    Without die_q4/flags2 this is the 23-byte packet of application version 262148. Passing
+    cd_centi makes it layout B (262152): cp_deci is then not on the wire at all.
     """
+    layout_b = cd_centi is not None
+    if layout_b:
+        flags2 = (flags2 or 0) | FLAG2_LAYOUT_B
     mfg = bytearray(23 if flags2 is None else 26)
     if flags2 is not None:
         mfg[23:25] = (die_q4 or 0).to_bytes(2, "little", signed=True)
@@ -127,13 +144,18 @@ def _encode(sensor, counter, rsoil_deci, battery_mv, flags, temp_q4, cm_deci, cp
     mfg[2:6] = MAGIC
     mfg[6] = sensor
     mfg[7:10] = counter.to_bytes(3, "little")
-    mfg[10:14] = rsoil_deci.to_bytes(4, "little")
+    # One 32-bit word on the wire: an MSV3 packet uses all of it as an FDC count; an MSV4 packet
+    # uses the low 24 bits for Rsoil and, in layout B, the top byte for the fit residual.
+    mfg[10:14] = (rsoil_deci | ((rms_e4 << 24) if layout_b else 0)).to_bytes(4, "little")
     mfg[14:16] = battery_mv.to_bytes(2, "little")
     mfg[16] = flags
     mfg[17:19] = temp_q4.to_bytes(2, "little", signed=True)
     mfg[19:21] = cm_deci.to_bytes(2, "little")
-    mfg[21] = cp_deci
-    mfg[22] = rms_e4
+    if layout_b:
+        mfg[21:23] = cd_centi.to_bytes(2, "little")
+    else:
+        mfg[21] = cp_deci
+        mfg[22] = rms_e4
     return bytes(mfg[2:])  # what Bleak delivers
 
 
@@ -169,6 +191,26 @@ def self_test() -> int:
     check("die.negative", decode(_encode(*common, die_q4=-22, flags2=FLAG2_DIE_TEMP_OK))["die_c"], -5.5)
     check("die.absent", decode(_encode(*common, die_q4=126, flags2=0))["die_c"], None)
     check("die.keeps.tip", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["tip_c"], 26.75)
+
+    # Layout B, board 1 in air as the console measured it: open, Cd 13.01 pF, residual 0.0229.
+    air = decode(_encode(10, 1, RSOIL_DECIOHM_MAX, 3816, FLAG_MSV4 | FLAG_TEMP_OK, 93, 0, None, 229,
+                         die_q4=94, flags2=FLAG2_DIE_TEMP_OK, cd_centi=1301))
+    check("b.cd", air["cd_pf"], 13.01)
+    check("b.rms", air["fit_rms"], 0.0229)
+    check("b.open", air["rsoil_open"], True)
+    check("b.rsoil", air["rsoil_ohm"], 400000.0)
+    check("b.cp.gone", air["cp_pf"], None)
+    check("b.die", air["die_c"], 23.5)
+    check("b.tip", air["tip_c"], 23.25)
+    wet = decode(_encode(10, 2, 3550, 3814, FLAG_MSV4 | FLAG_TEMP_OK, 107, 6710, None, 255,
+                         die_q4=94, flags2=FLAG2_DIE_TEMP_OK, cd_centi=65535))
+    check("b.wet.rsoil", wet["rsoil_ohm"], 355.0)
+    check("b.wet.cm", wet["cm_pf"], 671.0)
+    check("b.wet.cd", wet["cd_pf"], 655.35)
+    check("b.wet.rms", wet["fit_rms"], 0.0255)
+    # Layout A packets never carried Cd.
+    check("a.cd", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["cd_pf"], None)
+    check("a.cp", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["cp_pf"], 8.8)
 
     # Air: saturated Rsoil, default Cp, negative tip temperature, repeated reading, OTA closed.
     row = decode(_encode(10, 7, RSOIL_DECIOHM_MAX, 3400, FLAG_MSV4 | FLAG_TEMP_OK, -21, 180, 120, 255))
@@ -250,6 +292,7 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None) -> dic
 
 DIS_FIRMWARE_REVISION_UUID = "00002a26-0000-1000-8000-00805f9b34fb"
 DIS_SOFTWARE_REVISION_UUID = "00002a28-0000-1000-8000-00805f9b34fb"
+DIS_HARDWARE_REVISION_UUID = "00002a27-0000-1000-8000-00805f9b34fb"
 
 
 async def read_build(address: str, timeout: float) -> int:
@@ -265,8 +308,11 @@ async def read_build(address: str, timeout: float) -> int:
         print("No advertisement seen.")
         return 1
     async with BleakClient(device, timeout=20.0) as client:
+        # The hardware revision string is where application 262152 onward reports its boot-time
+        # Cp calibration ("Cp 8.76 pF", with " default" if the calibration fell back to 12 pF).
         for label, uuid in (("firmware revision", DIS_FIRMWARE_REVISION_UUID),
-                            ("software revision", DIS_SOFTWARE_REVISION_UUID)):
+                            ("software revision", DIS_SOFTWARE_REVISION_UUID),
+                            ("hardware revision", DIS_HARDWARE_REVISION_UUID)):
             try:
                 value = bytes(await client.read_gatt_char(uuid)).split(b"\x00")[0].decode("utf-8", "replace")
             except Exception as error:  # noqa: BLE001

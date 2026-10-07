@@ -4,15 +4,15 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-06 21:19 PDT, the display receiver was reflashed on `COM16` with the normal
+As of 2026-10-06 21:53 PDT, the display receiver was reflashed on `COM16` with the normal
 production build:
 
 ```text
-Treebeard runtime build 2026-10-06 msv4-die-temp-v3
+Treebeard runtime build 2026-10-06 msv4-layout-b-v4
 ```
 
-This is the third build flashed that evening (`msv4-conductance-scale4` at 20:02,
-`msv4-history-charts` at 21:10); each added to the one before.
+This is the fourth build flashed that evening (`msv4-conductance-scale4` at 20:02,
+`msv4-history-charts` at 21:10, `msv4-die-temp-v3` at 21:19); each added to the one before.
 
 It adds MSV4 conductance probes (flag bit7, moisture scale 4); see
 `MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md`. Measured after the flash: WiFi and the BLE

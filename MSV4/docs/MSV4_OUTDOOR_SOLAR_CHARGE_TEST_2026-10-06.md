@@ -142,6 +142,9 @@ From 20:03 the DisplayCenter receiver also ingests sensor 10 and uploads it to t
 | 21:12 | Computer-side CSV logging stopped at counter 341, 3825 mV. The cloud history is the record from here on |
 | 21:20:14–21:20:59 | Probe updated over BLE to `prod-2026-10-06b` (v262150), 45 s in total with the radio connected. Same duty cycle; the packet now also carries die temperature. The advertisement counter restarted at 1 |
 | 21:21–21:24 | 3820–3825 mV, tip 22.75–23.0 °C, die 23.5–24.0 °C |
+| 21:40–21:55 | Bring-up console put back for a diagnostic sweep (continuous advertising, several connections, two firmware transfers). `vbat` 3816 mV at 21:42 and 21:46 |
+| 21:55 | Production image `prod-2026-10-06c` (v262152) installed; counter restarted at 1 |
+| 21:55–21:58 | 3829, 3837, 3839, 3843 mV. It was dark: this is the cell relaxing after the heavier console load came off, not charging |
 
 The cell was at 3823–3830 mV from 20:05 to 21:12, so it held within the same 15 mV band from 15:33
 to 21:24 through daylight, dusk and two firmware transfers.

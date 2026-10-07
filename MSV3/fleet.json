@@ -598,18 +598,18 @@
         "bootloader_source": "MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md: flashed over SWD with --msv3 1.0.3. Not re-read since.",
         "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
         "device_type": "0x3356",
-        "installed_application_version": 262150,
-        "installed_build": "MSV4-BUILD:prod-2026-10-06b",
-        "installed_source": "OBSERVED 2026-10-06 21:23 PDT: DIS firmware revision MSV4-BUILD:prod-2026-10-06b and software revision 262150 read over BLE after the transfer, with advertisement counters 1-3 advancing one per minute (MSV4/scripts/msv4_adv_scan.py). Installed FROM the production image prod-2026-10-06 (262148) through its own buttonless jump, so the update path out of production firmware is proven on this board.",
+        "installed_application_version": 262152,
+        "installed_build": "MSV4-BUILD:prod-2026-10-06c",
+        "installed_source": "OBSERVED 2026-10-06 21:58 PDT: DIS firmware revision MSV4-BUILD:prod-2026-10-06c, software revision 262152 and hardware revision 'Cp 8.75 pF' read over BLE after the transfer, with advertisement counters 1-3 advancing one per minute. History of the day: bring-up console 262147 -> prod 262148 (15:32) -> prod 262150 (21:20) -> bring-up console 262151 (21:41, for a diagnostic sweep) -> prod 262152 (21:55). Every step after the first was installed through the running image's own buttonless jump.",
         "physical_state": {
           "verified": "2026-10-06",
           "source": "maintainer stated 2026-10-06 ~14:57 PDT: 'i have the MSV4 at home now after testing osc readings in the lab, all checked out'; starting an outdoor solar panel test to see whether it can charge the battery over time and whether the BQ chip is wired correctly",
           "location": "maintainer's home, OUTDOORS (exact spot, orientation and shading NOT STATED). Was in the lab for oscilloscope checks before this.",
           "pot": null,
-          "electrode_in_soil": "NOT STATED",
+          "electrode_in_soil": "NOT STATED by the maintainer. MEASURED 2026-10-06 21:42-21:57 PDT through the console and then the production image: no conduction at all and 12.98-13.03 pF of direct capacitance, which is what the bring-up record shows for the blade in AIR. Nothing conductive was touching the plates at that time.",
           "power": "solar panel + cell through the BQ25504 -- this is the configuration under test. Panel: the BOM panel, 2 V / 60 mA / 0.12 W, 36 x 30 mm (maintainer stated 2026-10-06: 'the new one in the BOM, the lower voltage small 30x36 one'). Measured V_OC / I_SC NOT STATED. Cell: maintainer stated 2026-10-06 that it has 'been dropping for a couple days now' (no voltage given).",
           "enclosure": "NOT STATED",
-          "firmware": "MSV4-BUILD:prod-2026-10-06b, application version 262150, sensor ID 10 -- production wake/measure/advertise/sleep image with the 26-byte packet (adds nRF die temperature). Installed over BLE 2026-10-06 21:20 PDT, replacing prod-2026-10-06 (262148, 23-byte packet), which had replaced the bring-up console at 15:32. There is no BLE console on this board. A bring-up console package would now need an application version above 262150. Never install an MSV3 production package on it (the bootloader shares MSV3's DFU device type and will not refuse it).",
+          "firmware": "MSV4-BUILD:prod-2026-10-06c, application version 262152, sensor ID 10 -- production wake/measure/advertise/sleep image, 26-byte layout B packet (die temperature, Cd at 0.01 pF, Cp published in the DIS hardware revision string instead of the packet). There is no BLE console on this board; a console package now needs an application version above 262152. Never install an MSV3 production package on it (the bootloader shares MSV3's DFU device type and will not refuse it).",
           "mods": "NOT STATED (whether an SP+ zener or any rework beyond the 2026-10-01 solder fixes is fitted)"
         },
         "active_test": {

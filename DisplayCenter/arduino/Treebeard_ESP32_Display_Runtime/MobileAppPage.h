@@ -777,8 +777,11 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
            above. An MSV4 row reuses three columns for different quantities: raw_fdc_counts is
            soil resistance in 0.1 ohm, board_temp_quarter_c is the blade-tip NTC, and
            bare_tank_fdc_counts packs Cm / Cp / fit residual (see msv4Diagnostics() in the
-           script), and raw_moisture_khz is the nRF52840 die temperature in quarter-degrees
-           (probe application 262150 onward). The MSV3 cards above skip MSV4 rows for that reason. Packet layout and the
+           script; from probe application 262152 the word carries Cd above bit 32 in place of
+           Cp, which that firmware no longer sends), and
+           raw_moisture_khz is the nRF52840 die temperature in quarter-degrees (262150 onward).
+           A saturated resistance (4,000,000) is a ceiling meaning "nothing conducting", so it
+           is never drawn as a value, and Cm is not drawn for those rows either. The MSV3 cards above skip MSV4 rows for that reason. Packet layout and the
            column mapping: MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md. -->
       <section class="network-card chart-card hidden" id="historyMsv4DieTempSection">
         <div class="chart-head">
@@ -791,9 +794,20 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         </div>
       </section>
 
+      <section class="network-card chart-card hidden" id="historyMsv4CdSection">
+        <div class="chart-head">
+          <div class="chart-title">Direct plate capacitance Cd (measured on every sweep, in air too; rises with anything on or near the blade)</div>
+          <div class="chart-latest" id="historyMsv4CdLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4CdChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4CdTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
       <section class="network-card chart-card hidden" id="historyMsv4RsoilSection">
         <div class="chart-head">
-          <div class="chart-title">Soil resistance, as measured (lower = wetter; 400,000 = nothing conducting)</div>
+          <div class="chart-title">Soil resistance, as measured (lower = wetter)</div>
           <div class="chart-latest" id="historyMsv4RsoilLatest"></div>
         </div>
         <div class="chart-wrap">
@@ -837,7 +851,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
 
       <section class="network-card chart-card hidden" id="historyMsv4CpSection">
         <div class="chart-head">
-          <div class="chart-title">Sense-node Cp used by the fit (re-measured at each probe boot; 12.0 = default)</div>
+          <div class="chart-title">Sense-node Cp: a calibration constant, not a soil reading (older probe firmware only; newer firmware reports it in its device information instead)</div>
           <div class="chart-latest" id="historyMsv4CpLatest"></div>
         </div>
         <div class="chart-wrap">
@@ -1932,17 +1946,27 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     }
 
     // bare_tank_fdc_counts on an MSV4 row: bits 0-15 Cm in 0.1 pF, bits 16-23 Cp in 0.1 pF,
-    // bits 24-31 fit RMS residual in 1e-4 of drive. Division, not bit operators: the word can
-    // exceed JavaScript's 32-bit signed range.
+    // bits 24-31 fit RMS residual in 1e-4 of drive, bits 32-47 Cd in 0.01 pF. Cp and Cd are each
+    // 0 when the probe's firmware did not send them (Cp until application 262150, Cd from 262152).
+    // Division, not bit operators: the word exceeds JavaScript's 32-bit signed range.
     function msv4Diagnostics(row) {
       if (!isMsv4Row(row) || row.bare_tank_fdc_counts == null) return null;
       const word = Number(row.bare_tank_fdc_counts);
-      if (!Number.isInteger(word) || word < 0 || word > 0xFFFFFFFF) return null;
+      if (!Number.isInteger(word) || word < 0 || word > 0xFFFFFFFFFFFF) return null;
+      const cpDeciPf = Math.floor(word / 65536) % 256;
+      const cdCentiPf = Math.floor(word / 4294967296) % 65536;
       return {
         cmPf: (word % 65536) / 10,
-        cpPf: (Math.floor(word / 65536) % 256) / 10,
+        cpPf: cpDeciPf ? cpDeciPf / 10 : null,
         residualPercent: (Math.floor(word / 16777216) % 256) / 100,
+        cdPf: cdCentiPf ? cdCentiPf / 100 : null,
       };
+    }
+
+    // True when the probe reported its ceiling: nothing was conducting between the plates
+    // (blade in air, or no soil contact). That is a state, not a 400 kohm measurement.
+    function msv4IsOpen(row) {
+      return isMsv4Row(row) && Number(row.raw_fdc_counts) >= MSV4_RSOIL_DECIOHM_MAX;
     }
 
     // Soil resistance in ohms as the probe sent it, or null when the row is not a valid MSV4
@@ -2236,9 +2260,25 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         }
       };
       renderOptionalHistoryCard("Msv4DieTemp", historySeries(msv4DieTempC), "#e0a23f", "°C");
-      renderOptionalHistoryCard("Msv4Rsoil", historySeries(msv4RsoilOhm), "#9b6bd6", "Ω");
+      renderOptionalHistoryCard("Msv4Cd", historySeries((r) => msv4Diagnostics(r)?.cdPf), "#5fb878", "pF");
+      // Resistance and Cm exist only while something conducts. An open reading keeps the card on
+      // screen and says so, instead of drawing the ceiling as if it had been measured.
+      const msv4Rows = lastHistoryRows.filter(isMsv4Row);
+      const latestMsv4Row = msv4Rows[msv4Rows.length - 1];
+      const rsoilPoints = historySeries((r) => (msv4IsOpen(r) ? null : msv4RsoilOhm(r)));
+      $("historyMsv4RsoilSection").classList.toggle("hidden", msv4Rows.length === 0);
+      if (msv4Rows.length) {
+        renderHistoryChart(
+          "historyMsv4RsoilChart", "historyMsv4RsoilTooltip", "historyMsv4RsoilLatest", rsoilPoints, "#9b6bd6", "Ω",
+          { emptyText: "Open circuit for this whole period: there is no resistance to plot." });
+        if (msv4IsOpen(latestMsv4Row)) {
+          $("historyMsv4RsoilLatest").textContent =
+            `latest: OPEN, nothing conducting (blade in air or not touching soil) · ${new Date(latestMsv4Row.received_at).toLocaleString()}`;
+        }
+      }
       renderOptionalHistoryCard("Msv4Rsoil25", historySeries(msv4Rsoil25Ohm), "#3987e5", "Ω at 25 °C");
-      renderOptionalHistoryCard("Msv4Cm", historySeries((r) => msv4Diagnostics(r)?.cmPf), "#3fb8c9", "pF");
+      renderOptionalHistoryCard(
+        "Msv4Cm", historySeries((r) => (msv4IsOpen(r) ? null : msv4Diagnostics(r)?.cmPf)), "#3fb8c9", "pF");
       renderOptionalHistoryCard(
         "Msv4Residual", historySeries((r) => msv4Diagnostics(r)?.residualPercent), "#d5a63c", "% of drive");
       renderOptionalHistoryCard("Msv4Cp", historySeries((r) => msv4Diagnostics(r)?.cpPf), "#8a94a6", "pF");
@@ -2319,7 +2359,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         t.setAttribute("x", 12);
         t.setAttribute("y", 32);
         t.setAttribute("class", "chart-axis");
-        t.textContent = "No data yet.";
+        t.textContent = chartOptions.emptyText || "No data yet.";
         svg.appendChild(t);
         latestEl.textContent = "";
         return;
@@ -2740,7 +2780,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             $("historyBareTankSection").classList.add("hidden");
             $("historyFdcReferenceSection").classList.add("hidden");
             $("historyTemperatureCompensatedSection").classList.add("hidden");
-            ["Msv4DieTemp", "Msv4Rsoil", "Msv4Rsoil25", "Msv4Cm", "Msv4Residual", "Msv4Cp", "Rssi"]
+            ["Msv4DieTemp", "Msv4Cd", "Msv4Rsoil", "Msv4Rsoil25", "Msv4Cm", "Msv4Residual", "Msv4Cp", "Rssi"]
               .forEach((name) => $(`history${name}Section`).classList.add("hidden"));
             return;
           }

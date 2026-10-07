@@ -55,7 +55,15 @@ type PlantReading = {
     // parseMsv3Diagnostics(). On those rows fdcCounts is soil resistance in 0.1 ohm and
     // boardTempQuarterC is the blade-tip temperature.
     // dieTempQuarterC (nRF52840 die) is stored in raw_moisture_khz for those rows.
-    msv4?: { cmDeciPf?: number; cpDeciPf?: number; fitRmsE4?: number; dieTempQuarterC?: number };
+    // cdCentiPf (direct plate capacitance, 0.01 pF) joins the packed word above bit 32. A probe
+    // sends cpDeciPf or cdCentiPf depending on its firmware, never both.
+    msv4?: {
+      cmDeciPf?: number;
+      cpDeciPf?: number;
+      fitRmsE4?: number;
+      dieTempQuarterC?: number;
+      cdCentiPf?: number;
+    };
   };
   batteryPercent?: number;
   rssi?: number;

@@ -71,23 +71,42 @@ test("batch values survive into the RPC input object (mirrors index.ts's reading
   });
 });
 
-test("MSV4 fit diagnostics pack into one word laid out like packet bytes 19-22", () => {
-  // Cm 671.0 pF, Cp 8.8 pF, residual 0.0229: the bytes on the wire are 36 1A 58 E5.
+test("MSV4 fit diagnostics pack into one word", () => {
+  // Application 262148/262150: Cm 671.0 pF, Cp 8.8 pF, residual 2.29 %.
   const packed = packMsv4Diagnostics({ cmDeciPf: 6710, cpDeciPf: 88, fitRmsE4: 229 });
   assert.equal(packed, 0xE5581A36);
   assert.ok(packed > MSV3_FDC_COUNT_MAX, "the word needs more than the 28-bit FDC bound");
   // A residual with its top bit set must stay positive (no 32-bit signed arithmetic).
   assert.equal(packMsv4Diagnostics({ cmDeciPf: 65535, cpDeciPf: 255, fitRmsE4: 255 }), 0xFFFFFFFF);
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: 0, cpDeciPf: 88, fitRmsE4: 230 }), 88 * 65536 + 230 * 16777216);
 });
 
-test("MSV4 diagnostics are all-or-nothing", () => {
+test("MSV4 Cd sits above bit 32 at 0.01 pF and Cp may be absent", () => {
+  // Application 262152, board 1 in air through the console: Cm 0, residual 2.29 %, Cd 13.01 pF.
+  const air = packMsv4Diagnostics({ cmDeciPf: 0, fitRmsE4: 229, cdCentiPf: 1301 });
+  assert.equal(air, 229 * 0x1000000 + 1301 * 0x100000000);
+  assert.ok(Number.isSafeInteger(air));
+  assert.equal(
+    packMsv4Diagnostics({ cmDeciPf: 65535, cpDeciPf: 255, fitRmsE4: 255, cdCentiPf: 65535 }), 2 ** 48 - 1);
+  // The low 32 bits keep their meaning, so rows stored before Cd existed decode unchanged.
+  const withCd = packMsv4Diagnostics({ cmDeciPf: 6710, cpDeciPf: 88, fitRmsE4: 229, cdCentiPf: 1301 });
+  assert.equal(withCd % 0x100000000, 0xE5581A36);
+  // Zero, out-of-range or null Cd and Cp are "not sent", not errors.
+  const base = 6710 + 15 * 0x1000000;
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 6710, fitRmsE4: 15 }), base);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 6710, fitRmsE4: 15, cdCentiPf: 0, cpDeciPf: 0 }), base);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 6710, fitRmsE4: 15, cdCentiPf: 65536, cpDeciPf: 256 }), base);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 6710, fitRmsE4: 15, cdCentiPf: null, cpDeciPf: null }), base);
+});
+
+test("MSV4 diagnostics need Cm and the residual", () => {
   assert.equal(packMsv4Diagnostics(undefined), null);
   assert.equal(packMsv4Diagnostics({ cmDeciPf: 6710, cpDeciPf: 88 }), null);
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: 65536, cpDeciPf: 88, fitRmsE4: 1 }), null);
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: 1, cpDeciPf: 256, fitRmsE4: 1 }), null);
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: 1, cpDeciPf: 1, fitRmsE4: -1 }), null);
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: 1.5, cpDeciPf: 1, fitRmsE4: 1 }), null);
+  assert.equal(packMsv4Diagnostics({ fitRmsE4: 229, cdCentiPf: 1301 }), null);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 65536, fitRmsE4: 1 }), null);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 1, fitRmsE4: -1 }), null);
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: 1.5, fitRmsE4: 1 }), null);
+  // Number(null) is 0: an explicit null must not become a zero reading.
+  assert.equal(packMsv4Diagnostics({ cmDeciPf: null, fitRmsE4: 228 }), null);
 });
 
 test("the moisture scale decides what the bare-tank column means", () => {
@@ -122,6 +141,4 @@ test("MSV4 die temperature is range-checked and never invented from null", () =>
   assert.equal(parseMsv4DieTempQuarterC(undefined), null);
   // A 23-byte packet (application 262148) has diagnostics but no die temperature.
   assert.equal(parseMsv4DieTempQuarterC({ cmDeciPf: 0, cpDeciPf: 88, fitRmsE4: 228 }), null);
-  // The same strictness now applies to the packed word.
-  assert.equal(packMsv4Diagnostics({ cmDeciPf: null, cpDeciPf: 88, fitRmsE4: 228 }), null);
 });
