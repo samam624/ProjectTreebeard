@@ -42,6 +42,10 @@ FLAG2_DIE_TEMP_OK = 1 << 0
 # top byte, and the two bytes that held Cp and the residual now hold Cd in 0.01 pF. Cp left the
 # packet; it is in the DIS hardware revision string (--read-build).
 FLAG2_LAYOUT_B = 1 << 1
+# Application version 262154: most wakes send a short NON-CONNECTABLE burst. A packet with this
+# bit set cannot be connected to; wait for one without it (every tenth wake, and the first three
+# after a boot).
+FLAG2_SHORT_BURST = 1 << 2
 
 RSOIL_DECIOHM_MAX = 4_000_000
 CP_DEFAULT_DECI_PF = 120
@@ -51,7 +55,7 @@ EC_TEMPCO_PER_C = 0.02
 
 CSV_FIELDS = ["time", "sensor", "counter", "rssi", "battery_mv", "tip_c", "moisture_valid",
               "fresh", "rsoil_ohm", "rsoil_open", "rsoil25_ohm", "cm_pf", "cp_pf", "cp_default",
-              "fit_rms", "ota_ok", "die_c", "cd_pf"]
+              "fit_rms", "ota_ok", "die_c", "cd_pf", "connectable"]
 
 
 def decode(payload: bytes) -> dict | None:
@@ -101,6 +105,7 @@ def decode(payload: bytes) -> dict | None:
         "fit_rms": rms_e4 / 1e4 if valid else None,
         "ota_ok": bool(flags & FLAG_OTA_OK),
         "die_c": die_c,
+        "connectable": not flags2 & FLAG2_SHORT_BURST,
     }
 
 
@@ -122,6 +127,7 @@ def describe(row: dict) -> str:
     if row["cp_pf"] is not None:
         cp = f" | Cp {row['cp_pf']:.1f} pF" + (" (DEFAULT)" if row["cp_default"] else "")
     marks = ("fresh" if row["fresh"] else "repeat") + ("" if row["ota_ok"] else ", OTA closed")
+    marks += ", connectable" if row["connectable"] else ", short burst"
     return f"sensor {row['sensor']} #{row['counter']} {battery} {tip} | {moisture}{cp} | {marks}"
 
 
@@ -208,6 +214,15 @@ def self_test() -> int:
     check("b.wet.cm", wet["cm_pf"], 671.0)
     check("b.wet.cd", wet["cd_pf"], 655.35)
     check("b.wet.rms", wet["fit_rms"], 0.0255)
+    # Short non-connectable bursts are marked; every older packet reads as connectable.
+    burst = decode(_encode(10, 3, RSOIL_DECIOHM_MAX, 3820, FLAG_MSV4 | FLAG_TEMP_OK, 93, 0, None, 229,
+                           die_q4=94, flags2=FLAG2_DIE_TEMP_OK | FLAG2_SHORT_BURST, cd_centi=1301))
+    check("burst", burst["connectable"], False)
+    check("burst.keeps.cd", burst["cd_pf"], 13.01)
+    check("burst.keeps.die", burst["die_c"], 23.5)
+    check("window", air["connectable"], True)
+    check("v262148.connectable", row["connectable"], True)
+
     # Layout A packets never carried Cd.
     check("a.cd", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["cd_pf"], None)
     check("a.cp", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["cp_pf"], 8.8)
@@ -302,11 +317,39 @@ async def read_build(address: str, timeout: float) -> int:
     """
     from bleak import BleakClient, BleakScanner
 
-    print(f"Waiting up to {timeout:.0f}s for {address} to advertise...", flush=True)
-    device = await BleakScanner.find_device_by_address(address, timeout=timeout)
+    print(f"Waiting up to {timeout:.0f}s for a connectable advertisement from {address}...", flush=True)
+    found = asyncio.get_running_loop().create_future()
+    wanted = address.upper()
+    candidate = None
+
+    def callback(device, advertisement):
+        nonlocal candidate
+        if device.address.upper() != wanted or found.done():
+            return
+        payload = bytes(advertisement.manufacturer_data.get(COMPANY_ID, b""))
+        row = decode(payload) if payload else None
+        if row is not None and not row["connectable"]:
+            candidate = None
+            return  # a short burst: nothing can connect on this wake
+        # The first event of a window can still carry the previous wake's payload (measured on
+        # Windows, 2026-10-06), so a production packet must repeat before it is believed.
+        if row is not None and candidate != row["counter"]:
+            candidate = row["counter"]
+            return
+        found.set_result(device)
+
+    scanner = BleakScanner(callback)
+    await scanner.start()
+    try:
+        device = await asyncio.wait_for(found, timeout=timeout)
+    except asyncio.TimeoutError:
+        device = None
+    finally:
+        await scanner.stop()
     if device is None:
-        print("No advertisement seen.")
+        print("No connectable advertisement seen.")
         return 1
+    await asyncio.sleep(1.0)  # let the scanner wind down before opening GATT
     async with BleakClient(device, timeout=20.0) as client:
         # The hardware revision string is where application 262152 onward reports its boot-time
         # Cp calibration ("Cp 8.76 pF", with " default" if the calibration fell back to 12 pF).
@@ -339,7 +382,8 @@ def main() -> int:
     if args.self_test:
         return self_test()
     if args.read_build:
-        return asyncio.run(read_build(args.read_build, max(args.seconds, 150.0)))
+        # Connectable windows can be ten minutes apart, so the default wait covers one full cycle.
+        return asyncio.run(read_build(args.read_build, max(args.seconds, 700.0)))
     try:
         seen = asyncio.run(scan(args.seconds, args.sensor, args.csv))
     except KeyboardInterrupt:

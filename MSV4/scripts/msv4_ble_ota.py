@@ -44,6 +44,8 @@ MSV4_NAME_RE = re.compile(rb"MSV4-MOISTURE-(\d{3})\x00")
 MSV4_BUILD_RE = re.compile(rb"MSV4-BUILD:([0-9A-Za-z._-]{1,48})\x00")
 MSV3_IDENTITY_RE = re.compile(rb"MSV3-(?:MOISTURE-\d{3}|BUILD:)")
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+# flags2 bit2 in the production packet (Bleak payload index 23): a short non-connectable burst.
+SHORT_BURST_FLAG2 = 0x04
 
 
 class Refused(Exception):
@@ -199,6 +201,59 @@ async def transfer(package: Path, addresses: list[str], device, args) -> int:
     return 0
 
 
+async def wait_for_connectable(address: str, timeout_s: float):
+    """Scan until `address` advertises something a client can connect to.
+
+    From application version 262154 the production image opens its connectable window only on
+    measurement wakes (every tenth minute) and on the first three wakes after a boot. In between
+    it sends short non-connectable bursts marked with flags2 bit2; connecting on one of those is
+    impossible, and trying would only use up the jump's retries. Older images, the bring-up
+    console and the bootloader never set that bit.
+
+    A production packet has to be seen TWICE with the same counter before it is believed. Measured
+    2026-10-06: the first event Windows delivers for a new window sometimes still carries the
+    previous wake's payload (3 of 11 windows), so one event alone can show the last connectable
+    packet at the start of a burst that is not connectable at all.
+    """
+    from bleak import BleakScanner
+
+    print(f"Waiting up to {timeout_s:.0f}s for a connectable advertisement from {address}...", flush=True)
+    found = asyncio.get_running_loop().create_future()
+    bursts = 0
+    candidate = None
+
+    def callback(device, advertisement):
+        nonlocal bursts, candidate
+        if device.address.upper() != address or found.done():
+            return
+        payload = bytes(advertisement.manufacturer_data.get(0xFFFF, b""))
+        is_production = len(payload) >= 21 and payload[0:4] == b"MSV2" and payload[14] & 0x80
+        if is_production and len(payload) >= 24 and payload[23] & SHORT_BURST_FLAG2:
+            candidate = None
+            if bursts == 0:
+                print("  heard a short non-connectable burst; waiting for the next connectable "
+                      "window (up to ten minutes)", flush=True)
+            bursts += 1
+            return
+        if is_production:
+            counter = bytes(payload[5:8])
+            if candidate != counter:
+                candidate = counter  # believe it only when the same packet arrives again
+                return
+        found.set_result((device, advertisement))
+
+    scanner = BleakScanner(callback)
+    await scanner.start()
+    try:
+        device, advertisement = await asyncio.wait_for(found, timeout=timeout_s)
+        print(f"  found {device.address} (rssi {advertisement.rssi})", flush=True)
+        return device, advertisement
+    except asyncio.TimeoutError:
+        return None, None
+    finally:
+        await scanner.stop()
+
+
 async def live(package: Path, board: dict, args) -> int:
     sys.path.insert(0, str(ota.DFU_CLIENT))
     pump = ota.install_windows_ble_workarounds("random")  # keep the reference; see ble_ota_update
@@ -208,8 +263,7 @@ async def live(package: Path, board: dict, args) -> int:
 
     if not args.skip_jump:
         async def find_application():
-            device, advertisement = await ota.wait_for_advertisement(
-                app_address, args.app_timeout, "the MSV4 application")
+            device, advertisement = await wait_for_connectable(app_address, args.app_timeout)
             if device is None:
                 return None
             if ota.looks_like_bootloader(device, advertisement):
@@ -230,8 +284,8 @@ async def live(package: Path, board: dict, args) -> int:
 
         device = await find_application()
         if device is None:
-            print(f"FAILED: no advertisement from {app_address} in {args.app_timeout:.0f}s. "
-                  f"Nothing was requested.")
+            print(f"FAILED: no connectable advertisement from {app_address} in "
+                  f"{args.app_timeout:.0f}s. Nothing was requested.")
             return 1
         try:
             status = await ota.jump_to_bootloader(
@@ -267,8 +321,9 @@ def main() -> int:
                         help="Run every package and target check and stop before the radio")
     parser.add_argument("--skip-jump", action="store_true",
                         help="Board is already sitting in its bootloader; go straight to the transfer")
-    parser.add_argument("--app-timeout", type=float, default=180.0,
-                        help="Seconds to wait for the application to advertise (default 180)")
+    parser.add_argument("--app-timeout", type=float, default=700.0,
+                        help="Seconds to wait for a connectable advertisement (default 700: the "
+                             "production image opens one every ten minutes)")
     parser.add_argument("--bootloader-timeout", type=float, default=60.0,
                         help="Seconds to wait for the bootloader after a jump (default 60)")
     parser.add_argument("--connect-delay", type=float, default=2.0,

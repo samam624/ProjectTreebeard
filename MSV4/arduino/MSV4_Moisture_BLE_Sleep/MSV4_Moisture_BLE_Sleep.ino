@@ -167,7 +167,9 @@ const uint16_t OTA_MIN_BATTERY_MV = 3500;
 // If no advertising cycle has completed for this long, stop feeding the watchdog. A probe that is
 // running but silent is unreachable, and this board has no USB; a reset at least hands the
 // decision to the boot guard.
-const uint32_t ADVERT_STALL_RESET_MS = 600000;
+// Twenty minutes, twice the spacing of the connectable windows: if the short bursts in between
+// ever failed to start, the windows alone must not be able to trip this.
+const uint32_t ADVERT_STALL_RESET_MS = 1200000;
 
 // --------------------------------------------------------------------------- front end -------
 // One TIMER at 16 MHz, period N ticks (CC5 + CLEAR short). Four compares toggle two GPIOTE task
@@ -196,7 +198,11 @@ static FrontEndState g_fe;
 // Set once in setup(): the SoftDevice accepting sd_ppi_channel_assign() only proves a channel is
 // application-accessible, not that nothing else in the image already uses it.
 static bool g_feResourcesFree = false;
-constexpr uint32_t FE_SETTLE_MS = 5;        // after a phase change: 50 x the 100 us filter tau
+// After a phase change the 100 us filters need about 1 ms (10 tau leaves 45 ppm of the step).
+// The wait is delay(), which is tick-based at 1024 Hz and ends on a tick BOUNDARY: delay(1) can be
+// anything from 0 to 0.98 ms, so 2 is the shortest value that guarantees the millisecond
+// (0.98-1.95 ms). It was 5 until application version 262154.
+constexpr uint32_t FE_SETTLE_MS = 2;
 constexpr uint8_t FE_OVERSAMPLE_LOG2 = 6;   // 64x hardware oversample for front-end reads
 
 // --------------------------------------------------------------------- boot/crystal guard ----
@@ -245,6 +251,7 @@ static uint32_t g_lastAdvertOkMs = 0;
 static MoistureReading g_reading = {false, 0, 0, 0, 0};
 static char g_hardwareRev[24];
 static uint8_t g_wakesUntilMoisture = 0;   // 0 = measure on this wake
+static uint8_t g_wakesSinceBoot = 0;       // saturates; only compared with LONG_WINDOW_BOOT_WAKES
 
 // ------------------------------------------------------------------------- low-level utils ---
 static void cycleCounterEnable()
@@ -743,13 +750,22 @@ static uint16_t specPhases(uint16_t n)
   return 0;
 }
 
+// H = 1 / (1 + Rs*(Ye + jw*Cp)) with Ye = jw*Cd + 1/(1/(jw*Cm) + 1/Gs), written out in real
+// arithmetic. The series branch is 1/Gs - j/(w*Cm), so its admittance is (a + jb)/(a^2 + b^2)
+// with a = 1/Gs and b = 1/(w*Cm). The bring-up sketch evaluates the same expression through the
+// general complex type, which costs about four times the double-precision operations, and this
+// function is where the fit spends its time (no double FPU on this core). The two forms agreed to
+// 3e-16 over 200,000 random parameter sets, 2026-10-06.
 static cplx specNodeH(double w, const double* p, double cp)
 {
   // p = {Cm, Gs, Cd}
-  const cplx j(0.0, 1.0);
-  const cplx zm = 1.0 / (j * w * p[0]);
-  const cplx ye = j * w * p[2] + 1.0 / (zm + 1.0 / p[1]);
-  return 1.0 / (1.0 + SPEC_RS * (ye + j * w * cp));
+  const double a = 1.0 / p[1];
+  const double b = 1.0 / (w * p[0]);
+  const double d = a * a + b * b;
+  const double dr = 1.0 + SPEC_RS * (a / d);
+  const double di = SPEC_RS * (w * (p[2] + cp) + b / d);
+  const double m = dr * dr + di * di;
+  return cplx(dr / m, -di / m);
 }
 
 // Predicted normalised bin-1 for timer period n sampled at m phases.
@@ -1049,10 +1065,12 @@ static MoistureReading takeMoistureReading()
 // [23-24] nRF52840 die temperature, signed int16 LE, quarter-degrees C (0 when flags2 bit0 is
 //         clear). The board end of the probe, NOT the soil: [17-18] is the soil.
 // [25]    flags2: bit0 = die temperature valid
+//                 bit2 = short burst: this wake is advertising non-connectably and no client can
+//                        connect. An updater must wait for a packet with this bit clear.
 //                 bit1 = layout B: [13] is the residual and [21-22] are Cd. Clear in packets
 //                        from application versions 262148/262150 (layout A), where [13] was 0,
 //                        [21] was Cp in 0.1 pF and [22] was the residual.
-//                 bits 2-7 = 0
+//                 bits 3-7 = 0
 // Cp is no longer in the packet: it is a per-boot calibration constant, and it is published as
 // the DIS hardware revision string instead ("Cp 8.76 pF").
 //
@@ -1070,6 +1088,7 @@ static MoistureReading takeMoistureReading()
 
 #define ADV_FLAG2_DIE_TEMP_OK    (1U << 0)
 #define ADV_FLAG2_LAYOUT_B       (1U << 1)
+#define ADV_FLAG2_SHORT_BURST    (1U << 2)
 
 constexpr size_t MFG_LEN = 26;
 static_assert(3 /* Flags */ + 2 /* manufacturer-data header */ + MFG_LEN <= 31,
@@ -1083,6 +1102,22 @@ const uint16_t ADV_SLOW_INTERVAL_UNITS = 400;  // 250 ms
 const uint16_t ADV_FAST_TIMEOUT_SECONDS = 1;
 const uint16_t OTA_ADV_HARD_TIMEOUT_SECONDS = OTA_ADV_LISTEN_MS / 1000;
 const uint32_t OTA_UNAVAILABLE_ADV_MS = 500;
+// Since application version 262154 the full connectable window above is opened only on wakes
+// that take a moisture measurement (every MOISTURE_EVERY_N_WAKES-th) and on the first
+// LONG_WINDOW_BOOT_WAKES wakes after a boot, so a fresh install can be checked or replaced at
+// once. Every other wake sends a short non-connectable burst instead: the same packet, but about
+// 16 advertising events instead of about 56, and no receive window after each one. Advertising
+// was the largest slice of the modelled energy budget and those 40 extra events per minute served
+// only an updater that is almost never there.
+//
+// The burst is spread over four seconds on purpose. The receiver listens 25 ms in every 75 and
+// stops scanning for two to three seconds around each cloud upload, so the same number of events
+// packed into a few hundred milliseconds would be lost whole whenever they met an upload.
+const uint32_t SHORT_ADV_MS = 4000;
+const uint16_t SHORT_ADV_INTERVAL_UNITS = 400;  // 250 ms
+const uint8_t LONG_WINDOW_BOOT_WAKES = 3;
+static_assert(SHORT_ADV_MS % 1000 == 0, "SHORT_ADV_MS must be whole seconds for the SoftDevice timeout");
+
 // Covers connect + service discovery + one write to the DFU control characteristic. The transfer
 // itself happens in the bootloader.
 const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
@@ -1103,7 +1138,8 @@ static void otaDisconnectCallback(uint16_t connHandle, uint8_t reason)
 }
 
 static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, float vbatMv,
-                     bool tempOk, float tempC, bool dieTempOk, int16_t dieTempQ4, bool otaPowerOk)
+                     bool tempOk, float tempC, bool dieTempOk, int16_t dieTempQ4, bool otaPowerOk,
+                     bool longWindow)
 {
   const uint16_t batteryMv = vbatOk ? (uint16_t)(vbatMv + 0.5f) : 0;
   const int16_t tempQ4 = tempOk ? (int16_t)lroundf(tempC * 4.0f) : 0;
@@ -1139,18 +1175,31 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
   mfg[22] = (uint8_t)((cd >> 8) & 0xFF);
   mfg[23] = (uint8_t)((uint16_t)dieQ4 & 0xFF);
   mfg[24] = (uint8_t)(((uint16_t)dieQ4 >> 8) & 0xFF);
-  mfg[25] = ADV_FLAG2_LAYOUT_B | (dieTempOk ? ADV_FLAG2_DIE_TEMP_OK : 0);
+  mfg[25] = ADV_FLAG2_LAYOUT_B | (dieTempOk ? ADV_FLAG2_DIE_TEMP_OK : 0) |
+            (longWindow ? 0 : ADV_FLAG2_SHORT_BURST);
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
   bool ok = true;
   ok &= Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   ok &= Bluefruit.Advertising.addData(BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, mfg, sizeof(mfg));
+  Bluefruit.Advertising.restartOnDisconnect(false);
+  if (!longWindow)
+  {
+    // Non-connectable and non-scannable: there must be no scan response for this type, and the
+    // radio does not listen after each transmission.
+    if (!ok) return false;
+    Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED);
+    Bluefruit.Advertising.setInterval(SHORT_ADV_INTERVAL_UNITS, SHORT_ADV_INTERVAL_UNITS);
+    Bluefruit.Advertising.setFastTimeout(SHORT_ADV_MS / 1000);
+    return Bluefruit.Advertising.start(SHORT_ADV_MS / 1000);
+  }
   ok &= Bluefruit.ScanResponse.addName();
   // A partial packet is useless as telemetry and, without the name, invisible to an OTA client.
   if (!ok) return false;
-  Bluefruit.Advertising.restartOnDisconnect(false);
+  Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
   Bluefruit.Advertising.setInterval(ADV_FAST_INTERVAL_UNITS, ADV_SLOW_INTERVAL_UNITS);
+  Bluefruit.Advertising.setFastTimeout(ADV_FAST_TIMEOUT_SECONDS);
   return Bluefruit.Advertising.start(OTA_ADV_HARD_TIMEOUT_SECONDS);
 }
 
@@ -1289,7 +1338,6 @@ void setup()
   g_otaServiceReady = bledfu.begin() == ERROR_NONE;
   Bluefruit.Periph.setConnectCallback(otaConnectCallback);
   Bluefruit.Periph.setDisconnectCallback(otaDisconnectCallback);
-  Bluefruit.Advertising.setFastTimeout(ADV_FAST_TIMEOUT_SECONDS);
 
   // One blip so a person holding the board can see the application started. (3 and 5 slow blinks
   // before a reset are the boot-counter and dead-crystal DFU escapes.)
@@ -1322,6 +1370,10 @@ void loop()
   int16_t dieTempQ4 = 0;
   const bool dieTempOk = measureDieTempQ4(dieTempQ4);
 
+  // The full connectable window goes with every measurement attempt and with the first few wakes
+  // after a boot; see SHORT_ADV_MS.
+  const bool longWindow = g_wakesUntilMoisture == 0 || g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;
+  if (g_wakesSinceBoot < 255) g_wakesSinceBoot++;
   bool fresh = false;
   if (g_wakesUntilMoisture == 0)
   {
@@ -1346,9 +1398,19 @@ void loop()
   // There cannot be a legitimate existing connection here: every one is disconnected below before
   // the probe returns to its sleep cadence.
   g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
-  if (startAdv(g_reading, fresh, vbatOk, vbatMv, tempOk, tempC, dieTempOk, dieTempQ4, otaPowerOk))
+  if (startAdv(g_reading, fresh, vbatOk, vbatMv, tempOk, tempC, dieTempOk, dieTempQ4, otaPowerOk,
+               longWindow))
   {
-    runAdvertisingWindow();
+    if (longWindow)
+    {
+      runAdvertisingWindow();
+    }
+    else
+    {
+      // Nothing can connect, so there is nothing to poll for: sleep through the burst.
+      sleepFeeding(SHORT_ADV_MS);
+      if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
+    }
     g_lastAdvertOkMs = millis();
     bootGuardNoteHealthyAdvert();
   }

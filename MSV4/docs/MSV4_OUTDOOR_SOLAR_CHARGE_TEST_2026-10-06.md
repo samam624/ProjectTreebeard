@@ -148,6 +148,8 @@ From 20:03 the DisplayCenter receiver also ingests sensor 10 and uploads it to t
 | 22:10 | Maintainer: the probe is in air, sitting in a window for a window-charging test, with an MSV3 probe next to it |
 | 22:16 | `prod-2026-10-06d` (v262153) installed: the ADC offset is now recalibrated every wake. Counter restarted at 1 |
 | 22:17–22:26 | 3818–3827 mV, mean 3821. Back on the same footing as the afternoon's 3826 |
+| 22:55 | `prod-2026-10-06e` (v262154) installed: lighter advertising, shorter measurement wake. **The load is lower from here** (modelled 1.2–1.3 mAh/day against 2.1–2.4 before). Counter restarted at 1 |
+| 22:55–23:06 | 3814–3820 mV |
 
 The cell was at 3823–3830 mV from 20:05 to 21:12, so it held within the same 15 mV band from 15:33
 to 21:24 through daylight, dusk and two firmware transfers.

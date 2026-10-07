@@ -12,7 +12,8 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 | First build | `MSV4-BUILD:prod-2026-10-06`, application version 262148, sensor ID 10 (23-byte packet) |
 | Second build, same day | `MSV4-BUILD:prod-2026-10-06b`, application version 262150: adds die temperature (26-byte packet, layout A) |
 | Third build, same day | `MSV4-BUILD:prod-2026-10-06c`, application version 262152: layout B, which adds `Cd` and moves `Cp` out of the packet. On board 1 21:55–22:16 PDT |
-| Fourth build, same day | `MSV4-BUILD:prod-2026-10-06d`, application version 262153: ADC offset recalibrated at every wake. On board 1 since 22:16 PDT |
+| Fourth build, same day | `MSV4-BUILD:prod-2026-10-06d`, application version 262153: ADC offset recalibrated at every wake. On board 1 22:16–22:55 PDT |
+| Fifth build, same day | `MSV4-BUILD:prod-2026-10-06e`, application version 262154: lighter advertising, 1 ms sweep settle, cheaper fit arithmetic. On board 1 since 22:55 PDT |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -51,6 +52,82 @@ console figure to compare against, so whether that is normal for this board in a
 - The transfer was moved onto the hardened client settings `scripts/ble_ota_update.py` uses (6 s
   receipt deadline, receipt guard, negotiated MTU, PRN 16). It then completed in **57 s** on the
   first session, after one stale-session reset.
+
+## Power: what the cycle costs and what 262154 changed
+
+**Time, measured** (cloud timestamps and a frame listener, 2026-10-06):
+
+| | Before (262148–262153) | 262154 |
+|---|---|---|
+| Wake spacing | 60.00 s median, 101 intervals | unchanged |
+| Ordinary wake | 5 s connectable window; frames heard spanning up to 4.98 s | 4 s non-connectable burst |
+| Measurement wake, sweep plus fit, blade in air | 3.8 s median, 12 wakes (range 3.2–6.0) | 2.7 s (one clean sample, and a second consistent with it) |
+| `Cd` / fit residual, blade in air | 12.96–13.04 pF / 0.0229–0.0231 | 12.99–13.01 pF / 0.0229 |
+| Receiver packets missed | 2 of 149 (1.3 %) | 0 of 11, of which 7 were short bursts |
+
+**Energy, modelled only.** No current has been measured on this board. Using the nRF52840
+product specification's typical figures in LDO mode (the Arduino core never enables DC/DC):
+TX at +8 dBm 32.7 mA, RX 9.9 mA, CPU from flash 6.3 mA, TIMER at 16 MHz with HFXO 0.82 mA,
+SAADC 1.24 mA, System ON with RTC 3.2 µA.
+
+| Per 10 minutes | Before | 262154 |
+|---|---:|---:|
+| Advertising | about 32 mC (56 events × 10 windows) | about 10 mC (9 bursts of 16 events, one window of 56) |
+| Sweep | about 4.7 mC | about 4.2 mC |
+| Fit arithmetic, blade in air | about 13.8 mC | about 11 mC |
+| Sleep, if MSV4 matches MSV3's measured 10–15 µA | 5–8 mC | unchanged |
+| **Total** | **about 55–60 mC, 2.1–2.4 mAh/day** | **about 31–34 mC, 1.2–1.3 mAh/day** |
+
+What changed in 262154:
+
+- **Advertising.** The full 5 s connectable window is opened only on measurement wakes (every
+  tenth) and on the first three wakes after a boot. Every other wake sends the same packet as a
+  4 s non-connectable, non-scannable burst at 250 ms: about 16 events instead of about 56 and no
+  receive slot after each. It is spread over 4 s deliberately: the receiver listens 25 ms in every
+  75 and stops scanning for 2–3 s around each cloud upload, so a dense burst would be lost whole
+  whenever it met an upload. Flags 2 bit 2 marks a short burst.
+  **Consequence:** an updater or a DIS read can wait up to ten minutes for a connectable window.
+  `msv4_ble_ota.py` and `msv4_adv_scan.py --read-build` wait for one themselves; this was
+  exercised at 23:10–23:15, when the DIS was read through the window at counter 21.
+- **Sweep settle** 5 ms → about 1 ms (the maintainer's call). `delay(2)` is used because the
+  tick-based delay ends on a tick boundary: `delay(1)` can be anything from 0 to 0.98 ms.
+- **Fit arithmetic.** The divider model is evaluated in real arithmetic instead of through the
+  general complex type. Same result (3e-16 over 200,000 random cases), fewer operations.
+
+The fit was expected to speed up by 3× or more and did not: the wake shortened by 1.1 s, about
+0.6 s of it the sweep. **Inferred:** with the blade in air the fit is degenerate and runs to its
+iteration limit on all four starting points, and its time is dominated by divisions, whose count
+did not change. In soil it should converge in far fewer iterations; that has not been measured.
+
+Left alone, with the reason:
+
+- **TX power** stays at +8 dBm. After the advertising change it is worth about 0.09 mAh/day at
+  +4 dBm, and it would have been a second radio change on top of the first.
+- **Measurement interval** stays at 10 minutes.
+- **DC/DC regulator** is not enabled. See below.
+
+### The chip's DC/DC regulator
+
+The nRF52840's core runs at about 1.3 V. On its linear regulator the supply current equals the
+core current and the rest of the voltage is burned as heat; the DC/DC converter trades voltage
+for current instead, which is why the specification's 32.7 mA at +8 dBm becomes 14.8 mA and
+6.3 mA of CPU becomes 3.3 mA. It needs an inductor between the chip's DCC and DEC4 pins. In
+sleep it makes no difference.
+
+Whether the E73-2G4M08S1C module has that inductor is **not established**:
+
+- For: Ebyte's manual quotes the module's own transmit currents "(DC/DC, 3 V)" as 17.05, 12.68
+  and 7.63 mA at +8, +4 and 0 dBm, which are not Nordic's chip figures, so Ebyte appears to have
+  measured the module in DC/DC mode. The module exposes only the high-voltage stage's DCCH pin,
+  so the inductor for the main stage would have to be inside it.
+- Against: a Nordic DevZone report of this exact module drawing 30 mA after
+  `sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE)`. It was never resolved; the poster suspected
+  their measurement setup.
+
+It was not tried on board 1. If the inductor is missing, enabling the converter can brown the
+chip out at every boot, and a brownout does not advance the boot counter, so the board would not
+escape to DFU on its own. It needs a bench test with a current meter and SWD at hand. Modelled
+saving if it works: about 0.4 mAh/day on top of 262154.
 
 ## The battery reading depended on the boot (found and fixed 2026-10-06)
 
@@ -110,6 +187,9 @@ Deliberate differences from the two parents:
 
 ## Wake cycle
 
+(As first written, for 262148. From 262154 step 3 is the full connectable window only on
+measurement wakes and the first three wakes after a boot; see "Power" below.)
+
 Every 60 s:
 
 1. Battery through the Q1 divider, then tip NTC temperature.
@@ -148,7 +228,7 @@ came from dropping the TX Power structure from the advertisement, which nothing 
 | 19–20 | `Cm`, uint16 LE, units of 0.1 pF. Reads 0 while nothing conducts | same |
 | 21–22 | `Cd`, uint16 LE, units of 0.01 pF; 0 = not sent | 21: `Cp` in 0.1 pF (120 = default). 22: residual |
 | 23–24 | nRF52840 die temperature, int16 LE, quarter-°C. The board end, not the soil | same (absent in 262148) |
-| 25 | Flags 2: bit0 die temperature valid, bit1 layout B | bit0 only |
+| 25 | Flags 2: bit0 die temperature valid, bit1 layout B, bit2 short non-connectable burst (262154 onward) | bit0 only |
 
 `Rsoil` never needs more than 22 bits, which is where byte 13 came from. A reader that still takes
 bytes 10–13 as one 32-bit number sees an out-of-range resistance on a layout B packet and rejects
@@ -313,3 +393,6 @@ rows and its script parses, but nobody has looked at the rendered charts yet.
 - [ ] MSV4 still shares MSV3's DFU device type `0x3356`. `msv4_ble_ota.py` refuses an MSV3 image
       by its identity string, but the bootloader itself would accept one
 - [ ] Measure sleep current and per-wake charge
+- [ ] Bench-test the nRF52840 DC/DC regulator on an E73 module, with a current meter and SWD
+- [ ] Time the fit with the blade in soil; if it is still slow, stop iterating once the
+      conductance has fallen below what the packet can report

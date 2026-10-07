@@ -598,9 +598,9 @@
         "bootloader_source": "MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md: flashed over SWD with --msv3 1.0.3. Not re-read since.",
         "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
         "device_type": "0x3356",
-        "installed_application_version": 262153,
-        "installed_build": "MSV4-BUILD:prod-2026-10-06d",
-        "installed_source": "OBSERVED 2026-10-06 22:27 PDT: DIS firmware revision MSV4-BUILD:prod-2026-10-06d, software revision 262153 and hardware revision 'Cp 8.76 pF' read over BLE, after advertisement counters 1-10 advanced one per minute. History of the day: bring-up console 262147 -> prod 262148 (15:32) -> prod 262150 (21:20) -> bring-up console 262151 (21:41, diagnostic sweep) -> prod 262152 (21:55) -> prod 262153 (22:16, ADC recalibrated every wake). Every step after the first went in through the running image's own buttonless jump.",
+        "installed_application_version": 262154,
+        "installed_build": "MSV4-BUILD:prod-2026-10-06e",
+        "installed_source": "OBSERVED 2026-10-06 23:15 PDT: DIS firmware revision MSV4-BUILD:prod-2026-10-06e, software revision 262154 and hardware revision 'Cp 8.78 pF' read over BLE through the scheduled connectable window at counter 21; the receiver logged counters 1-11 with none missing. History of the day: bring-up console 262147 -> prod 262148 (15:32) -> 262150 (21:20) -> console 262151 (21:41, diagnostic sweep) -> prod 262152 (21:55) -> 262153 (22:16, ADC recalibrated every wake) -> 262154 (22:55, lighter advertising, 1 ms sweep settle, cheaper fit).",
         "physical_state": {
           "verified": "2026-10-06",
           "source": "maintainer stated 2026-10-06 ~22:10 PDT: 'its in air rn sitting in the window to test the window charging with MSV3 next to it'. Earlier the same day (14:57): the board was at home after lab oscilloscope checks, for a solar panel test the maintainer called 'outdoor'.",
@@ -610,7 +610,7 @@
           "power": "solar panel + cell through the BQ25504 -- this is the configuration under test. Panel: the BOM panel, 2 V / 60 mA / 0.12 W, 36 x 30 mm (maintainer stated 2026-10-06: 'the new one in the BOM, the lower voltage small 30x36 one'). Measured V_OC / I_SC NOT STATED. Cell: maintainer stated 2026-10-06 that it has 'been dropping for a couple days now' (no voltage given).",
           "enclosure": "NOT STATED",
           "neighbours": "an MSV3 probe sits next to it in the window (maintainer stated 2026-10-06 ~22:10 PDT: 'its in air rn sitting in the window to test the window charging with MSV3 next to it'); WHICH MSV3 probe was not stated. Sensors 4 and 7 were both reporting to the receiver that evening.",
-          "firmware": "MSV4-BUILD:prod-2026-10-06d, application version 262153, sensor ID 10 -- production wake/measure/advertise/sleep image, 26-byte layout B packet (die temperature, Cd at 0.01 pF, Cp published in the DIS hardware revision string), ADC offset recalibrated at every wake. There is no BLE console on this board; a console package now needs an application version above 262153. Never install an MSV3 production package on it (the bootloader shares MSV3's DFU device type and will not refuse it).",
+          "firmware": "MSV4-BUILD:prod-2026-10-06e, application version 262154, sensor ID 10 -- production wake/measure/advertise/sleep image. CONNECTABLE ONLY on measurement wakes (every tenth minute) and the first three wakes after a boot; every other wake is a 4 s non-connectable burst, so an updater or a DIS read can wait up to ten minutes (MSV4/scripts/msv4_ble_ota.py and msv4_adv_scan.py --read-build do this themselves). 26-byte layout B packet, ADC offset recalibrated every wake. There is no BLE console on this board; a console package now needs an application version above 262154. Never install an MSV3 production package on it (the bootloader shares MSV3's DFU device type and will not refuse it).",
           "mods": "NOT STATED (whether an SP+ zener or any rework beyond the 2026-10-01 solder fixes is fitted)"
         },
         "active_test": {

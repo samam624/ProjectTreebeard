@@ -103,7 +103,7 @@ assert.match(scanner, /rsoil_deci = rsoil_word & 0xFFFFFF/);
 
 // ---- Layout B (flags2 bit1): residual in byte 13, Cd in bytes 21-22, no Cp ----
 assert.match(probe, /#define ADV_FLAG2_LAYOUT_B\s+\(1U << 1\)/);
-assert.match(probe, /mfg\[25\] = ADV_FLAG2_LAYOUT_B \| \(dieTempOk \? ADV_FLAG2_DIE_TEMP_OK : 0\);/,
+assert.match(probe, /mfg\[25\] = ADV_FLAG2_LAYOUT_B \| \(dieTempOk \? ADV_FLAG2_DIE_TEMP_OK : 0\)/,
   "This sketch only ever writes layout B, so it must always say so.");
 assert.match(probe, /mfg\[13\] = reading\.valid \? reading\.rmsE4 : 0;/);
 assert.match(probe, /mfg\[21\] = \(uint8_t\)\(cd & 0xFF\);/);
@@ -128,6 +128,21 @@ assert.match(receiver,
   /len >= MSV4_EXTENDED_PACKET_LEN && \(buffer\[25\] & MSV4_ADV_FLAG2_DIE_TEMP\) != 0[\s\S]{0,260}buffer\[23\] \| \(buffer\[24\] << 8\)/);
 assert.match(scanner, /flags2 = payload\[23\] if len\(payload\) >= EXTENDED_LEN else 0/);
 assert.match(scanner, /if flags2 & FLAG2_DIE_TEMP_OK:\s*die_c = struct\.unpack_from\("<h", payload, 21\)/);
+
+// ---- Short bursts (flags2 bit2): the packet says when nothing can connect ----
+// From application 262154 most wakes advertise non-connectably. An updater that tried to connect
+// on one would burn its retries, so the probe marks them and both host tools wait for a packet
+// without the mark. The receiver ignores the bit: the readings are the same either way.
+const updater = await readFile(join(repoRoot, "MSV4", "scripts", "msv4_ble_ota.py"), "utf8");
+assert.match(probe, /#define ADV_FLAG2_SHORT_BURST\s+\(1U << 2\)/);
+assert.match(probe, /\(longWindow \? 0 : ADV_FLAG2_SHORT_BURST\)/);
+assert.match(probe, /BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED/);
+assert.match(scanner, /^FLAG2_SHORT_BURST = 1 << 2$/m);
+assert.match(updater, /^SHORT_BURST_FLAG2 = 0x04$/m);
+assert.match(updater, /payload\[23\] & SHORT_BURST_FLAG2/);
+// A measurement wake must always open the connectable window: it is the only scheduled way in.
+assert.match(probe,
+  /const bool longWindow = g_wakesUntilMoisture == 0 \|\| g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;/);
 
 // ---- An MSV4 packet must not be judged or stored as an FDC reading ----
 assert.match(receiver, /if \(msv4\)\s*\{\s*caplessTank = false;\s*bareTankValid = false;/);
