@@ -11,7 +11,8 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 | Sketch | `MSV4/arduino/MSV4_Moisture_BLE_Sleep/MSV4_Moisture_BLE_Sleep.ino` |
 | First build | `MSV4-BUILD:prod-2026-10-06`, application version 262148, sensor ID 10 (23-byte packet) |
 | Second build, same day | `MSV4-BUILD:prod-2026-10-06b`, application version 262150: adds die temperature (26-byte packet, layout A) |
-| Third build, same day | `MSV4-BUILD:prod-2026-10-06c`, application version 262152: layout B, which adds `Cd` and moves `Cp` out of the packet. On board 1 since 21:55 PDT |
+| Third build, same day | `MSV4-BUILD:prod-2026-10-06c`, application version 262152: layout B, which adds `Cd` and moves `Cp` out of the packet. On board 1 21:55–22:16 PDT |
+| Fourth build, same day | `MSV4-BUILD:prod-2026-10-06d`, application version 262153: ADC offset recalibrated at every wake. On board 1 since 22:16 PDT |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -50,6 +51,39 @@ console figure to compare against, so whether that is normal for this board in a
 - The transfer was moved onto the hardened client settings `scripts/ble_ota_update.py` uses (6 s
   receipt deadline, receipt guard, negotiated MTU, PRN 16). It then completed in **57 s** on the
   first session, after one stale-session reset.
+
+## The battery reading depended on the boot (found and fixed 2026-10-06)
+
+The maintainer noticed the battery "jump" after the 21:41–21:55 gap. Measured, same cell, in the
+dark, no charging possible:
+
+| Image, boot time | Battery readings | Mean |
+|---|---|---:|
+| 262148, 15:32 (first hour / last hour) | 3821–3832 / 3823–3830 mV | 3826 mV |
+| 262150, 21:20 | 3820–3829 mV, flat from the first reading | 3823 mV |
+| console 262151, 21:41 (BLE connected, so under load) | 3816, 3816 mV | |
+| **262152, 21:55** | 3829, then 3834–3844 mV | **3838 mV** |
+| 262153, 22:16 (recalibrates every wake) | 3818–3827 mV | 3821 mV |
+
+The 262152 boot read about 13 mV high for its whole 21 minutes. Its first reading, 3829, is the
+console's 3816 plus 13, and it then rose the same 10 mV or so that any reading does once a
+transfer's load comes off. The step went away the moment the offset was recalibrated.
+
+Cause, as far as it is established: all of these images calibrated the SAADC offset **once, at
+boot**. 262152 was the first to run that calibration earlier in `setup()`, before the GATT
+services are registered (so that `Cp` could go into the DIS string). **Measured:** that boot's
+calibration was off by about 7 LSB at the ADC input, and the four other boots agree with each
+other within 3 mV. **Inferred, not tested:** that the earlier position in `setup()` is why. It
+could equally be chance.
+
+The fix does not depend on which: from 262153 the offset is recalibrated at the start of every
+wake, with `OVERSAMPLE` forced to bypass first so each calibration is taken in the same
+configuration. Scatter is unchanged (9 mV peak to peak, as before), so one calibration per wake
+adds no noise. It also follows the offset's drift with temperature, which a boot-time
+calibration cannot.
+
+**Cloud rows for sensor 10 between 21:55 and 22:16 on 2026-10-06 carry battery values about
+13 mV high.** They have not been altered.
 
 ## Where the code comes from
 

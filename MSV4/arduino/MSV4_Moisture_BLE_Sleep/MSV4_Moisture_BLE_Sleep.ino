@@ -473,8 +473,19 @@ static inline bool readAinMv(uint8_t ain, uint8_t osLog2, uint32_t tacqUs, float
   return saadcReadMv(static_cast<uint8_t>(ain + 1), osLog2, tacqUs, mv);
 }
 
+// Offset calibration. Runs at the start of EVERY wake since application version 262153, not once
+// at boot. Measured on board 1, 2026-10-06: a boot-time calibration is whatever the supply and
+// the SoftDevice happened to be doing in that instant, and it then biases every reading until the
+// next reset. Two production boots agreed at 3826 and 3823 mV; the third (262152, which ran this
+// earlier in setup()) read the same resting cell 13 mV higher, in the dark. A wake is a quiet,
+// repeatable moment, and recalibrating there also follows the offset's drift with temperature,
+// which a probe in a window sees every day.
+// OVERSAMPLE is forced to bypass first so every calibration is taken in the same configuration,
+// whatever the previous read left behind.
 static bool saadcCalibrate()
 {
+  NRF_SAADC->ENABLE = 0;
+  NRF_SAADC->OVERSAMPLE = SAADC_OVERSAMPLE_OVERSAMPLE_Bypass;
   NRF_SAADC->ENABLE = 1;
   NRF_SAADC->EVENTS_CALIBRATEDONE = 0;
   NRF_SAADC->TASKS_CALIBRATEOFFSET = 1;
@@ -1300,7 +1311,9 @@ void loop()
   cycleCounterEnable();
   const uint32_t cycleStartMs = millis();
 
-  // Battery first, before the front end or the radio loads the rail.
+  // Fresh ADC offset first (see saadcCalibrate()), then the battery, before the front end or the
+  // radio loads the rail.
+  saadcCalibrate();
   float vbatMv = 0;
   const bool vbatOk = measureVbatMv(vbatMv) && vbatMv >= 2500.0f && vbatMv <= 5000.0f;
   float tempC = 0;

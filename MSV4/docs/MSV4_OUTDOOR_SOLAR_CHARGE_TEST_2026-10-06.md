@@ -9,7 +9,7 @@ Dated record of a test in progress. Current physical state lives in `MSV3/fleet.
 | Status | Running |
 | Ended | — |
 | Board | Board 1, `MSV4-BU-AD95` (`F6:26:7D:76:AD:95`) — the only MSV4 bring-up board seen in a BLE scan at 15:02 |
-| Location | Maintainer's home, outdoors |
+| Location | Maintainer's home. Called an "outdoor" test at the start; at 22:10 the maintainer said it is sitting in a window, in air, for window charging, with an MSV3 probe beside it |
 | Question | Does the panel charge the cell over time, and is the BQ25504 wired correctly? |
 
 ## Stated by the maintainer at the start
@@ -144,10 +144,23 @@ From 20:03 the DisplayCenter receiver also ingests sensor 10 and uploads it to t
 | 21:21–21:24 | 3820–3825 mV, tip 22.75–23.0 °C, die 23.5–24.0 °C |
 | 21:40–21:55 | Bring-up console put back for a diagnostic sweep (continuous advertising, several connections, two firmware transfers). `vbat` 3816 mV at 21:42 and 21:46 |
 | 21:55 | Production image `prod-2026-10-06c` (v262152) installed; counter restarted at 1 |
-| 21:55–21:58 | 3829, 3837, 3839, 3843 mV. It was dark: this is the cell relaxing after the heavier console load came off, not charging |
+| 21:55–22:16 | 3829, then 3834–3844 mV. **Not charge, and not just relaxation as first written here: this boot's ADC calibration read about 13 mV high.** See "The battery reading depended on the boot" in the production firmware record |
+| 22:10 | Maintainer: the probe is in air, sitting in a window for a window-charging test, with an MSV3 probe next to it |
+| 22:16 | `prod-2026-10-06d` (v262153) installed: the ADC offset is now recalibrated every wake. Counter restarted at 1 |
+| 22:17–22:26 | 3818–3827 mV, mean 3821. Back on the same footing as the afternoon's 3826 |
 
 The cell was at 3823–3830 mV from 20:05 to 21:12, so it held within the same 15 mV band from 15:33
 to 21:24 through daylight, dusk and two firmware transfers.
+
+## Reading the battery trace
+
+- **Gaps are firmware changes, not power loss.** Every gap on 2026-10-06 (15:24–15:32, 21:20,
+  21:41–21:55, 22:16) is one of the transfers listed above. The board has not browned out or
+  been cut off by the harvester at any point in this record.
+- **Compare battery values only within one firmware boot before 22:16.** Up to then each boot
+  carried its own ADC offset. From 22:16 the readings are recalibrated every wake and are
+  comparable with each other, and with the 15:33–21:41 readings to within a few mV.
+- **Baseline for the window test, from 22:17:** 3821 mV.
 
 ## Result
 
