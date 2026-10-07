@@ -8,7 +8,7 @@ import {
   selectHistoryRows,
   validateHistoryRowIdentity,
 } from "./history-batch.ts";
-import { parseMsv3Diagnostics } from "./msv3-diagnostics.ts";
+import { MSV4_MOISTURE_SCALE, parseMsv3Diagnostics, parseMsv4DieTempQuarterC } from "./msv3-diagnostics.ts";
 import { parseTemperatureCompensation } from "./temperature-compensation.ts";
 
 // Permissive on purpose - not a full RFC 791/4291 validator, just enough to keep obviously
@@ -51,6 +51,11 @@ type PlantReading = {
     bareTankFdcCounts?: number;
     caplessTank?: boolean;
     tankPhase?: number;
+    // MSV4 only (moistureScale 4): fit diagnostics, packed into the bare-tank column by
+    // parseMsv3Diagnostics(). On those rows fdcCounts is soil resistance in 0.1 ohm and
+    // boardTempQuarterC is the blade-tip temperature.
+    // dieTempQuarterC (nRF52840 die) is stored in raw_moisture_khz for those rows.
+    msv4?: { cmDeciPf?: number; cpDeciPf?: number; fitRmsE4?: number; dieTempQuarterC?: number };
   };
   batteryPercent?: number;
   rssi?: number;
@@ -420,7 +425,10 @@ Deno.serve(async (request) => {
             : isValidInt32(displayMoisture) ? displayMoisture : null,
           displayMoisture: isValidInt32(displayMoisture) ? displayMoisture : null,
           moistureScale: isValidInt32(moistureScale) && moistureScale > 0 ? moistureScale : 1,
-          rawMoistureKHz: isValidInt32(Number(plant?.raw?.moistureKHz))
+          // MSV4 rows have no oscillator reading; the column holds their die temperature.
+          rawMoistureKHz: moistureScale === MSV4_MOISTURE_SCALE
+            ? parseMsv4DieTempQuarterC(plant?.raw?.msv4)
+            : isValidInt32(Number(plant?.raw?.moistureKHz))
             ? Number(plant.raw.moistureKHz)
             : null,
           rawFdcCounts: isValidRawFdcCount(Number(plant?.raw?.fdcCounts))
@@ -436,7 +444,7 @@ Deno.serve(async (request) => {
           ageMs: isValidInt32(Number(plant?.ageMs)) ? Number(plant.ageMs) : null,
           observationId,
           receivedAt: observedAtIso(historyServerNowMs, plant?.queuedAgeMs, plant?.observedAtMs),
-          ...parseMsv3Diagnostics(plant?.raw),
+          ...parseMsv3Diagnostics(plant?.raw, moistureScale),
           ...parseTemperatureCompensation(plant),
         });
       }
@@ -492,7 +500,7 @@ Deno.serve(async (request) => {
 
         const displayMoisture = Number(plant?.moisture);
         const measuredMoisture = Number(plant?.measuredMoisture);
-        const msv3Diagnostics = parseMsv3Diagnostics(plant?.raw);
+        const msv3Diagnostics = parseMsv3Diagnostics(plant?.raw, plant?.moistureScale);
         const temperatureCompensation = parseTemperatureCompensation(plant);
 
         const { error: historyError } = await supabase.rpc("msv2_store_sensor_reading", {
@@ -509,7 +517,9 @@ Deno.serve(async (request) => {
           p_moisture_scale: Number.isInteger(Number(plant?.moistureScale)) && Number(plant?.moistureScale) > 0
             ? Number(plant.moistureScale)
             : 1,
-          p_raw_moisture_khz: Number.isFinite(Number(plant?.raw?.moistureKHz))
+          p_raw_moisture_khz: Number(plant?.moistureScale) === MSV4_MOISTURE_SCALE
+            ? parseMsv4DieTempQuarterC(plant?.raw?.msv4)
+            : Number.isFinite(Number(plant?.raw?.moistureKHz))
             ? Number(plant.raw.moistureKHz)
             : null,
           p_raw_fdc_counts: Number.isFinite(Number(plant?.raw?.fdcCounts))

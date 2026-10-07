@@ -173,4 +173,5 @@ patches. The first real soil test will establish board 1's actual Cm and Rsoil r
       `PSELRESET` is still open, and what re-armed it is unexplained: neither Adafruit core 1.7.0
       nor the pinned bootloader defines `CONFIG_GPIO_AS_PINRESET`, the only code found that writes
       it. Read `0x10001200`/`0x10001204` over SWD before assuming the app restores it.*
-- [ ] Update the documented commands that point at the missing portable Python
+- [x] Update the documented commands that point at the missing portable Python
+      — *2026-10-06: noted in the bring-up firmware doc, step 4.*

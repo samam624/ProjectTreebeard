@@ -8,6 +8,11 @@ param(
   # application-version floor, so every later image for the same board must use a larger number.
   # 0x00040000 + n keeps MSV4 bring-up images in their own range, clear of MSV3's 655xx numbers.
   [uint32]$ApplicationVersion = 262145,
+  # Required by arduino/MSV4_Moisture_BLE_Sleep, which refuses to compile without it: the sensor ID
+  # is a build parameter so (commit, sensor id) reproduces a deployed image. The bring-up console
+  # has no sensor ID and ignores this.
+  [ValidateRange(0, 255)]
+  [int]$SensorId = 0,
   # Also produce a signed BLE DFU package (needs the MSV3 signing key and DFU tools).
   [switch]$Package,
   # Required with -Package. The package is signed with the MSV3 key and tagged with MSV3's device
@@ -96,6 +101,7 @@ New-Item -ItemType Directory -Force -Path $buildPath, $outDir | Out-Null
 
 $defines = @("-DMSV4_APP_VERSION=$ApplicationVersion")
 if ($BuildTag) { $defines += "-DMSV4_BUILD_TAG=$BuildTag" }
+if ($SensorId -gt 0) { $defines += "-DMSV4_SENSOR_ID=$SensorId" }
 $defineFlags = $defines -join " "
 
 # Forward slashes: these strings pass through arduino-cli property expansion into gcc/ld arguments.

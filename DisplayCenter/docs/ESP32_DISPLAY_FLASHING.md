@@ -4,7 +4,27 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-09-02, the display receiver was reflashed on `COM16` with the normal production build:
+As of 2026-10-06 21:19 PDT, the display receiver was reflashed on `COM16` with the normal
+production build:
+
+```text
+Treebeard runtime build 2026-10-06 msv4-die-temp-v3
+```
+
+This is the third build flashed that evening (`msv4-conductance-scale4` at 20:02,
+`msv4-history-charts` at 21:10); each added to the one before.
+
+It adds MSV4 conductance probes (flag bit7, moisture scale 4); see
+`MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md`. Measured after the flash: WiFi and the BLE
+scanner came up, sensors 1, 4, 7 and 10 were received, and a snapshot upload returned `HTTP 200`
+with seven history rows and an empty queue.
+
+`COM16` follows the USB socket, not the board: this receiver and the ESP32-S3 SWD flasher share
+the same USB identifiers and carry no serial number, so either one shows up as `COM16` there.
+Before flashing, confirm it is the receiver by its `[Treebeard ...]` log lines
+(`python scripts/serial_capture.py --port COM16 --duration 75 --no-reset --out <file>`).
+
+Earlier known-good build, 2026-09-02:
 
 ```text
 Treebeard runtime build 2026-09-02 treebeard-rename-v1

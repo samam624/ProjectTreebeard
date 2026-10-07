@@ -60,7 +60,11 @@ would always be wrong. So MSV4 never touches it:
    BLE DFU.
 
 4. **Install the app over BLE** from the bootloader. Have only this board powered, find its DFU
-   address, then pass it explicitly:
+   address, then pass it explicitly. Two notes added 2026-10-06: where the portable Python is
+   missing (the lab computer on 2026-10-01), plain `python` 3.12 or newer with `bleak` and
+   `pyserial` runs every script in this document; and once the board is in `MSV3/fleet.json`
+   (`msv4_boards`), `MSV4\scripts\msv4_ble_ota.py <zip> --board N --skip-jump` is the transfer
+   to use, because `ble_dfu_recover.py` failed on a weak link that day.
    ```powershell
    MSV3\.arduino-build\python-portable\runtime\python.exe scripts\ble_dfu_recover.py `
      MSV4\.arduino-build\msv4-out\MSV4_Probe_Bringup_BLE-v262145-first-signed-ota.zip --device <address>
@@ -151,19 +155,27 @@ is power-cycled.
 - BLE UART is unauthenticated. Anyone in range can drive the front end or trigger a DFU reset,
   though never an unsigned image. That's acceptable for bench bring-up and not for deployment.
 
-## First-board checklist (nothing here has been observed yet)
+## First-board checklist
 
-- [ ] `info` shows LFCLK `XTAL running` both at setup entry and now, and a plausible start wait (~250 ms)
-- [ ] `vbat` matches a meter on `VBAT+` within ~2 %; `vdd` ≈ 3300 mV
-- [ ] `temp` is about room temperature; warming the blade tip with a finger moves it
-- [ ] `drive 16` gives a 1.000 MHz square wave on DRV and the `pins` report shows `[GPIOTE] hi-drive`; `drive off` returns it low
-- [ ] On a scope with DRV and READ_CNTL, the `phase 0/4/8/12` edge positions match the table above
-- [ ] `swap a` / `swap b` / `swap open` and `chop on`, then `read`: `SENSE_OUT` moves between states. OPEN is the reference
-- [ ] `iq` shows a stable φ between repeats, and `sweep 16` shows a residual small next to A
-- [ ] After every cancel and failure mode (disconnect during `drive`, `sweep` then `stop`, `vbat`, `temp`),
+> **Annotated 2026-10-06.** This list was written before any MSV4 hardware existed. Board 1 has
+> since been through it: results and numbers are in
+> [MSV4_BOARD1_BRINGUP_2026-10-01.md](MSV4_BOARD1_BRINGUP_2026-10-01.md), including the scope
+> item, which was closed on 2026-10-06. Boxes are ticked where that record holds a measurement.
+> Two differences from what is written below: LFCLK reads **RC at setup entry** (the bootloader
+> runs on LFRC) and XTAL afterwards, which is the expected result; and the dead-crystal escape has
+> not been tested on any board.
+
+- [x] `info` shows LFCLK `XTAL running` both at setup entry and now, and a plausible start wait (~250 ms)
+- [x] `vbat` matches a meter on `VBAT+` within ~2 %; `vdd` ≈ 3300 mV
+- [x] `temp` is about room temperature; warming the blade tip with a finger moves it
+- [x] `drive 16` gives a 1.000 MHz square wave on DRV and the `pins` report shows `[GPIOTE] hi-drive`; `drive off` returns it low
+- [x] On a scope with DRV and READ_CNTL, the `phase 0/4/8/12` edge positions match the table above
+- [x] `swap a` / `swap b` / `swap open` and `chop on`, then `read`: `SENSE_OUT` moves between states. OPEN is the reference
+- [x] `iq` shows a stable φ between repeats, and `sweep 16` shows a residual small next to A
+- [x] After every cancel and failure mode (disconnect during `drive`, `sweep` then `stop`, `vbat`, `temp`),
       `pins` shows both `/OE` released, DRV/TEMP_READ/VBAT_DIV_EN low, and no 1 MHz waveform remains on the scope
-- [ ] Ten `drive` start/stop and disconnect cycles in a row: `info` shows HFXO off afterwards, and drive still starts cleanly
-- [ ] `dfu enter`, then reinstall with a larger version over BLE **without power-cycling**. The new app
+- [x] Ten `drive` start/stop and disconnect cycles in a row: `info` shows HFXO off afterwards, and drive still starts cleanly
+- [x] `dfu enter`, then reinstall with a larger version over BLE **without power-cycling**. The new app
       must advertise and `info` must show LFCLK on XTAL. This proves the WDT is fed during DFU AND that
       the LFRC-bootloader → LFXO-app handoff survives an inherited running WDT. If it bounces back into
       DFU, a power cycle recovers it, but that would justify an MSV4-specific LFXO bootloader.

@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-09-14 msv3-capless-scale3"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-06 msv4-die-temp-v3"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -403,6 +403,43 @@ const size_t MSV3_DIAGNOSTIC_PACKET_LEN = 23;
 const uint8_t MSV2_MOISTURE_SCALE_VERSION = 1;
 const uint8_t MSV3_MOISTURE_SCALE_VERSION = 2;
 const uint8_t MSV3_CAPLESS_MOISTURE_SCALE_VERSION = 3;
+// 2026-10-06: MSV4 probes (MSV4/arduino/MSV4_Moisture_BLE_Sleep) keep the 23-byte MSV3 layout and
+// set flag bit7. The sensor fields then mean something else entirely: bytes 10-13 are the fitted
+// soil resistance in 0.1 ohm (not an FDC count), bytes 17-18 are the blade-tip NTC temperature
+// (not die temperature), and bytes 19-22 pack Cm, Cp and the fit residual (not a bare-tank count).
+// They travel through the SAME SensorReading/PendingHistoryReading fields as their MSV3
+// counterparts so the durable history record and the cloud columns do not change; scale 4 is
+// what tells every consumer which meaning applies. See that sketch's layout comment above
+// startAdv() -- the packet is an ABI with this parser.
+const uint8_t MSV4_MOISTURE_SCALE_VERSION = 4;
+const uint8_t MSV4_ADV_FLAG = 0x80;
+// The probe saturates Rsoil here (400 kohm): with its 1 kohm source resistor it cannot tell
+// larger values apart, and in air the fit runs off to 1e14 ohm. Below 1 ohm is the fit collapsing
+// with nothing to conduct, which the probe already marks invalid.
+const uint32_t MSV4_RSOIL_DECIOHM_MIN = 10UL;
+const uint32_t MSV4_RSOIL_DECIOHM_MAX = 4000000UL;
+// Soil conductivity rises about 2 %/C, the standard EC correction. The probe sends Rsoil
+// uncorrected with the tip temperature beside it, so the correction lives here with every other
+// calibration.
+const float MSV4_EC_TEMPCO_PER_C = 0.02f;
+const float MSV4_EC_REFERENCE_C = 25.0f;
+// Presentation units per decade of resistance; see calibrateMsv4Moisture().
+const float MSV4_MOISTURE_UNITS_PER_DECADE = 10000.0f;
+// The BQ25504 stops charging this cell at VBAT_OV and switches the load off at VBAT_OK falling
+// (nominal resistor values, MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md), so an MSV4 battery only ever
+// moves through that slice of the LiPo curve.
+const float MSV4_BATTERY_EMPTY_MV = 3369.0f;
+const float MSV4_BATTERY_FULL_MV = 3889.0f;
+// MSV4 application version 262150 grew the packet from 23 to 26 bytes: bytes 23-24 are the
+// nRF52840 die temperature (quarter-degrees C, the board end of the probe, not the soil) and
+// byte 25 is a second flags byte whose bit0 marks that temperature valid. The 23-byte packet
+// from 262148 stays valid; the tail is optional.
+const size_t MSV4_EXTENDED_PACKET_LEN = 26;
+const uint8_t MSV4_ADV_FLAG2_DIE_TEMP = 0x01;
+// History keeps that die temperature in the record's rawMoistureKHz slot, which an MSV4 row
+// otherwise leaves empty, offset so 0 still means "absent" as it does for every use of the slot.
+// It reaches the cloud's raw_moisture_khz column as plain quarter-degrees.
+const int16_t MSV4_DIE_TEMP_HISTORY_OFFSET = 1000;
 // Keep a passive scan session alive long enough that advertisements from several probes do
 // not repeatedly collide with stop/clear/restart gaps. Results are still cleared between
 // sessions, bounding NimBLE's discovered-device storage, but the allocator churn now happens
@@ -599,10 +636,57 @@ const BuzzerStep BUZZER_WATER_WARNING[] = {
 // Keep this first helper below BuzzerStep. Arduino inserts generated prototypes immediately
 // before the first .ino function definition; moving a function above this struct makes those
 // prototypes refer to BuzzerStep before the type exists (see the preprocessor warning at EOF).
-static inline uint8_t moistureScaleVersion(bool wideRaw, bool caplessTank)
+static inline uint8_t moistureScaleVersion(bool wideRaw, bool caplessTank, bool msv4)
 {
   if (!wideRaw) return MSV2_MOISTURE_SCALE_VERSION;
+  if (msv4) return MSV4_MOISTURE_SCALE_VERSION;
   return caplessTank ? MSV3_CAPLESS_MOISTURE_SCALE_VERSION : MSV3_MOISTURE_SCALE_VERSION;
+}
+
+// An MSV4 packet's bytes 19-22, held verbatim in rawBareTankFdcCounts (bareTankValid stays false
+// so nothing mistakes them for a tank reference): Cm in 0.1 pF, the Cp the fit used in 0.1 pF,
+// and the fit RMS residual in 1e-4 of drive.
+static inline uint16_t msv4CmDeciPf(uint32_t packed) { return (uint16_t)(packed & 0xFFFFUL); }
+static inline uint8_t msv4CpDeciPf(uint32_t packed) { return (uint8_t)((packed >> 16) & 0xFFUL); }
+static inline uint8_t msv4FitRmsE4(uint32_t packed) { return (uint8_t)((packed >> 24) & 0xFFUL); }
+
+// The MSV4-only raw fields for the hand-built JSON paths. Rsoil itself is already out as
+// raw.fdcCounts and the tip temperature as raw.boardTempQuarterC, which is how they reach the
+// existing cloud columns.
+static void appendMsv4RawJson(String& output, uint32_t packed, bool dieTempValid, int16_t dieTempQuarterC)
+{
+  output += F(",\"msv4\":{\"cmDeciPf\":");
+  output += msv4CmDeciPf(packed);
+  output += F(",\"cpDeciPf\":");
+  output += msv4CpDeciPf(packed);
+  output += F(",\"fitRmsE4\":");
+  output += msv4FitRmsE4(packed);
+  if (dieTempValid)
+  {
+    output += F(",\"dieTempQuarterC\":");
+    output += dieTempQuarterC;
+  }
+  output += '}';
+}
+
+static inline uint16_t msv4EncodeDieTemp(bool valid, int16_t quarterC)
+{
+  return valid ? (uint16_t)(quarterC + MSV4_DIE_TEMP_HISTORY_OFFSET) : 0;
+}
+
+static inline bool msv4DecodeDieTemp(uint16_t encoded, int16_t& quarterC)
+{
+  if (encoded == 0) return false;
+  quarterC = (int16_t)((int32_t)encoded - MSV4_DIE_TEMP_HISTORY_OFFSET);
+  return true;
+}
+
+// The history-record form: the die temperature comes out of the rawMoistureKHz slot.
+static void appendMsv4HistoryRawJson(String& output, uint32_t packed, uint16_t encodedDieTemp)
+{
+  int16_t dieTempQuarterC = 0;
+  const bool dieTempValid = msv4DecodeDieTemp(encodedDieTemp, dieTempQuarterC);
+  appendMsv4RawJson(output, packed, dieTempValid, dieTempQuarterC);
 }
 
 uint16_t buzzerDutyRaw()
@@ -674,6 +758,15 @@ struct SensorReading
   // bare field must be invalid and the capless presentation scale/calibration epoch must be used.
   bool caplessTank = false;
   uint8_t tankPhase = 0;
+  // Probe flag bit7: an MSV4 conductance packet. rawFdcCounts is then Rsoil in 0.1 ohm,
+  // rawBoardTempQuarterC is the blade-tip NTC, rawBareTankFdcCounts packs Cm/Cp/fit residual
+  // (see msv4CmDeciPf()), and tankPhase is 1 on the wake the probe actually measured and 0 on
+  // the wakes that repeat that measurement. See MSV4_MOISTURE_SCALE_VERSION.
+  bool msv4 = false;
+  // MSV4 26-byte packets only: nRF52840 die temperature. Kept apart from rawBoardTempQuarterC,
+  // which on an MSV4 is the tip thermistor.
+  bool msv4DieTempValid = false;
+  int16_t msv4DieTempQuarterC = 0;
   // Receiver-derived shadow channel. This never overwrites rawFdcCounts or the original
   // measuredMoisture. In Active mode (and only after two accepted daily fits), the equivalent
   // corrected count may feed the presentation filter; cloud history still receives both.
@@ -2118,11 +2211,15 @@ bool enqueueHistoryReading(uint8_t sensorId, const SensorReading& reading)
   pending.rawMoistureKHz = reading.wideRaw && reading.temperatureCompensationValid
       ? encodeTemperatureCompensatedLogRatioPpm(reading.temperatureCompensatedLogRatioPpm)
       : reading.rawMoistureKHz;
+  if (reading.msv4)
+  {
+    pending.rawMoistureKHz = msv4EncodeDieTemp(reading.msv4DieTempValid, reading.msv4DieTempQuarterC);
+  }
   pending.rawBatteryMv = reading.rawBatteryMv;
   pending.rawCharging = reading.rawCharging;
   pending.rssi = (int16_t)constrain(reading.rssi, -32768, 32767);
   pending.sensorId = sensorId;
-  pending.moistureScale = moistureScaleVersion(reading.wideRaw, reading.caplessTank);
+  pending.moistureScale = moistureScaleVersion(reading.wideRaw, reading.caplessTank, reading.msv4);
   pending.batteryPercent = reading.batteryPercent;
   pending.hasRaw = reading.hasRaw;
   pending.wideRaw = reading.wideRaw;
@@ -6332,7 +6429,18 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
   snprintf(s.probeText, sizeof(s.probeText), "%u", slot.sensorId);
   snprintf(s.rangeText, sizeof(s.rangeText), "%d-%d", slot.dry, slot.wet);
   s.hasRaw = reading != nullptr && reading->hasRaw;
-  if (s.hasRaw && reading->wideRaw)
+  if (s.hasRaw && reading->wideRaw && reading->msv4)
+  {
+    // MSV4: soil resistance as sent (0.1 ohm, not temperature-corrected). The saturated value
+    // means nothing is conducting, which a number would misrepresent.
+    if (reading->rawFdcCounts >= MSV4_RSOIL_DECIOHM_MAX)
+      strlcpy(s.rawText, "open", sizeof(s.rawText));
+    else
+      snprintf(s.rawText, sizeof(s.rawText), "%lu.%lu ohm",
+               (unsigned long)(reading->rawFdcCounts / 10UL),
+               (unsigned long)(reading->rawFdcCounts % 10UL));
+  }
+  else if (s.hasRaw && reading->wideRaw)
   {
     // MSV3: FDC2214 raw counts, not an oscillator kHz - no "kHz" suffix here.
     snprintf(s.rawText, sizeof(s.rawText), "%lu", (unsigned long)reading->rawFdcCounts);
@@ -7171,7 +7279,7 @@ String sensorDataJson()
     // unsmoothed receiver-derived reading beside it for diagnostics and cloud history.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank, r.msv4);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -7205,6 +7313,14 @@ String sensorDataJson()
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
           if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
+          if (r.msv4)
+          {
+            JsonObject msv4Item = rawItem.createNestedObject("msv4");
+            msv4Item["cmDeciPf"] = msv4CmDeciPf(r.rawBareTankFdcCounts);
+            msv4Item["cpDeciPf"] = msv4CpDeciPf(r.rawBareTankFdcCounts);
+            msv4Item["fitRmsE4"] = msv4FitRmsE4(r.rawBareTankFdcCounts);
+            if (r.msv4DieTempValid) msv4Item["dieTempQuarterC"] = r.msv4DieTempQuarterC;
+          }
         }
       }
       else
@@ -7304,7 +7420,7 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
     output += F(",\"measuredMoisture\":");
     output += reading.measuredMoisture;
     output += F(",\"moistureScale\":");
-    output += moistureScaleVersion(reading.wideRaw, reading.caplessTank);
+    output += moistureScaleVersion(reading.wideRaw, reading.caplessTank, reading.msv4);
     if (reading.batteryPercent != BATTERY_UNKNOWN)
     {
       output += F(",\"batteryPercent\":");
@@ -7362,6 +7478,11 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
           if (reading.caplessTank) output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += reading.tankPhase;
+          if (reading.msv4)
+          {
+            appendMsv4RawJson(output, reading.rawBareTankFdcCounts,
+                              reading.msv4DieTempValid, reading.msv4DieTempQuarterC);
+          }
         }
       }
       else
@@ -7422,7 +7543,8 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
   output += pending.rssi;
   output += F(",\"ageMs\":0");
   int32_t compensatedLogRatioPpm = 0;
-  if (pending.wideRaw &&
+  // An MSV4 row keeps its die temperature in this slot (msv4EncodeDieTemp()), not a log ratio.
+  if (pending.wideRaw && pending.moistureScale != MSV4_MOISTURE_SCALE_VERSION &&
       decodeTemperatureCompensatedLogRatioPpm(pending.rawMoistureKHz, compensatedLogRatioPpm))
   {
     output += F(",\"temperatureCompensatedLogRatioPpm\":");
@@ -7452,6 +7574,8 @@ void appendHistoryOutboxRowJson(String& output, const PendingHistoryReading& pen
           output += F(",\"caplessTank\":true");
         output += F(",\"tankPhase\":");
         output += pending.tankPhase;
+        if (pending.moistureScale == MSV4_MOISTURE_SCALE_VERSION)
+          appendMsv4HistoryRawJson(output, pending.rawBareTankFdcCounts, pending.rawMoistureKHz);
       }
     }
     else
@@ -7767,7 +7891,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     // while receiver-snapshot stores measuredMoisture in the original history series.
     item["moisture"] = r.moisture;
     item["measuredMoisture"] = r.measuredMoisture;
-    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank);
+    item["moistureScale"] = moistureScaleVersion(r.wideRaw, r.caplessTank, r.msv4);
     if (r.batteryPercent != BATTERY_UNKNOWN)
     {
       item["batteryPercent"] = r.batteryPercent;
@@ -7792,6 +7916,14 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
           if (r.bareTankValid) rawItem["bareTankFdcCounts"] = r.rawBareTankFdcCounts;
           if (r.caplessTank) rawItem["caplessTank"] = true;
           rawItem["tankPhase"] = r.tankPhase;
+          if (r.msv4)
+          {
+            JsonObject msv4Item = rawItem.createNestedObject("msv4");
+            msv4Item["cmDeciPf"] = msv4CmDeciPf(r.rawBareTankFdcCounts);
+            msv4Item["cpDeciPf"] = msv4CpDeciPf(r.rawBareTankFdcCounts);
+            msv4Item["fitRmsE4"] = msv4FitRmsE4(r.rawBareTankFdcCounts);
+            if (r.msv4DieTempValid) msv4Item["dieTempQuarterC"] = r.msv4DieTempQuarterC;
+          }
         }
       }
       else
@@ -7896,7 +8028,8 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     output += pending.rssi;
     output += F(",\"ageMs\":0");
     int32_t compensatedLogRatioPpm = 0;
-    if (pending.wideRaw &&
+    // An MSV4 row keeps its die temperature in this slot (msv4EncodeDieTemp()), not a log ratio.
+    if (pending.wideRaw && pending.moistureScale != MSV4_MOISTURE_SCALE_VERSION &&
         decodeTemperatureCompensatedLogRatioPpm(pending.rawMoistureKHz,
                                                  compensatedLogRatioPpm))
     {
@@ -7927,6 +8060,8 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
           output += F(",\"caplessTank\":true");
           output += F(",\"tankPhase\":");
           output += pending.tankPhase;
+          if (pending.moistureScale == MSV4_MOISTURE_SCALE_VERSION)
+            appendMsv4HistoryRawJson(output, pending.rawBareTankFdcCounts, pending.rawMoistureKHz);
         }
       }
       else
@@ -9463,6 +9598,36 @@ uint16_t calibrateMsv3CaplessMoisture(uint32_t rawFdcCounts)
   return moisture > 0xFFFF ? 0xFFFF : (uint16_t)moisture;
 }
 
+// MSV4 measures soil RESISTANCE, which falls as the soil gets wetter and spans decades, so the
+// presentation number is the log of how far below "open" it is:
+//     moisture = 10000 * log10(400 kohm / Rsoil@25C)
+// 0 with nothing conducting, about 30500 at 355 ohm, capped at 65535. Equal ratios of resistance
+// are equal steps, and like every other scale this is only an ordering: the per-plant dry/wet
+// bounds turn it into a percentage. The 25 C correction uses the blade-tip NTC when the probe
+// sent a valid one and is skipped otherwise.
+uint16_t calibrateMsv4Moisture(uint32_t rsoilDeciOhm, bool tipTempValid, int16_t tipTempQuarterC)
+{
+  if (rsoilDeciOhm < MSV4_RSOIL_DECIOHM_MIN || rsoilDeciOhm >= MSV4_RSOIL_DECIOHM_MAX)
+  {
+    return 0;
+  }
+  float rsoilDeci = (float)rsoilDeciOhm;
+  if (tipTempValid)
+  {
+    float factor = 1.0f + MSV4_EC_TEMPCO_PER_C * ((float)tipTempQuarterC * 0.25f - MSV4_EC_REFERENCE_C);
+    // -40 C would otherwise drive the linear correction through zero.
+    if (factor < 0.25f) factor = 0.25f;
+    rsoilDeci *= factor;
+  }
+  if (rsoilDeci >= (float)MSV4_RSOIL_DECIOHM_MAX)
+  {
+    return 0;
+  }
+  float moisture = MSV4_MOISTURE_UNITS_PER_DECADE * log10f((float)MSV4_RSOIL_DECIOHM_MAX / rsoilDeci);
+  if (moisture <= 0.0f) return 0;
+  return moisture >= 65535.0f ? 0xFFFF : (uint16_t)lroundf(moisture);
+}
+
 uint16_t moistureCeilingForSensor(uint8_t sensorId)
 {
   if (sensorId <= MAX_SENSOR_ID && MOISTURE_INVERT_CEILING_BY_SENSOR[sensorId] != 0)
@@ -9691,14 +9856,27 @@ uint8_t batteryMvToPercent(float mvolts)
 float smoothedBatteryPercent[MAX_SENSOR_ID + 1];
 bool smoothedBatteryReady[MAX_SENSOR_ID + 1];
 
-uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv)
+// MSV4 only: the share of the cell's USABLE charge, i.e. the standard curve rescaled between the
+// harvester's load cut-off and its charge limit. On the plain curve a full MSV4 cell reads about
+// 62 % and an about-to-shut-down one about 1 %.
+uint8_t msv4BatteryMvToPercent(float mvolts)
+{
+  const float empty = interpolateBatteryPercent(MSV4_BATTERY_EMPTY_MV);
+  const float full = interpolateBatteryPercent(MSV4_BATTERY_FULL_MV);
+  float percent = (interpolateBatteryPercent(mvolts) - empty) * 100.0f / (full - empty);
+  if (percent < 0.0f) percent = 0.0f;
+  if (percent > 100.0f) percent = 100.0f;
+  return (uint8_t)(percent + 0.5f);
+}
+
+uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool msv4)
 {
   if (sensorId > MAX_SENSOR_ID)
   {
-    return batteryMvToPercent(rawMv);
+    return msv4 ? msv4BatteryMvToPercent(rawMv) : batteryMvToPercent(rawMv);
   }
 
-  float raw = batteryMvToPercent(rawMv);
+  float raw = msv4 ? msv4BatteryMvToPercent(rawMv) : batteryMvToPercent(rawMv);
 
   if (!smoothedBatteryReady[sensorId])
   {
@@ -9905,6 +10083,9 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     bool bareTankValid = false;
     uint32_t rawBareTankFdcCounts = 0;
     bool caplessTank = false;
+    bool msv4 = false;
+    bool msv4DieTempValid = false;
+    int16_t msv4DieTempQuarterC = 0;
     uint8_t tankPhase = 0;
     if (wideRaw)
     {
@@ -9964,10 +10145,40 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         readingValid = (flags & 0x20) == 0 &&
                        rawFdcCounts >= MSV3_PLAUSIBLE_COUNT_MIN &&
                        rawFdcCounts <= plausibleCountMax;
+
+        // 2026-10-06, MSV4 (flag bit7). Same bytes, different quantities - see
+        // MSV4_MOISTURE_SCALE_VERSION - so replace the MSV3 reading of them rather than layer on
+        // it. There is no tank and no bare reference: the four diagnostic bytes are kept verbatim
+        // with bareTankValid false, and the plausibility band is a resistance, not a count. The
+        // temperature range check above applies unchanged; for MSV4 that field is the blade tip.
+        msv4 = (flags & MSV4_ADV_FLAG) != 0;
+        if (msv4)
+        {
+          caplessTank = false;
+          bareTankValid = false;
+          rawBareTankFdcCounts = bareTankField;
+          readingValid = (flags & 0x20) == 0 &&
+                         rawFdcCounts >= MSV4_RSOIL_DECIOHM_MIN &&
+                         rawFdcCounts <= MSV4_RSOIL_DECIOHM_MAX;
+          if (len >= MSV4_EXTENDED_PACKET_LEN && (buffer[25] & MSV4_ADV_FLAG2_DIE_TEMP) != 0)
+          {
+            // Same range and same distrust of the probe's own validity bit as the field above.
+            int16_t dieField = (int16_t)(buffer[23] | (buffer[24] << 8));
+            msv4DieTempValid = dieField >= -160 && dieField <= 340;
+            msv4DieTempQuarterC = msv4DieTempValid ? dieField : 0;
+          }
+        }
       }
-      moisture = caplessTank
-          ? calibrateMsv3CaplessMoisture(rawFdcCounts)
-          : calibrateMsv3Moisture(rawFdcCounts);
+      if (msv4)
+      {
+        moisture = calibrateMsv4Moisture(rawFdcCounts, boardTempValid, rawBoardTempQuarterC);
+      }
+      else
+      {
+        moisture = caplessTank
+            ? calibrateMsv3CaplessMoisture(rawFdcCounts)
+            : calibrateMsv3Moisture(rawFdcCounts);
+      }
     }
     else if (hasRaw)
     {
@@ -10012,7 +10223,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       {
         faulted.rawBatteryMv = rawBatteryMv;
         faulted.rawCharging = rawCharging;
-        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
+        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4);
       }
       portEXIT_CRITICAL(&sensorsMux);
       sensorDataDirty = true;
@@ -10040,6 +10251,13 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       temperatureCompensationResult.configuredMode = TEMPERATURE_COMPENSATION_OFF;
       temperatureCompensationResult.effectiveMode = TEMPERATURE_COMPENSATION_OFF;
     }
+    else if (msv4)
+    {
+      // Same reasoning: this learner models an FDC tank against a bare reference, and MSV4 has
+      // neither. Its temperature correction is the fixed one in calibrateMsv4Moisture().
+      temperatureCompensationResult.configuredMode = TEMPERATURE_COMPENSATION_OFF;
+      temperatureCompensationResult.effectiveMode = TEMPERATURE_COMPENSATION_OFF;
+    }
     else if (wideRaw && hasMsv3Diagnostics && boardTempValid && bareTankValid)
     {
       temperatureCompensationResult = updateTemperatureCompensation(
@@ -10064,7 +10282,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // A probe generation/packet-format change under the same sensor ID also changes its
     // numeric scale. Do not blend across those incompatible scales.
     if (reading.seen && (reading.hasRaw != hasRaw || reading.wideRaw != wideRaw ||
-                         reading.caplessTank != caplessTank))
+                         reading.caplessTank != caplessTank || reading.msv4 != msv4))
     {
       reading.moistureCenterCount = 0;
       reading.moistureCenterNext = 0;
@@ -10084,7 +10302,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // physical wake in the EMA or race another callback for this sensor's filter state.
     if (hasRaw)
     {
-      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv);
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4);
     }
     const bool useTemperatureCompensatedPresentation =
         temperatureCompensationResult.valid &&
@@ -10128,6 +10346,9 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     reading.bareTankValid = bareTankValid;
     reading.rawBareTankFdcCounts = rawBareTankFdcCounts;
     reading.caplessTank = caplessTank;
+    reading.msv4 = msv4;
+    reading.msv4DieTempValid = msv4DieTempValid;
+    reading.msv4DieTempQuarterC = msv4DieTempQuarterC;
     reading.tankPhase = tankPhase;
     reading.temperatureCompensationValid = temperatureCompensationResult.valid;
     reading.temperatureCompensatedLogRatioPpm = temperatureCompensationResult.logRatioPpm;

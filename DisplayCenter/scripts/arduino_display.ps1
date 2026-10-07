@@ -82,7 +82,8 @@ function Invoke-ReceiverRegressionChecks {
     "verify_msv3_capless_policy.mjs",
     "verify_msv3_reference_compensation.mjs",
     "verify_msv3_temperature_compensation.mjs",
-    "verify_bench_packet_abi.mjs"
+    "verify_bench_packet_abi.mjs",
+    "verify_msv4_packet_abi.mjs"
   )
 
   $PreviousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE

@@ -29,6 +29,8 @@ has been reworked is the single most repeated failure mode in this project.
   v1.2 electrode = low. **Do not try to force a single-factor answer** ("is it the electrode OR the
   readout"); sessions have repeatedly got stuck doing that. It is both, which is why the apparent
   electrode effect changes size depending on which readout it is measured through.
+- `msv4_boards` -- MSV4 boards: where each one is, what powers it, and any `active_test` running on
+  it. They are NOT in `probes[]` and no OTA tool reads this section.
 
 Rules:
 
@@ -94,6 +96,15 @@ An edit under `%LOCALAPPDATA%\Arduino15\packages` is not part of this Git reposi
 - Do not use `--allow-identity-mismatch`, `--allow-downgrade`, `--skip-jump`, or
   `--reflash-same-build` merely to make an ordinary field update proceed. Each is a deliberate
   exceptional path whose precondition must already be established.
+- **MSV4 boards are not in `probes[]` and `ble_ota_update.py` must never target one.** Use
+  `MSV4/scripts/msv4_ble_ota.py <zip> --board N` (`--preflight-only` first), which reads the board
+  from `msv4_boards` in `MSV3/fleet.json`. Prove the result with
+  `MSV4/scripts/msv4_adv_scan.py --sensor <id> --require-progress` and `--read-build <address>`,
+  then update that board's `installed_application_version` and `installed_build`. The bootloader's
+  application DFU is single-bank: a failed transfer leaves the board in BLE DFU with no
+  application, and the fix is to re-run with `--skip-jump`. Do not fall back to
+  `ble_dfu_recover.py` on a weak link: at -78 dBm on 2026-10-06 it streamed a whole image past
+  its 0.8 s receipt deadline and the bootloader refused it (status 6), twice.
 
 ## SWD sessions: never issue a bare serial command to the flasher
 

@@ -696,7 +696,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
            probe. Raw/uncompensated - see MSV3_SOFTWARE_TEMPERATURE_TANK_REFERENCE_2026-08-25.md. -->
       <section class="network-card chart-card hidden" id="historyTempSection">
         <div class="chart-head">
-          <div class="chart-title">Board (die) temperature</div>
+          <div class="chart-title" id="historyTempTitle">Board (die) temperature</div>
           <div class="chart-latest" id="historyTempLatest"></div>
         </div>
         <div class="chart-wrap">
@@ -770,6 +770,91 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         <div class="chart-wrap">
           <svg class="chart" id="historyTemperatureCompensatedChart"></svg>
           <div class="chart-tooltip" id="historyTemperatureCompensatedTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- MSV4-only (moisture_scale 4), same hidden-until-seen convention as the MSV3 cards
+           above. An MSV4 row reuses three columns for different quantities: raw_fdc_counts is
+           soil resistance in 0.1 ohm, board_temp_quarter_c is the blade-tip NTC, and
+           bare_tank_fdc_counts packs Cm / Cp / fit residual (see msv4Diagnostics() in the
+           script), and raw_moisture_khz is the nRF52840 die temperature in quarter-degrees
+           (probe application 262150 onward). The MSV3 cards above skip MSV4 rows for that reason. Packet layout and the
+           column mapping: MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md. -->
+      <section class="network-card chart-card hidden" id="historyMsv4DieTempSection">
+        <div class="chart-head">
+          <div class="chart-title">Board (die) temperature (nRF52840, at the board end, not the soil)</div>
+          <div class="chart-latest" id="historyMsv4DieTempLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4DieTempChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4DieTempTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card hidden" id="historyMsv4RsoilSection">
+        <div class="chart-head">
+          <div class="chart-title">Soil resistance, as measured (lower = wetter; 400,000 = nothing conducting)</div>
+          <div class="chart-latest" id="historyMsv4RsoilLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4RsoilChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4RsoilTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card hidden" id="historyMsv4Rsoil25Section">
+        <div class="chart-head">
+          <div class="chart-title">Soil resistance corrected to 25 °C (2 %/°C, tip temperature)</div>
+          <div class="chart-latest" id="historyMsv4Rsoil25Latest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4Rsoil25Chart"></svg>
+          <div class="chart-tooltip" id="historyMsv4Rsoil25Tooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card hidden" id="historyMsv4CmSection">
+        <div class="chart-head">
+          <div class="chart-title">Interface capacitance Cm (soil contact quality, not moisture)</div>
+          <div class="chart-latest" id="historyMsv4CmLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4CmChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4CmTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card hidden" id="historyMsv4ResidualSection">
+        <div class="chart-head">
+          <div class="chart-title">Fit residual (how well the model matched the sweep; lower = better)</div>
+          <div class="chart-latest" id="historyMsv4ResidualLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4ResidualChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4ResidualTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <section class="network-card chart-card hidden" id="historyMsv4CpSection">
+        <div class="chart-head">
+          <div class="chart-title">Sense-node Cp used by the fit (re-measured at each probe boot; 12.0 = default)</div>
+          <div class="chart-latest" id="historyMsv4CpLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4CpChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4CpTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
+      <!-- Every probe generation: rssi has been in history since migration 013. -->
+      <section class="network-card chart-card hidden" id="historyRssiSection">
+        <div class="chart-head">
+          <div class="chart-title">Signal strength at the receiver</div>
+          <div class="chart-latest" id="historyRssiLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyRssiChart"></svg>
+          <div class="chart-tooltip" id="historyRssiTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
         </div>
       </section>
     </section>
@@ -1822,6 +1907,69 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return Math.round(interpolateBatteryPercent(mv));
     }
 
+    // ---- MSV4 (moisture_scale 4) ----
+    // Ports of the receiver's MSV4_* constants and msv4BatteryMvToPercent() /
+    // msv4CmDeciPf() / msv4CpDeciPf() / msv4FitRmsE4(). verify_msv4_packet_abi.mjs fails the
+    // build if these drift from the firmware.
+    const MSV4_MOISTURE_SCALE = 4;
+    const MSV4_RSOIL_DECIOHM_MAX = 4000000;
+    const MSV4_EC_TEMPCO_PER_C = 0.02;
+    const MSV4_EC_REFERENCE_C = 25;
+    const MSV4_BATTERY_EMPTY_MV = 3369;
+    const MSV4_BATTERY_FULL_MV = 3889;
+
+    function isMsv4Row(row) {
+      return row != null && Number(row.moisture_scale) === MSV4_MOISTURE_SCALE;
+    }
+
+    // Share of the cell's usable charge: the standard curve rescaled between the harvester's
+    // load cut-off and its charge limit.
+    function msv4BatteryMvToPercent(mv) {
+      const empty = interpolateBatteryPercent(MSV4_BATTERY_EMPTY_MV);
+      const full = interpolateBatteryPercent(MSV4_BATTERY_FULL_MV);
+      const percent = (interpolateBatteryPercent(mv) - empty) * 100 / (full - empty);
+      return Math.round(Math.min(100, Math.max(0, percent)));
+    }
+
+    // bare_tank_fdc_counts on an MSV4 row: bits 0-15 Cm in 0.1 pF, bits 16-23 Cp in 0.1 pF,
+    // bits 24-31 fit RMS residual in 1e-4 of drive. Division, not bit operators: the word can
+    // exceed JavaScript's 32-bit signed range.
+    function msv4Diagnostics(row) {
+      if (!isMsv4Row(row) || row.bare_tank_fdc_counts == null) return null;
+      const word = Number(row.bare_tank_fdc_counts);
+      if (!Number.isInteger(word) || word < 0 || word > 0xFFFFFFFF) return null;
+      return {
+        cmPf: (word % 65536) / 10,
+        cpPf: (Math.floor(word / 65536) % 256) / 10,
+        residualPercent: (Math.floor(word / 16777216) % 256) / 100,
+      };
+    }
+
+    // Soil resistance in ohms as the probe sent it, or null when the row is not a valid MSV4
+    // reading. The saturated value is returned as-is: it means nothing was conducting.
+    function msv4RsoilOhm(row) {
+      if (!isMsv4Row(row) || row.raw_fdc_counts == null) return null;
+      const deci = Number(row.raw_fdc_counts);
+      return Number.isInteger(deci) && deci > 0 && deci <= MSV4_RSOIL_DECIOHM_MAX ? deci / 10 : null;
+    }
+
+    // nRF52840 die temperature in C. On an MSV4 row raw_moisture_khz holds it in quarter-degrees;
+    // rows from probe application 262148 have none.
+    function msv4DieTempC(row) {
+      if (!isMsv4Row(row) || row.raw_moisture_khz == null) return null;
+      const quarterC = Number(row.raw_moisture_khz);
+      return Number.isInteger(quarterC) && quarterC >= -160 && quarterC <= 340 ? quarterC / 4 : null;
+    }
+
+    // The same correction calibrateMsv4Moisture() applies. Null when the reading is saturated
+    // (there is no resistance to correct) or the row carries no tip temperature.
+    function msv4Rsoil25Ohm(row) {
+      const rsoil = msv4RsoilOhm(row);
+      if (rsoil == null || rsoil * 10 >= MSV4_RSOIL_DECIOHM_MAX || row.board_temp_quarter_c == null) return null;
+      const factor = Math.max(0.25, 1 + MSV4_EC_TEMPCO_PER_C * (row.board_temp_quarter_c / 4 - MSV4_EC_REFERENCE_C));
+      return rsoil * factor;
+    }
+
     // Faithful port of calibrateRawBattery() in Treebeard_ESP32_Display_Runtime.ino. Rows that predate raw-battery history (before
     // migration 032) or come from a probe still on the legacy no-raw packet format have no
     // rawBatteryMv/rawCharging - those pass straight through as whatever the receiver's own
@@ -1840,7 +1988,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           continue;
         }
 
-        const rawPct = batteryMvToPercent(row.rawBatteryMv);
+        const rawPct = row.msv4 ? msv4BatteryMvToPercent(row.rawBatteryMv) : batteryMvToPercent(row.rawBatteryMv);
         if (smoothed === null) {
           smoothed = rawPct;
         } else {
@@ -1880,6 +2028,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // and therefore wetter. This is reference normalization, not calibrated soil-water percent.
     function msv3ReferenceExcessPercent(row) {
       if (!row) return null;
+      // An MSV4 row (moisture_scale 4) holds a resistance and a packed diagnostics word in these
+      // two columns. Written out rather than calling isMsv4Row(): this function is evaluated on
+      // its own by verify_msv3_reference_compensation.mjs and must not need the rest of the page.
+      if (Number(row.moisture_scale) === 4) return null;
       const connected = Number(row.raw_fdc_counts);
       const bare = Number(row.bare_tank_fdc_counts);
       const maxFdcCount = 0x0FFFFFFF;
@@ -2032,6 +2184,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         rawBatteryMv: r.raw_battery_mv,
         rawCharging: r.raw_charging,
         batteryPercent: r.battery_percent,
+        msv4: isMsv4Row(r),
       }));
       const batteryPercentPoints = smoothBatterySeries(batteryRows, params);
       const batteryMillivoltPoints = rawBatteryMillivoltSeries(batteryRows);
@@ -2055,20 +2208,45 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         .filter((r) => r.board_temp_quarter_c != null)
         .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.board_temp_quarter_c / 4 }));
       $("historyTempSection").classList.toggle("hidden", tempPoints.length === 0);
+      // The same column is the nRF die on MSV3 and the blade-tip NTC on MSV4.
+      const historyIsMsv4 = lastHistoryRows.some(isMsv4Row);
+      $("historyTempTitle").textContent = historyIsMsv4
+        ? "Blade-tip thermistor temperature (in the soil)"
+        : "Board (die) temperature";
       if (tempPoints.length) {
         renderHistoryChart("historyTempChart", "historyTempTooltip", "historyTempLatest", tempPoints, "#e5723f", "°C");
       }
 
       const rawFdcPoints = lastHistoryRows
-        .filter((r) => r.raw_fdc_counts != null)
+        .filter((r) => r.raw_fdc_counts != null && !isMsv4Row(r))
         .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.raw_fdc_counts }));
       $("historyRawFdcSection").classList.toggle("hidden", rawFdcPoints.length === 0);
       if (rawFdcPoints.length) {
         renderHistoryChart("historyRawFdcChart", "historyRawFdcTooltip", "historyRawFdcLatest", rawFdcPoints, "#9b6bd6", "");
       }
 
+      // One card per MSV4 quantity, each built from whole rows so nothing is paired across rows.
+      const historySeries = (valueOf) => lastHistoryRows
+        .map((r) => ({ t: new Date(r.received_at).getTime(), v: valueOf(r) }))
+        .filter((point) => point.v != null && Number.isFinite(point.v));
+      const renderOptionalHistoryCard = (name, points, color, unit) => {
+        $(`history${name}Section`).classList.toggle("hidden", points.length === 0);
+        if (points.length) {
+          renderHistoryChart(`history${name}Chart`, `history${name}Tooltip`, `history${name}Latest`, points, color, unit);
+        }
+      };
+      renderOptionalHistoryCard("Msv4DieTemp", historySeries(msv4DieTempC), "#e0a23f", "°C");
+      renderOptionalHistoryCard("Msv4Rsoil", historySeries(msv4RsoilOhm), "#9b6bd6", "Ω");
+      renderOptionalHistoryCard("Msv4Rsoil25", historySeries(msv4Rsoil25Ohm), "#3987e5", "Ω at 25 °C");
+      renderOptionalHistoryCard("Msv4Cm", historySeries((r) => msv4Diagnostics(r)?.cmPf), "#3fb8c9", "pF");
+      renderOptionalHistoryCard(
+        "Msv4Residual", historySeries((r) => msv4Diagnostics(r)?.residualPercent), "#d5a63c", "% of drive");
+      renderOptionalHistoryCard("Msv4Cp", historySeries((r) => msv4Diagnostics(r)?.cpPf), "#8a94a6", "pF");
+      renderOptionalHistoryCard(
+        "Rssi", historySeries((r) => (r.rssi == null ? null : Number(r.rssi))), "#c77dba", "dBm");
+
       const bareTankPoints = lastHistoryRows
-        .filter((r) => r.bare_tank_fdc_counts != null)
+        .filter((r) => r.bare_tank_fdc_counts != null && !isMsv4Row(r))
         .map((r) => ({ t: new Date(r.received_at).getTime(), v: r.bare_tank_fdc_counts }));
       $("historyBareTankSection").classList.toggle("hidden", bareTankPoints.length === 0);
       if (bareTankPoints.length) {
@@ -2195,7 +2373,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         label.setAttribute("y", gy + 3);
         label.setAttribute("text-anchor", "end");
         label.setAttribute("class", "chart-axis");
-        label.textContent = Math.round(v).toLocaleString();
+        // Whole numbers when the grid step is 1 or more; otherwise as many decimals as the step
+        // needs, so a chart spanning less than a few units (temperature, pF, a residual) does not
+        // label every grid line with the same rounded number.
+        const yDecimals = yStep >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(yStep) - 1e-9));
+        label.textContent = yDecimals ? v.toFixed(yDecimals) : Math.round(v).toLocaleString();
         svg.appendChild(label);
       }
 
@@ -2558,6 +2740,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             $("historyBareTankSection").classList.add("hidden");
             $("historyFdcReferenceSection").classList.add("hidden");
             $("historyTemperatureCompensatedSection").classList.add("hidden");
+            ["Msv4DieTemp", "Msv4Rsoil", "Msv4Rsoil25", "Msv4Cm", "Msv4Residual", "Msv4Cp", "Rssi"]
+              .forEach((name) => $(`history${name}Section`).classList.add("hidden"));
             return;
           }
 
