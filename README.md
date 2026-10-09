@@ -1,15 +1,15 @@
 # Project Treebeard
 
-**A wireless plant monitor built to answer one useful question: *does this plant need water?***
+**A wireless plant monitor built to answer one question: *does this plant need water?***
 
-Project Treebeard is a ground-up hardware and software system for watching the moisture cycle of
-houseplants. Small battery-powered probes sit in the soil, a tabletop receiver listens to them over
-Bluetooth, and a local or hosted dashboard turns the readings into plant status and history.
+Project Treebeard is a home-built system for watching how the soil in a houseplant's pot dries out
+and gets watered again. A small probe sits in the soil and runs on a battery topped up by a tiny
+solar panel. A receiver on a shelf listens to the probes over Bluetooth and shows each plant on a
+screen. A phone dashboard keeps the history.
 
-This is an active engineering project, not a finished commercial sensor. The MSV2 system has been
-monitoring real plants for months. MSV3 is the custom-PCB generation currently in the soil, and
-MSV4 — a redesigned probe that came directly out of what MSV3 measured — was ordered on
-**2026-09-19**.
+Everything here was designed from scratch: the circuit boards, the firmware, the enclosures, the
+receiver and the cloud backend. It is an active engineering project, not a finished product, and
+the repository keeps the failures alongside the things that worked.
 
 <p align="center">
   <img src="MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png" width="43%" alt="MSV3 probe and adjustable solar panel enclosure render">
@@ -17,51 +17,28 @@ MSV4 — a redesigned probe that came directly out of what MSV3 measured — was
   <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png" width="43%" alt="DisplayCenter tabletop enclosure render">
 </p>
 
-<p align="center"><em>The MSV3 solar-probe concept and the shared DisplayCenter receiver.</em></p>
+<p align="center"><em>The MSV3 solar probe design and the DisplayCenter receiver.</em></p>
 
 [Open the hosted dashboard](https://msv2-plants.netlify.app) ·
-[Read the current status](docs/STATUS_HANDOFF.md) ·
-[See what is actually plugged in where](MSV3/fleet.json) ·
+[See where every probe is right now](MSV3/fleet.json) ·
+[Read the latest work log](MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md) ·
 [Follow the engineering story](docs/paper/MSV_EVOLUTION_IEEE_PAPER_DRAFT.md)
 
-## Where things stand
+## How it works
 
-*Physical state last verified with the maintainer on 2026-09-19.*
+There are three parts.
 
-| Piece | State |
-| --- | --- |
-| **MSV2 probes** | Deployed and in daily use, indoors and outdoors. |
-| **DisplayCenter receiver** | Deployed. Runs the plant display, the phone setup app, and cloud upload. |
-| **Cloud dashboard** | Live at the link above. |
-| **MSV3 probes** | Five boards built. Three in soil, one on the desk as a temperature reference, one powered off. All of them update over Bluetooth. |
-| **MSV4 probes** | Schematic, layout and bring-up firmware done; **five boards ordered 2026-09-19**. Nothing built yet. |
-
-### Recent milestones (September 2026)
-
-- **MSV3 probes update themselves over Bluetooth.** A signed bootloader, a fleet registry, and a
-  fail-closed preflight mean a probe buried in a pot — or sealed in conformal coating with no
-  physical access left — can still take new firmware safely.
-- **The bare-tank reference channel was retired** in exchange for a roughly **4× larger** soil
-  response. Hardware, firmware, receiver and cloud all changed together.
-- **The coating problem was explained** — and the explanation turned out to be a geometry problem,
-  not a chemistry one. It is the main reason MSV4 exists.
-- **A solar bug that had been quietly overcharging cells** was traced to the panel's voltage, not
-  the charger's settings.
-- **MSV4 was designed, audited against its own netlist, and ordered**, with a new electrode, a new
-  front end, and a new solar array.
-- **The receiver got more reliable.** The periodic display freeze, the missing learned percentages,
-  and the failing cloud uploads each had a real root cause; all three are fixed and running.
-
-## The system in one minute
-
-Each probe wakes briefly, takes a capacitive measurement, broadcasts it, and returns to sleep. The
-wall-powered DisplayCenter does the expensive work: it listens continuously, filters readings,
-shows every plant on its screen, hosts the setup interface, and uploads history when Wi-Fi is
-available. The plants remain visible locally even if the internet is down.
+- **The probe.** A narrow circuit board you push into the soil. About once a minute it wakes up,
+  takes a measurement, broadcasts it over Bluetooth and goes back to sleep. Sleeping almost all the
+  time is what lets it run from a tiny rechargeable battery and a solar panel about 3 cm across.
+- **The receiver ("DisplayCenter").** A wall-powered box with a screen. It listens all the time,
+  cleans up the readings, shows every plant, and uploads the history when Wi-Fi is available. The
+  plants stay visible on its screen even if the internet is down.
+- **The dashboard.** A web page for your phone with each plant's status and history.
 
 ```mermaid
 flowchart LR
-    P[Battery or solar<br>soil probes] -->|Bluetooth LE| D[DisplayCenter<br>ESP32-S3]
+    P[Battery and solar<br>soil probes] -->|Bluetooth LE| D[DisplayCenter<br>ESP32-S3]
     D --> T[Tabletop display]
     F[Phone on local Wi-Fi] <-->|Setup and status| D
     D -->|HTTPS| S[Supabase<br>history and calibration]
@@ -69,236 +46,235 @@ flowchart LR
     L[Laptop] -.->|Signed firmware<br>over Bluetooth| P
 ```
 
-In day-to-day use, the system can:
+In day-to-day use the system can:
 
 - monitor several plants from one receiver;
-- show moisture, battery level, stale probes, and watering alerts;
-- configure plant names, artwork, probe assignments, Wi-Fi, and calibration from a phone;
-- retain raw and filtered history instead of only showing the latest value;
-- learn plant-specific dry and wet ranges from supported watering cycles;
-- apply temperature compensation to MSV3 readings in the receiver and in the cloud; and
-- expose detailed diagnostics for packet loss, battery behavior, and sensor experiments.
+- show moisture, battery level, probes that have gone quiet, and watering alerts;
+- set up plant names, artwork, probe assignments, Wi-Fi and calibration from a phone;
+- keep raw and filtered history instead of only the latest value;
+- learn each plant's own dry and wet range from its watering cycles; and
+- send new firmware to a probe over Bluetooth while it stays in its pot.
 
-## Where the project is now
+**Why it is harder than it sounds.** Sticking two electrodes in soil and getting a number is easy.
+Getting a number that means "wet" or "dry" is not. The reading also moves with temperature, with
+sunlight on the pot, with fertiliser salts, and with how tightly the soil grips the probe. Most of
+this project has been about separating those effects from the water.
 
-### MSV2: the working field system
+## Where things stand
 
-MSV2 proved the complete product architecture. Its nRF52840 probes measure a relaxation oscillator,
-send short BLE advertisements, and sleep between readings. The shared ESP32-S3 receiver, local setup
-app, Supabase backend, and hosted dashboard were all developed around these probes and are in active
-use.
+*As of 2026-10-08.*
 
-Field testing also uncovered the unglamorous problems that make real sensor products difficult:
-sleep-current leaks, timer quantization, BLE packet loss, receiver concurrency, long-history
-pagination, stale web caches, and calibration drift. Those failures and their fixes are preserved in
-the repository rather than polished out of the story.
+| Piece | State |
+| --- | --- |
+| **MSV4 probe** (newest) | The first board is built and running. Its solar charging is verified, it takes firmware over Bluetooth, and on 2026-10-08 it went into a real pot for the first time. Its soil readings are brand new and not yet turned into a moisture scale. |
+| **MSV3 probes** | Five boards built. They have been out of the soil since a two-week comparison experiment was taken apart on 2026-09-30. Two are still powered and reporting as test units. |
+| **MSV2 probes** | The original working system, which monitored real plants for months. One probe is still in a pot outdoors. |
+| **DisplayCenter receiver** | Running. It hears all three probe generations and uploads to the cloud. |
+| **Cloud dashboard** | Live at the link above. |
 
-### MSV3: the probe currently in the soil
+### Recent milestones (September and October 2026)
 
-MSV3 replaced GPIO timing with a dedicated **FDC2214 28-bit resonant capacitance converter**, added
-a **TMUX1109** to switch the electrode routing and an **E73/nRF52840** module for measurement and
-BLE, and gave the probe a solar power path. The custom board, firmware, enclosure, solar mount, and
-manufacturing files all live here.
+- **MSV4 came to life.** The boards arrived on 2026-09-23. The first one was assembled and brought
+  up on 2026-10-01, and it has run its real wake-measure-sleep firmware since 2026-10-06.
+- **MSV4's solar charging works.** The battery was drained on purpose overnight. The next morning
+  weak window light started the recharge, about half an hour of direct sun finished it, and the
+  charger stopped at its programmed limit, the same level it had stopped at the day before.
+- **MSV4 read real soil for the first time.** In air it reports "nothing conducting". Ten minutes
+  after going into an Alocasia pot it reported a soil resistance of about 20 kΩ.
+- **A two-week side-by-side test answered an old argument.** Four sensor combinations shared one
+  pot so that the electrode and the electronics could be swapped independently. The daily
+  temperature wobble turned out to enter at the electrode, not the electronics.
+- **A probe now checks it is in clean air before calibrating itself.** A board that restarted
+  while being held calibrated against a hand and reported a wrong value for hours. The firmware
+  now takes a moisture reading first and only calibrates if that reading looks like air.
+- **MSV3 probes update over Bluetooth.** A signed bootloader and a registry of which probe is
+  which mean a probe buried in a pot can take new firmware safely.
 
-**What is now solid:**
-
-- **Field-updatable firmware.** Probes run a custom signed bootloader and accept new images over
-  Bluetooth in roughly 30–50 seconds. A registry ([`MSV3/fleet.json`](MSV3/fleet.json)) binds each
-  probe's identity to the Bluetooth addresses it is allowed to appear on, so an image built for one
-  plant cannot silently land on another and mix two plants' data. The updater refuses tampered
-  packages, downgrades, and any image the probe could not be recovered from afterwards. USB is a
-  second, equal transport for boards on a bench, and a battery probe pays nothing for it.
-- **A much larger soil signal.** Removing one fixed capacitor (`C17`) roughly quadrupled the
-  response to moisture. The cost was the disconnected "bare tank" reference channel, which is no
-  longer measurable — and which had only been removing about 12% of the daily wobble anyway.
-- **Low power, measured rather than estimated.** Timed sleep is **10–15 µA**; averaged over real
-  wake cycles a probe draws about **126 µA / 528 µW**, or **3.03 mAh/day** — roughly 50 days on a
-  full cell with no sun at all. A working solar path measured **8–9 mAh/day** of harvest.
-- **Rich telemetry.** Every packet carries the moisture count, die temperature, battery voltage,
-  mux phase, and status flags, so environmental drift can be studied instead of guessed at.
-
-**What is still open:** the probe reads **drier when it gets warmer**, and that is essentially the
-whole remaining problem. A probe left by a window read *flat in air* and *flat in pure water*, then
-wobbled substantially in moist soil — so the effect needs the soil itself, not the board. Four
-sensors now share one Alocasia pot to separate how much of the drift comes from the **electrode**
-and how much from the **readout electronics**. The working model is that both contribute, which is
-why earlier single-cause answers kept contradicting each other.
-
-> [!IMPORTANT]
-> MSV3 reports an experimental capacitance-related signal, not laboratory-calibrated volumetric
-> water content. Its higher numerical resolution does not automatically make it a better soil
-> sensor; sealing, electrode geometry, acquisition timing, and calibration still have to be proven
-> together.
-
-Recent detail: [electrode vs. readout thermal comparison](MSV3/docs/MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md),
-[the no-bare-tank policy](MSV3/docs/MSV3_CAPLESS_NO_BARE_TANK_POLICY_2026-09-14.md),
-[solar charging state](MSV3/docs/MSV3_SOLAR_CHARGING_STATE_2026-09-19.md).
-
-### MSV4: designed from what MSV3 measured
-
-MSV4 is not a tidy-up of MSV3. Three measurements pointed at three different parts of the design,
-and all three change:
-
-- **A new electrode** — two symmetric electrodes inside a guard ring, mirrored front and back on an
-  18 × 110 mm blade, with a temperature sensor at the tip.
-- **A new front end** — the FDC2214 comes out, replaced by a single chopper switch with phase *and*
-  frequency as firmware parameters. That is a software lock-in amplifier, deliberately run at a
-  fixed 1–3 MHz rather than tracking a resonance.
-- **A new solar array** — two commodity 1.5 V panels in parallel, comfortably inside the charger's
-  input limit, instead of one 6 V panel that was well outside it.
-
-Bring-up firmware, a BLE console, a build script, a pin/net reference and an electrode field solver
-are written and checked in, and the layout was audited pin-for-pin against its final netlist. None
-of it has run on hardware yet — the boards were ordered on 2026-09-19.
-
-Start here: [MSV4 electrode architecture](MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md),
-[MSV4 front-end architecture](MSV3/docs/MSV4_FRONT_END_ARCHITECTURE_2026-09-16.md),
-[bring-up firmware and first-board checklist](MSV4/docs/MSV4_BLE_BRINGUP_FIRMWARE_2026-09-18.md).
-
-## Three findings that changed the design
-
-**1. Electrode spacing alone sets how deep the probe can see.** Penetration depth works out to
-`spacing / π`, and nothing else in the geometry matters — not finger count, not blade length, not
-board area. MSV3's 1.5 mm pitch reads a soil skin only **0.48 mm** thick. That is why coating the
-probe hurt so much: a 75 µm coating holds **14.5%** of MSV3's field energy, absorbs water,
-saturates, and then stops responding to the soil. No change of coating material can fix a 0.48 mm
-sensor. The MSV4 electrode reaches **2.90 mm** and drops the coating's share to **2.6%**.
-
-**2. The temperature wobble lives in the soil, not the board.** The same uncoated probe was flat in
-air and flat in pure water, and only wobbled in moist soil — which rules out the board, the clock,
-the inductor, the battery, and temperature acting on the electronics. Dissolved-ion mobility rises
-about 2 %/°C, and soil conductivity reaches the converter as apparent capacitance. The outstanding
-experiment is a salty-water test, to separate a conductivity artefact from genuine thermally driven
-moisture movement.
-
-**3. The solar charger's overvoltage protection was never doing anything.** A boost converter
-cannot output below its input. The 6 V panel exceeded the BQ25504's 3 V recommended input, so
-current took the high-side body diode straight to the cell — a passive path with no comparator to
-stop it. One cell reached 4.49 V while a 3.89 V ceiling was programmed. The fix is a clamp on the
-panel input now, and in MSV4 a panel that never gets near the limit.
-
-## How the design evolved
+## The four generations
 
 | Generation | The idea | What it taught the project | Status |
 | --- | --- | --- | --- |
-| **MSV1** | Interdigitated PCB sensor, two 555 timers, analog filtering, and a comparator | Soil capacitance was measurable, but the analog output compressed most of the useful range | Completed proof of concept |
-| **MSV2** | Digitally count a capacitive oscillator and broadcast it from a sleeping nRF52840 | A practical monitor is a whole system: sensing, power, radio, display, calibration, and history all matter | Deployed and actively used |
-| **MSV3** | Custom FDC2214/TMUX probe with solar harvesting and a purpose-built enclosure | Resolution was not the bottleneck. Electrode geometry, soil temperature, and the solar input limit were | In soil, under active validation |
-| **MSV4** | New electrode geometry, a firmware-defined lock-in front end, and a safe solar array | — | Ordered 2026-09-19, not yet built |
+| **MSV1** | A printed-circuit sensor read by two 555 timers and analog filtering | Soil moisture can be measured this way, but the analog output squeezed most of the useful range together | Finished proof of concept |
+| **MSV2** | Count a capacitance-controlled oscillator digitally and broadcast it from a sleeping radio chip | A useful monitor is a whole system: sensing, power, radio, display, calibration and history all matter | Worked in the field for months |
+| **MSV3** | A custom board with a precision capacitance chip, solar charging and a purpose-built enclosure | Resolution was never the bottleneck. Electrode shape, soil temperature and the solar panel's voltage were | Five built; now test units |
+| **MSV4** | A new electrode, a new way of measuring, and a solar panel that suits the charger | Still being learned | First board running and in soil |
 
-MSV2 and MSV3 are not separate ecosystems. Both report to the same DisplayCenter and appear in the
-same local and hosted dashboards.
+All generations report to the same DisplayCenter and appear in the same dashboards.
+
+### MSV2: the system that proved the idea
+
+MSV2 used an off-the-shelf radio module (XIAO nRF52840) and a simple oscillator whose speed changes
+with soil moisture. The receiver, the phone setup app, the cloud backend and the dashboard were all
+built around it. Field use also turned up the unglamorous problems that make sensor products
+difficult: batteries drained by sleep-current leaks, lost radio packets, calibration drift and
+stale web caches. Those failures and their fixes are kept in the repository.
+
+### MSV3: the custom board
+
+MSV3 moved to a custom circuit board with a dedicated capacitance-measuring chip (FDC2214), a
+solar charging circuit and a 3D-printed enclosure with an adjustable panel mount.
+
+What it got right:
+
+- **Firmware updates over Bluetooth**, in roughly 30 to 50 seconds, with checks that stop an image
+  built for one probe landing on another.
+- **Measured low power**: about 3 mAh a day, or roughly 50 days on a full battery with no sun.
+- **Rich telemetry**: every packet carries the reading, board temperature, battery voltage and
+  status flags, so drift can be studied instead of guessed at.
+
+What it could not fix: its reading moved with temperature and sunlight even when the soil's water
+had not changed. Working out why is what led to MSV4.
+
+> [!IMPORTANT]
+> MSV3 reports an experimental capacitance-related signal, not laboratory-calibrated water
+> content. Higher numerical resolution did not make it a better soil sensor.
+
+### MSV4: built from what MSV3 measured
+
+MSV4 changes three things at once.
+
+- **A new electrode.** Two matching electrodes inside a guard ring, on both faces of an
+  18 × 110 mm blade, with a temperature sensor at the tip.
+- **A new way of measuring.** MSV3 measured capacitance. MSV4 measures how well the soil conducts.
+  It drives the electrodes at eight frequencies between 250 kHz and 2.67 MHz, fits a small circuit
+  model to the response, and reports the soil's resistance. Wet soil conducts; air does not. The
+  tip temperature is sent alongside so the receiver can correct for it.
+- **A new solar panel.** One small 2 V panel that stays well inside the charger's input limit,
+  instead of a 6 V panel that was far outside it.
+
+The first board has been measured in air, on a damp towel, in a hand, and now in a pot. Its power
+draw is modelled at a fraction of MSV3's but has not been measured yet.
+
+Start here: [board 1 bring-up](MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md),
+[production firmware and first soil reading](MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md),
+[solar charge test](MSV4/docs/MSV4_OUTDOOR_SOLAR_CHARGE_TEST_2026-10-06.md),
+[electrode design](MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md).
+
+## What the project has learned
+
+**1. How deep a probe "sees" depends on how far apart its electrodes are.** MSV3's finely spaced
+comb only sensed the half-millimetre of soil touching its surface. That is why a protective
+coating hurt it so much: the coating itself took up a meaningful share of what the sensor could
+see. MSV4's electrodes are spaced to reach several times deeper.
+
+**2. The daily wobble comes in through the electrode, and sunlight on the pot matters.** In the
+shared-pot test, the MSV3 blade swung about ten times more over a day than an older electrode
+read by the same kind of circuit, and the circuit could account for at most about a fifth of it.
+A blade of the same design was quiet on the shaded side of the pot. So the wobble is about where
+and how the electrode sits in the soil, not a fixed property of the electronics.
+([Write-up](MSV3/docs/MSV3_ALOCASIA_ELECTRODE_VS_CIRCUIT_2026-09-29.md))
+
+**3. A solar charger cannot protect a battery from a panel whose voltage is too high.** MSV3's
+6 V panel pushed current straight through the charger chip into the battery, past the programmed
+limit. One cell reached 4.49 V with a 3.89 V limit set. MSV4's 2 V panel cannot do that, and its
+charger has now been seen stopping where it should.
+([Root cause](MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md))
 
 ## Repository tour
 
 | Folder | What lives there |
 | --- | --- |
-| [`MSV1/`](MSV1/) | Original analog prototype and final course report |
-| [`MSV2/`](MSV2/) | Working XIAO nRF52840 probe firmware, experiments, and field notes |
-| [`MSV3/`](MSV3/) | Custom FDC2214 probe: firmware, PCB, enclosure, solar, bootloader, procurement, validation |
-| [`MSV4/`](MSV4/) | Next-generation probe: bring-up firmware, layout reference, BOM, procurement |
-| [`DisplayCenter/`](DisplayCenter/) | ESP32-S3 receiver/display firmware, local phone UI, assets, enclosure, test scripts |
-| [`cloud/`](cloud/) | Supabase migrations and Edge Function plus the Netlify-hosted dashboard |
-| [`docs/`](docs/) | Current handoff, known issues, roadmap, and the cross-generation engineering paper |
-| [`hardware/`](hardware/) | Shared Altium libraries and cross-generation procurement |
+| [`MSV1/`](MSV1/) | The original analog prototype and its course report |
+| [`MSV2/`](MSV2/) | The XIAO nRF52840 probe: firmware, experiments and field notes |
+| [`MSV3/`](MSV3/) | The custom FDC2214 probe: firmware, circuit board, enclosure, solar, bootloader, test write-ups |
+| [`MSV4/`](MSV4/) | The newest probe: firmware, board reference, enclosures, parts lists, test write-ups |
+| [`DisplayCenter/`](DisplayCenter/) | The receiver: firmware, phone setup interface, artwork, enclosure, test scripts |
+| [`cloud/`](cloud/) | The database setup and the hosted dashboard |
+| [`docs/`](docs/) | Cross-project notes: known issues, roadmap and the engineering paper |
+| [`hardware/`](hardware/) | Shared circuit-design libraries and parts ordering |
 | [`data/`](data/), [`dumps/`](dumps/) | Captured measurements and probe diagnostic dumps used for debugging |
-| [`scripts/`](scripts/) | Shared tooling: the BLE OTA updater, the fleet scanner, and the SWD utilities |
+| [`scripts/`](scripts/) | Shared tools: the Bluetooth updater, the fleet scanner and the wired-programming utilities |
 
-If you are trying to understand a specific subsystem, start in that subsystem's `docs/` directory.
+If you want to understand one part, start in that part's own `docs/` folder.
 
 > [!NOTE]
-> **Dated documents are history, and they are never edited after the fact.** Hardware moves between
-> work sessions. [`MSV3/fleet.json`](MSV3/fleet.json) is the only place that describes the
-> *present* — where each probe is, which electrode is in its soil, what powers it, and what has been
-> reworked. Read it before drawing conclusions from any dated write-up.
+> **Dated documents are history and are never edited afterwards.** Hardware moves between work
+> sessions. [`MSV3/fleet.json`](MSV3/fleet.json) is the only place that describes the *present*:
+> where each probe is, what is in its soil, what powers it and what has been reworked. Read it
+> before drawing conclusions from any dated write-up.
 
-Checked-in source, successfully compiled firmware, flashed firmware, and observed live behavior are
-deliberately treated as four different claims throughout this repository.
+Throughout the repository, "the code is written", "it compiles", "it was flashed" and "it was seen
+working" are treated as four different claims.
 
 ## Getting started
 
 ### I just want to see what it does
 
-- Visit the [hosted dashboard](https://msv2-plants.netlify.app). The historical `MSV2` URL remains
-  in use so existing receivers and saved links continue to work.
+- Visit the [hosted dashboard](https://msv2-plants.netlify.app). The old `MSV2` address is kept so
+  existing receivers and saved links keep working.
 - Read the short [engineering paper](docs/paper/MSV_EVOLUTION_IEEE_PAPER_DRAFT.md).
-- Browse the [MSV3 enclosure renders](MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/) or the
+- Browse the [MSV3 enclosure renders](MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/), the
+  [MSV4 enclosures](MSV4/hardware/MSV4_Probe_Enclosures/) or the
   [DisplayCenter hardware](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/).
 
 ### I want to work on the firmware
 
-The firmware helpers expect Windows PowerShell and the `arduino-cli.exe` bundled with Arduino IDE.
-They perform clean, repeatable builds and keep generated files outside the sketch directories.
-
+The build helpers expect Windows PowerShell and the `arduino-cli.exe` that ships with Arduino IDE.
 From the repository root:
 
 ```powershell
-# Working MSV2 probe
+# MSV2 probe
 powershell -ExecutionPolicy Bypass -File MSV2\scripts\arduino_probe.ps1 -Action compile
 
-# Shared ESP32-S3 DisplayCenter
+# DisplayCenter receiver
 powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action compile
 
-# MSV3 field firmware
+# MSV3 probe
 powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 -Action doctor
 powershell -ExecutionPolicy Bypass -File MSV3\scripts\arduino_msv3_probe.ps1 -Action compile -Sketch arduino/MSV3_Moisture_BLE_Sleep
 
-# MSV4 bring-up firmware
+# MSV4 probe
 powershell -ExecutionPolicy Bypass -File MSV4\scripts\arduino_msv4_probe.ps1 -Action doctor
+powershell -ExecutionPolicy Bypass -File MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10
 ```
 
 > [!WARNING]
-> **Always use the per-generation script — never the Arduino IDE Upload button and never a raw
-> `arduino-cli` command.** MSV3 and MSV4 need *opposite* clock settings. The MSV3 board has no
-> 32.768 kHz crystal and must select the internal oscillator before Bluetooth, FreeRTOS, or RTC code
-> can start; MSV4 has a crystal and no USB. Each script enforces its own board's rules and refuses
-> unsafe states. Run the `doctor` action first, and read [Known Issues](docs/KNOWN_ISSUES.md)
-> before changing clock, sleep, watchdog, or BLE behavior.
+> **Always use the script for that generation. Never use the Arduino IDE Upload button or a raw
+> `arduino-cli` command.** MSV3 and MSV4 need *opposite* clock settings: the MSV3 board has no
+> 32.768 kHz crystal, and MSV4 has a crystal and no USB. Each script enforces its own board's rules
+> and refuses unsafe states. Run the `doctor` action first, and read
+> [Known Issues](docs/KNOWN_ISSUES.md) before changing clock, sleep, watchdog or Bluetooth
+> behaviour.
 
-Updating a deployed MSV3 probe over Bluetooth goes through `scripts/ble_ota_update.py`, which
-resolves `--probe N` through the fleet registry; run it with `--preflight-only` first. Wired SWD
-work goes through the scripts in [`scripts/`](scripts/), which wait for stable pogo-pin contact
-before touching a target, because the pins are held by hand. Both workflows are spelled out in
-[`CLAUDE.md`](CLAUDE.md).
+Sending firmware to a probe over Bluetooth:
 
-Upload and serial-monitor commands, board ports, required libraries, Wi-Fi provisioning, and local
-receiver endpoints are covered in the [DisplayCenter guide](DisplayCenter/README.md). MSV3 hardware
-bring-up and production details are under [`MSV3/docs/`](MSV3/docs/).
+- **MSV3** uses `scripts/ble_ota_update.py --probe N`.
+- **MSV4** uses `MSV4/scripts/msv4_ble_ota.py <package> --board N`.
+
+Run either with `--preflight-only` first. Wired programming goes through the scripts in
+[`scripts/`](scripts/), which wait for steady contact before touching a board because the
+programming pins are held by hand. The rules for all of this are in [`CLAUDE.md`](CLAUDE.md).
+
+Receiver setup, ports, libraries and Wi-Fi provisioning are covered in the
+[DisplayCenter guide](DisplayCenter/README.md).
 
 ### I want to run the cloud side
 
 The root [`netlify.toml`](netlify.toml) publishes
-[`cloud/web/plant-dashboard/`](cloud/web/plant-dashboard/). Supabase schema, security, Edge Function,
-claiming, and receiver-bootstrap instructions are in the
-[Supabase setup guide](cloud/docs/SUPABASE_SETUP.md).
+[`cloud/web/plant-dashboard/`](cloud/web/plant-dashboard/). Database setup, security and receiver
+sign-up instructions are in the [Supabase setup guide](cloud/docs/SUPABASE_SETUP.md).
 
-The receiver is intentionally local-first: it makes outbound HTTPS requests, but it should never be
-exposed directly to the internet. Wi-Fi credentials stay on the receiver, while remote access uses
-per-device secrets and account-free household share tokens.
+The receiver is local-first on purpose. It makes outbound requests but should never be exposed
+directly to the internet. Wi-Fi passwords stay on the receiver.
 
 ## What comes next
 
-**On the bench, before the MSV4 boards arrive:**
+1. **Watch MSV4 through a watering.** The first soil readings exist; the next step is seeing how
+   they move when the pot is watered and as the probe settles in.
+2. **Turn MSV4's soil resistance into a moisture scale** a person can read, once there is enough
+   data to trust it.
+3. **Measure MSV4's real power draw.** Every energy figure for it is still modelled.
+4. **Find out why the board restarts when it is handled.** It happened twice in one day. The
+   firmware copes, but nothing yet reports the cause.
+5. **Give MSV4 its own firmware-update identity** so an MSV3 image can never be sent to it by
+   mistake.
 
-1. finish the electrode-versus-readout comparison in the shared pot, which is waiting on one bench
-   measurement of the older front end's millivolts-per-picofarad slope;
-2. run the salty-water test that separates a conductivity artefact from real moisture movement; and
-3. confirm whether the solar clamp on probe 7 actually caps its cell, and whether probe 4's daytime
-   charging returns once its battery falls back into the harvester's restart band.
-
-**When the MSV4 boards land:**
-
-4. bring up one board — crystal, radio, console, then the frequency sweep;
-5. characterise the new electrode against the older reference electrode in the same pot; and
-6. prove the solar energy budget through real light and low-battery conditions.
-
-Only after those pass does it make sense to turn a raw count into a confident plant-moisture scale,
-or to call any probe production-ready.
+Only after those does it make sense to call any probe production-ready.
 
 ## Project notes
 
 Project Treebeard is a personal, experimental hardware project by **Sam Amezcua**. It includes
-working deployments alongside unfinished research, failed approaches, diagnostic firmware, and
+working deployments alongside unfinished research, failed approaches, diagnostic firmware and
 manufacturing iterations. That history is intentional: it is often the most useful part of the
 repository for anyone building a low-power environmental sensor.
 
