@@ -56,13 +56,15 @@ const printFiles = {
   [path.join(referenceDir, 'MSV4_case_gasket_TPU_optional.3mf')]: ['Case Gasket TPU'],
 };
 
-// Independent restatement of the v5.2 design heights; the generator must agree.
+// Independent restatement of the v5.3 design heights; the generator must agree.
 const roofZ = 7.00;
 const armLidTopZ = 8.00;
 const solarLidTopZ = 9.40;
 const panelPocketFloorZ = solarLidTopZ - 1.60;
-const armPanelPivotZ = 17.00;
-const framePocketFloorZ = 15.70 + 2.60 - 1.60;
+const baseBackZ = -4.50;
+const frameBackZ = 15.70;
+const armPanelPivotZ = frameBackZ + 2.70;
+const framePocketFloorZ = frameBackZ + 2.60 - 1.60;
 
 const screwCenters = [
   [-15.30, 101.50],
@@ -227,7 +229,9 @@ checks.bounds = Object.fromEntries(
 const expectedBounds = {
   integratedBase: [[-18.3, 94.8, -4.5], [18.3, 148.5, 0.25]],
   integratedLid: [[-18.3, 94.8, -0.10], [18.3, 148.5, solarLidTopZ]],
-  armBase: [[-20.1, 94.8, -5.1], [20.1, 148.5, 0.90]],
+  // Both arm-mount parts must end on their back plane or they cannot print flat.
+  armBase: [[-20.1, 94.8, baseBackZ], [20.1, 148.5, 0.90]],
+  panelFrame: [[-20.4, 129.8, frameBackZ], [20.4, 168.6, armPanelPivotZ + 2.70]],
   armLid: [[-18.3, 94.8, -0.10], [18.3, 148.5, armLidTopZ]],
   minimalBase: [[-16.2, 96.0, -4.25], [16.2, 146.2, 0.25]],
   minimalLid: [[-16.2, 96.0, 0.30], [16.2, 146.2, solarLidTopZ]],
@@ -269,6 +273,7 @@ for (const name of ['integratedObstructionVolume', 'armObstructionVolume', 'mini
   if (checks.ledWindows[name] > 0.002) errors.push(`${name}: clear-epoxy LED window is obstructed.`);
 }
 
+// Screws enter from the base back; inserts are blind pockets in the lid seam.
 checks.fasteners = {};
 for (const variant of ['integrated', 'arm']) {
   const base = imported[`${variant}Base`];
@@ -279,30 +284,83 @@ for (const variant of ['integrated', 'arm']) {
     const result = {
       x,
       y,
-      insertVoidVolume: intersectionVolume(base, cylinderZ(-2.90, 3.05, x, y, 1.40)),
-      tipReliefVoidVolume: intersectionVolume(base, cylinderZ(-3.40, 0.40, x, y, 1.15)),
-      baseWallMaterial: intersectionVolume(base, cylinderZ(-4.45, 4.60, x, y, 2.35)),
-      lidHoleVoidVolume: intersectionVolume(lid, cylinderZ(0.35, lidTopZ - 1.25, x, y, 1.15)),
-      countersinkOpeningVoidVolume: intersectionVolume(lid, cylinderZ(lidTopZ - 0.01, 0.10, x, y, 2.05)),
-      topLandMaterial: intersectionVolume(lid, cylinderZ(lidTopZ - 1.00, 0.85, x, y, 2.35)),
-      countersinkPerimeterMaterial: intersectionVolume(
-        lid,
-        cylinderZ(lidTopZ - 0.10, 0.08, x, y, 2.60).cut(
-          cylinderZ(lidTopZ - 0.12, 0.12, x, y, 2.15),
+      insertVoidVolume: intersectionVolume(lid, cylinderZ(0.35, 3.05, x, y, 1.40)),
+      tipReliefVoidVolume: intersectionVolume(lid, cylinderZ(3.45, 0.95, x, y, 1.15)),
+      lidWallMaterial: intersectionVolume(lid, cylinderZ(0.35, 4.10, x, y, 2.35)),
+      lidTopClosedMaterial: intersectionVolume(lid, cylinderZ(lidTopZ - 1.00, 0.90, x, y, 1.15)),
+      baseHoleVoidVolume: intersectionVolume(base, cylinderZ(baseBackZ - 0.05, 4.85, x, y, 1.15)),
+      headRecessVoidVolume: intersectionVolume(base, cylinderZ(baseBackZ - 0.02, 0.40, x, y, 2.05)),
+      headSeatMaterial: intersectionVolume(base, cylinderZ(baseBackZ + 1.35, 3.35, x, y, 2.35)),
+      // The recess wall must stay closed against the back chamfer from
+      // 0.05 mm above the back face upward.
+      headRecessRimMaterial: intersectionVolume(
+        base,
+        cylinderZ(baseBackZ + 0.05, 0.08, x, y, 2.20).cut(
+          cylinderZ(baseBackZ + 0.03, 0.12, x, y, 2.12),
         ),
       ),
     };
     checks.fasteners[variant].push(result);
     if (result.insertVoidVolume > 0.002) errors.push(`${variant}: obstructed insert pocket at ${x},${y}.`);
     if (result.tipReliefVoidVolume > 0.002) errors.push(`${variant}: obstructed tip relief at ${x},${y}.`);
-    if (result.baseWallMaterial < 30) errors.push(`${variant}: insufficient base material at ${x},${y}.`);
-    if (result.lidHoleVoidVolume > 0.002) errors.push(`${variant}: obstructed lid clearance at ${x},${y}.`);
-    if (result.countersinkOpeningVoidVolume > 0.002) errors.push(`${variant}: obstructed countersink at ${x},${y}.`);
-    if (result.topLandMaterial < 5) errors.push(`${variant}: insufficient flush top land at ${x},${y}.`);
-    if (result.countersinkPerimeterMaterial < 0.50) {
-      errors.push(`${variant}: countersink perimeter breaks through the case at ${x},${y}.`);
+    if (result.lidWallMaterial < 25) errors.push(`${variant}: insufficient lid material at ${x},${y}.`);
+    if (result.lidTopClosedMaterial < 3.70) errors.push(`${variant}: lid top is open above the screw at ${x},${y}.`);
+    if (result.baseHoleVoidVolume > 0.002) errors.push(`${variant}: obstructed base clearance at ${x},${y}.`);
+    if (result.headRecessVoidVolume > 0.002) errors.push(`${variant}: obstructed screw-head recess at ${x},${y}.`);
+    if (result.headSeatMaterial < 30) errors.push(`${variant}: insufficient base material at ${x},${y}.`);
+    if (result.headRecessRimMaterial < 0.085) {
+      errors.push(`${variant}: screw-head recess breaks through the back chamfer at ${x},${y}.`);
     }
   }
+}
+
+// A slab just above each back plane must be solid under the whole mount, and
+// nothing may hang below the plane.
+checks.flatBacks = {
+  armBaseLeftBoss: intersectionVolume(imported.armBase, box(-20.05, 118.55, baseBackZ, -16.65, 124.45, baseBackZ + 0.10)),
+  armBaseRightBoss: intersectionVolume(imported.armBase, box(16.65, 118.55, baseBackZ, 20.05, 124.45, baseBackZ + 0.10)),
+  panelFrameLeftLug: intersectionVolume(imported.panelFrame, box(-20.35, 146.55, frameBackZ, -16.45, 151.85, frameBackZ + 0.10)),
+  panelFrameRightLug: intersectionVolume(imported.panelFrame, box(16.45, 146.55, frameBackZ, 20.35, 151.85, frameBackZ + 0.10)),
+  armBaseBelowBack: intersectionVolume(imported.armBase, box(-25, 90, baseBackZ - 5, 25, 155, baseBackZ - 0.002)),
+  panelFrameBelowBack: intersectionVolume(imported.panelFrame, box(-25, 125, frameBackZ - 5, 25, 175, frameBackZ - 0.002)),
+};
+if (!near(checks.flatBacks.armBaseLeftBoss, 3.40 * 5.90 * 0.10, 0.01)
+  || !near(checks.flatBacks.armBaseRightBoss, 3.40 * 5.90 * 0.10, 0.01)) {
+  errors.push('Arm base pivot bosses are not flat on the base back.');
+}
+if (!near(checks.flatBacks.panelFrameLeftLug, 3.90 * 5.30 * 0.10, 0.01)
+  || !near(checks.flatBacks.panelFrameRightLug, 3.90 * 5.30 * 0.10, 0.01)) {
+  errors.push('Panel frame lugs are not flat on the frame back.');
+}
+if (checks.flatBacks.armBaseBelowBack > 0.002) errors.push('Arm base protrudes below its back plane.');
+if (checks.flatBacks.panelFrameBelowBack > 0.002) errors.push('Panel frame protrudes below its back plane.');
+
+// Sample the 45-degree corner of each chamfered perimeter on the straight
+// positive-X wall: the outer half of a square prism there must be empty and
+// the inner half solid.
+function chamferSample(shape, wallX, faceZ, size, towardInterior) {
+  const zFar = faceZ + towardInterior * size;
+  const corner = [[wallX, faceZ], [wallX - size, faceZ], [wallX, zFar]];
+  const inner = [[wallX - size, faceZ], [wallX - size, zFar], [wallX, zFar]];
+  const tool = (points) => new replicad.Sketcher('XZ', -126.0)
+    .movePointerTo(points[0]).lineTo(points[1]).lineTo(points[2]).close().extrude(-4.0);
+  return {
+    removed: intersectionVolume(shape, tool(corner)),
+    kept: intersectionVolume(shape, tool(inner)),
+    expectedKept: size * size / 2 * 4.0,
+  };
+}
+checks.chamfers = {
+  integratedBaseBack: chamferSample(imported.integratedBase, 16.60, baseBackZ, 0.60, 1),
+  armBaseBack: chamferSample(imported.armBase, 16.60, baseBackZ, 0.60, 1),
+  integratedLidTop: chamferSample(imported.integratedLid, 16.60, solarLidTopZ, 0.80, -1),
+  armLidTop: chamferSample(imported.armLid, 16.60, armLidTopZ, 1.20, -1),
+  minimalBaseBack: chamferSample(imported.minimalBase, 16.20, -4.25, 0.80, 1),
+  minimalLidTop: chamferSample(imported.minimalLid, 16.20, solarLidTopZ, 0.40, -1),
+};
+for (const [name, sample] of Object.entries(checks.chamfers)) {
+  if (sample.removed > 0.002) errors.push(`${name}: perimeter chamfer is missing.`);
+  if (!near(sample.kept, sample.expectedKept, 0.01)) errors.push(`${name}: perimeter chamfer is the wrong size.`);
 }
 
 const rawPcb = await importStep(sourcePcbPath);
@@ -579,6 +637,14 @@ checks.openings = {
     imported.armBase,
     cylinderX(17.15, 3.05, 121.50, -2.10, 1.40),
   ),
+  leftFrameLugInsert: intersectionVolume(
+    imported.panelFrame,
+    cylinderX(-20.50, 3.05, 149.20, armPanelPivotZ, 1.40),
+  ),
+  rightFrameLugInsert: intersectionVolume(
+    imported.panelFrame,
+    cylinderX(17.45, 3.05, 149.20, armPanelPivotZ, 1.40),
+  ),
 };
 for (const [name, volume] of Object.entries(checks.openings)) {
   if (volume > 0.002) errors.push(`${name}: modeled opening is obstructed (${volume} mm^3).`);
@@ -639,5 +705,5 @@ fs.writeFileSync(
   path.join(referenceDir, 'MSV4_enclosure_validation_report.json'),
   `${JSON.stringify(report, null, 2)}\n`,
 );
-console.log(JSON.stringify({ passed: report.passed, errors, clearances: checks.clearances, openings: checks.openings, wireExitWall: checks.armLidWireExitWallMaterial, baseLidOverlap: checks.baseLidOverlap }, null, 2));
+console.log(JSON.stringify({ passed: report.passed, errors, fasteners: checks.fasteners, flatBacks: checks.flatBacks, chamfers: checks.chamfers, clearances: checks.clearances, openings: checks.openings, wireExitWall: checks.armLidWireExitWallMaterial, baseLidOverlap: checks.baseLidOverlap }, null, 2));
 if (errors.length) process.exit(1);

@@ -1,4 +1,4 @@
-# Printing and assembly - MSV4 enclosures (v5.2)
+# Printing and assembly - MSV4 enclosures (v5.3)
 
 ## What to print
 
@@ -25,14 +25,16 @@ kept out of the rigid-material files; skip it when using silicone cord or RTV.
 
 The supplied orientations are the intended ones:
 
-- bases floor-down
+- bases back-down; the arm base's pivot bosses are flat on the bed
 - arm lid roof-down (it prints as an open tray, no supports in the cavity)
 - arms flat
+- panel frame back-down; its pivot lugs are flat on the bed
 - integrated and minimum-profile lids rear-edge-down; add a 6-8 mm brim and do
   not let auto-orient put them on the solar recess face
 
 Auto-orient is safe on the arm file. Do not add supports inside the close-fit
-blade throat.
+blade throat. No part needs supports: the perimeter chamfers and the
+screw-head pockets on the bed faces are 45-degree overhangs.
 
 Recommended starting profile: 0.20 mm layers, 5 walls, 6 top and bottom layers,
 25-35% infill, seam away from the probe throat and gasket land. ASA for outdoor
@@ -42,28 +44,32 @@ use, PETG for a first fit print; PLA is not recommended in sun.
 
 1. Measure the physical solar panel. The pockets are 36.4 x 30.4 mm and assume
    a 1.6 mm panel thickness.
-2. Print one set first. Confirm the PCB, battery, panel, countersinks, and your
-   particular heat-set inserts.
+2. Print one set first. Confirm the PCB, battery, panel, screw-head pockets,
+   and your particular heat-set inserts.
 
 ## Hardware
 
 Integrated and arm enclosures:
 
 - 4 x M2 heat-set inserts, approximately 3 mm OD x 3 mm long
-- integrated version: 4 x M2 x 12 mm, 90-degree countersunk flat head
-- arm version: 4 x M2 x 10 mm, 90-degree countersunk flat head
+- 4 x M2 x 8 mm, 90-degree countersunk flat head (same for both versions)
 - silicone cord, neutral-cure RTV, or the optional printed TPU gasket
 
-The lids are 3 mm taller than v5.1, so the v5.1 screw lengths (10 mm and 8 mm)
-no longer reach far enough into the inserts.
+From v5.3 the case screws go in from the back, the face with the LED teardrop,
+and the inserts are in the lid. The v5.2 screws (12 mm and 10 mm) are too long:
+the blind lid holes end 4.2 mm above the seam, which an 8 mm screw just
+reaches. Each head sits in a recessed countersink and finishes flush with or
+slightly below the back face. The pockets are cut for countersunk heads; pan
+or socket-cap heads will not sit flush in them.
 
 Arm version only:
 
 - 4 x M2 x 5-6 mm pivot screws
 - 4 x matching M2 heat-set inserts
 
-Install case inserts from the seam side into the blind 2.90 x 3.20 mm pockets.
-Use a temperature-controlled insert tip and stop when each insert is flush.
+Install case inserts from the seam side of the lid into the blind
+2.90 x 3.20 mm pockets. Use a temperature-controlled insert tip and stop when
+each insert is flush.
 The minimum-profile enclosure requires no hardware; the base and lid are
 permanently bonded after the electronics pass their functional test.
 
@@ -91,18 +97,19 @@ frame and case, and seal the hole with neutral-cure RTV after routing.
 
 ## Sealing and final assembly
 
-1. Deburr the PCB rails, throat, countersinks, and gasket groove without
+1. Deburr the PCB rails, throat, screw-head pockets, and gasket groove without
    rounding the sealing lands.
 2. Dry-fit the board and battery. The board should be snug but must not bow.
 3. Route the panel wires and seal each passage with neutral-cure RTV or
    electronics-compatible epoxy.
 4. Bond the solar panel around its complete perimeter. On the integrated
    version, the panel is part of the weather barrier.
-5. Apply a thin continuous RTV bead, cord, or the TPU gasket in the groove.
+5. Apply a thin continuous RTV bead, cord, or the TPU gasket in the groove,
+   which is in the seam face of the base.
 6. Seal around the exposed blade at the split throat, keeping sealant off the
    sensing region.
-7. Tighten the case screws gradually in a diagonal pattern, only enough to
-   compress the seal.
+7. Turn the case over and fit the four screws from the back. Tighten them
+   gradually in a diagonal pattern, only enough to compress the seal.
 8. Leak-test the empty housing with tissue inside and a gentle spray.
 
 For all three bases, fill the teardrop LED window from the outside with

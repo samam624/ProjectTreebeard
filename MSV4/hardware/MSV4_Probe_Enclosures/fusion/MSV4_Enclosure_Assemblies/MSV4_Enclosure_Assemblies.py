@@ -35,11 +35,11 @@ PARAMETERS_MM = (
     ('solar_panel_pocket_length', 36.40, '0.20 mm clearance per end'),
     ('solar_panel_pocket_width', 30.40, '0.20 mm clearance per side'),
     ('solar_panel_recess_depth', 1.60, 'Bonded front-loading panel recess'),
-    ('case_screw_clearance_diameter', 2.40, 'M2 lid clearance hole'),
-    ('case_countersink_top_diameter', 4.20, 'M2 90-degree flat-head countersink'),
-    ('case_insert_pocket_diameter', 2.90, 'M2 heat-set insert pilot'),
+    ('case_screw_clearance_diameter', 2.40, 'M2 base clearance hole; screws enter from the back'),
+    ('case_countersink_top_diameter', 4.20, 'M2 90-degree flat-head countersink under a 0.40 mm recess in the base back'),
+    ('case_insert_pocket_diameter', 2.90, 'M2 heat-set insert pilot in the lid seam face'),
     ('case_insert_pocket_depth', 3.20, 'M2 heat-set insert length'),
-    ('arm_pivot_center_distance', 32.0390, 'Roof-clearing arm pivot spacing'),
+    ('arm_pivot_center_distance', 34.4607, 'Roof-clearing arm pivot spacing'),
     ('arm_thickness', 1.60, 'Flat-print solar arm thickness'),
 )
 

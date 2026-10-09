@@ -65,13 +65,18 @@ const p = {
   gasketGrooveWidth: 0.80,
   gasketNominalThickness: 0.80,
 
+  // Case screws enter from the back (the base, the face with the LED
+  // teardrop) and thread into inserts in the lid. The 90-degree countersink
+  // sits under a short cylindrical recess so the head rim ends up at or just
+  // below the back face instead of standing 0.1 mm proud.
   screwClearanceDiameter: 2.40,
   countersinkTopDiameter: 4.20,
   countersinkDepth: 0.90,
+  screwHeadRecessDepth: 0.40,
   insertPocketDiameter: 2.90,
   insertPocketDepth: 3.20,
   screwTipReliefDiameter: 2.40,
-  screwTipReliefBottomZ: -3.45,
+  screwTipReliefTopZ: 4.50,
   screwCenters: [
     { x: -15.30, y: 101.50 },
     { x: 15.30, y: 101.50 },
@@ -119,13 +124,16 @@ const p = {
   armPivotY: 121.50,
   armPivotZ: -2.10,
   armPanelPivotY: 149.20,
-  armPanelPivotZ: 17.00,
+  // panelFrameBackZ + panelLugRadius: the frame lugs are flat on the frame
+  // back, so the pivot axis sits one lug radius above it.
+  armPanelPivotZ: 18.40,
   armThickness: 1.60,
   armEndRadius: 2.80,
   armClearanceDiameter: 2.40,
   armInsertPocketDiameter: 2.90,
   armInsertPocketDepth: 3.20,
   pivotBossRadius: 3.00,
+  panelLugRadius: 2.70,
   panelFrameWidth: 32.80,
   panelFrameLength: 38.80,
   panelFrameBackZ: 15.70,
@@ -135,6 +143,17 @@ const p = {
   // gasket groove and below the roof, on the wire-channel (left) arm side.
   caseWireEntryDiameter: 3.00,
   caseWireEntryCenterZ: 4.00,
+
+  // 45-degree chamfers on the outer perimeter of each back and top face. The
+  // screw-case back is limited by the 0.70 mm land beside the rear screw-head
+  // recesses, the integrated top by the 1.40 mm rim outside the panel pocket,
+  // and the minimum-profile top by 0.80 mm of wall at the pocket's front
+  // corners.
+  baseBottomChamfer: 0.60,
+  armLidTopChamfer: 1.20,
+  integratedLidTopChamfer: 0.80,
+  minimalBaseBottomChamfer: 0.80,
+  minimalLidTopChamfer: 0.40,
 
   // 301020-class LiPo (MSV4 BOM BT1): 3.0 mm thick, resting on top-side parts.
   batteryNominal: [10.0, 20.0, 3.0],
@@ -279,8 +298,14 @@ const minimalBoardGrooveContour = [
   [-13.00 - p.minimalGrooveXYClearance, 101.75],
 ];
 
-function outerCase(zMin, zMax) {
-  return prism(outerContour, zMin, zMax);
+// Prism with a 45-degree chamfer around the perimeter of its bottom or top face.
+function chamferedPrism(points, zMin, zMax, chamfer, face) {
+  const faceZ = face === 'top' ? zMax : zMin;
+  return prism(points, zMin, zMax).chamfer(chamfer, (edge) => edge.inPlane('XY', faceZ));
+}
+
+function outerCase(zMin, zMax, chamfer, face) {
+  return chamferedPrism(outerContour, zMin, zMax, chamfer, face);
 }
 
 function cavity(zMin, zMax) {
@@ -332,67 +357,68 @@ function gasketRing(zMin, zMax, clearance = 0.0) {
   return outer.cut(inner).cut(probeSlot(zMin - 0.20, zMax + 0.20));
 }
 
-function countersink(location, lidTopZ) {
-  const bottomZ = lidTopZ - p.countersinkDepth;
-  const bottom = replicad.sketchCircle(
-    p.screwClearanceDiameter / 2,
-    { plane: 'XY', origin: [location.x, location.y, bottomZ] },
-  );
-  const top = replicad.sketchCircle(
+// Screw-head pocket opening on the base back: a cylindrical recess, then the
+// 90-degree cone narrowing upward into the clearance bore.
+function screwHeadPocket(location) {
+  const recessTopZ = p.baseBottomZ + p.screwHeadRecessDepth;
+  const wide = replicad.sketchCircle(
     p.countersinkTopDiameter / 2,
-    { plane: 'XY', origin: [location.x, location.y, lidTopZ + 0.02] },
+    { plane: 'XY', origin: [location.x, location.y, recessTopZ] },
   );
-  return bottom.loftWith(top, { ruled: true });
+  const narrow = replicad.sketchCircle(
+    p.screwClearanceDiameter / 2,
+    { plane: 'XY', origin: [location.x, location.y, recessTopZ + p.countersinkDepth] },
+  );
+  return wide.loftWith(narrow, { ruled: true }).fuse(cylinderZ(
+    p.baseBottomZ - 0.20,
+    p.screwHeadRecessDepth + 0.21,
+    location.x,
+    location.y,
+    p.countersinkTopDiameter / 2,
+  ));
 }
 
-function addCaseFasteners(baseShape, lidShape, lidTopZ) {
+function addCaseFasteners(baseShape, lidShape) {
   let base = baseShape;
   let lid = lidShape;
   for (const location of p.screwCenters) {
-    const leadIn = cylinderZ(
-      p.baseTopZ - 0.35,
+    base = base.cut(cylinderZ(
+      p.baseBottomZ - 0.20,
+      p.baseTopZ - p.baseBottomZ + 0.40,
+      location.x,
+      location.y,
+      p.screwClearanceDiameter / 2,
+    ));
+    base = base.cut(screwHeadPocket(location));
+
+    // Blind from the seam: the lid top stays closed over every screw.
+    lid = lid.cut(cylinderZ(
+      p.lidBottomZ - 0.10,
       0.45,
       location.x,
       location.y,
       p.insertPocketDiameter / 2 + 0.20,
-    );
-    base = base.cut(leadIn);
-    base = base.cut(cylinderZ(
-      p.baseTopZ - p.insertPocketDepth,
+    ));
+    lid = lid.cut(cylinderZ(
+      p.lidBottomZ - 0.20,
       p.insertPocketDepth + 0.20,
       location.x,
       location.y,
       p.insertPocketDiameter / 2,
     ));
-    base = base.cut(cylinderZ(
-      p.screwTipReliefBottomZ,
-      p.baseTopZ - p.insertPocketDepth - p.screwTipReliefBottomZ + 0.10,
+    lid = lid.cut(cylinderZ(
+      p.lidBottomZ + p.insertPocketDepth - 0.10,
+      p.screwTipReliefTopZ - p.lidBottomZ - p.insertPocketDepth + 0.10,
       location.x,
       location.y,
       p.screwTipReliefDiameter / 2,
-    ));
-
-    lid = lid.cut(cylinderZ(
-      p.lidBottomZ - 0.20,
-      lidTopZ - p.lidBottomZ + 0.40,
-      location.x,
-      location.y,
-      p.screwClearanceDiameter / 2,
-    ));
-    lid = lid.cut(countersink(location, lidTopZ));
-    lid = lid.cut(cylinderZ(
-      lidTopZ - 0.01,
-      0.20,
-      location.x,
-      location.y,
-      p.countersinkTopDiameter / 2,
     ));
   }
   return { base, lid };
 }
 
 function buildCommonBase(withArmPivots) {
-  let base = outerCase(p.baseBottomZ, p.baseTopZ)
+  let base = outerCase(p.baseBottomZ, p.baseTopZ, p.baseBottomChamfer, 'bottom')
     .cut(cavity(p.baseFloorTopZ, p.baseTopZ + 0.50))
     .cut(probeSlot(
       -p.pcbActualThickness - p.probeSlotZClearance,
@@ -418,10 +444,32 @@ function buildCommonBase(withArmPivots) {
     .fuse(box(-13.50, 104.00, -1.80, -13.10, 140.00, -0.25))
     .fuse(box(13.10, 104.00, -1.80, 13.50, 140.00, -0.25));
 
+  // A shallow cord/formed-in-place gasket groove follows the cavity. It is
+  // deliberately open only at the probe throat, which is epoxy/RTV sealed.
+  // It lives in the base, the part with the plain screw bores: the lid's
+  // insert pockets are too wide to share a seam face with it.
+  base = base.cut(gasketRing(
+    p.baseTopZ - p.gasketGrooveDepth,
+    p.baseTopZ + 0.05,
+  ));
+
   if (withArmPivots) {
+    // Each boss drops straight to the base back so the base prints flat. The
+    // inboard block fills the back chamfer behind the boss.
+    const bossYMin = p.armPivotY - p.pivotBossRadius;
+    const bossYMax = p.armPivotY + p.pivotBossRadius;
+    const fillDepth = p.baseBottomChamfer + 0.40;
+    for (const [xMin, xMax, fillXMin, fillXMax] of [
+      [-20.10, -16.60, -16.60, -16.60 + fillDepth],
+      [16.60, 20.10, 16.60 - fillDepth, 16.60],
+    ]) {
+      base = base
+        .fuse(cylinderX(xMin, xMax - xMin, p.armPivotY, p.armPivotZ, p.pivotBossRadius))
+        .fuse(box(xMin, bossYMin, p.baseBottomZ, xMax, bossYMax, p.armPivotZ))
+        .fuse(box(fillXMin, bossYMin, p.baseBottomZ, fillXMax, bossYMax, p.baseBottomZ + fillDepth))
+        .cut(box(xMin - 0.10, bossYMin - 0.10, p.baseBottomZ - 1.00, xMax + 0.10, bossYMax + 0.10, p.baseBottomZ));
+    }
     base = base
-      .fuse(cylinderX(-20.10, 3.50, p.armPivotY, p.armPivotZ, p.pivotBossRadius))
-      .fuse(cylinderX(16.60, 3.50, p.armPivotY, p.armPivotZ, p.pivotBossRadius))
       .cut(cylinderX(
         -20.30,
         p.armInsertPocketDepth + 0.20,
@@ -443,7 +491,13 @@ function buildCommonBase(withArmPivots) {
 function buildMinimalSolarBase() {
   // The board-shaped top recess makes the PCB drop into one unambiguous
   // position. A deeper local cavity clears every corrected bottom component.
-  let base = prism(minimalOuterContour, p.minimalBaseBottomZ, p.minimalBaseTopZ)
+  let base = chamferedPrism(
+    minimalOuterContour,
+    p.minimalBaseBottomZ,
+    p.minimalBaseTopZ,
+    p.minimalBaseBottomChamfer,
+    'bottom',
+  )
     .cut(prism(
       minimalBoardGrooveContour,
       p.minimalGrooveBottomZ,
@@ -463,7 +517,13 @@ function buildMinimalSolarBase() {
 }
 
 function buildMinimalSolarLid() {
-  let lid = prism(minimalOuterContour, p.minimalLidBottomZ, p.minimalLidTopZ)
+  let lid = chamferedPrism(
+    minimalOuterContour,
+    p.minimalLidBottomZ,
+    p.minimalLidTopZ,
+    p.minimalLidTopChamfer,
+    'top',
+  )
     .cut(cavity(p.minimalLidBottomZ - 0.20, p.lidInnerRoofZ));
 
   const pocketMinX = -p.solarPanelPocketWidth / 2;
@@ -497,7 +557,8 @@ function buildLidShell(kind) {
 
   // One continuous top skin replaces the old stepped roof and screw scallops.
   // The PCB-following outline carries straight into the exposed probe blade.
-  let lid = outerCase(p.lidBottomZ, topZ)
+  const topChamfer = isIntegrated ? p.integratedLidTopChamfer : p.armLidTopChamfer;
+  let lid = outerCase(p.lidBottomZ, topZ, topChamfer, 'top')
     .cut(cavity(p.lidBottomZ - 0.20, p.lidInnerRoofZ));
 
   lid = lid.cut(probeSlot(
@@ -506,10 +567,10 @@ function buildLidShell(kind) {
   ));
   lid = taperLidAtProbe(lid, topZ);
 
-  // Compression rails provide 0.10 mm nominal pinch on the PCB edge. They
-  // remain inside the gasket and rise to the roof, so the sealing groove does
-  // not isolate them as loose solids. Above the groove each rail is tied back
-  // into the cavity wall; a free 0.20 mm fin is not printable at this height.
+  // Compression rails provide 0.10 mm nominal pinch on the PCB edge. They sit
+  // just inside the base's gasket groove and rise to the roof. From the seam
+  // up each rail is tied back into the cavity wall; a free 0.20 mm fin is not
+  // printable at this height.
   lid = lid
     .fuse(box(
       -12.95,
@@ -527,17 +588,9 @@ function buildLidShell(kind) {
       139.00,
       p.lidInnerRoofZ + 0.05,
     ));
-  const railTieBottomZ = p.lidBottomZ + p.gasketGrooveDepth;
   lid = lid
-    .fuse(box(-13.40, 105.00, railTieBottomZ, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
-    .fuse(box(12.75, 105.00, railTieBottomZ, 13.40, 139.00, p.lidInnerRoofZ + 0.05));
-
-  // A shallow cord/formed-in-place gasket groove follows the cavity. It is
-  // deliberately open only at the probe throat, which is epoxy/RTV sealed.
-  lid = lid.cut(gasketRing(
-    p.lidBottomZ - 0.05,
-    p.lidBottomZ + p.gasketGrooveDepth,
-  ));
+    .fuse(box(-13.40, 105.00, p.lidBottomZ, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
+    .fuse(box(12.75, 105.00, p.lidBottomZ, 13.40, 139.00, p.lidInnerRoofZ + 0.05));
 
   if (isIntegrated) {
     const pocketMinX = -p.solarPanelPocketWidth / 2;
@@ -664,11 +717,23 @@ function buildPanelFrame() {
     ));
   }
 
-  // The frame lugs meet the outside faces of the two arms. Inserts install
-  // from the outside so the panel can still be removed after bonding.
+  // The frame lugs meet the inside faces of the two arms. Each is flat on the
+  // frame back, so the frame prints back-down, and rounds over above the
+  // pivot. Inserts install from the outside so the panel can still be removed
+  // after bonding.
+  for (const lugXMin of [-20.40, 16.40]) {
+    frame = frame
+      .fuse(cylinderX(lugXMin, 4.00, centerY, p.armPanelPivotZ, p.panelLugRadius))
+      .fuse(box(
+        lugXMin,
+        centerY - p.panelLugRadius,
+        p.panelFrameBackZ,
+        lugXMin + 4.00,
+        centerY + p.panelLugRadius,
+        p.armPanelPivotZ,
+      ));
+  }
   frame = frame
-    .fuse(cylinderX(-20.40, 4.00, centerY, p.armPanelPivotZ, 2.70))
-    .fuse(cylinderX(16.40, 4.00, centerY, p.armPanelPivotZ, 2.70))
     .cut(cylinderX(
       -20.60,
       p.armInsertPocketDepth + 0.20,
@@ -866,19 +931,16 @@ fs.mkdirSync(referenceDir, { recursive: true });
 
 let integratedBase = buildCommonBase(false);
 let integratedLid = buildLidShell('integrated');
-({ base: integratedBase, lid: integratedLid } = addCaseFasteners(
-  integratedBase,
-  integratedLid,
-  p.integratedLidTopZ,
-));
+({ base: integratedBase, lid: integratedLid } = addCaseFasteners(integratedBase, integratedLid));
 
 let armBase = buildCommonBase(true);
 let armLid = buildLidShell('arm');
-({ base: armBase, lid: armLid } = addCaseFasteners(armBase, armLid, p.armLidTopZ));
+({ base: armBase, lid: armLid } = addCaseFasteners(armBase, armLid));
 const leftArm = buildArm('left');
 const rightArm = buildArm('right');
 const panelFrame = buildPanelFrame();
 const gasket = buildGasket();
+const gasketSeatZ = p.baseTopZ - p.gasketGrooveDepth;
 const minimalBase = buildMinimalSolarBase();
 const minimalLid = buildMinimalSolarLid();
 const pcb = await correctedPcbReference();
@@ -920,7 +982,7 @@ await writeBlob(
   replicad.exportSTEP([
     { shape: integratedBase, name: 'MSV4 Integrated Solar Base', color: colors.base },
     { shape: integratedLid, name: 'MSV4 Integrated Solar Lid', color: colors.lid },
-    { shape: gasket.clone().translateZ(p.baseTopZ), name: 'MSV4 Case Gasket', color: colors.gasket },
+    { shape: gasket.clone().translateZ(gasketSeatZ), name: 'MSV4 Case Gasket', color: colors.gasket },
     { shape: integratedPanel, name: '36 x 30 mm Solar Panel Reference - Do Not Print', color: colors.panel },
   ]),
 );
@@ -929,7 +991,7 @@ await writeBlob(
   replicad.exportSTEP([
     { shape: integratedBase, name: 'MSV4 Integrated Solar Base', color: colors.base },
     { shape: integratedLid, name: 'MSV4 Integrated Solar Lid', color: colors.lid },
-    { shape: gasket.clone().translateZ(p.baseTopZ), name: 'MSV4 Case Gasket', color: colors.gasket },
+    { shape: gasket.clone().translateZ(gasketSeatZ), name: 'MSV4 Case Gasket', color: colors.gasket },
     { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
     { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
     { shape: integratedPanel, name: '36 x 30 mm Solar Panel Reference', color: colors.panel },
@@ -941,7 +1003,7 @@ await writeBlob(
   replicad.exportSTEP([
     { shape: armBase, name: 'MSV4 Arm Solar Base', color: colors.base },
     { shape: armLid, name: 'MSV4 Arm Solar Lid', color: colors.lid },
-    { shape: gasket.clone().translateZ(p.baseTopZ), name: 'MSV4 Case Gasket', color: colors.gasket },
+    { shape: gasket.clone().translateZ(gasketSeatZ), name: 'MSV4 Case Gasket', color: colors.gasket },
     { shape: leftArm, name: 'MSV4 Solar Arm Left', color: colors.arm },
     { shape: rightArm, name: 'MSV4 Solar Arm Right', color: colors.arm },
     { shape: panelFrame, name: 'MSV4 36 x 30 Solar Panel Frame', color: colors.frame },
@@ -953,7 +1015,7 @@ await writeBlob(
   replicad.exportSTEP([
     { shape: armBase, name: 'MSV4 Arm Solar Base', color: colors.base },
     { shape: armLid, name: 'MSV4 Arm Solar Lid', color: colors.lid },
-    { shape: gasket.clone().translateZ(p.baseTopZ), name: 'MSV4 Case Gasket', color: colors.gasket },
+    { shape: gasket.clone().translateZ(gasketSeatZ), name: 'MSV4 Case Gasket', color: colors.gasket },
     { shape: leftArm, name: 'MSV4 Solar Arm Left', color: colors.arm },
     { shape: rightArm, name: 'MSV4 Solar Arm Right', color: colors.arm },
     { shape: panelFrame, name: 'MSV4 36 x 30 Solar Panel Frame', color: colors.frame },
@@ -1019,8 +1081,8 @@ const roofCornerDistance = Math.hypot(
   p.armLidTopZ - p.armPivotZ,
 );
 const report = {
-  version: 'MSV4-enclosures-v5.2-tall-cavity-single-wire-exit',
-  revisionNote: 'Raises the board-to-roof cavity from 4.0 to 7.0 mm on all three variants for the thicker battery, raises the arm panel pivot to match, replaces the two blocked arm-lid wire holes with one 3.0 mm side exit, and ships one multi-object 3MF per variant instead of loose STLs.',
+  version: 'MSV4-enclosures-v5.3-back-screws-flat-backs-chamfers',
+  revisionNote: 'Case screws now enter from the back (base) into recessed countersinks and thread into inserts in the lid, with the gasket groove moved to the base to make room; the arm pivot bosses and panel-frame lugs are flat on their backs so both parts print flat; the outer back and top perimeters are chamfered.',
   units: 'mm',
   source: path.relative(projectDir, sourcePcbPath),
   parameters: p,
@@ -1034,11 +1096,17 @@ const report = {
     reason: 'MSV4 fab instruction specifies 1.6 mm FR4; Altium STEP contains the default thin stackup.',
   },
   closure: {
-    fastener: 'four M2 90-degree countersunk flat-head screws: 12 mm integrated lid, 10 mm arm lid',
-    insert: 'four M2 heat-set inserts in 2.90 mm x 3.20 mm blind pockets',
+    fastener: 'four M2 x 8 mm 90-degree countersunk flat-head screws, both variants, driven from the back (base)',
+    insert: 'four M2 heat-set inserts in 2.90 mm x 3.20 mm blind pockets in the lid seam face',
     screwStations: p.screwCenters,
-    layout: 'unbroken circular lands inside a locally widened front shoulder; flush countersinks and no external ears',
-    gasket: '0.80 mm wide x 0.55 mm deep PCB-following groove for silicone cord or formed-in-place RTV; optional 0.80 mm TPU gasket supplied',
+    headPocket: {
+      face: 'base back',
+      diameter: p.countersinkTopDiameter,
+      recessDepth: p.screwHeadRecessDepth,
+      countersinkDepth: p.countersinkDepth,
+    },
+    layout: 'locally widened front shoulder; recessed countersinks in the base back, closed lid top, and no external ears',
+    gasket: '0.80 mm wide x 0.55 mm deep PCB-following groove in the base seam face for silicone cord or formed-in-place RTV; optional 0.80 mm TPU gasket supplied',
     probeExit: 'split close-fit throat with 0.25 mm XY / 0.20 mm Z adhesive clearance',
   },
   commonCase: {
@@ -1047,6 +1115,13 @@ const report = {
     neckWidth: 20.40,
     noseThickness: p.probeOuterTopZ - p.probeOuterBottomZ,
     transition: 'planform follows the PCB shoulder and both exterior Z faces slope to a 3.0 mm shell around the 1.6 mm blade',
+    edgeChamfers: {
+      baseBack: p.baseBottomChamfer,
+      armLidTop: p.armLidTopChamfer,
+      integratedLidTop: p.integratedLidTopChamfer,
+      minimumProfileBaseBack: p.minimalBaseBottomChamfer,
+      minimumProfileLidTop: p.minimalLidTopChamfer,
+    },
     boardSideClearance: p.pcbSideClearance,
     internalRoofZ: p.lidInnerRoofZ,
     baseFloorZ: p.baseFloorTopZ,
@@ -1098,6 +1173,7 @@ const report = {
     pivotCenterDistance: armCenterDistance,
     closedCaseThickness: p.armLidTopZ - p.baseBottomZ,
     minimumRoofSweepClearance: armCenterDistance - p.armEndRadius - roofCornerDistance,
+    flatBacks: 'base pivot bosses end on the base back plane and panel-frame lugs on the frame back plane, so both parts print flat without supports',
     pivotHardware: 'four additional M2 x 5-6 mm screws and four 2.90 x 3.20 mm heat-set inserts',
     overallBounds: {
       base: measure(armBase),
