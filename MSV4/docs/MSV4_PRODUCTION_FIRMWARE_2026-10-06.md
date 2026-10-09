@@ -13,7 +13,13 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 | Second build, same day | `MSV4-BUILD:prod-2026-10-06b`, application version 262150: adds die temperature (26-byte packet, layout A) |
 | Third build, same day | `MSV4-BUILD:prod-2026-10-06c`, application version 262152: layout B, which adds `Cd` and moves `Cp` out of the packet. On board 1 21:55–22:16 PDT |
 | Fourth build, same day | `MSV4-BUILD:prod-2026-10-06d`, application version 262153: ADC offset recalibrated at every wake. On board 1 22:16–22:55 PDT |
-| Fifth build, same day | `MSV4-BUILD:prod-2026-10-06e`, application version 262154: lighter advertising, 1 ms sweep settle, cheaper fit arithmetic. On board 1 since 22:55 PDT |
+| Fifth build, same day | `MSV4-BUILD:prod-2026-10-06e`, application version 262154: lighter advertising, 1 ms sweep settle, cheaper fit arithmetic. On board 1 2026-10-06 22:55 – 2026-10-07 11:55 PDT |
+| Sixth build, 2026-10-07 | `MSV4-BUILD:prod-2026-10-07`, application version 262155: the nRF52840's DC/DC regulator is switched on after the first wake of each boot, and every packet reports it (flags 2 bit 3). On board 1 2026-10-07 11:56–13:06 PDT |
+| Seventh build, same day | `MSV4-BUILD:prod-2026-10-07b`, application version 262157: warm-start fit (one fit from the last full fit's answer, four cold starts as the fallback), reported in flags 2 bit 4. On board 1 2026-10-07 13:07–23:17 PDT. (262156 is an uninstalled fallback package, see the DC/DC result) |
+| Burn test build, 2026-10-07 night | `MSV4-BUILD:burn-2026-10-07`, application version 262158: the seventh build with `-BurnFloorMv 3700`. On board 1 2026-10-07 23:18 – 2026-10-08 13:48 PDT. See "Discharge burn test build" |
+| Eighth build | `MSV4-BUILD:prod-2026-10-07c`, application version 262159: the seventh build under a new label (two bytes differ). On board 1 2026-10-08 13:49–18:59 PDT |
+| Ninth build | `MSV4-BUILD:prod-2026-10-08`, application version 262160: `Cp` is calibrated only after a sane moisture reading in air, never at boot; flags 2 bit 6 says when it has not been. On board 1 2026-10-08 18:59–22:07 PDT. See "`Cp` is calibrated only after an open reading" |
+| One-minute TEST build | `MSV4-BUILD:fast1min-2026-10-08`, application version 262161: the ninth build with `-MoistureEveryNWakes 1` (moisture measured on every wake, every wake connectable) and `-CpCentiPf 869` (the `Cp` board 1 was running on when it was updated in soil). See "One-minute test build" |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -98,13 +104,17 @@ The fit was expected to speed up by 3× or more and did not: the wake shortened 
 0.6 s of it the sweep. **Inferred:** with the blade in air the fit is degenerate and runs to its
 iteration limit on all four starting points, and its time is dominated by divisions, whose count
 did not change. In soil it should converge in far fewer iterations; that has not been measured.
+(2026-10-07: a statement-for-statement replica of the solver supports neither half. Each start
+takes about 20 iterations, not the limit of 60, and four cold starts cost as much in modelled
+soil as in air. See "Warm-start fit".)
 
 Left alone, with the reason:
 
 - **TX power** stays at +8 dBm. After the advertising change it is worth about 0.09 mAh/day at
   +4 dBm, and it would have been a second radio change on top of the first.
 - **Measurement interval** stays at 10 minutes.
-- **DC/DC regulator** is not enabled. See below.
+- **DC/DC regulator** is not enabled. See below. (Enabled in 262155 on 2026-10-07; the result is
+  at the end of the next section.)
 
 ### The chip's DC/DC regulator
 
@@ -116,7 +126,8 @@ sleep it makes no difference.
 
 **The E73-2G4M08S1C module almost certainly has that inductor inside it. This is inferred from
 four independent sources; nothing has been measured on a Treebeard board.** (Researched later
-on 2026-10-06; the first version of this section said "not established".) The module does *not*
+on 2026-10-06; the first version of this section said "not established". Tested on board 1 on
+2026-10-07: see "Result on board 1" at the end of this section.) The module does *not*
 have the separate inductor for the high-voltage stage (REG0, pin DCCH), which does not matter
 here: MSV4 ties VDD and VDDH to the same 3.3 V rail, so that stage is bypassed.
 
@@ -168,6 +179,419 @@ loop through resets (the 2017 nRF52832 measurement was a boot loop), and the app
 switch the converter on again after every reset, so the board would stay silent until it was
 reflashed over SWD. Modelled saving once enabled: about 0.4 mAh/day on top of 262154.
 
+### Result on board 1, 2026-10-07: it runs with the converter on
+
+Application 262155 (`MSV4-BUILD:prod-2026-10-07`) went on over BLE at 11:55:56–11:56:32 PDT
+(36 s of transfer, first session).
+
+How 262155 does it:
+
+- **The converter is requested at the end of the first wake after each boot,** not in
+  `setup()`. The first wake, with its full connectable window, runs on the linear regulator. A
+  board with no inductor would therefore reset into one connectable window after another
+  instead of going silent, and could be recovered over BLE without SWD. That path was not
+  needed and has not been exercised.
+- **Every packet reports `DCDCEN` as read back from the register** when the packet is built
+  (flags 2 bit 3). The request is `sd_power_dcdc_mode_set()`; the bit is a direct read of
+  `0x40000578`. Checked in the built image by disassembly: `loop()` calls the SVC with 1 and
+  ANDs bit 0 of that register into byte 25. The core does clear the register on the way into
+  `setup()` (TinyUSB calls `nrfx_power_init()` with a zeroed configuration), which is why the
+  request cannot be made by the bootloader and why a readback is carried.
+- The high-voltage stage (`DCDCEN0`) is left off.
+
+Measured, from the maintainer's computer at −63 to −81 dBm:
+
+| Check | Result |
+|---|---|
+| DIS firmware / software / hardware revision, read at 11:58 | `MSV4-BUILD:prod-2026-10-07` / `262155` / `Cp 8.83 pF` |
+| Advertisement counter | 2 to 11, none missing, 60 s apart (11:57:33 … 12:06:36); it carried on through the DIS connection |
+| `DCDCEN` readback (flags 2 bit 3) | set in all ten packets |
+| Battery, counters 2–11 | 3827–3832 mV, mean 3829. Under 262154 at 11:43–11:44: 3825, 3829 mV |
+| Sweep at counter 11, converter on | `Cd` 12.98 pF, residual 0.0229, open |
+| Sweep at counter 1, same boot, taken before the converter is requested | `Cd` 12.95 pF, residual 0.0228, open |
+| Same quantities under 262154 | `Cd` 12.96–13.01 pF, residual 0.0229 |
+| Tip / die temperature | 24.0–24.25 °C / 24.75–25.0 °C |
+
+What that does and does not establish:
+
+- **The chip sleeps, wakes, sweeps, accepts a connection and transmits at +8 dBm with `DCDCEN`
+  set** (measured). The specification says a chip with no LC filter would not, and the one
+  measured example of a missing inductor boot-looped, so the E73-2G4M08S1C's main-stage
+  inductor is taken as present on this module. That last step is still an inference from the
+  specification; nobody has seen the part.
+- **The one sweep taken with the converter on is inside the scatter of the sweeps taken with it
+  off** (`Cd` 12.95–13.04 pF and residual 0.0228–0.0231 across every earlier reading in air).
+  One sample; the hourly record will show whether that holds.
+- **No supply current has been measured,** so the saving is still the modelled 0.4 mAh/day. The
+  battery readings are taken before each wake's load and cannot show it.
+- **Counter 1 was not heard** (the listener started as its window closed), so "bit 3 is clear on
+  the first wake" is from the source and the disassembly, not from a packet.
+
+A fallback package was built before the install and not used: the 262154 source (commit
+`c1f9991`) rebuilt as `MSV4-BUILD:prod-2026-10-07-ldo`, application version 262156, so that a
+board looping with the converter on could be put back on the linear regulator in one transfer.
+
+### Warm-start fit (262157, 2026-10-07)
+
+Until 262155 every measurement ran the fit four times, from four starting conductances a decade
+apart, and kept the best. From 262157 a measurement first runs **one** fit started from the last
+full fit's answer (the anchor) and keeps it only if both hold:
+
+- its residual is within 10 % (plus one count of the packet's residual field) of the anchor's;
+- the answer is still near the anchor: reported `Rsoil` and `Cd` each within a factor of 1.25.
+
+Otherwise the four cold starts run exactly as before and the best of all five is taken, so the
+worst case is the old behaviour plus one short fit. Every 12th measurement (two hours) is a full
+fit regardless, and so is the first after a boot and the retry after an invalid reading.
+Flags 2 bit 4 says which path produced a reading.
+
+Three details, each there for a reason found in testing:
+
+- **The warm fit starts from the anchor, not from the previous warm answer.** `Cm` and `Gs` are
+  flat directions whenever little conducts, and solver steps taken there on rounding noise would
+  add up from one measurement to the next.
+- **An open anchor is not used as it stands.** At 1e-16 S the solver has no slope to follow back
+  when the medium starts to conduct. The start is then a cold start's `Cm` with `Gs` at the wire
+  ceiling (1/400 kΩ), keeping only `Cd`. A first version that fitted `Cd` alone while open cost a
+  fifth as much in air and was dropped: with a true 50–100 kΩ it went on reporting "open" until
+  the next full fit, where four cold starts reported 72–250 kΩ.
+- **The move limit exists because this solver can stall.** With an anchor at 2 kΩ and the medium
+  now at 364 Ω, one warm fit in eight stopped at 357 Ω with a residual 25 % above the minimum;
+  restarting it from its own answer finished the job. A fit that had to travel means the medium
+  changed, which is when a full fit is wanted anyway.
+
+**Synthetic test** (`MSV4/scripts/test_msv4_warm_fit.py`: the sketch's solver and this logic
+replicated statement for statement, constants read from the sketch, each scenario run through
+the warm logic and through four cold starts on identical sweeps). The sweeps are the model plus
+a fixed distortion sized to board 1's 2.3 % residual in air; none is a board reading, and no
+sweep has been recorded in soil.
+
+| Scenario | Sweeps | Full fits | Worst `Rsoil` difference | Model evaluations, warm path vs cold |
+|---|---:|---:|---:|---:|
+| Air, steady (two noise seeds) | 72 + 72 | 6 + 6 | both open | 25 %, 24 % |
+| Moist soil 355 Ω, steady | 36 | 3 | 0.000 % | 14 % |
+| Damp towel 5.9 kΩ / hand grip, steady | 24 / 12 | 2 / 1 | 0.000 % | 23 % / 21 % |
+| Soil, `Rsoil` ±20 % thermal cycle | 36 | 4 | 0.000 % | 17 % |
+| Air, then into moist soil / onto a towel | 13 / 13 | 2 / 2 | 0.000 % | 22 % / 28 % |
+| Soil at 2 kΩ watered to 355 Ω | 13 | 2 | 0.000 % | 22 % |
+| Soil, then pulled out into air | 13 | 2 | both open | 29 % |
+| Towel drying 5.9 kΩ → open | 40 | 14 | 0.000 % | 47 % |
+| Soil drying 355 Ω → 100 kΩ | 40 | 25 | 0.000 % | 76 % |
+| Conduction creeping in from open | 30 | 12 | 0.000 % | 60 % |
+
+All 13 pass: the packet would carry the same `Rsoil`, open verdict, `Cd` and (when open) `Cm`
+either way. Every step change was caught on the sweep it happened. The fast ramps cost more
+because `Rsoil` leaves the 1.25 window every sweep or two; they change a decade in two to three
+hours, which a pot does not.
+
+What the replica says about the fit as it was (modelled, not timed on a board):
+
+- **Four cold starts are about 400 model evaluations in air and about 450 in moist soil.** So
+  the fit is no cheaper in soil. The 262154 note above expected it to converge in far fewer
+  iterations there; the replica does not support that.
+- **It is not the iteration limit.** Each start takes about 100 evaluations, roughly 20
+  iterations, where the limit is 60. That corrects the inference in the 262154 section.
+- **In every conducting case all four cold starts end on the same answer.** The four starts
+  matter in air, where two families of answer fit equally well (no conduction, or a short
+  circuit behind `Cm`), and the cold fit picked the collapsed one on 13 of 432 synthetic air
+  sweeps (six noise seeds). The probe reports that as an invalid reading and retries a minute
+  later. The warm path did it on 3 of the same 432, each one a scheduled full fit.
+- A warm fit is about 69 evaluations in air (it still has to walk `Gs` down from the ceiling)
+  and about 25 in soil. With one full fit in twelve that averages **24 % of the old fit time in
+  air and 13 % in soil**.
+
+**Measured on board 1, blade in air, 2026-10-07.** 262157 went on over BLE at 13:06:40–13:07:35
+(52 s of transfer, first session). DIS read at 13:09: `MSV4-BUILD:prod-2026-10-07b` / `262157` /
+`Cp 8.66 pF`. Counters 1 to 13 heard, none missing.
+
+The length of a measurement is the time from the 60 s wake grid to the first advertising frame of
+that wake, taken with a millisecond listener on the maintainer's computer. Windows often delivers
+the first frame of a window late, so the grid is the earliest of the non-measurement wakes and
+each figure is good to about 0.2 s.
+
+| Wake | Fit path (flags 2 bit 4) | Sweep + fit | `Cd` / residual |
+|---|---|---:|---|
+| 262155, counter 61, 12:56:36 | four cold starts | 3.02 s | 12.94 pF / 0.0229 |
+| 262157, counter 1, 13:07:37 | four cold starts (no anchor yet) | 2.95 s | 13.12 pF / 0.0232 |
+| 262157, counter 11, 13:17:35 | **warm, accepted** | **1.00 s** | 13.11 pF / 0.0232 |
+
+- **The measurement wake is 2.0 s shorter on a warm fit.** Less the 0.65 s modelled sweep that is
+  a fit of about 0.35 s against about 2.35 s, which is what the replica predicted for air
+  (69 against 400 evaluations).
+- **The warm fit reported what the full fit had ten minutes earlier:** open, `Cd` 13.11 against
+  13.12 pF, the same residual. One warm sample so far; bit 4 in every packet is the running
+  record of how often it is accepted.
+- Both full-fit samples read about 3.0 s. The 2.7 s in the 262154 table above was one sample
+  taken another way; the budget model now uses 3.0.
+- Modelled, at the specification's 3.3 mA of CPU current with the converter on: the fit slice
+  falls from 7.8 to 1.7 mC per 10 minutes, about 0.24 mAh/day, and the whole budget from
+  0.81–0.93 to 0.57–0.69 mAh/day (`MSV4/scripts/msv4_power_budget.py`). No current has been
+  measured.
+
+Two things this boot showed that are not about the fit:
+
+- **`Cd` steps at a reboot because `Cp` is recalibrated at every boot; their sum does not.**
+  `Cp` + `Cd` was 8.78 + 12.96–13.01 (262154), 8.83 + 12.93–12.98 (262155) and 8.66 + 13.11–13.12
+  (262157): 21.74–21.81 pF across three boots, while `Cd` alone stepped 0.18 pF at the last
+  reboot. Compare `Cd` within one boot, or compare the sum.
+- **The first battery reading after this boot was 3850 mV; the next twelve were 3823–3829.** The
+  first wake is also the only one with the converter off, but the stored history has ten more
+  single readings 12–19 mV off since 23:10 the night before, under 262154 and in the dark too,
+  so it is one of a kind of outlier this board already had. Cause not established.
+
+### Discharge burn test build (prepared 2026-10-07, installed that night at 23:18)
+
+For the window charge test the maintainer asked for an image that draws the cell down overnight,
+so that a day of charging starts from a known low level. It is the production sketch built with
+one extra parameter; without the parameter none of it is compiled.
+
+| | |
+|---|---|
+| Build | `arduino_msv4_probe.ps1 ... -BuildTag burn-<date> -BurnFloorMv <mV>` (the script refuses the parameter without a tag starting `burn`, and that tag without the parameter) |
+| What it does | Between wakes the CPU spins with the LED lit instead of sleeping, 55 s of every 60, and the DC/DC converter stays off. The wakes, the packets and the OTA window are unchanged |
+| Load | Modelled about 6–7 mA: the specification's 6.3 mA of CPU on the linear regulator for 55 s in 60, plus about 1 mA of LED (470 Ω). Not measured |
+| Seen from outside | LED lit; `msv4_adv_scan.py` prints `BURNING` (flags 2 bit 5) and `DC/DC off` |
+
+It ends itself, once per boot:
+
+- a battery reading at or below the floor pauses the burn for that minute, and a second in a row
+  ends it (single readings stand 12–25 mV off about once in two hours);
+- ten hours after boot it ends wherever the cell is;
+- an unusable battery reading pauses it, and three in a row end it;
+- it does not start after a watchdog or lockup reset.
+
+**Why it has a floor at all, and why the sketch refuses one below 3600 mV.** Left running, about
+6 mA empties this cell's usable window in a few hours. The BQ25504 then switches the 3V3 rail off
+(3.37 V nominal, 3.42 V at the top of its tolerance; the ADC's own reading is good to 3 %),
+nothing can reach the board, and when the panel has brought the cell back to 3.73 V the image
+boots and burns again.
+
+**What is not retained.** "Finished" is a RAM flag. After a soft reset the burn would run again
+if the cell has charged above the floor in the meantime, so the production image goes back on
+before a day's charge record is trusted to it.
+
+Prepared on 2026-10-07, both passing `msv4_ble_ota.py --preflight-only`:
+
+| Package | Application version | For |
+|---|---:|---|
+| `MSV4_Moisture_BLE_Sleep-v262158-burn-2026-10-07-signed-ota.zip` | 262158 | the night: floor 3700 mV, about 125 mV below the cell's level that day |
+| `MSV4_Moisture_BLE_Sleep-v262159-prod-2026-10-07c-signed-ota.zip` | 262159 | the morning after |
+
+Checked without a board: the 262159 image differs from the installed 262157 image in two bytes,
+the version digit and the tag letter, so the burn is compiled out completely and the morning
+image is the firmware already running. In the 262158 image the disassembly shows the stop logic
+(the floor compared as 1850 mV at the divider node, the two-in-a-row counter, the ten-hour cap)
+and the spin loop (LED set, watchdog fed, 55 s bound).
+
+**First run, board 1, 2026-10-07.** The maintainer asked for it at about 23:08 ("Set up the LED
+burner now"). 262158 went on over BLE at 23:17:42–23:18:28 (45 s of transfer, first session); DIS
+read at 23:19: `MSV4-BUILD:burn-2026-10-07` / `262158` / `Cp 8.73 pF`.
+
+| Check | Result |
+|---|---|
+| Flags 2 bit 5 (burn) and bit 3 (converter) | burn set, converter off, in all of counters 1–9 |
+| Wake cadence | unchanged, 60 s (23:18:32 … 23:26:30) |
+| Battery | 3825, 3829, 3830, 3823, 3825, 3821, 3823, 3821, 3818 mV; 3834 mV at 23:09 before the update |
+| Fitted slope over those nine | **−1.1 mV/min**. In the dark the night before, without the burn: −0.17 mV/h |
+| Die minus tip temperature | 1.0–1.25 °C, against 0.25 °C at 23:09 |
+| Sweep at counter 1 | `Cd` 12.93 pF, residual 0.0226, open: the measurement is not disturbed |
+
+So the burn runs, the wakes and packets carry on through it, and the cell falls about four
+hundred times faster than at rest. At that rate the 3700 mV floor is roughly two hours away.
+Not seen by anyone: the LED. How and when it stopped is recorded in the solar charge test
+record once it has.
+
+**It stopped itself at 01:47 on 2026-10-08**, 2 h 29 min after the boot, on the first two
+readings in a row at or below the floor (3700 and 3698 mV); a single 3698 mV three minutes
+earlier did not end it. The fall over the whole burn was −47.3 ± 0.5 mV/h. At 13:27 the scanner
+showed the burn flag clear and the converter on at counter 850, so the board had not reset. The
+numbers are in [the solar charge test record](MSV4_OUTDOOR_SOLAR_CHARGE_TEST_2026-10-06.md)
+under 2026-10-08.
+
+**262159 went back on at 13:48 on 2026-10-08** (43 s of transfer, first session), at the
+maintainer's request. DIS read at 13:50: `MSV4-BUILD:prod-2026-10-07c` / `262159` /
+`Cp 8.74 pF`; counters 3 to 8 heard by 13:56 with the converter on and the burn flag clear.
+
+### `Cp` is calibrated only after an open reading (262160, installed 2026-10-08 18:59)
+
+**What happened on board 1, 2026-10-08.** The maintainer handled the board to put epoxy on the
+bottom thermistor and the side edge of the PCB, and afterwards saw `Cd` low and staying low.
+From the stored history, and the DIS string read at 16:29:
+
+| Time (PDT) | Event | `Rsoil` | `Cd` | `Cp` of that boot | `Cp` + `Cd` |
+|---|---|---|---:|---:|---:|
+| 13:52–15:29 | 262159, in the window, untouched | open | 12.82–13.00 pF | 8.74 pF | 21.56–21.74 pF |
+| 15:34–15:35 | handling starts: signal strength at the receiver jumps, tip thermistor +1.5 °C for one wake | | | | |
+| 15:39, 15:49 | moved | open | 13.23, 13.24 pF | 8.74 pF | 21.97–21.98 pF |
+| 15:56:21 → 15:59:11 | **the board reset** (counter 128 → 1). Two wakes missing from the history in between |
+| 15:59:11 | first reading of the new boot, something conducting across the blade | 13.3 kΩ, `Cm` 55.7 pF | 10.40 pF | **15.89 pF** | 26.29 pF |
+| 16:09, 16:19, 16:29 | hands off | open | 6.44, 6.40, 6.45 pF | 15.89 pF | 22.29–22.34 pF |
+| 16:39 | | open | 5.59 pF, residual at the field's ceiling (≥ 2.55 %) | 15.89 pF | 21.48 pF |
+
+- **Measured:** this boot's `Cp` is 7.15 pF above the last one's, and `Cd` is low by that
+  amount, less the 0.3 pF the node really gained. `Cp` + `Cd` moved 0.3 pF across the reset. The
+  electrode did not change; the calibration did.
+- **Why the reset happened was not established.** Nothing reports the reset reason. It fell
+  between two scheduled wakes, which a firmware hang would not (the watchdog is 8 s), and the
+  board came back by itself, which a battery disconnect long enough to open the BQ25504's switch
+  would not (maintainer). What that leaves is the 3V3 rail's enable (`VBAT_OK`, set by megaohm
+  ladders a finger can load), the bare `RESET` test point and the crystal pins.
+- **This corrects a claim in this record.** "The sweep opens U3, so it does not depend on what
+  the blade is in" is wrong. With U3 open the electrodes still reach the SENSE node through its
+  off-capacitance, and what they are touching comes with them.
+
+**Why it matters beyond `Cd`.** `Cp` and `Cd` enter the model only as their sum, so `Rsoil` and
+`Cm` do not depend on `Cp`, as long as `Cd` can absorb it. The fit keeps `Cd` positive. A `Cp`
+larger than the node capacitance the fit finds pins `Cd` at nothing and the error goes into
+`Rsoil`. In the synthetic moist soil (355 Ω) `Rsoil` reads 0.9 % high with `Cp` zero, 1.2 % high
+with the synthetic air calibration and 3.8 % high with a `Cp` taken with a hand on the blade.
+Synthetic: no sweep has been recorded in soil, and the test's distortion is invented.
+
+**The rule in 262160** (`calibrateCpAfterOpenReading()`):
+
+- Nothing is calibrated at boot.
+- The moisture reading comes first, and the calibration runs only on the strength of a **sane
+  reading in air** (the maintainer's requirement, 2026-10-08: "it should definitely check for a
+  sane moisture value before running it first"). Sane means all three:
+  - the reading is valid (the fit converged to positive, finite values);
+  - nothing is conducting (`Rsoil` at the 400 kΩ ceiling, moisture number 0);
+  - the fit residual is below 0.0255, the ceiling of the packet's residual field. Board 1's 262
+    undisturbed open readings in the stored history of 2026-10-06 to 2026-10-08 are
+    0.0195–0.0234; the one taken while the board was being carried (16:39 on 2026-10-08) is at
+    the ceiling.
+- `Cp` is then measured straight away and kept for the rest of the boot. The reading that
+  allowed it is put on the new `Cp` by arithmetic, and so is the warm fit's anchor. A reading
+  that is not sane leaves everything as it was, and the next measurement tries again.
+- Until then `Cp` is taken as **zero** (it was 12 pF when a calibration failed). `Cd` is then the
+  whole node capacitance, about 21.7 pF on board 1 in air, and **flags 2 bit 6** is set so nobody
+  reads it as a change in the electrode.
+- A candidate is refused if it is outside 2–25.5 pF or would leave less than 1 pF of `Cd`.
+- The DIS hardware revision string follows it: `Cp 0.00 pF default` until a calibration is
+  accepted, `Cp 8.74 pF` after. It is now the sketch's own characteristic (same UUID, same
+  service), because BLEDis writes its strings once.
+
+So a board that resets with a hand or wet soil on the blade reports the node capacitance, marked,
+until it next takes a sane reading in air, and a board that boots in soil and stays there never
+calibrates in that boot. The residual does not depend on which `Cp` the fit was given (the
+replica returns the same residual and the same `Cp` + `Cd` for 0, 5.37, 8.8 and 12 pF), so the
+limit taken from board 1's calibrated readings applies to its uncalibrated ones.
+
+**Not covered:** a medium too dry to conduct also reads open, and a calibration taken there
+would be accepted. How far such a medium moves the floating sweep has not been measured.
+
+**Synthetic test** (`MSV4/scripts/test_msv4_cp_calibration.py`: the fit replica from the
+warm-start test with this rule around it, the rule's lines checked as source text; every row
+against a probe booted in air and left alone, on identical sweeps):
+
+| Scenario | Calibrates | `Cd` against the undisturbed probe | `Rsoil` error (undisturbed probe) |
+|---|---|---:|---:|
+| 262160, boot in air | reading 0 | 0.02 pF | open |
+| 262160, boot with a hand on it, then let go | reading 2, the first open one | 0.01 pF | same as the reference |
+| 262160, a hand at every reading | never | 0.01 pF, plus the `Cp` it lacks | same as the reference |
+| 262160, boot in moist soil, stays there | never | (reference pinned) | 0.87 % (1.15 %) |
+| 262160, soil, out into air, back into soil | reading 3 | 0.01 pF | 1.13 % (1.15 %) |
+| 262160, air, then two hours in soil | reading 0 | 0.02 pF | 1.15 % (1.15 %) |
+| 262160, boot while being carried (open, residual 0.029), then set down | reading 2, the first sane one | 0.01 pF | open |
+| 262160, hand, let go but still carried, set down | reading 3 | 0.01 pF | same as the reference |
+| **262159**, boot with a hand on it, then let go | at boot | **7.25 pF low**, as on the board | same as the reference |
+| **262159**, boot in moist soil, stays there | at boot | (reference pinned) | **3.83 %** (1.15 %) |
+
+The warm-start test still passes 13 of 13 on the edited sketch, the scanner's self-test passes
+with the new bit, and `verify_msv4_packet_abi.mjs` passes with checks added for it.
+
+**On board 1, 2026-10-08.** `Cd` stayed at 6.21–6.27 pF from 16:49 to 18:39 (advertisement
+counter 166 at 18:44: no reboot since 15:59), and the maintainer asked whether the board had to
+go into a pot to fix it. It did not: only a boot recalibrates. 262160 went on over BLE at the
+18:59:10 measurement wake at the maintainer's word ("flash"): 38 s of transfer, first session,
+−66 dBm, the board sitting in air and not being touched.
+
+| Check | Result |
+|---|---|
+| DIS firmware / software / hardware revision, read at 19:00:02 | `MSV4-BUILD:prod-2026-10-08` / `262160` / **`Cp 8.93 pF`**, with no "default": the calibration ran on the first reading, and the string, now the sketch's own characteristic, reads back |
+| Packets, counters 2–4 (19:00:52–19:02:53) | open, **`Cd` 13.33 pF**, residual 0.0227, bit 6 clear, converter on, 3825–3827 mV, tip 25.25 °C |
+| `Cp` + `Cd` | 22.26 pF, against 22.13–22.16 pF over the two hours before the update (15.89 + 6.24–6.27) |
+| `Cp` against the last undisturbed boot | 8.93 pF against 8.74 pF at 13:49, before the epoxy; earlier boots 8.66–8.83 pF |
+
+So the first of the three paths is seen on hardware: a boot in air calibrates at its first
+reading. **Not yet seen on hardware:** a boot with something on the blade (bit 6 set,
+`Cp 0.00 pF default`, `Cd` near 22 pF, then the calibration at the first sane reading), and a
+reading refused for its residual.
+
+### First reading in soil (board 1, Alocasia pot, 2026-10-08 21:57)
+
+The maintainer pushed board 1 into the Alocasia pot at about 21:47 ("moment of truth"), the
+epoxy having had about six hours. Soil wetness and insertion depth were not stated; the last
+watering on record for that pot is 2026-09-22.
+
+| Time (PDT) | Event | `Rsoil` (at 25 °C) | `Cm` | `Cd` | Residual | Tip / die |
+|---|---|---:|---:|---:|---:|---|
+| 21:36–21:41 | in air, untouched (262160, boot of 18:59, `Cp` 8.93 pF) | open | | 13.48–13.50 pF | 0.0227 | 26.0 / 26.25 °C |
+| 21:42–21:46 | picked up | | | | | tip to 29.75 °C |
+| 21:46:54 → 21:47:10 | **the board reset as it was pushed in** (counter 168 → 1; the maintainer saw the start-up blink). 3820–3837 mV throughout |
+| 21:47:10 | first reading of the boot, blade part-way in | open | | 14.05 pF | 0.0199 | 29.25 / 28.25 °C |
+| 21:49 | DIS: `Cp 8.69 pF`. The calibration ran on that open reading and is in the air range | | | | | |
+| **21:57:09** | **first reading with the blade firmly in** | **20,209.9 Ω (20,310.9 Ω)** | **15.2 pF** | **21.39 pF** | 0.0133 | 25.25 / 26.25 °C |
+
+- **It conducts in soil, and the fit is better there than in air** (residual 0.0133 against
+  0.0227). Moisture number 12,943.
+- **It is nothing like the modelled moist soil** (355 Ω, 671 pF): 57 times the resistance and
+  a forty-fourth of the series capacitance. One reading, ten minutes after insertion, in soil of
+  unstated wetness; the blade has not settled and no watering has been seen.
+- **`Cd` went up, 13.5 → 21.4 pF, not down to the fit's floor.** The synthetic test's soil rows
+  pin `Cd` at nothing; this soil does not. `Cp` + `Cd` is 30.08 pF.
+- **The calibration rule met a boot during insertion and came out right, by timing.** The
+  reading four seconds after the reset was still open, so the calibration ran, and it read
+  8.69 pF. Had the blade been conducting by then it would have stayed uncalibrated and flagged.
+  The path where a boot finds something conducting has still not been seen on hardware.
+- **The tip thermistor reads the soil colder than the air was:** 25.25 °C against 26.0 °C before
+  it was picked up, still settling.
+- **Second reset during handling in one day**, again with the battery steady. Cause still not
+  established; no image reports its reset reason.
+
+### One-minute test build (262161, 2026-10-08)
+
+With board 1 just planted the maintainer asked for the moisture measurement every minute for
+testing: "Lets bring the candence back up to 1 min for testing right now. I like that we can tune
+that knob but not necessary when solar charging was so effective." Two build parameters, both
+compiled out when they are not given:
+
+| Parameter | What it does | Cost or caution |
+|---|---|---|
+| `-MoistureEveryNWakes 1` | The sweep and fit run on every one-minute wake instead of every tenth. A full fit still comes once in twelve measurements, now every 12 minutes. Every wake is a measurement wake, so every wake opens the 5 s connectable window | Modelled 2.24–2.36 mAh/day against 0.57–0.69 (`msv4_power_budget.py` with one wake per interval), about four times; nothing measured. The script refuses a tag starting `prod` for any cadence but ten |
+| `-CpCentiPf 869` | The image starts on this `Cp` instead of zero | Only for a probe that is already in soil, with the value its previous boot calibrated (DIS read `Cp 8.69 pF` at 21:49). The update's reboot happens in soil, where 262160's rule never calibrates, so without it `Cd` would step up by the whole 8.69 pF and stay there for as long as the probe is planted. Flags 2 bit 6 stays set (nothing was calibrated this boot) and the DIS string reads `Cp 8.69 pF default` |
+
+The calibration test gained three rows for a build that carries its own `Cp` (boots in soil and
+stays; a hand at every reading; soil then air, where it calibrates as usual) and passes 13 of
+13; the warm-start test, the scanner self-test and the packet check pass.
+
+**On board 1, in the Alocasia pot.** 262161 went on over BLE at the 22:07:07 measurement wake
+(39 s of transfer, first session, −65 dBm).
+
+| Time (PDT) | Image, counter | `Rsoil` (at 25 °C) | `Cm` | `Cd` | Residual | Fit |
+|---|---|---:|---:|---:|---:|---|
+| 21:57:09 | 262160, 11 | 20,209.9 Ω (20,310.9) | 15.2 pF | 21.39 pF | 0.0133 | full |
+| 22:07:07 | 262160, 21 | 19,109.2 Ω (19,204.7) | 16.1 pF | 21.60 pF | 0.0131 | **warm, accepted** |
+| 22:07:54 | **262161**, 1 | 19,012.4 Ω (19,107.5) | 16.4 pF | 21.62 pF | 0.0130 | full |
+| 22:09:53 | 262161, 3 | 18,702.6 Ω (18,796.1) | 16.6 pF | 21.63 pF | 0.0130 | warm |
+| 22:10:53 | 262161, 4 | 18,788.2 Ω (18,882.1) | 16.4 pF | 21.66 pF | 0.0128 | warm |
+| 22:11:53 | 262161, 5 | 18,874.9 Ω (19,063.6) | 16.8 pF | 21.65 pF | 0.0127 | warm |
+| 22:12:53 | 262161, 6 | 18,704.9 Ω (18,798.4) | 16.6 pF | 21.69 pF | 0.0130 | warm |
+
+- **Every wake is a fresh reading**, 60 s apart, and DIS reads
+  `MSV4-BUILD:fast1min-2026-10-08` / `262161` / `Cp 8.69 pF default`.
+- **`Cd` carried straight across the update:** 21.60 pF on the calibrated 8.69 pF, 21.62 pF on
+  the built-in 8.69 pF.
+- **262160's rule refused to calibrate on a boot in soil.** First sight of that path on
+  hardware: the first reading conducted, bit 6 is set in every packet, and the DIS string says
+  `default`.
+- **The warm fit is accepted in soil.** First sight of that too (the Open list's "watch flags 2
+  bit 4 there"). Its timing has not been taken.
+- **Reading-to-reading scatter at one minute:** `Rsoil` 18.70–18.87 kΩ over four readings
+  (0.9 % end to end), `Cm` 16.4–16.8 pF, `Cd` 21.63–21.69 pF.
+- **`Rsoil` came down 7 % in the first quarter of an hour** (20.2 → 18.8 kΩ) while `Cm` and
+  `Cd` crept up, with the tip steady at 25.25 °C. That is what soil closing on a freshly
+  inserted blade would do; inferred, nothing else was observed.
+
 ## The battery reading depended on the boot (found and fixed 2026-10-06)
 
 The maintainer noticed the battery "jump" after the 21:41–21:55 gap. Measured, same cell, in the
@@ -216,13 +640,14 @@ Deliberate differences from the two parents:
 |---|---|
 | No BLE UART console; DIS and buttonless DFU only | The console is unauthenticated: anyone in range could drive the front end |
 | Sensor ID is a required build parameter (`-SensorId`) | Same rule as MSV3: (commit, sensor id) must reproduce an image |
-| `Cp` is measured at every boot with the electrodes floating | `spectrum open` was RAM-only and manual. The sweep opens U3, so it does not depend on what the blade is in. From 262152 the value is published as the DIS hardware revision string (`Cp 8.75 pF`), not in the packet |
+| `Cp` is measured at every boot with the electrodes floating | `spectrum open` was RAM-only and manual. The sweep opens U3, so it does not depend on what the blade is in (**wrong, measured 2026-10-08:** a hand on the blade at boot gave 15.89 pF against 8.74; from 262160 it is taken only after an open reading, see "`Cp` is calibrated only after an open reading"). From 262152 the value is published as the DIS hardware revision string (`Cp 8.75 pF`), not in the packet |
 | Moisture sweep every 10th wake, not every wake | A sweep and fit keeps the CPU and HFXO up for about 5 s (console, board 1, 2026-10-01) |
 | `TIMER3 TASKS_SHUTDOWN` once per wake, after the last sweep | A TIMER that has run and is only stopped keeps drawing current (nRF52 anomaly 78) |
 | Boot counter carries only across watchdog, software and lockup resets, and clears after two completed advertising cycles | MSV3's guard rules. A pin reset or power-on starts at zero |
 | The watchdog is left unfed if no advertising cycle completes for 10 minutes | A running but silent board cannot be reached; this board has no USB |
 | OTA gate at 3500 mV, open when the battery reading is unusable | The MCU only runs above `VBAT_OK` (3.369 V falling). MSV3's 3800 mV would shut OTA over most of the 3.37–3.89 V window |
 | TX power +8 dBm | MSV3 production's setting; the bring-up console used +4 |
+| Warm-start fit, from 262157 | The console's `moisture` command still runs the four cold starts every time; it is a manual command and its time does not matter. See "Warm-start fit" |
 
 ## Wake cycle
 
@@ -267,7 +692,7 @@ came from dropping the TX Power structure from the advertisement, which nothing 
 | 19–20 | `Cm`, uint16 LE, units of 0.1 pF. Reads 0 while nothing conducts | same |
 | 21–22 | `Cd`, uint16 LE, units of 0.01 pF; 0 = not sent | 21: `Cp` in 0.1 pF (120 = default). 22: residual |
 | 23–24 | nRF52840 die temperature, int16 LE, quarter-°C. The board end, not the soil | same (absent in 262148) |
-| 25 | Flags 2: bit0 die temperature valid, bit1 layout B, bit2 short non-connectable burst (262154 onward) | bit0 only |
+| 25 | Flags 2: bit0 die temperature valid, bit1 layout B, bit2 short non-connectable burst (262154 onward), bit3 DC/DC regulator enabled, read back from `DCDCEN` as the packet is built (262155 onward; clear on the first wake of every boot), bit4 the moisture fields came from an accepted warm-start fit (262157 onward; it stays with the reading through its repeats), bit5 discharge burn active (test builds made with `-BurnFloorMv` only), bit6 no `Cp` calibration accepted this boot, so `Cd` is the whole node capacitance (262160 onward) | bit0 only |
 
 `Rsoil` never needs more than 22 bits, which is where byte 13 came from. A reader that still takes
 bytes 10–13 as one 32-bit number sees an out-of-range resistance on a layout B packet and rejects
@@ -412,12 +837,18 @@ rows and its script parses, but nobody has looked at the rendered charts yet.
 - Sleep current, and awake time and charge per wake, of this image. Every energy figure for it is
   modelled.
 - Whether `Cp` measured with the blade in soil differs from `Cp` in air (8.8 pF, board 1,
-  2026-10-01).
+  2026-10-01). With a hand on the blade it does: 15.89 pF at the 15:59 boot on 2026-10-08. Soil
+  itself is still unmeasured.
+- Whether `Cd` sits at the fit's floor (0.01 pF on the wire) in moist soil with an air-calibrated
+  `Cp`. The synthetic test's does; if board 1's does, `Rsoil` is carrying the difference.
+- Why board 1 reset while it was being handled on 2026-10-08. No image reports its reset reason.
 - The boot-guard escape and the 10-minute radio-stall reset on this image. Neither has been
   provoked on hardware.
 - (Measured since: the buttonless jump out of this image. At 21:20 `msv4_ble_ota.py` caught the
   production image's 5 s window, connected in 2.4 s, jumped it and installed 262150 in 39 s.)
-- Any reading in soil. Board 1 has only been measured in air, on a damp towel and in a hand.
+- (Measured since: a reading in soil. 20.2 kΩ, `Cm` 15.2 pF, `Cd` 21.39 pF in the Alocasia pot
+  at 21:57 on 2026-10-08; see "First reading in soil".) Still unmeasured: soil of known
+  wetness, a watering, and the settled value.
 
 ## Open
 
@@ -432,8 +863,25 @@ rows and its script parses, but nobody has looked at the rendered charts yet.
 - [ ] MSV4 still shares MSV3's DFU device type `0x3356`. `msv4_ble_ota.py` refuses an MSV3 image
       by its identity string, but the bootloader itself would accept one
 - [ ] Measure sleep current and per-wake charge
-- [ ] Enable the nRF52840 DC/DC regulator on a board that is on the bench with SWD at hand (the
-      inductor is inferred present, see "The chip's DC/DC regulator"); a current meter would
-      also give the first measured supply current
-- [ ] Time the fit with the blade in soil; if it is still slow, stop iterating once the
-      conductance has fallen below what the packet can report
+- [x] Enable the nRF52840 DC/DC regulator — *done over BLE 2026-10-07 in 262155; board 1 runs
+      with it on, see "Result on board 1"*
+- [ ] Measure the supply current with the converter on and off; the 0.4 mAh/day saving is still
+      modelled
+- [x] Cut the fit time — *done 2026-10-07 in 262157 with a warm start: 3.0 s to 1.0 s per
+      measurement wake in air, see "Warm-start fit"*
+- [ ] Time the fit with the blade in soil and watch flags 2 bit 4 there: the replica predicts
+      four cold starts cost what they do in air and a warm fit about a third of the air one, and
+      no sweep has been recorded in soil to check either
+- [x] Install 262160 and see it calibrate after its first open reading — *done 2026-10-08
+      18:59: `Cp 8.93 pF`, `Cd` 13.33 pF, bit 6 clear*
+- [x] See the rule refuse a boot with something on the blade — *done 2026-10-08 22:07: 262161
+      booted in soil, bit 6 set, `Cp 8.69 pF default`. Not yet seen: the calibration that
+      follows at the first sane reading in air, and a build without `-CpCentiPf` in soil
+      (`Cp 0.00 pF default`, `Cd` near 30 pF).* Board 1's `Cd` rows from 15:59 to 18:59 on
+      2026-10-08 are 7.15 pF low
+- [ ] Put the ten-minute cadence back on board 1 when the one-minute testing is over (262161
+      is a test image)
+- [ ] Single battery readings stand 12–25 mV apart from their neighbours about once every two
+      hours (11 of 860 in the stored history of 2026-10-06 23:10 to 2026-10-07 13:34, of either
+      sign, in the dark as well; the 3850 mV on the first wake of the 262157 boot is one). Cause
+      not established. Listed in the solar charge test record

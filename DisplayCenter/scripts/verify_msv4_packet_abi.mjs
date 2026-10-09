@@ -144,6 +144,47 @@ assert.match(updater, /payload\[23\] & SHORT_BURST_FLAG2/);
 assert.match(probe,
   /const bool longWindow = g_wakesUntilMoisture == 0 \|\| g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;/);
 
+// ---- DC/DC regulator state (flags2 bit3): a register readback, not a build constant ----
+// From application 262155. The bit is only evidence if the probe reads DCDCEN when it builds the
+// packet, so that is what is checked. The receiver ignores the bit and stores nothing for it.
+assert.match(probe, /#define ADV_FLAG2_DCDC_ON\s+\(1U << 3\)/);
+assert.match(probe, /\(dcdcEnabled\(\) \? ADV_FLAG2_DCDC_ON : 0\)/);
+assert.match(probe, /return \(NRF_POWER->DCDCEN & POWER_DCDCEN_DCDCEN_Msk\) != 0;/);
+assert.match(scanner, /^FLAG2_DCDC_ON = 1 << 3$/m);
+
+// ---- Warm-start fit (flags2 bit4): which estimator path produced the moisture fields ----
+// From application 262157. It travels with the reading, so it must come from the reading, and a
+// reading that is not valid must not claim it. The receiver ignores the bit.
+assert.match(probe, /#define ADV_FLAG2_FIT_WARM\s+\(1U << 4\)/);
+assert.match(probe, /\(reading\.valid && reading\.warm \? ADV_FLAG2_FIT_WARM : 0\)/);
+assert.match(scanner, /^FLAG2_FIT_WARM = 1 << 4$/m);
+assert.match(scanner, /"fit_warm": bool\(valid and flags2 & FLAG2_FIT_WARM\)/);
+
+// ---- Discharge burn (flags2 bit5): a test image saying it is drawing the cell down ----
+// Only a build made with -BurnFloorMv contains the burn. A production build must compile it out
+// completely, so the bit has to come from a function that is empty without the build parameter.
+assert.match(probe, /#define ADV_FLAG2_BURN\s+\(1U << 5\)/);
+assert.match(probe, /\(burnActive\(\) \? ADV_FLAG2_BURN : 0\)/);
+assert.match(probe, /#else\s+static void burnBegin\(\) \{\}\s+static void burnJudge\(bool, float\) \{\}\s+static bool burnActive\(\) \{ return false; \}/);
+assert.match(probe, /static_assert\(MSV4_BURN_FLOOR_MV >= 3600 &&/,
+  "The burn floor must stay above the level where the harvester cuts the 3V3 rail.");
+assert.match(scanner, /^FLAG2_BURN = 1 << 5$/m);
+
+// ---- Cp not calibrated yet (flags2 bit6): Cd is the whole node capacitance ----
+// From application 262160. Cp is measured only straight after a reading that found nothing
+// conducting, never at boot, so the bit must follow the calibration state and the calibration
+// must sit behind the open test. The receiver ignores the bit.
+assert.match(probe, /#define ADV_FLAG2_CP_DEFAULT\s+\(1U << 6\)/);
+assert.match(probe, /\(g_cpCalibrated \? 0 : ADV_FLAG2_CP_DEFAULT\)/);
+assert.match(probe,
+  /const bool saneOpenReading = rsoil >= FIT_OPEN_OHM && bestRms < SPEC_CAL_MAX_RMS;\s*if \(!g_cpCalibrated && saneOpenReading\) cd = calibrateCpAfterOpenReading\(cd\);/);
+assert.equal(probe.match(/measureCp\(/g).length, 2,
+  "measureCp() must have one caller: a calibration taken with something on the blade is how " +
+  "board 1 came to report Cd 7 pF low on 2026-10-08.");
+assert.match(probe, /constexpr double SPEC_CP_DEFAULT = 0\.0;/,
+  "Until it is calibrated Cp is zero: a Cp above the node capacitance pins Cd and bends Rsoil.");
+assert.match(scanner, /^FLAG2_CP_DEFAULT = 1 << 6$/m);
+
 // ---- An MSV4 packet must not be judged or stored as an FDC reading ----
 assert.match(receiver, /if \(msv4\)\s*\{\s*caplessTank = false;\s*bareTankValid = false;/);
 assert.match(receiver,

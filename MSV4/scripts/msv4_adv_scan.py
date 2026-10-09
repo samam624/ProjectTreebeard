@@ -46,6 +46,23 @@ FLAG2_LAYOUT_B = 1 << 1
 # bit set cannot be connected to; wait for one without it (every tenth wake, and the first three
 # after a boot).
 FLAG2_SHORT_BURST = 1 << 2
+# Application version 262155: the nRF52840's DCDCEN register as the probe read it back while
+# building this packet. Clear on the first wake of every boot (the converter is requested when
+# that wake's window closes) and in every packet from an older image.
+FLAG2_DCDC_ON = 1 << 3
+# Application version 262157: the moisture fields came from an accepted warm-start fit (one fit
+# started from the last full fit's answer) instead of the four cold starts. It belongs to the
+# reading, so the repeats of a reading carry the same bit.
+FLAG2_FIT_WARM = 1 << 4
+# A discharge-burn test image (built with -BurnFloorMv): the probe will spin instead of sleep
+# until its next wake. No production image sets it.
+FLAG2_BURN = 1 << 5
+# Application version 262160: no Cp calibration has been accepted this boot, so Cd is on the
+# build's Cp. That is zero unless the build carries the board's own (see the DIS string), and
+# with zero Cd is the whole node capacitance, Cp included. The probe calibrates straight after
+# its first sane reading in air. Rsoil and Cm do not depend on Cp. Clear in every packet from an
+# older image, which calibrated at boot whatever the blade was in.
+FLAG2_CP_DEFAULT = 1 << 6
 
 RSOIL_DECIOHM_MAX = 4_000_000
 CP_DEFAULT_DECI_PF = 120
@@ -55,7 +72,8 @@ EC_TEMPCO_PER_C = 0.02
 
 CSV_FIELDS = ["time", "sensor", "counter", "rssi", "battery_mv", "tip_c", "moisture_valid",
               "fresh", "rsoil_ohm", "rsoil_open", "rsoil25_ohm", "cm_pf", "cp_pf", "cp_default",
-              "fit_rms", "ota_ok", "die_c", "cd_pf", "connectable"]
+              "fit_rms", "ota_ok", "die_c", "cd_pf", "connectable", "dcdc", "fit_warm", "burn",
+              "cp_uncalibrated"]
 
 
 def decode(payload: bytes) -> dict | None:
@@ -106,6 +124,10 @@ def decode(payload: bytes) -> dict | None:
         "ota_ok": bool(flags & FLAG_OTA_OK),
         "die_c": die_c,
         "connectable": not flags2 & FLAG2_SHORT_BURST,
+        "dcdc": bool(flags2 & FLAG2_DCDC_ON),
+        "fit_warm": bool(valid and flags2 & FLAG2_FIT_WARM),
+        "burn": bool(flags2 & FLAG2_BURN),
+        "cp_uncalibrated": bool(flags2 & FLAG2_CP_DEFAULT),
     }
 
 
@@ -123,11 +145,18 @@ def describe(row: dict) -> str:
         r25 = f" ({row['rsoil25_ohm']:.1f} @25C)" if row["rsoil25_ohm"] is not None else ""
         moisture = (f"Rsoil {row['rsoil_ohm']:.1f} ohm{r25} Cm {row['cm_pf']:.1f} pF "
                     f"{cd}rms {row['fit_rms']:.4f}")
+    if row["moisture_valid"]:
+        moisture += " warm fit" if row["fit_warm"] else " full fit"
     cp = ""
     if row["cp_pf"] is not None:
         cp = f" | Cp {row['cp_pf']:.1f} pF" + (" (DEFAULT)" if row["cp_default"] else "")
     marks = ("fresh" if row["fresh"] else "repeat") + ("" if row["ota_ok"] else ", OTA closed")
     marks += ", connectable" if row["connectable"] else ", short burst"
+    marks += ", DC/DC on" if row["dcdc"] else ", DC/DC off"
+    if row["burn"]:
+        marks += ", BURNING"
+    if row["cp_uncalibrated"]:
+        marks += ", Cp NOT CALIBRATED this boot (Cd is on the build's Cp)"
     return f"sensor {row['sensor']} #{row['counter']} {battery} {tip} | {moisture}{cp} | {marks}"
 
 
@@ -222,6 +251,60 @@ def self_test() -> int:
     check("burst.keeps.die", burst["die_c"], 23.5)
     check("window", air["connectable"], True)
     check("v262148.connectable", row["connectable"], True)
+    # The DC/DC readback is its own bit: set only when sent, and it disturbs nothing beside it.
+    dcdc = decode(_encode(10, 4, RSOIL_DECIOHM_MAX, 3820, FLAG_MSV4 | FLAG_TEMP_OK, 93, 0, None, 229,
+                          die_q4=94, flags2=FLAG2_DIE_TEMP_OK | FLAG2_SHORT_BURST | FLAG2_DCDC_ON,
+                          cd_centi=1301))
+    check("dcdc.on", dcdc["dcdc"], True)
+    check("dcdc.keeps.burst", dcdc["connectable"], False)
+    check("dcdc.keeps.cd", dcdc["cd_pf"], 13.01)
+    check("dcdc.keeps.die", dcdc["die_c"], 23.5)
+    check("dcdc.off", burst["dcdc"], False)
+    check("dcdc.off.window", air["dcdc"], False)
+    check("v262148.dcdc", row["dcdc"], False)
+    check("dcdc.mark", "DC/DC on" in describe(dcdc), True)
+    check("dcdc.mark.off", "DC/DC off" in describe(burst), True)
+    # The warm-fit bit: its own bit, only believed on a valid reading, older packets read "full".
+    warm = decode(_encode(10, 5, 3550, 3814, FLAG_MSV4 | FLAG_TEMP_OK, 107, 6710, None, 30,
+                          die_q4=94, flags2=FLAG2_DIE_TEMP_OK | FLAG2_DCDC_ON | FLAG2_FIT_WARM,
+                          cd_centi=500))
+    check("warm.on", warm["fit_warm"], True)
+    check("warm.keeps.dcdc", warm["dcdc"], True)
+    check("warm.keeps.rsoil", warm["rsoil_ohm"], 355.0)
+    check("warm.keeps.cd", warm["cd_pf"], 5.0)
+    check("warm.keeps.window", warm["connectable"], True)
+    check("warm.off", dcdc["fit_warm"], False)
+    check("warm.v262148", row["fit_warm"], False)
+    check("warm.mark", "warm fit" in describe(warm), True)
+    check("warm.mark.full", "full fit" in describe(dcdc), True)
+    burning = decode(_encode(10, 7, RSOIL_DECIOHM_MAX, 3790, FLAG_MSV4 | FLAG_TEMP_OK, 93, 0, None, 229,
+                             die_q4=94, flags2=FLAG2_DIE_TEMP_OK | FLAG2_SHORT_BURST | FLAG2_BURN,
+                             cd_centi=1301))
+    check("burn.on", burning["burn"], True)
+    check("burn.keeps.dcdc", burning["dcdc"], False)
+    check("burn.keeps.battery", burning["battery_mv"], 3790)
+    check("burn.keeps.cd", burning["cd_pf"], 13.01)
+    check("burn.mark", "BURNING" in describe(burning), True)
+    check("burn.off", warm["burn"], False)
+    check("burn.off.mark", "BURNING" in describe(warm), False)
+    check("burn.v262148", row["burn"], False)
+    # Cp not yet calibrated: its own bit, nothing beside it moves, older packets read calibrated.
+    uncal = decode(_encode(10, 9, 132962, 3825, FLAG_MSV4 | FLAG_TEMP_OK, 106, 557, None, 151,
+                           die_q4=119, flags2=FLAG2_DIE_TEMP_OK | FLAG2_CP_DEFAULT, cd_centi=429))
+    check("cp.uncal.on", uncal["cp_uncalibrated"], True)
+    check("cp.uncal.keeps.rsoil", uncal["rsoil_ohm"], 13296.2)
+    check("cp.uncal.keeps.cd", uncal["cd_pf"], 4.29)
+    check("cp.uncal.keeps.burn", uncal["burn"], False)
+    check("cp.uncal.keeps.window", uncal["connectable"], True)
+    check("cp.uncal.mark", "Cp NOT CALIBRATED" in describe(uncal), True)
+    check("cp.uncal.off", air["cp_uncalibrated"], False)
+    check("cp.uncal.off.mark", "Cp NOT CALIBRATED" in describe(air), False)
+    check("cp.uncal.off.burn", burning["cp_uncalibrated"], False)
+    check("cp.uncal.v262148", row["cp_uncalibrated"], False)
+    stale = decode(_encode(10, 6, 0, 3700, FLAG_MSV4 | FLAG_INVALID, 0, 0, None, 0,
+                           die_q4=94, flags2=FLAG2_FIT_WARM, cd_centi=0))
+    check("warm.invalid", stale["fit_warm"], False)
+    check("warm.invalid.mark", "fit" in describe(stale), False)
 
     # Layout A packets never carried Cd.
     check("a.cd", decode(_encode(*common, die_q4=126, flags2=FLAG2_DIE_TEMP_OK))["cd_pf"], None)

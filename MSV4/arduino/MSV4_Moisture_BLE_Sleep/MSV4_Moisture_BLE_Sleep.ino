@@ -110,6 +110,7 @@ struct MoistureReading
   uint16_t cmDeciPf;
   uint8_t rmsE4;
   uint16_t cdCentiPf;
+  bool warm;   // came from an accepted warm-start fit; see runSpectrumFit()
 };
 
 struct RetainedRecord
@@ -155,8 +156,17 @@ const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};
 // spectrum sweep is far more expensive than an FDC read (about 5 s awake with HFXO and the CPU
 // running, measured on board 1 through the console on 2026-10-01), so it runs on every
 // MOISTURE_EVERY_N_WAKES-th wake and the packets in between repeat its result.
+// Ten unless the build says otherwise (-MoistureEveryNWakes on arduino_msv4_probe.ps1). At 1
+// every wake measures and every wake opens the connectable window: modelled 2.2-2.4 mAh/day
+// against 0.57-0.69 at ten (MSV4/scripts/msv4_power_budget.py), nothing measured.
 const uint32_t WAKE_PERIOD_MS = 60000;
+#ifdef MSV4_MOISTURE_EVERY_N_WAKES
+static_assert(MSV4_MOISTURE_EVERY_N_WAKES >= 1 && MSV4_MOISTURE_EVERY_N_WAKES <= 60,
+              "MSV4_MOISTURE_EVERY_N_WAKES must be 1..60");
+const uint8_t MOISTURE_EVERY_N_WAKES = MSV4_MOISTURE_EVERY_N_WAKES;
+#else
 const uint8_t MOISTURE_EVERY_N_WAKES = 10;
+#endif
 
 // The 3V3 rail only exists while the BQ25504 asserts VBAT_OK (3.369 V falling), so a running MCU
 // already implies some charge. This adds margin for the minutes a BLE DFU spends in the bootloader.
@@ -239,6 +249,9 @@ static bool g_bootGuardCleared = false;
 
 // ------------------------------------------------------------------------------------ BLE ----
 BLEDis bledis;
+// Hardware Revision String, in the DIS service; see publishCp().
+static BLECharacteristic g_hardwareRevChar(UUID16_CHR_HARDWARE_REVISION_STRING);
+static bool g_hardwareRevReady = false;
 ResetSafeBLEDfu bledfu;
 static bool g_otaServiceReady = false;
 static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
@@ -248,10 +261,27 @@ static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
 static uint32_t g_advertCount = 0;
 static uint32_t g_lastAdvertOkMs = 0;
 
-static MoistureReading g_reading = {false, 0, 0, 0, 0};
+static MoistureReading g_reading = {false, 0, 0, 0, 0, false};
 static char g_hardwareRev[24];
 static uint8_t g_wakesUntilMoisture = 0;   // 0 = measure on this wake
 static uint8_t g_wakesSinceBoot = 0;       // saturates; only compared with LONG_WINDOW_BOOT_WAKES
+
+// --------------------------------------------------------------------- DC/DC regulator -------
+// The nRF52840's main-stage DC/DC converter (REG1), requested since application version 262155.
+// It needs an inductor between DCC and DEC4, which on this board can only be inside the E73
+// module, and the product specification says enabling the converter without one "will inhibit
+// device operation". So the first wake of every boot runs on the linear regulator and the
+// converter is requested only once that wake's connectable window has closed: a board whose
+// module has no inductor still offers an updater one full window per reset instead of going
+// silent.
+// The request is never taken on trust. Every packet carries DCDCEN as read back when the packet
+// was built (flags2 bit3): the core clears the register on its way into setup() (TinyUSB's
+// nrfx_power_init() with a zeroed configuration), and a later clear would otherwise look exactly
+// like a converter that works.
+// REG0 (DCDCEN0) stays off: VDD and VDDH share the 3V3 rail, so that stage is bypassed, and the
+// module has no DCCH inductor. Evidence for the inductor and the result on board 1:
+// MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md.
+static bool g_dcdcRequested = false;
 
 // ------------------------------------------------------------------------- low-level utils ---
 static void cycleCounterEnable()
@@ -318,6 +348,90 @@ static void ledWrite(bool on)
   if (on) NRF_P1->OUTSET = (1UL << PIN_LED_P1);
   else NRF_P1->OUTCLR = (1UL << PIN_LED_P1);
 }
+
+// ------------------------------------------------------------------ discharge burn (test) ----
+// TEST BUILDS ONLY: arduino_msv4_probe.ps1 -BurnFloorMv <mV>. Without that parameter none of this
+// is compiled and the functions below are empty. It draws the cell down to a chosen level so a
+// day of charging can be watched from a known low start. Between wakes the CPU spins on the
+// linear regulator with the LED lit instead of sleeping; the wakes themselves, the packets and
+// the OTA window are the production image's.
+//
+// It ends itself, once per boot, and must never be the reason a board goes dark:
+// - a battery reading at or below the floor pauses the burn for that minute, and a second one in
+//   a row ends it. Two, because single readings stand 12-25 mV off about once in two hours, and
+//   the second is then taken after a minute's rest;
+// - BURN_MAX_MS after boot ends it wherever the cell is;
+// - a battery reading the wake cannot use pauses it, and three in a row end it;
+// - it does not start at all after a watchdog or lockup reset.
+// The floor may not be set below 3600 mV. The BQ25504 switches the 3V3 rail off at 3.37 V nominal
+// (3.42 V at the top of its tolerance), this ADC's gain is good to 3 %, and once the rail is off
+// nothing can reach the board until the panel has brought the cell back above 3.73 V -- where
+// this image would boot and burn again.
+// NOT retained: "finished" lives in RAM. After a soft reset the burn would run again if the cell
+// has charged above the floor since, so put a production image back before trusting a day's
+// charge record to this one.
+#ifdef MSV4_BURN_FLOOR_MV
+static_assert(MSV4_BURN_FLOOR_MV >= 3600 && MSV4_BURN_FLOOR_MV <= 4100,
+              "MSV4_BURN_FLOOR_MV must be 3600..4100: see the comment above");
+constexpr float BURN_FLOOR_MV = MSV4_BURN_FLOOR_MV;
+constexpr uint32_t BURN_MAX_MS = 10UL * 3600UL * 1000UL;
+// The cell rests this long before each wake's battery reading.
+constexpr uint32_t BURN_REST_MS = 5000;
+static bool g_burnDone = false;
+static bool g_burnThisCycle = false;
+static uint8_t g_burnBelow = 0;
+static uint8_t g_burnUnreadable = 0;
+
+static void burnBegin()
+{
+  g_burnDone = (readResetReason() & (POWER_RESETREAS_DOG_Msk | POWER_RESETREAS_LOCKUP_Msk)) != 0;
+}
+
+// Called once per wake with that wake's battery reading; decides the minute that follows.
+static void burnJudge(bool vbatOk, float vbatMv)
+{
+  g_burnThisCycle = false;
+  if (g_burnDone) return;
+  if (millis() >= BURN_MAX_MS)
+  {
+    g_burnDone = true;
+    return;
+  }
+  if (!vbatOk)
+  {
+    if (++g_burnUnreadable >= 3) g_burnDone = true;
+    return;
+  }
+  g_burnUnreadable = 0;
+  if (vbatMv <= BURN_FLOOR_MV)
+  {
+    if (++g_burnBelow >= 2) g_burnDone = true;
+    return;
+  }
+  g_burnBelow = 0;
+  g_burnThisCycle = true;
+}
+
+static bool burnActive() { return g_burnThisCycle; }
+// The converter stays off until the burn is over: the linear regulator is the bigger load.
+static bool burnHoldsLinearRegulator() { return !g_burnDone; }
+
+// Spins from now until BURN_REST_MS before the next wake is due. Nothing is advertising by then,
+// so the only other work is the SoftDevice's, which preempts this task as it always does.
+static void burnUntilRest(uint32_t cycleStartMs)
+{
+  if (!g_burnThisCycle) return;
+  ledWrite(true);
+  while (millis() - cycleStartMs < WAKE_PERIOD_MS - BURN_REST_MS) feedWatchdog();
+  ledWrite(false);
+}
+#else
+static void burnBegin() {}
+static void burnJudge(bool, float) {}
+static bool burnActive() { return false; }
+static bool burnHoldsLinearRegulator() { return false; }
+static void burnUntilRest(uint32_t) {}
+#endif
 
 static bool readRetained(uint8_t& count)
 {
@@ -395,6 +509,13 @@ static void bootGuardNoteHealthyAdvert()
   if (++g_probationAdverts < BOOT_GUARD_PROBATION_ADVERTS) return;
   writeRetained(0);
   g_bootGuardCleared = true;
+}
+
+// POWER shares its register block with CLOCK and belongs to the SoftDevice while that is enabled:
+// writes go through the SVC, reads are direct, as lfclkOnXtal() already does.
+static bool dcdcEnabled()
+{
+  return (NRF_POWER->DCDCEN & POWER_DCDCEN_DCDCEN_Msk) != 0;
 }
 
 // ---------------------------------------------------------------------------------- SAADC ----
@@ -733,11 +854,37 @@ static bool readFrontEnd(float& senseMv, float& drvMv)
 //   Cd = direct board/fringe capacitance that never reaches soil.
 // Divider node: H(w) = 1 / (1 + Rs*(Ye + jw*Cp)), Rs = R15, Cp = SENSE-node parasitics.
 constexpr double SPEC_RS = 1000.0;       // R15
-// Replaced at boot by calibrateCp(). Board 1 measured 8.8 pF through the console on 2026-10-01.
-constexpr double SPEC_CP_DEFAULT = 12e-12;
+// The value in use until calibrateCpAfterOpenReading() accepts a measured one (board 1 reads
+// 8.66-8.83 pF in air). ZERO, so that Cd until then is the whole node capacitance, Cp included.
+// Zero and not a typical value (it was 12 pF up to 262159) because the fit keeps Cd positive: a
+// Cp larger than the capacitance the fit finds pins Cd at nothing and Rsoil takes the error. On
+// synthetic moist soil at 355 ohm, MSV4/scripts/test_msv4_cp_calibration.py reads 0.9 % high
+// with Cp 0 and 3.8 % high with a Cp taken with a hand on the blade. A Cp that is too low costs
+// only the offset in Cd.
+// A build for a probe that is ALREADY IN SOIL may carry the Cp that probe last calibrated, read
+// from its DIS string before the update (-CpCentiPf on arduino_msv4_probe.ps1). The update's
+// reboot happens in soil, so without it that boot would report the whole node capacitance for as
+// long as the probe stays planted. A later calibration in air still replaces it.
+#ifdef MSV4_CP_CENTI_PF
+static_assert(MSV4_CP_CENTI_PF >= 200 && MSV4_CP_CENTI_PF <= 2550,
+              "MSV4_CP_CENTI_PF is this board's last calibrated Cp in 0.01 pF: 200..2550");
+constexpr double SPEC_CP_DEFAULT = MSV4_CP_CENTI_PF * 1e-14;
+#else
+constexpr double SPEC_CP_DEFAULT = 0.0;
+#endif
+constexpr double SPEC_CP_START = 10e-12;  // where the calibration fit starts
 constexpr double SPEC_CP_MIN = 2e-12;
-constexpr double SPEC_CP_MAX = 25.5e-12;  // plausibility bound for the boot calibration
+constexpr double SPEC_CP_MAX = 25.5e-12;  // plausibility bound for a calibration
+// A calibration must leave at least this much Cd: a Cp that takes the whole node capacitance was
+// not a measurement of the parasitics.
+constexpr double SPEC_CD_MIN_AFTER_CAL = 1e-12;
+// The reading that lets a calibration run must itself be a sane one in air: valid, nothing
+// conducting, and a fit residual below this. It is the ceiling of the packet's residual field.
+// Board 1's 262 undisturbed open readings of 2026-10-06 to 2026-10-08 are 0.0195-0.0234; the one
+// taken while the board was being moved (2026-10-08 16:39) is at or above 0.0255.
+constexpr double SPEC_CAL_MAX_RMS = 0.0255;
 static double g_specCp = SPEC_CP_DEFAULT;
+static bool g_cpCalibrated = false;   // a measured Cp has been accepted this boot
 static const uint16_t SPEC_N[] = {64, 48, 32, 24, 16, 12, 8, 6};  // 250 kHz .. 2.67 MHz
 constexpr int SPEC_NF = sizeof(SPEC_N) / sizeof(SPEC_N[0]);
 static_assert(SPEC_NF <= SPEC_MAX, "SpecSet too small");
@@ -939,12 +1086,10 @@ static double specFit(const SpecSet& s, double* p, const bool* freeP, double cp,
   return sqrt(ss / nr);
 }
 
-// Electrodes floating (U3 /OE high), so Ye = 0 and the sweep sees only the SENSE node's own
-// parasitics. Runs once per boot, whatever the blade is standing in, and keeps the result in RAM.
-// A failed sweep or an out-of-range fit leaves the default in place and returns false; the DIS
-// hardware revision string says which Cp is in use. NOT YET MEASURED: whether Cp taken with the
-// blade in soil differs from Cp in air.
-static bool calibrateCp()
+// Electrodes floating (U3 /OE high), so Ye = 0 and the sweep sees the SENSE node's parasitics.
+// Returns the fitted value without putting it to use; false on a failed sweep or an out-of-range
+// fit.
+static bool measureCp(double& cp)
 {
   setSwap(SwapState::Open);
   setChopEnabled(true);
@@ -954,17 +1099,72 @@ static bool calibrateCp()
   if (!ok) return false;
   // Fit Cp alone: Cm tiny makes zm huge, so the series branch vanishes, Ye = jw*Cd, and Cd plays
   // Cp's role.
-  double p[3] = {1e-15, 1e-12, g_specCp}, sig[3];
+  double p[3] = {1e-15, 1e-12, SPEC_CP_START}, sig[3];
   const bool freeP[3] = {false, false, true};
   specFit(s, p, freeP, 0.0, sig);
   if (p[2] < SPEC_CP_MIN || p[2] > SPEC_CP_MAX) return false;
-  g_specCp = p[2];
+  cp = p[2];
   return true;
 }
 
-// Sweeps both orientations, averages the complex transfers, and fits {Cm, Gs, Cd}.
-static bool runSpectrumFit(double* best, double& bestRms)
+// The Cp in use, as text, in the DIS hardware revision string. " default" means no calibration
+// has been accepted this boot. The string changes when one is, so it is this sketch's own
+// characteristic and not one of BLEDis's write-once strings.
+static void publishCp()
 {
+  const unsigned cpCenti = (unsigned)(g_specCp * 1e14 + 0.5);
+  snprintf(g_hardwareRev, sizeof(g_hardwareRev), "Cp %u.%02u pF%s", cpCenti / 100, cpCenti % 100,
+           g_cpCalibrated ? "" : " default");
+  if (g_hardwareRevReady) g_hardwareRevChar.write(g_hardwareRev, strlen(g_hardwareRev));
+}
+
+// A full fit is four cold starts across four decades of Gs, about two seconds of arithmetic.
+// Since application version 262157 a measurement first tries ONE fit started from the last full
+// fit's answer (the anchor) and keeps it only if
+//   - its residual is within FIT_WARM_ACCEPT of the anchor's, and
+//   - the answer is still near the anchor: reported Rsoil and Cd within FIT_WARM_MAX_MOVE.
+// Anything else -- no anchor yet, a worse residual, an answer that has moved, a non-finite
+// result -- runs the four cold starts exactly as before and takes the best of all five, so the
+// worst case is the old behaviour plus one short fit.
+// - The warm fit starts from the ANCHOR, never from the previous warm result. Cm and Gs are flat
+//   directions whenever little conducts, and steps the solver takes there on rounding noise
+//   would otherwise accumulate from one measurement to the next.
+// - An open anchor (Rsoil at or above the wire ceiling) is not used as it stands: at 1e-16 S the
+//   solver has no slope to follow back if the medium starts to conduct. The start is then a cold
+//   start's Cm with Gs AT the ceiling, and only Cd is carried over.
+// - The move limit is there because this solver can stall short of the minimum on a long path
+//   (seen in the synthetic test: 357 ohm where every cold start gave 364). A fit that had to
+//   travel means the medium changed, which is when a full fit is wanted anyway.
+// - Every FIT_FULL_EVERY_N-th measurement is a full fit regardless, which re-anchors.
+// MSV4/scripts/test_msv4_warm_fit.py runs this logic against four cold starts on synthetic
+// sweeps. Change one, change the other.
+constexpr double FIT_WARM_ACCEPT = 1.10;
+// One count of the packet's residual field, so a near-perfect anchor cannot reject everything.
+constexpr double FIT_WARM_SLACK = 1e-4;
+constexpr double FIT_WARM_MAX_MOVE = 1.25;
+constexpr uint8_t FIT_FULL_EVERY_N = 12;   // a full fit every two hours at ten minutes each
+constexpr double FIT_OPEN_OHM = 400000.0;  // the wire ceiling; asserted against RSOIL_DECIOHM_MAX
+constexpr double FIT_COLD_CM = 500e-12;
+constexpr double FIT_COLD_CD = 5e-12;
+static double g_fitAnchor[3];
+static double g_fitAnchorRms = 0;
+static bool g_fitAnchorValid = false;
+static uint8_t g_fitsSinceFull = 0;
+
+// Compared as the packet reports it: every resistance above the ceiling is the same "open".
+static bool fitNearAnchor(const double* p)
+{
+  const double r = fmin(1.0 / p[1], FIT_OPEN_OHM);
+  const double ra = fmin(1.0 / g_fitAnchor[1], FIT_OPEN_OHM);
+  return r <= ra * FIT_WARM_MAX_MOVE && ra <= r * FIT_WARM_MAX_MOVE &&
+         p[2] <= g_fitAnchor[2] * FIT_WARM_MAX_MOVE && g_fitAnchor[2] <= p[2] * FIT_WARM_MAX_MOVE;
+}
+
+// Sweeps both orientations, averages the complex transfers, and fits {Cm, Gs, Cd}. `warm` says
+// whether the answer is an accepted warm fit.
+static bool runSpectrumFit(double* best, double& bestRms, bool& warm)
+{
+  warm = false;
   setChopEnabled(true);
   SpecSet acc, s;
   for (int o = 0; o < 2; o++)
@@ -978,13 +1178,37 @@ static bool runSpectrumFit(double* best, double& bestRms)
   allSafe();
   for (int i = 0; i < acc.count; i++) acc.h[i] /= 2.0;
 
-  // Several starting points for Gs across four decades; keep the best fit.
   const bool freeP[3] = {true, true, true};
   bestRms = 1e30;
+  if (g_fitAnchorValid && g_fitsSinceFull + 1 < FIT_FULL_EVERY_N)
+  {
+    double p[3], sig[3];
+    memcpy(p, g_fitAnchor, sizeof(p));
+    if (1.0 / p[1] >= FIT_OPEN_OHM)
+    {
+      p[0] = FIT_COLD_CM;
+      p[1] = 1.0 / FIT_OPEN_OHM;
+    }
+    const double rms = specFit(acc, p, freeP, g_specCp, sig);
+    if (isfinite(rms))
+    {
+      // Kept as a fifth candidate even when it is not accepted.
+      bestRms = rms;
+      memcpy(best, p, sizeof(p));
+      if (rms <= g_fitAnchorRms * FIT_WARM_ACCEPT + FIT_WARM_SLACK && fitNearAnchor(p))
+      {
+        g_fitsSinceFull++;
+        warm = true;
+        return true;
+      }
+    }
+  }
+
+  // Several starting points for Gs across four decades; keep the best fit.
   static const double gStart[] = {1e-5, 1e-4, 1e-3, 1e-2};
   for (double g0 : gStart)
   {
-    double p[3] = {500e-12, g0, 5e-12}, sig[3];
+    double p[3] = {FIT_COLD_CM, g0, FIT_COLD_CD}, sig[3];
     const double rms = specFit(acc, p, freeP, g_specCp, sig);
     if (rms < bestRms)
     {
@@ -992,6 +1216,13 @@ static bool runSpectrumFit(double* best, double& bestRms)
       memcpy(best, p, 3 * sizeof(double));
     }
   }
+  g_fitAnchorValid = isfinite(bestRms) && best[0] > 0.0 && best[1] > 0.0 && best[2] > 0.0;
+  if (g_fitAnchorValid)
+  {
+    memcpy(g_fitAnchor, best, sizeof(g_fitAnchor));
+    g_fitAnchorRms = bestRms;
+  }
+  g_fitsSinceFull = 0;
   return true;
 }
 
@@ -1002,22 +1233,71 @@ static bool runSpectrumFit(double* best, double& bestRms)
 constexpr uint32_t RSOIL_DECIOHM_MAX = 4000000UL;
 // Rsoil therefore needs only three of its four bytes; the fourth carries the fit residual.
 static_assert(RSOIL_DECIOHM_MAX < (1UL << 24), "Rsoil must fit 24 bits: mfg[13] is the residual");
+static_assert(static_cast<uint32_t>(FIT_OPEN_OHM * 10.0) == RSOIL_DECIOHM_MAX,
+              "the warm fit's idea of open must be the wire ceiling");
 // The fit occasionally collapses to ~0 ohm with an enormous uncertainty when there is nothing to
 // conduct. That is "no fit", not "very wet".
 constexpr double RSOIL_MIN_VALID_OHM = 1.0;
 
+// Cp is calibrated once per boot, straight after the first moisture reading that is a sane one in
+// air (valid, nothing conducting, an ordinary fit residual), and never on the strength of any
+// other.
+// Why: the floating-electrode sweep does not see the SENSE node alone. What the electrodes are
+// touching reaches it through U3's off-capacitance. Up to application version 262159 the
+// calibration ran at every boot whatever the blade was in, and on 2026-10-08 board 1 reset with a
+// hand on it: it calibrated 15.89 pF against 8.66-8.83 pF in air and reported Cd 7 pF low until
+// its next boot.
+// Cp and Cd enter the model only as their sum, so a wrong Cp moves Cd by the same amount and
+// nothing else: Rsoil and Cm do not depend on it. That is also why the reading just taken can be
+// put on the new Cp by arithmetic, without a second fit.
+// Until a calibration is accepted Cp is the build's value (zero unless the build carries this
+// board's own, see SPEC_CP_DEFAULT) and flags2 bit6 says so. A probe that boots in conducting
+// soil therefore stays on it for that boot; with zero, its Cd is the whole node capacitance.
+// NOT COVERED: a medium too dry to conduct also reads open. Not yet measured in soil.
+// Takes the Cd of an open reading and returns the Cd to report.
+static double calibrateCpAfterOpenReading(double cd)
+{
+  feedWatchdog();
+  double cp = 0;
+  if (!measureCp(cp)) return cd;
+  const double shift = g_specCp - cp;   // Cd gains what Cp gives up
+  if (cd + shift < SPEC_CD_MIN_AFTER_CAL) return cd;
+  g_specCp = cp;
+  g_cpCalibrated = true;
+  // The anchor is a fit made on the old Cp.
+  if (g_fitAnchorValid)
+  {
+    g_fitAnchor[2] += shift;
+    if (!(g_fitAnchor[2] > 0.0)) g_fitAnchorValid = false;
+  }
+  publishCp();
+  return cd + shift;
+}
+
 static MoistureReading takeMoistureReading()
 {
-  MoistureReading out = {false, 0, 0, 0, 0};
+  MoistureReading out = {false, 0, 0, 0, 0, false};
   double best[3] = {}, bestRms = 0;
-  const bool swept = runSpectrumFit(best, bestRms);
+  bool warm = false;
+  const bool swept = runSpectrumFit(best, bestRms, warm);
   allSafe();
   if (!swept) return out;
+  out.warm = warm;
 
-  const double cm = best[0], gs = best[1], cd = best[2];
-  if (!(gs > 0.0) || !(cm > 0.0) || !(cd > 0.0) || !isfinite(bestRms)) return out;
-  const double rsoil = 1.0 / gs;
-  if (!isfinite(rsoil) || rsoil < RSOIL_MIN_VALID_OHM) return out;
+  const double cm = best[0], gs = best[1];
+  double cd = best[2];
+  const double rsoil = gs > 0.0 ? 1.0 / gs : 0.0;
+  if (!(gs > 0.0) || !(cm > 0.0) || !(cd > 0.0) || !isfinite(bestRms) || !isfinite(rsoil) ||
+      rsoil < RSOIL_MIN_VALID_OHM)
+  {
+    // An answer the packet will not carry must not seed the next fit either: the retry on the
+    // next wake is a full fit, as it always was.
+    g_fitAnchorValid = false;
+    return out;
+  }
+  // Calibrate only on the strength of a sane reading in air; see calibrateCpAfterOpenReading().
+  const bool saneOpenReading = rsoil >= FIT_OPEN_OHM && bestRms < SPEC_CAL_MAX_RMS;
+  if (!g_cpCalibrated && saneOpenReading) cd = calibrateCpAfterOpenReading(cd);
 
   const double rDeci = rsoil * 10.0 + 0.5;
   out.rsoilDeciOhm = rDeci >= (double)RSOIL_DECIOHM_MAX ? RSOIL_DECIOHM_MAX : (uint32_t)rDeci;
@@ -1070,9 +1350,21 @@ static MoistureReading takeMoistureReading()
 //                 bit1 = layout B: [13] is the residual and [21-22] are Cd. Clear in packets
 //                        from application versions 262148/262150 (layout A), where [13] was 0,
 //                        [21] was Cp in 0.1 pF and [22] was the residual.
-//                 bits 3-7 = 0
-// Cp is no longer in the packet: it is a per-boot calibration constant, and it is published as
-// the DIS hardware revision string instead ("Cp 8.76 pF").
+//                 bit3 = the DC/DC regulator is enabled: DCDCEN read back as this packet was
+//                        built (262155 onward). Clear on the first wake of every boot.
+//                 bit4 = the moisture fields came from an accepted warm-start fit, not the four
+//                        cold starts (262157 onward; see runSpectrumFit()). Stays with the
+//                        reading, so repeats of it carry the same bit.
+//                 bit5 = discharge burn: the probe will spin instead of sleep until its next
+//                        wake. Only a test build made with -BurnFloorMv ever sets it.
+//                 bit6 = no Cp calibration has been accepted this boot (262160 onward; see
+//                        calibrateCpAfterOpenReading()). Cd is then on the build's Cp: with the
+//                        usual zero it is the whole node capacitance, Cp included. Rsoil and Cm
+//                        are not affected.
+//                 bit7 = 0
+// Cp is no longer in the packet: it is published as the DIS hardware revision string instead
+// ("Cp 8.76 pF"; while bit6 is set, "Cp 0.00 pF default" or the build's own value and
+// " default").
 //
 // Bytes 23-25 were added in application version 262150. A 23-byte packet from 262148 is still
 // valid; readers must treat the tail as optional. The three bytes came from dropping the TX Power
@@ -1089,6 +1381,10 @@ static MoistureReading takeMoistureReading()
 #define ADV_FLAG2_DIE_TEMP_OK    (1U << 0)
 #define ADV_FLAG2_LAYOUT_B       (1U << 1)
 #define ADV_FLAG2_SHORT_BURST    (1U << 2)
+#define ADV_FLAG2_DCDC_ON        (1U << 3)
+#define ADV_FLAG2_FIT_WARM       (1U << 4)
+#define ADV_FLAG2_BURN           (1U << 5)
+#define ADV_FLAG2_CP_DEFAULT     (1U << 6)
 
 constexpr size_t MFG_LEN = 26;
 static_assert(3 /* Flags */ + 2 /* manufacturer-data header */ + MFG_LEN <= 31,
@@ -1176,7 +1472,11 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
   mfg[23] = (uint8_t)((uint16_t)dieQ4 & 0xFF);
   mfg[24] = (uint8_t)(((uint16_t)dieQ4 >> 8) & 0xFF);
   mfg[25] = ADV_FLAG2_LAYOUT_B | (dieTempOk ? ADV_FLAG2_DIE_TEMP_OK : 0) |
-            (longWindow ? 0 : ADV_FLAG2_SHORT_BURST);
+            (longWindow ? 0 : ADV_FLAG2_SHORT_BURST) |
+            (dcdcEnabled() ? ADV_FLAG2_DCDC_ON : 0) |
+            (reading.valid && reading.warm ? ADV_FLAG2_FIT_WARM : 0) |
+            (burnActive() ? ADV_FLAG2_BURN : 0) |
+            (g_cpCalibrated ? 0 : ADV_FLAG2_CP_DEFAULT);
 
   Bluefruit.Advertising.clearData();
   Bluefruit.ScanResponse.clearData();
@@ -1274,6 +1574,7 @@ void setup()
   // Crystal/boot guard, all before the SoftDevice. See the block comment at the top.
   uint8_t count = 0;
   if (!readRetained(count) || !resetCarriesBootCount(readResetReason())) count = 0;
+  burnBegin();
   if (count >= BOOT_ESCAPE_LIMIT) escapeToDfuPreSoftDevice(3);
   writeRetained(static_cast<uint8_t>(count + 1));
 
@@ -1313,27 +1614,26 @@ void setup()
     armDfuAndReset();
   }
 
-  // The front end needs only the SoftDevice (for HFXO), not the GATT services, so Cp is
-  // calibrated here and its value goes into the DIS: a per-boot constant has no business taking
-  // a byte of every advertisement. " default" marks a calibration that fell back to 12 pF.
   uint32_t ppiEnabled = 0;
   g_feResourcesFree = sd_ppi_channel_enable_get(&ppiEnabled) == NRF_SUCCESS &&
                       (ppiEnabled & PPI_MASK) == 0 &&
                       (NRF_GPIOTE->CONFIG[GPIOTE_CH_DRV] & GPIOTE_CONFIG_MODE_Msk) == 0 &&
                       (NRF_GPIOTE->CONFIG[GPIOTE_CH_CHOP] & GPIOTE_CONFIG_MODE_Msk) == 0;
-  saadcCalibrate();
-  const bool cpCalibrated = calibrateCp();
   feedWatchdog();
-  const unsigned cpCenti = (unsigned)(g_specCp * 1e14 + 0.5);
-  snprintf(g_hardwareRev, sizeof(g_hardwareRev), "Cp %u.%02u pF%s", cpCenti / 100, cpCenti % 100,
-           cpCalibrated ? "" : " default");
 
   bledis.setManufacturer("Treebeard");
   bledis.setModel("MSV4");
-  bledis.setHardwareRev(g_hardwareRev);
   bledis.setFirmwareRev(FIRMWARE_BUILD_ID);
   bledis.setSoftwareRev(MSV4_STRINGIFY(MSV4_APP_VERSION));
   bledis.begin();
+  // Added while DIS is still the last service begun, so it lands in DIS. Cp is no longer
+  // calibrated here: see calibrateCpAfterOpenReading(). The first wake's reading comes before its
+  // advertising window, so a client that connects in that window already reads the outcome.
+  g_hardwareRevChar.setProperties(CHR_PROPS_READ);
+  g_hardwareRevChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  g_hardwareRevChar.setMaxLen(sizeof(g_hardwareRev) - 1);
+  g_hardwareRevReady = g_hardwareRevChar.begin() == ERROR_NONE;
+  publishCp();
 
   g_otaServiceReady = bledfu.begin() == ERROR_NONE;
   Bluefruit.Periph.setConnectCallback(otaConnectCallback);
@@ -1364,6 +1664,7 @@ void loop()
   saadcCalibrate();
   float vbatMv = 0;
   const bool vbatOk = measureVbatMv(vbatMv) && vbatMv >= 2500.0f && vbatMv <= 5000.0f;
+  burnJudge(vbatOk, vbatMv);
   float tempC = 0;
   const bool tempOk = measureTemp(tempC) && tempC >= -40.0f && tempC <= 85.0f;
   // Taken at the start of the wake, before the sweep and the radio warm the die.
@@ -1415,7 +1716,15 @@ void loop()
     bootGuardNoteHealthyAdvert();
   }
 
+  // Once per boot, with the first wake's radio window behind it; see g_dcdcRequested.
+  if (!g_dcdcRequested && !burnHoldsLinearRegulator())
+  {
+    g_dcdcRequested = true;
+    sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+  }
+
   cycleCounterDisable();
+  burnUntilRest(cycleStartMs);
   const uint32_t awakeMs = millis() - cycleStartMs;
   sleepFeeding(awakeMs < WAKE_PERIOD_MS ? (WAKE_PERIOD_MS - awakeMs) : 1);
 }

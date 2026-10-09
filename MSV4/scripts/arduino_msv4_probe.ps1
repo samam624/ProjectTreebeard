@@ -13,6 +13,26 @@ param(
   # has no sensor ID and ignores this.
   [ValidateRange(0, 255)]
   [int]$SensorId = 0,
+  # TEST IMAGES ONLY. Builds arduino/MSV4_Moisture_BLE_Sleep with its discharge burn compiled in:
+  # between wakes the probe spins instead of sleeping until two battery readings in a row are at
+  # or below this many millivolts, then behaves as the production image. 0 (the default) leaves
+  # the burn out of the image entirely. The sketch refuses a floor below 3600 mV, and this script
+  # requires the build tag to start with "burn" so the image says what it is in its DIS string.
+  [ValidateRange(0, 4100)]
+  [int]$BurnFloorMv = 0,
+  # arduino/MSV4_Moisture_BLE_Sleep only. Measure moisture on every Nth one-minute wake. 0 (the
+  # default) leaves the sketch's ten. 1 measures every minute and opens the connectable window on
+  # every wake, modelled at about four times the charge per day. Give such a build a tag that
+  # says so, never one starting "prod".
+  [ValidateRange(0, 60)]
+  [int]$MoistureEveryNWakes = 0,
+  # arduino/MSV4_Moisture_BLE_Sleep only, for a probe that is ALREADY IN SOIL. The Cp it last
+  # calibrated, in 0.01 pF, read from its DIS hardware revision string before the update
+  # ("Cp 8.69 pF" -> 869). The image calibrates Cp only on a sane reading in air, so an update's
+  # reboot in soil would otherwise report the whole node capacitance as Cd for as long as the
+  # probe stays planted. 0 (the default) leaves it out. Never guess it or copy another board's.
+  [ValidateRange(0, 2550)]
+  [int]$CpCentiPf = 0,
   # Also produce a signed BLE DFU package (needs the MSV3 signing key and DFU tools).
   [switch]$Package,
   # Required with -Package. The package is signed with the MSV3 key and tagged with MSV3's device
@@ -89,6 +109,10 @@ if ($BuildTag -and $BuildTag -notmatch '^[A-Za-z0-9._-]+$') {
   throw "-BuildTag must be alphanumeric with . _ - only (the sketch stringifies it)."
 }
 
+if (($BurnFloorMv -gt 0) -ne ($BuildTag -like "burn*")) {
+  throw "-BurnFloorMv and a -BuildTag starting with 'burn' go together: a discharge-burn image must be labelled as one, and nothing else may carry that label."
+}
+
 if ($Package -and -not $AcceptSharedMsv3DeviceType) {
   throw @"
 -Package would sign an MSV4 image with MSV3's device type 0x3356, which every MSV3 field bootloader
@@ -102,6 +126,14 @@ New-Item -ItemType Directory -Force -Path $buildPath, $outDir | Out-Null
 $defines = @("-DMSV4_APP_VERSION=$ApplicationVersion")
 if ($BuildTag) { $defines += "-DMSV4_BUILD_TAG=$BuildTag" }
 if ($SensorId -gt 0) { $defines += "-DMSV4_SENSOR_ID=$SensorId" }
+if ($BurnFloorMv -gt 0) { $defines += "-DMSV4_BURN_FLOOR_MV=$BurnFloorMv" }
+if ($MoistureEveryNWakes -gt 0) {
+  if ($MoistureEveryNWakes -ne 10 -and $BuildTag -like "prod*") {
+    throw "-MoistureEveryNWakes $MoistureEveryNWakes is not the production cadence: give the build a tag that does not start with 'prod'."
+  }
+  $defines += "-DMSV4_MOISTURE_EVERY_N_WAKES=$MoistureEveryNWakes"
+}
+if ($CpCentiPf -gt 0) { $defines += "-DMSV4_CP_CENTI_PF=$CpCentiPf" }
 $defineFlags = $defines -join " "
 
 # Forward slashes: these strings pass through arduino-cli property expansion into gcc/ld arguments.
