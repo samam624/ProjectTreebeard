@@ -252,6 +252,21 @@ BLEDis bledis;
 // Hardware Revision String, in the DIS service; see publishCp().
 static BLECharacteristic g_hardwareRevChar(UUID16_CHR_HARDWARE_REVISION_STRING);
 static bool g_hardwareRevReady = false;
+// The GATT "String" characteristic, also in the DIS service: the mask check's result. BLEDis
+// already publishes every DIS string it has a slot for (it fills the serial number itself), so
+// this cannot be one of those. See checkMask().
+constexpr uint16_t UUID16_CHR_STRING = 0x2A3D;
+static BLECharacteristic g_maskChar(UUID16_CHR_STRING);
+static bool g_maskCharReady = false;
+static char g_maskText[23] = "not checked";
+// The checked ADC calibration's outcome, also in the DIS service; see saadcCalibrateChecked().
+// A UUID of this sketch's own (4d535634-adc0-4e52-a001-000000000001, "MSV4" then "adc0"),
+// least significant byte first as the SoftDevice wants it.
+static const uint8_t UUID128_CHR_ADC_CAL[16] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xa0,
+                                                0x52, 0x4e, 0xc0, 0xad, 0x34, 0x56, 0x53, 0x4d};
+static BLECharacteristic g_adcCalChar(UUID128_CHR_ADC_CAL);
+static bool g_adcCalCharReady = false;
+static char g_adcCalText[23] = "not checked";
 ResetSafeBLEDfu bledfu;
 static bool g_otaServiceReady = false;
 static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
@@ -552,7 +567,9 @@ static void saadcStop()
 
 // Single-ended, gain 1/6, internal 0.6 V reference -> 0..3.6 V full scale at 12 bits. With
 // oversampling, BURST takes all 2^osLog2 samples on one SAMPLE task and returns their average.
-static bool saadcReadMv(uint8_t pselp, uint8_t osLog2, uint32_t tacqUs, float& mv)
+// The code as the converter gives it, sign and all: a zero input reads a few counts either side
+// of nothing, and saadcCalibrateChecked() needs to see which side.
+static bool saadcReadCode(uint8_t pselp, uint8_t osLog2, uint32_t tacqUs, int32_t& code)
 {
   if (osLog2 > 8) osLog2 = 8;
   NRF_SAADC->ENABLE = 0;
@@ -590,7 +607,14 @@ static bool saadcReadMv(uint8_t pselp, uint8_t osLog2, uint32_t tacqUs, float& m
   NRF_SAADC->CH[0].PSELP = SAADC_CH_PSELP_PSELP_NC;
   if (!ok) return false;
 
-  int32_t code = g_saadcResult;
+  code = g_saadcResult;
+  return true;
+}
+
+static bool saadcReadMv(uint8_t pselp, uint8_t osLog2, uint32_t tacqUs, float& mv)
+{
+  int32_t code = 0;
+  if (!saadcReadCode(pselp, osLog2, tacqUs, code)) return false;
   if (code < 0) code = 0;  // single-ended can report small negative codes near 0 V
   mv = code * 3600.0f / 4096.0f;
   return true;
@@ -791,6 +815,61 @@ static void allSafe()
   pinOutput(PIN_TEMP_READ, false);
 }
 
+// ---------------------------------------------------------------- checked ADC calibration ----
+// The offset calibration is checked against a true zero since application version 262163.
+// Measured on board 1, 2585 one-minute wakes of 262161 (2026-10-08 to 2026-10-10): one
+// calibration in fifty lands about 9 LSB high, and every reading of that wake carries it. The
+// battery read 14-22 mV high and the tip thermistor 0.12 C low on those wakes and on no others;
+// the sweep is immune, since a constant drops out of its sum over phases. It is the 13 mV boot
+// of 2026-10-06 again, one wake at a time. Why a calibration lands there is not established.
+// The zero is the battery divider's own midpoint: with VBAT_DIV_EN low Q1 disconnects VBAT and
+// R9 holds AIN0 at ground. After each calibration that pin is read as a signed code, and a zero
+// SAADC_ZERO_MAX_LSB or more from nothing means the calibration is taken again, up to
+// SAADC_CAL_TRIES in all. THE LAST ONE STANDS WHATEVER IT READS: if the zero is not where this
+// expects (Q1's leakage across R9, say), a wake costs two more calibrations and is otherwise
+// what it was before.
+// The outcome is the text of g_adcCalChar, "z+1 n1 r27 b0": this wake's zero in LSB and how many
+// calibrations it took, then the wakes of this boot that needed more than one, and those whose
+// last zero was still out. That text is an ABI with MSV4/scripts/msv4_adv_scan.py --read-build.
+// NOT MEASURED YET: what the zero reads on this board. 5 LSB is half the step that was seen.
+constexpr int32_t SAADC_ZERO_MAX_LSB = 5;
+constexpr uint8_t SAADC_CAL_TRIES = 3;
+constexpr uint16_t SAADC_CAL_COUNT_MAX = 9999;   // what the text has room for
+static uint16_t g_calRepeatedWakes = 0;
+static uint16_t g_calBadWakes = 0;
+
+static void saadcCalibrateChecked()
+{
+  pinOutput(PIN_VBAT_DIV_EN, false);   // the zero: divider off, R9 to ground
+  int32_t zero = 0;
+  uint8_t tries = 0;
+  bool zeroRead = false;
+  while (tries < SAADC_CAL_TRIES)
+  {
+    saadcCalibrate();
+    tries++;
+    zeroRead = saadcReadCode(static_cast<uint8_t>(AIN_VBAT + 1), 4, 40, zero);
+    // A zero that cannot be read checks nothing: keep this calibration, as before 262163.
+    if (!zeroRead || (zero > -SAADC_ZERO_MAX_LSB && zero < SAADC_ZERO_MAX_LSB)) break;
+  }
+  if (!zeroRead)
+  {
+    snprintf(g_adcCalText, sizeof(g_adcCalText), "read failed");
+  }
+  else
+  {
+    const bool out = zero <= -SAADC_ZERO_MAX_LSB || zero >= SAADC_ZERO_MAX_LSB;
+    if (tries > 1 && g_calRepeatedWakes < SAADC_CAL_COUNT_MAX) g_calRepeatedWakes++;
+    if (out && g_calBadWakes < SAADC_CAL_COUNT_MAX) g_calBadWakes++;
+    long shown = zero > 99 ? 99 : (zero < -99 ? -99 : zero);
+    const char sign = shown < 0 ? '-' : '+';
+    if (shown < 0) shown = -shown;
+    snprintf(g_adcCalText, sizeof(g_adcCalText), "z%c%ld n%u r%u b%u", sign, shown,
+             (unsigned)tries, (unsigned)g_calRepeatedWakes, (unsigned)g_calBadWakes);
+  }
+  if (g_adcCalCharReady) g_adcCalChar.write(g_adcCalText, strlen(g_adcCalText));
+}
+
 // ------------------------------------------------------------------------------ measurements --
 static bool measureVbatMv(float& vbatMv)
 {
@@ -841,6 +920,70 @@ static bool readFrontEnd(float& senseMv, float& drvMv)
   bool ok = readAinMv(AIN_SENSE, FE_OVERSAMPLE_LOG2, 10, senseMv);
   ok = ok && readAinMv(AIN_DRVMON, FE_OVERSAMPLE_LOG2, 10, drvMv);
   return ok;
+}
+
+// ------------------------------------------------------------------------------ mask check ---
+// A DC leak test of the solder mask over the plates, since application version 262162.
+// The sweep cannot see what this tests. The fit has no DC path in it, and the plates reach DRV
+// through R15 and U3 with no blocking capacitor, so the mask is the only thing between the copper
+// and the soil. With the mask whole no DC flows and SENSE sits at DRV. Copper touching soil in
+// two places (a hot plate and anything grounded) draws current through R15, and SENSE drops.
+// DRV is held HIGH instead of toggled, the chopper stays on "signal" (its pulldown), and both
+// ADC channels are read through the same U4 and the same 100k / 1 nF filters as the sweep:
+//   drop(state)         = DRV_OUT - SENSE_OUT
+//   reported, per plate = drop(that plate hot) - drop(both plates floating)
+// The floating reading takes out the two channels' own offsets. What is left besides a leak is
+// the change in U3's leakage between open and closed: 2 uA at most by its data sheet (IOZ), 2 mV
+// across R15. A 1 Mohm path reads 3.3 mV and a 100 kohm path 33 mV.
+// It runs after the sweep on every measurement wake and takes about 20 ms, at the 3.3 V the
+// sweep's own square wave reaches. The result is NOT in the packet (flags2 bit7 is still
+// unused): it is the DIS "String" characteristic, "A+0.3 B-0.1 mV", which
+// MSV4/scripts/msv4_adv_scan.py --read-build reads. That text is an ABI with that script.
+// NOT MEASURED YET: what a whole mask reads on this board. Nothing here judges the number.
+constexpr uint32_t MASK_SETTLE_MS = 5;   // 40 or more of the filters' 100 us time constants
+
+// Signed tenths of a millivolt as text; this printf has no %f.
+static void formatDeciMv(char* out, size_t size, char plate, float mv)
+{
+  long deci = lroundf(mv * 10.0f);
+  const char sign = deci < 0 ? '-' : '+';
+  if (deci < 0) deci = -deci;
+  snprintf(out, size, "%c%c%ld.%ld", plate, sign, deci / 10, deci % 10);
+}
+
+static void checkMask()
+{
+  frontEndStop();   // DRV low, timer off, chopper select back on its pulldown
+  setChopEnabled(true);
+  setSwap(SwapState::Open);
+  pinOutput(PIN_DRV, true, true);
+  static const SwapState states[3] = {SwapState::Open, SwapState::A, SwapState::B};
+  float sense[3] = {}, drv[3] = {};
+  bool ok = true;
+  for (int i = 0; i < 3 && ok; i++)
+  {
+    setSwap(states[i]);
+    delay(MASK_SETTLE_MS);
+    ok = readFrontEnd(sense[i], drv[i]);
+  }
+  // Both plates back to 0 V before they float: B through R15 to DRV, A on its ground throw.
+  pinOutput(PIN_DRV, false);
+  delay(1);
+  allSafe();
+
+  if (ok)
+  {
+    const float floating = drv[0] - sense[0];
+    char a[10], b[10];
+    formatDeciMv(a, sizeof(a), 'A', (drv[1] - sense[1]) - floating);
+    formatDeciMv(b, sizeof(b), 'B', (drv[2] - sense[2]) - floating);
+    snprintf(g_maskText, sizeof(g_maskText), "%s %s mV", a, b);
+  }
+  else
+  {
+    snprintf(g_maskText, sizeof(g_maskText), "read failed");
+  }
+  if (g_maskCharReady) g_maskChar.write(g_maskText, strlen(g_maskText));
 }
 
 // ------------------------------------------------------------------------------- spectrum ----
@@ -1364,7 +1507,7 @@ static MoistureReading takeMoistureReading()
 //                 bit7 = 0
 // Cp is no longer in the packet: it is published as the DIS hardware revision string instead
 // ("Cp 8.76 pF"; while bit6 is set, "Cp 0.00 pF default" or the build's own value and
-// " default").
+// " default"). The mask check (262162 onward) is not in the packet either: see checkMask().
 //
 // Bytes 23-25 were added in application version 262150. A 23-byte packet from 262148 is still
 // valid; readers must treat the tail as optional. The three bytes came from dropping the TX Power
@@ -1634,6 +1777,18 @@ void setup()
   g_hardwareRevChar.setMaxLen(sizeof(g_hardwareRev) - 1);
   g_hardwareRevReady = g_hardwareRevChar.begin() == ERROR_NONE;
   publishCp();
+  // Same service, same reason for the order. "not checked" until the first measurement wake.
+  g_maskChar.setProperties(CHR_PROPS_READ);
+  g_maskChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  g_maskChar.setMaxLen(sizeof(g_maskText) - 1);
+  g_maskCharReady = g_maskChar.begin() == ERROR_NONE;
+  if (g_maskCharReady) g_maskChar.write(g_maskText, strlen(g_maskText));
+  // And the ADC calibration's outcome. "not checked" until the first wake has calibrated.
+  g_adcCalChar.setProperties(CHR_PROPS_READ);
+  g_adcCalChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  g_adcCalChar.setMaxLen(sizeof(g_adcCalText) - 1);
+  g_adcCalCharReady = g_adcCalChar.begin() == ERROR_NONE;
+  if (g_adcCalCharReady) g_adcCalChar.write(g_adcCalText, strlen(g_adcCalText));
 
   g_otaServiceReady = bledfu.begin() == ERROR_NONE;
   Bluefruit.Periph.setConnectCallback(otaConnectCallback);
@@ -1659,9 +1814,9 @@ void loop()
   cycleCounterEnable();
   const uint32_t cycleStartMs = millis();
 
-  // Fresh ADC offset first (see saadcCalibrate()), then the battery, before the front end or the
-  // radio loads the rail.
-  saadcCalibrate();
+  // Fresh ADC offset first, checked against a zero (see saadcCalibrateChecked()), then the
+  // battery, before the front end or the radio loads the rail.
+  saadcCalibrateChecked();
   float vbatMv = 0;
   const bool vbatOk = measureVbatMv(vbatMv) && vbatMv >= 2500.0f && vbatMv <= 5000.0f;
   burnJudge(vbatOk, vbatMv);
@@ -1682,6 +1837,8 @@ void loop()
     fresh = g_reading.valid;
     // A failed sweep is retried on the next wake rather than left standing for the whole interval.
     g_wakesUntilMoisture = g_reading.valid ? MOISTURE_EVERY_N_WAKES - 1 : 0;
+    // After the sweep, so the DC step cannot be in the reading it follows.
+    checkMask();
   }
   else
   {

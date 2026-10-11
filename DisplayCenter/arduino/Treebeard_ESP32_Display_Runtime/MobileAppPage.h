@@ -783,6 +783,17 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
            A saturated resistance (4,000,000) is a ceiling meaning "nothing conducting", so it
            is never drawn as a value, and Cm is not drawn for those rows either. The MSV3 cards above skip MSV4 rows for that reason. Packet layout and the
            column mapping: MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md. -->
+      <section class="network-card chart-card hidden" id="historyMsv4CoupledSection">
+        <div class="chart-head">
+          <div class="chart-title">EXPERIMENTAL moisture reading: soil-coupled capacitance (Cm + Cd − this probe's Cd in air, so air reads about 0 pF; not yet tested against a watering)</div>
+          <div class="chart-latest" id="historyMsv4CoupledLatest"></div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="chart" id="historyMsv4CoupledChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4CoupledTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+        </div>
+      </section>
+
       <section class="network-card chart-card hidden" id="historyMsv4DieTempSection">
         <div class="chart-head">
           <div class="chart-title">Board (die) temperature (nRF52840, at the board end, not the soil)</div>
@@ -838,14 +849,18 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
         </div>
       </section>
 
-      <section class="network-card chart-card hidden" id="historyMsv4ResidualSection">
+      <!-- The probe's own residual (a share of the drive voltage) had a card here until
+           2026-10-10. Removed at the maintainer's word: it rises when wetter soil loads the probe
+           harder, so it does not compare between dry and wet. The value is still decoded
+           (msv4Diagnostics().residualPercent) because the card below is made from it. -->
+      <section class="network-card chart-card hidden" id="historyMsv4RelativeResidualSection">
         <div class="chart-head">
-          <div class="chart-title">Fit residual (how well the model matched the sweep; lower = better)</div>
-          <div class="chart-latest" id="historyMsv4ResidualLatest"></div>
+          <div class="chart-title">Fit residual as a share of the electrode signal (how much of what the electrodes add the model fails to match; comparable between dry and wet; lower = better)</div>
+          <div class="chart-latest" id="historyMsv4RelativeResidualLatest"></div>
         </div>
         <div class="chart-wrap">
-          <svg class="chart" id="historyMsv4ResidualChart"></svg>
-          <div class="chart-tooltip" id="historyMsv4ResidualTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
+          <svg class="chart" id="historyMsv4RelativeResidualChart"></svg>
+          <div class="chart-tooltip" id="historyMsv4RelativeResidualTooltip"><div class="tt-value"></div><div class="tt-time"></div></div>
         </div>
       </section>
 
@@ -1994,6 +2009,97 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       return rsoil * factor;
     }
 
+    // EXPERIMENTAL moisture reading (2026-10-10): the capacitance the soil couples to the blade,
+    // Cm + Cd minus the same probe's Cd in air, in pF. Zero in air. Unlike the moisture number it
+    // is not made from the soil's resistance, which follows temperature. Not yet tested against
+    // a watering: MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md.
+    // Cd is the node capacitance minus the Cp that boot runs on, so an air value belongs to one
+    // boot of one probe, and every boot gets its own entry: a reading from a boot with no entry
+    // gets no value. The same table is AIR_BASELINES in
+    // MSV4/scripts/msv4_experimental_moisture.py; verify_msv4_history_decode.mjs compares them.
+    const MSV4_AIR_BASELINES = [
+      { sensor: 10, boot: "2026-10-08T21:47:10-07:00", cdAirPf: 13.72, cpPf: 8.69 },
+      { sensor: 10, boot: "2026-10-08T22:07:55-07:00", cdAirPf: 13.72, cpPf: 8.69 },
+    ];
+    // Which boot a reading belongs to comes from the reading: the probe counts one wake a minute
+    // from 1 at boot, so its boot began (wake - 1) minutes earlier. An entry is that boot's when
+    // it starts within two minutes of that, plus 0.2 % of the time since (the probe's clock is
+    // an RC oscillator).
+    const MSV4_WAKE_PERIOD_MS = 60000;
+    const MSV4_BOOT_MATCH_MS = 120000;
+    const MSV4_BOOT_MATCH_PER_UPTIME = 0.002;
+
+    // The entry for the boot this row was taken on, or null.
+    function msv4BootEntry(row, sensor) {
+      const wake = Number(row?.wake);
+      if (row == null || row.received_at == null || !Number.isInteger(wake) || wake < 1) return null;
+      const uptimeMs = (wake - 1) * MSV4_WAKE_PERIOD_MS;
+      const bootMs = new Date(row.received_at).getTime() - uptimeMs;
+      const slackMs = MSV4_BOOT_MATCH_MS + MSV4_BOOT_MATCH_PER_UPTIME * uptimeMs;
+      let baseline = null;
+      let nearestMs = Infinity;
+      for (const entry of MSV4_AIR_BASELINES) {
+        const offMs = Math.abs(Date.parse(entry.boot) - bootMs);
+        if (entry.sensor === Number(sensor) && offMs <= slackMs && offMs < nearestMs) {
+          baseline = entry;
+          nearestMs = offMs;
+        }
+      }
+      return baseline;
+    }
+
+    function msv4SoilCoupledPf(row, sensor) {
+      const fitted = msv4Diagnostics(row);
+      const baseline = msv4BootEntry(row, sensor);
+      if (fitted == null || fitted.cdPf == null || baseline == null) return null;
+      // An open reading has no Cm. Negative values are kept: below the air value is information.
+      const cmPf = msv4IsOpen(row) ? 0 : fitted.cmPf;
+      return Math.round((cmPf + fitted.cdPf - baseline.cdAirPf) * 100) / 100;
+    }
+
+    // The fit residual as a share of what the electrodes add to the sweep (2026-10-10). The
+    // probe sends its residual as a share of the DRIVE; a wetter medium loads the node harder, so
+    // the response being fitted is larger and the same proportional misfit is a larger number.
+    // This divides by the size of that response: the rms, over the sweep's eight frequencies, of
+    // the fitted transfer minus the transfer with the electrodes switched out (Cp alone).
+    // Rs, the clock and the divisors are the probe sketch's SPEC_RS, FE_CLOCK_HZ and SPEC_N;
+    // relative_residual_percent() in MSV4/scripts/msv4_experimental_moisture.py is the same sum.
+    const MSV4_SWEEP_RS_OHM = 1000;
+    const MSV4_SWEEP_CLOCK_HZ = 16000000;
+    const MSV4_SWEEP_DIVISORS = [64, 48, 32, 24, 16, 12, 8, 6];
+    // Of the drive: below this the electrodes add nothing to take a share of.
+    const MSV4_SIGNAL_FLOOR = 0.001;
+
+    function msv4RelativeResidualPercent(row, sensor) {
+      const fitted = msv4Diagnostics(row);
+      const baseline = msv4BootEntry(row, sensor);
+      if (fitted == null || fitted.cdPf == null || baseline == null) return null;
+      const rsoil = msv4IsOpen(row) ? null : msv4RsoilOhm(row);
+      const cpF = baseline.cpPf * 1e-12;
+      let total = 0;
+      for (const divisor of MSV4_SWEEP_DIVISORS) {
+        const w = 2 * Math.PI * MSV4_SWEEP_CLOCK_HZ / divisor;
+        let g = 0;
+        let b = w * (fitted.cdPf * 1e-12 + cpF);
+        if (rsoil != null && fitted.cmPf > 0) {
+          const x = 1 / (w * fitted.cmPf * 1e-12);   // the branch is rsoil - jx
+          g = rsoil / (rsoil * rsoil + x * x);
+          b += x / (rsoil * rsoil + x * x);
+        }
+        // H = 1 / (dr + j di), with the electrodes; 1 / (1 + j d0) without.
+        const dr = 1 + MSV4_SWEEP_RS_OHM * g;
+        const di = MSV4_SWEEP_RS_OHM * b;
+        const d0 = MSV4_SWEEP_RS_OHM * w * cpF;
+        const m = dr * dr + di * di;
+        const m0 = 1 + d0 * d0;
+        const re = dr / m - 1 / m0;
+        const im = -di / m + d0 / m0;
+        total += re * re + im * im;
+      }
+      const signal = Math.sqrt(total / MSV4_SWEEP_DIVISORS.length);
+      return signal > MSV4_SIGNAL_FLOOR ? Math.round(fitted.residualPercent / signal * 100) / 100 : null;
+    }
+
     // Faithful port of calibrateRawBattery() in Treebeard_ESP32_Display_Runtime.ino. Rows that predate raw-battery history (before
     // migration 032) or come from a probe still on the legacy no-raw packet format have no
     // rawBatteryMv/rawCharging - those pass straight through as whatever the receiver's own
@@ -2043,6 +2149,9 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // Rows from the most recent loadHistory() fetch, cached so a Smoothing-panel parameter
     // change can recompute both charts instantly with no refetch.
     let lastHistoryRows = [];
+    // The probe those rows belong to. The selector can already show another one while its rows
+    // are still loading, and the experimental MSV4 reading needs the probe's own air value.
+    let lastHistorySensor = null;
 
     // FDC2214 DATA is proportional to 1/sqrt(L*C)/fref. Connected and bare readings in one
     // packet use the same FDC, reference clock, inductor and close-in-time thermal state, so
@@ -2259,6 +2368,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           renderHistoryChart(`history${name}Chart`, `history${name}Tooltip`, `history${name}Latest`, points, color, unit);
         }
       };
+      renderOptionalHistoryCard(
+        "Msv4Coupled", historySeries((r) => msv4SoilCoupledPf(r, lastHistorySensor)), "#d95926", "pF");
       renderOptionalHistoryCard("Msv4DieTemp", historySeries(msv4DieTempC), "#e0a23f", "°C");
       renderOptionalHistoryCard("Msv4Cd", historySeries((r) => msv4Diagnostics(r)?.cdPf), "#5fb878", "pF");
       // Resistance and Cm exist only while something conducts. An open reading keeps the card on
@@ -2280,7 +2391,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       renderOptionalHistoryCard(
         "Msv4Cm", historySeries((r) => (msv4IsOpen(r) ? null : msv4Diagnostics(r)?.cmPf)), "#3fb8c9", "pF");
       renderOptionalHistoryCard(
-        "Msv4Residual", historySeries((r) => msv4Diagnostics(r)?.residualPercent), "#d5a63c", "% of drive");
+        "Msv4RelativeResidual", historySeries((r) => msv4RelativeResidualPercent(r, lastHistorySensor)),
+        "#d5a63c", "% of signal");
       renderOptionalHistoryCard("Msv4Cp", historySeries((r) => msv4Diagnostics(r)?.cpPf), "#8a94a6", "pF");
       renderOptionalHistoryCard(
         "Rssi", historySeries((r) => (r.rssi == null ? null : Number(r.rssi))), "#c77dba", "dBm");
@@ -2780,7 +2892,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             $("historyBareTankSection").classList.add("hidden");
             $("historyFdcReferenceSection").classList.add("hidden");
             $("historyTemperatureCompensatedSection").classList.add("hidden");
-            ["Msv4DieTemp", "Msv4Cd", "Msv4Rsoil", "Msv4Rsoil25", "Msv4Cm", "Msv4Residual", "Msv4Cp", "Rssi"]
+            ["Msv4Coupled", "Msv4DieTemp", "Msv4Cd", "Msv4Rsoil", "Msv4Rsoil25", "Msv4Cm",
+              "Msv4RelativeResidual", "Msv4Cp", "Rssi"]
               .forEach((name) => $(`history${name}Section`).classList.add("hidden"));
             return;
           }
@@ -2831,6 +2944,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         // rather than read straight from the receiver's own baked-in display_moisture/
         // battery_percent, so a filter change applies retroactively to everything just loaded.
         lastHistoryRows = rows;
+        lastHistorySensor = Number(sensor);
         renderHistoryFromCache();
       } catch (err) {
         if (isCurrent()) $("historyNotice").textContent = "Fetch failed: " + err.message;

@@ -59,6 +59,57 @@ this on the History chart at about 14:40 and asked whether it was a taper toward
 3787 mV at 22:00. The light ran out about 80 mV under the 3.887 V limit, so the reworked limit
 on this board is still unseen.
 
+## How long the cell lasted, and whether that is too fast
+
+Asked by the maintainer on 2026-10-08 from the History chart: the fall looks far too steep for a
+probe that sleeps at 10 µA. Probe 4's stored history from 2026-09-01, night slopes fitted over
+22:00–06:00 (`data/sensor_logs/treebeard_s4_cloud_long_2026-10-08.csv`, not tracked).
+
+**The timeline.** The chart begins at 3.71 V, which is the end of a discharge, not the start.
+
+| When | Battery (night median) | What was happening |
+|---|---:|---|
+| 09-19 → 09-22 | 4009 → 3864 mV | in the pot, held off charging above its overvoltage limit: −40 to −58 mV a day |
+| 09-23 → 09-28 | 3847 → 3820 mV | in the pot, charging by day: −4 to −6 mV a day net |
+| 09-29, 09-30 | 3833, 3845 mV | +12 mV a day net. Last days with sun; out of the pot that evening |
+| 10-01 → 10-05 | | receiver away, no rows. Packets replayed on 10-06 with counters of about 10-02 noon read 3813–3823 mV |
+| 10-06 15:00 | 3710 mV | |
+| 10-07 23:39 | 3075 mV | cut off |
+
+So from the last sun at 3.845 V to the cut-off was **7.1 days**, the last 33 hours of it on the
+chart.
+
+**The steep end is the cell, not the load.** The wake cadence is 51.4 an hour on every night in
+the record. The night slope was −0.65 to −1.2 mV/h at 3.82–3.87 V (09-21 to 09-29) and −12.9 mV/h
+at 3.64 V (10-06), with nothing changed but the cell's place on its curve.
+
+**It is still faster than the measured budget says.** The 2026-09-15 budget
+(`MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`) put this probe at 126 µA (90–180 µA) on a
+150 mAh cell, about 2 % of the cell a day, with 10–15 µA of that being sleep. 3.845 V on a
+generic LiPo curve is about half a cell, anywhere from 25 % to 65 % allowing for how flat the
+curve is there and the ADC's tolerance. At 2 % a day that is 12 to 32 days. It lasted 7.1:
+about 7 % of the cell a day, three to four times the budget, and outside it under every
+combination of those ranges. Inferred; no current was measured.
+
+**Night slopes before and after mid-September**, same cadence throughout:
+
+| Probe | Nights | Level | Night slope |
+|---|---|---|---:|
+| 4 | 09-05 to 09-09 | 4032–4126 mV | −0.24 to −0.97 mV/h |
+| 4 | 09-10 to 09-13 | 4160–4290 mV | −1.22 to −1.52 mV/h |
+| 4 | 09-18 to 09-20 (hybrid build from 09-18) | 4015–3914 mV | −1.74 to −3.37 mV/h |
+| 7 | 09-16 to 09-29, and 10-07 (capless production build) | 4004–4206 mV | −1.67 to −3.04 mV/h |
+
+mV/h is not current and the two probes have different cells, but at comparable voltages both
+fall two to five times faster at night after mid-September than probe 4 did in the nine nights
+the budget was taken from. Probe 7 has no hybrid wiring, so that points at something the two
+share from 2026-09-14 on (the capless firmware and the removal of C17) more than at probe 4's
+rig. Not established.
+
+**This board has been here before.** The same budget table has 693 µA through 08-28 ("9 days")
+and notes that something cut consumption 5.5 times around 2026-08-29 without ever being
+attributed. A cell lasting about two weeks from full is that regime again.
+
 ## Thresholds on this board
 
 | Threshold | Value | Basis |

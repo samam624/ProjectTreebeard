@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import re
 import struct
 import sys
 from datetime import datetime
@@ -336,6 +337,32 @@ def self_test() -> int:
     # The firmware's ceiling must stay under the receiver's 5,000,000-count MSV3 floor.
     check("ceiling", RSOIL_DECIOHM_MAX < 5_000_000, True)
 
+    # The mask check's DIS text. Only the firmware's own format decodes; the rest passes through.
+    check("mask.parse", parse_mask_check("A+0.3 B-0.1 mV"), {"a_mv": 0.3, "b_mv": -0.1})
+    check("mask.big", parse_mask_check("A+3300.0 B+33.0 mV"), {"a_mv": 3300.0, "b_mv": 33.0})
+    check("mask.unchecked", parse_mask_check("not checked"), None)
+    check("mask.failed", parse_mask_check("read failed"), None)
+    # The checked ADC calibration's DIS text, likewise.
+    check("adc.parse", parse_adc_calibration("z+1 n1 r27 b0"),
+          {"zero_lsb": 1, "tries": 1, "repeated_wakes": 27, "bad_wakes": 0})
+    check("adc.negative", parse_adc_calibration("z-2 n1 r0 b0")["zero_lsb"], -2)
+    check("adc.full", parse_adc_calibration("z+99 n3 r9999 b9999"),
+          {"zero_lsb": 99, "tries": 3, "repeated_wakes": 9999, "bad_wakes": 9999})
+    check("adc.unchecked", parse_adc_calibration("not checked"), None)
+    check("adc.failed", parse_adc_calibration("read failed"), None)
+    check("adc.loose", parse_adc_calibration("z+1 n1 r27 b0 extra"), None)
+    check("adc.passthrough", describe_adc_calibration("not checked"), "not checked")
+    check("adc.in", "zero +1 LSB (+1.8 mV on the battery reading, in)" in describe_adc_calibration("z+1 n1 r27 b0"), True)
+    # Nine LSB is the step that was measured on board 1: 16 mV on the battery.
+    check("adc.out", "zero +9 LSB (+15.8 mV on the battery reading, OUT)" in describe_adc_calibration("z+9 n3 r1 b1"), True)
+    check("adc.rate", "27 of 1440 wakes" in describe_adc_calibration("z+1 n1 r27 b0", 1440), True)
+    check("mask.passthrough", describe_mask_check("not checked"), "not checked")
+    check("mask.floor", "within the switch" in describe_mask_check("A+0.3 B-0.1 mV"), True)
+    check("mask.floor.no.path", "DC path" in describe_mask_check("A+2.0 B-0.1 mV"), False)
+    # 33 mV across R15 at 3.3 V is 99 kohm, 3.3 mV is 999 kohm.
+    check("mask.100k", "about 99 kohm" in describe_mask_check("A+33.0 B+0.0 mV"), True)
+    check("mask.1M", "about 999 kohm" in describe_mask_check("A+0.0 B+3.3 mV"), True)
+
     for line in failures:
         print("FAIL", line)
     print(f"self-test: {'FAILED' if failures else 'passed'} ({len(failures)} failure(s))")
@@ -391,6 +418,74 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None) -> dic
 DIS_FIRMWARE_REVISION_UUID = "00002a26-0000-1000-8000-00805f9b34fb"
 DIS_SOFTWARE_REVISION_UUID = "00002a28-0000-1000-8000-00805f9b34fb"
 DIS_HARDWARE_REVISION_UUID = "00002a27-0000-1000-8000-00805f9b34fb"
+# The GATT "String" characteristic, which application 262162 onward puts in DIS for its mask
+# check; see checkMask() in the sketch. The text is an ABI with parse_mask_check().
+MASK_CHECK_UUID = "00002a3d-0000-1000-8000-00805f9b34fb"
+MASK_RS_OHM = 1000.0     # R15
+MASK_DRIVE_MV = 3300.0   # nominal 3V3 rail; the probe does not send what DRV read
+# Not a pass mark. The switch's own leakage may change by up to 2 uA between open and closed
+# (FSUSB42 IOZ), which is 2 mV across R15, so nothing below that can be called a leak.
+MASK_SWITCH_FLOOR_MV = 2.0
+
+
+def parse_mask_check(text: str):
+    """Decode "A+0.3 B-0.1 mV" into the DC drop per plate; None for anything else.
+
+    Each number is how far SENSE fell below DRV with that plate hot, less the same reading with
+    both plates floating. A whole mask passes no DC, so it reads the instrument's own floor.
+    """
+    match = re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV", text)
+    if not match:
+        return None
+    return {"a_mv": float(match.group(1)), "b_mv": float(match.group(2))}
+
+
+# The outcome of the probe's checked ADC offset calibration, application 262163 onward; see
+# saadcCalibrateChecked() in the sketch. A characteristic of the sketch's own in DIS, and its
+# text is an ABI with parse_adc_calibration().
+ADC_CAL_UUID = "4d535634-adc0-4e52-a001-000000000001"
+ADC_ZERO_MAX_LSB = 5     # SAADC_ZERO_MAX_LSB in the sketch
+ADC_LSB_MV = 3600.0 / 4096.0
+
+
+def parse_adc_calibration(text: str):
+    """Decode "z+1 n1 r27 b0"; None for anything else.
+
+    z is the ADC's reading of a grounded input, in LSB, after the calibration this wake is using;
+    n how many calibrations that took; r the wakes of this boot that needed more than one; b the
+    wakes whose last calibration still read a zero that far out.
+    """
+    match = re.fullmatch(r"z([+-]\d+) n(\d) r(\d+) b(\d+)", text)
+    if not match:
+        return None
+    return {"zero_lsb": int(match.group(1)), "tries": int(match.group(2)),
+            "repeated_wakes": int(match.group(3)), "bad_wakes": int(match.group(4))}
+
+
+def describe_adc_calibration(text: str, wakes: int | None = None) -> str:
+    cal = parse_adc_calibration(text)
+    if cal is None:
+        return text
+    zero = cal["zero_lsb"]
+    state = "in" if abs(zero) < ADC_ZERO_MAX_LSB else "OUT"
+    of = f" of {wakes}" if wakes else ""
+    return (f"zero {zero:+d} LSB ({zero * ADC_LSB_MV * 2:+.1f} mV on the battery reading, {state}), "
+            f"{cal['tries']} calibration(s) this wake; this boot {cal['repeated_wakes']}{of} wakes "
+            f"needed more than one and {cal['bad_wakes']} ended out")
+
+
+def describe_mask_check(text: str) -> str:
+    drops = parse_mask_check(text)
+    if drops is None:
+        return text
+    parts = []
+    for plate, mv in (("A", drops["a_mv"]), ("B", drops["b_mv"])):
+        if mv <= MASK_SWITCH_FLOOR_MV:
+            parts.append(f"{plate} {mv:+.1f} mV (within the switch's own {MASK_SWITCH_FLOOR_MV:.0f} mV)")
+        else:
+            ohm = MASK_RS_OHM * (MASK_DRIVE_MV - mv) / mv
+            parts.append(f"{plate} {mv:+.1f} mV (a DC path of about {ohm / 1000.0:,.0f} kohm)")
+    return "; ".join(parts)
 
 
 async def read_build(address: str, timeout: float) -> int:
@@ -444,6 +539,18 @@ async def read_build(address: str, timeout: float) -> int:
             except Exception as error:  # noqa: BLE001
                 value = f"unreadable ({type(error).__name__})"
             print(f"{label}: {value}", flush=True)
+        # Absent before application 262162, and "not checked" until a measurement wake has run.
+        try:
+            mask = bytes(await client.read_gatt_char(MASK_CHECK_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
+            print(f"mask check: {describe_mask_check(mask)}", flush=True)
+        except Exception as error:  # noqa: BLE001
+            print(f"mask check: not offered by this build ({type(error).__name__})", flush=True)
+        # Absent before application 262163, and "not checked" until the first wake has calibrated.
+        try:
+            cal = bytes(await client.read_gatt_char(ADC_CAL_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
+            print(f"ADC calibration: {describe_adc_calibration(cal, candidate)}", flush=True)
+        except Exception as error:  # noqa: BLE001
+            print(f"ADC calibration: not offered by this build ({type(error).__name__})", flush=True)
     return 0
 
 

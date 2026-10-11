@@ -248,4 +248,40 @@ assert.match(page, /r\.raw_fdc_counts != null && !isMsv4Row\(r\)/);
 assert.match(page, /r\.bare_tank_fdc_counts != null && !isMsv4Row\(r\)/);
 assert.match(page, /function msv3ReferenceExcessPercent\(row\) \{\s*if \(!row\) return null;[\s\S]{0,400}if \(Number\(row\.moisture_scale\) === 4\) return null;/);
 
+// ---- Mask check (application 262162): a DIS string, not a packet field ----
+// The probe holds DRV high, reads SENSE against it with each plate hot and with both floating, and
+// publishes "A+0.3 B-0.1 mV" in the GATT String characteristic. The scanner decodes exactly that
+// text, so the two formats are one ABI. It runs after the sweep, on measurement wakes only.
+assert.match(probe, /constexpr uint16_t UUID16_CHR_STRING = 0x2A3D;/);
+assert.match(scanner, /^MASK_CHECK_UUID = "00002a3d-0000-1000-8000-00805f9b34fb"$/m);
+assert.match(probe, /snprintf\(out, size, "%c%c%ld\.%ld", plate, sign, deci \/ 10, deci % 10\);/);
+assert.match(probe, /snprintf\(g_maskText, sizeof\(g_maskText\), "%s %s mV", a, b\);/);
+assert.ok(scanner.includes(String.raw`re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV", text)`),
+  "The scanner must decode the probe's mask text and nothing looser.");
+assert.match(probe, /checkMask\(\);\s*\}\s*else\s*\{\s*g_wakesUntilMoisture--;/,
+  "The DC step belongs after the sweep of the same wake, never before it.");
+assert.match(probe, /const float floating = drv\[0\] - sense\[0\];/,
+  "The floating reading is what takes the two ADC channels' own offsets out.");
+
+// ---- Checked ADC calibration (application 262163): a DIS string of the sketch's own ----
+// One offset calibration in fifty landed about 9 LSB high on board 1, and the wake's battery and
+// tip readings carried it. The probe now reads a grounded input after calibrating and calibrates
+// again when that zero is out. The text is "z+1 n1 r27 b0"; the scanner decodes exactly that.
+assert.match(probe, /snprintf\(g_adcCalText, sizeof\(g_adcCalText\), "z%c%ld n%u r%u b%u", sign, shown,/);
+assert.ok(scanner.includes(String.raw`re.fullmatch(r"z([+-]\d+) n(\d) r(\d+) b(\d+)", text)`),
+  "The scanner must decode the probe's ADC calibration text and nothing looser.");
+// The UUID is written least significant byte first in the sketch.
+const adcUuidBytes = probe.match(/UUID128_CHR_ADC_CAL\[16\] = \{([^}]+)\};/)?.[1]
+  .split(",").map((b) => Number(b).toString(16).padStart(2, "0")).reverse().join("");
+assert.equal(adcUuidBytes?.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"),
+  scanner.match(/^ADC_CAL_UUID = "([0-9a-f-]+)"$/m)?.[1], "The sketch and the scanner must name the same characteristic.");
+assert.equal(Number(probe.match(/constexpr int32_t SAADC_ZERO_MAX_LSB = (\d+);/)?.[1]),
+  Number(scanner.match(/^ADC_ZERO_MAX_LSB = (\d+)\b/m)?.[1]));
+assert.match(probe, /pinOutput\(PIN_VBAT_DIV_EN, false\);\s*\/\/ the zero: divider off, R9 to ground/,
+  "The zero is only a zero with the battery divider switched off.");
+assert.match(probe, /saadcCalibrateChecked\(\);\s*float vbatMv = 0;/,
+  "Every wake calibrates, checked, before its first reading.");
+assert.match(probe, /if \(!zeroRead \|\| \(zero > -SAADC_ZERO_MAX_LSB && zero < SAADC_ZERO_MAX_LSB\)\) break;/,
+  "A calibration is repeated only on a zero that was read and is out; the last one always stands.");
+
 console.log("MSV4 packet ABI: probe, receiver, scanner, History page and cloud function agree.");

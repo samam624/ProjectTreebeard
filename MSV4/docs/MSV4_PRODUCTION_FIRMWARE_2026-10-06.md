@@ -20,6 +20,7 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 | Eighth build | `MSV4-BUILD:prod-2026-10-07c`, application version 262159: the seventh build under a new label (two bytes differ). On board 1 2026-10-08 13:49–18:59 PDT |
 | Ninth build | `MSV4-BUILD:prod-2026-10-08`, application version 262160: `Cp` is calibrated only after a sane moisture reading in air, never at boot; flags 2 bit 6 says when it has not been. On board 1 2026-10-08 18:59–22:07 PDT. See "`Cp` is calibrated only after an open reading" |
 | One-minute TEST build | `MSV4-BUILD:fast1min-2026-10-08`, application version 262161: the ninth build with `-MoistureEveryNWakes 1` (moisture measured on every wake, every wake connectable) and `-CpCentiPf 869` (the `Cp` board 1 was running on when it was updated in soil). See "One-minute test build" |
+| Mask check TEST build, **built 2026-10-09, NOT installed** | `MSV4-BUILD:fast1min-mask-2026-10-09`, application version 262162: the one-minute test build plus a DC leak test of the solder mask after every sweep, published as a DIS string. See "Mask check" |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -588,6 +589,94 @@ stays; a hand at every reading; soil then air, where it calibrates as usual) and
   bit 4 there"). Its timing has not been taken.
 - **Reading-to-reading scatter at one minute:** `Rsoil` 18.70–18.87 kΩ over four readings
   (0.9 % end to end), `Cm` 16.4–16.8 pF, `Cd` 21.63–21.69 pF.
+
+### Mask check (262162, built 2026-10-09, not installed)
+
+The maintainer, 2026-10-09 ~21:00 PDT: "can we add this to firmware? mask quality check". It
+came out of the first day in soil (`MSV4_SOIL_THERMAL_FIRST_DAY_2026-10-09.md`): the plates reach
+`DRV` through R15 and U3 with no blocking capacitor, so the solder mask is the only thing between
+the copper and the soil, and nothing the sweep measures can tell whether it is whole.
+
+**What it does** (`checkMask()` in the sketch). After the sweep on every measurement wake `DRV`
+is held high instead of toggled, the chopper is left on "signal", and `DRV_OUT − SENSE_OUT` is
+read three times: both plates floating, A hot, B hot. Each plate's number is its reading less
+the floating one, which takes the two ADC channels' own offsets out. About 20 ms, at the 3.3 V
+the sweep's square wave already reaches; both plates are returned to 0 V before they float.
+
+| DC path from a hot plate to ground | Reads |
+|---|---:|
+| none (mask whole) | the instrument's floor, not yet measured |
+| 1 MΩ | 3.3 mV |
+| 100 kΩ | 33 mV |
+| 10 kΩ | 300 mV |
+
+- A leak needs copper in the soil in two places, a hot plate and something grounded (the other
+  plate, the guard, a board edge, a thermistor joint). One pinhole alone reads as whole.
+- U3's own leakage may differ by up to 2 µA between open and closed (FSUSB42 `IOZ`, data sheet
+  maximum), which is 2 mV across R15. Nothing under that can be called a leak.
+- **Where the result goes.** Not the packet: it is full, and flags 2 bit 7, the last unused
+  bit, is still unused. It is a new read-only DIS characteristic, the GATT "String" (0x2A3D),
+  reading `A+0.3 B-0.1 mV`, `not checked` before the first measurement wake, or `read failed`.
+  `msv4_adv_scan.py --read-build` prints it with the equivalent resistance. The receiver, the
+  cloud and the History page do not see it.
+- **Nothing judges the number.** No threshold is in the firmware or the script until a whole
+  mask has been read on this board.
+
+Checks run: the scanner self-test (with the new text decoder) and
+`verify_msv4_packet_abi.mjs` (which now ties the sketch's text to the scanner's decoder) pass;
+the build compiles with no warnings, 153,456 bytes; `msv4_ble_ota.py --preflight-only` passes
+for board 1. **Nothing has run on hardware.** The bring-up console has no matching command.
+
+Package: `MSV4/.arduino-build/msv4-out/MSV4_Moisture_BLE_Sleep-v262162-fast1min-mask-2026-10-09-signed-ota.zip`,
+built with `-MoistureEveryNWakes 1 -CpCentiPf 869`. The maintainer chose to install it after
+the morning reading of 2026-10-10, so board 1 is untouched through the overnight cooling test.
+Before installing, read the board's DIS `Cp` again: if it is no longer `8.69 pF`, rebuild with
+the value it shows. *(Superseded on 2026-10-10 by 262163 below, which contains this check; the
+262162 package was never installed.)*
+
+### Checked ADC calibration (262163, built 2026-10-10, not installed)
+
+The maintainer, 2026-10-10 ~23:15 PDT, on the battery spikes diagnosed in the addendum to "The
+battery reading depended on the boot" below: "set it up for the next probe flash, not important
+right now".
+
+**What it does** (`saadcCalibrateChecked()` in the sketch). One offset calibration in fifty
+lands about 9 LSB high and the whole wake's ADC readings carry it. The board has a true zero to
+test a calibration against: the battery divider's midpoint, which R9 holds at ground whenever
+`VBAT_DIV_EN` is low (Q1 disconnects VBAT). After each calibration that pin is read as a signed
+code. A zero 5 LSB or more from nothing means the calibration is taken again, three at most.
+
+- **The last calibration stands whatever it reads.** If the zero is not where this expects
+  (Q1's leakage across R9, for one), a wake costs two more calibrations, a few milliseconds,
+  and is otherwise what it was before.
+- **Where the outcome goes.** A new read-only characteristic in DIS with the sketch's own UUID
+  (`4d535634-adc0-4e52-a001-000000000001`), reading `z+1 n1 r27 b0`: this wake's zero in LSB,
+  how many calibrations it took, the wakes of this boot that needed more than one, and those
+  whose last zero was still out. `not checked` before the first wake, `read failed` if the zero
+  could not be read. `msv4_adv_scan.py --read-build` prints it with the zero in battery
+  millivolts. Not in the packet; flags 2 bit 7 is still unused.
+- **What it should change, if it works:** `r` near one wake in fifty, `b` at or near zero, and
+  the +14 to +22 mV battery readings and the quarter-degree-low tip readings gone from the
+  History charts. Unchanged: everything the sweep measures.
+- **Not measured: what the zero reads on this board.** 5 LSB is half the step that was seen.
+  `r` climbing on every wake would say the threshold is wrong, not that calibrations are bad.
+- It also contains the mask check of 262162, unchanged.
+
+Checks run: the scanner self-test (with the new text decoder) and
+`verify_msv4_packet_abi.mjs` (which ties the sketch's text, UUID and threshold to the scanner's)
+pass; the build compiles with no warnings, 154,408 bytes; `msv4_ble_ota.py --preflight-only`
+passes for board 1 (installed 262161). **Nothing has run on hardware.**
+
+Package: `MSV4/.arduino-build/msv4-out/MSV4_Moisture_BLE_Sleep-v262163-fast1min-adczero-2026-10-10-signed-ota.zip`,
+built with `-MoistureEveryNWakes 1 -CpCentiPf 869`, sensor 10. It is still the one-minute test
+cadence. Before installing:
+
+1. Not before 03:14 on 2026-10-11: a restart inside the watering test's hours voids it
+   (`MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md`).
+2. Read the board's DIS `Cp`; if it is no longer `8.69 pF`, rebuild with the value it shows.
+3. Afterwards the new boot needs its own entry in `AIR_BASELINES`
+   (`msv4_experimental_moisture.py`) and `MSV4_AIR_BASELINES` (`MobileAppPage.h`), and the
+   receiver a reflash, or the two experimental History cards go blank for that boot by design.
 - **`Rsoil` came down 7 % in the first quarter of an hour** (20.2 → 18.8 kΩ) while `Cm` and
   `Cd` crept up, with the tip steady at 25.25 °C. That is what soil closing on a freshly
   inserted blade would do; inferred, nothing else was observed.
@@ -624,6 +713,30 @@ calibration cannot.
 
 **Cloud rows for sensor 10 between 21:55 and 22:16 on 2026-10-06 carry battery values about
 13 mV high.** They have not been altered.
+
+### Addendum 2026-10-10: the off calibration is chance, about one wake in fifty
+
+The maintainer, looking at the battery chart on the one-minute image: "diagnose strange periodic
+large battery spikes from measurement, is this firmware error?" Measured on board 1, 2585
+consecutive one-minute readings, 2026-10-08 22:10 to 2026-10-10 19:10 (262161):
+
+- **50 readings sit +14 to +22 mV above their neighbours** (most at +16 or +18), 1.9 % of
+  wakes. Nothing sits between +7 and +12 mV, and none is low by that much: it is a second
+  state, not scatter. The readings a minute before and after are ordinary.
+- **Not periodic.** The gaps run from 1 to 383 wakes, median 34, with no preference for any
+  position in the 10- or 12-wake cycles and none for an hour of the day.
+- **It is the whole wake's ADC offset, not the cell.** On those wakes the tip thermistor, read
+  through the same ADC as a ratio to VDD, reads 0.122 °C low (se 0.017): 19 of 41 sit a quarter
+  degree below two equal neighbours and none above. An offset of +8 mV on both readings of
+  that ratio gives −0.12 °C. The die temperature, which does not go through the SAADC, does not
+  move (0.000 °C).
+- **The moisture measurement is not touched** (measured): `Cd` +0.003 pF, `Rsoil` +0.05 %,
+  `Cm` +0.2 %, residual +0.003 against the neighbours, all inside their standard errors. A
+  constant offset drops out of the lock-in's sum over phases.
+- So the 13 mV boot of 2026-10-06 was chance, not the position in `setup()`: calibrating every
+  wake turned a bias that lasted a whole boot into a one-minute outlier on one wake in fifty.
+  **Why a calibration lands about 9 LSB off is not established.**
+- **A fix is built and not installed:** 262163, "Checked ADC calibration" above.
 
 ## Where the code comes from
 
@@ -881,6 +994,8 @@ rows and its script parses, but nobody has looked at the rendered charts yet.
       2026-10-08 are 7.15 pF low
 - [ ] Put the ten-minute cadence back on board 1 when the one-minute testing is over (262161
       is a test image)
+- [ ] Install 262162 (mask check) on board 1 after the morning reading of 2026-10-10, read the
+      DIS string, and record what this board's mask reads
 - [ ] Single battery readings stand 12–25 mV apart from their neighbours about once every two
       hours (11 of 860 in the stored history of 2026-10-06 23:10 to 2026-10-07 13:34, of either
       sign, in the dark as well; the 3850 mV on the first wake of the 262157 boot is one). Cause

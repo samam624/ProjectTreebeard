@@ -4,14 +4,48 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-06 21:53 PDT, the display receiver was reflashed on `COM16` with the normal
+As of 2026-10-10 21:01 PDT, the display receiver was reflashed on `COM16` with the normal
 production build:
+
+```text
+Treebeard runtime build 2026-10-10 msv4-relative-residual-v3
+```
+
+It removes the raw fit-residual History card at the maintainer's word ("remove the fit residual
+raw from history"); the card "Fit residual as a share of the electrode signal" replaces it.
+Measured: before the flash `COM16` showed `[Treebeard ...]` lines; after it, snapshot uploads
+returned `HTTP 200` at 21:01:19 and 21:02:34, sensor 10 was received at wake 2815 (the probe did
+not restart), and the page served at the receiver's address has no raw residual card and has
+the relative one and the experimental one. Not captured: the boot line with the build tag.
+
+The build before it, 20:43 PDT the same day, `msv4-relative-residual-v2`, added that relative
+card and kept the raw one relabelled. Measured then: sensor 10 at wakes 2797 and 2798, an upload
+`HTTP 200` at 20:44:30, the new card and its function in the served page.
+
+The build before it, 14:19 PDT the same day:
+
+```text
+Treebeard runtime build 2026-10-10 msv4-soil-coupled-v1
+```
+
+That one added the History card "EXPERIMENTAL moisture reading: soil-coupled
+capacitance" (`MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md`); the moisture number, the
+plant percentage and the alerts are unchanged. Measured: before the flash `COM16` showed
+`[Treebeard ...]` lines, a sensor 7 packet and an upload; after it, WiFi and the BLE scanner
+came up at 14:19:10, sensor 10 was received at wakes 2413, 2414 and 2415 (the probe did not
+restart), snapshot uploads returned `HTTP 200` at 14:19:37, 14:20:41 and 14:21:43, and the page
+served at the receiver's address contains the new card and its air-value table. The boot line
+with the build tag was not captured (the log was attached five seconds after the reset).
+**Not seen:** the card rendered in a browser. A page that was already open keeps the old script
+until it is reloaded.
+
+The build before it, 2026-10-06 21:53 PDT:
 
 ```text
 Treebeard runtime build 2026-10-06 msv4-layout-b-v4
 ```
 
-This is the fourth build flashed that evening (`msv4-conductance-scale4` at 20:02,
+That was the fourth build flashed that evening (`msv4-conductance-scale4` at 20:02,
 `msv4-history-charts` at 21:10, `msv4-die-temp-v3` at 21:19); each added to the one before.
 
 It adds MSV4 conductance probes (flag bit7, moisture scale 4); see

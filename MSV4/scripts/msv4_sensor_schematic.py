@@ -81,6 +81,8 @@ with schemdraw.Drawing(show=False) as d:
         dsp.Filter(response="lp").anchor("W")
         dsp.Arrow().right().length(1.2).label(name, loc="right", ofst=0.15)
 
-    d.save(str(OUT), dpi=300)
+    # schemdraw saves with a transparent background unless told otherwise, whatever bgcolor says;
+    # black lines on nothing are invisible in a dark image viewer.
+    d.save(str(OUT), dpi=300, transparent=False)
 
 print(f"wrote {OUT}")
