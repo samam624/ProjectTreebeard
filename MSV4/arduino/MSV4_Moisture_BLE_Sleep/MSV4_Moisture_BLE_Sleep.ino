@@ -1766,11 +1766,15 @@ static uint8_t saverMoistureEveryWakes()
   return MOISTURE_EVERY_N_WAKES > floorWakes ? MOISTURE_EVERY_N_WAKES : floorWakes;
 }
 
-// Two short blinks before a sweep, at Full with a battery reading to say so. One blink is a boot;
-// two are a measurement. The LED is dark again before the front end's first sample: D1 draws
-// about 1 mA through R10 (470 ohm) from the rail the sweep is measured on. Lit through a whole
-// one-second measurement it would add over a quarter to that measurement's charge (modelled);
-// these two blinks add about 2 %.
+// Two short blinks after a completed sweep, at Full with a battery reading to say so. One blink is
+// a boot; two are a measurement. D1 draws about 1 mA through R10 (470 ohm) from the same rail the
+// sweep is measured on. Application 262165 blinked immediately BEFORE the sweep and had no rail
+// settling interval after the second falling edge. Measured after installing it on board 1, local
+// reading-to-reading scatter rose from 5.97 to 18.18 ohm in Rsoil and from 0.233 to 0.701 pF in Cm;
+// 262163 already had the checked ADC calibration and was quiet. Blinking after takeMoistureReading()
+// makes the indication unable to disturb the reading it announces and leaves nearly a minute for
+// the rail and electrode to settle before the next one. Lit through a whole one-second measurement
+// would add over a quarter to that measurement's charge (modelled); these two blinks add about 2 %.
 // Not on a boot's first wake. That wake always measures and setup() has just blinked once: three
 // flashes together would read as the boot guard's three-blink escape.
 constexpr uint32_t LED_MEASURE_BLINK_MS = 30;
@@ -2071,9 +2075,11 @@ void loop()
   bool fresh = false;
   if (g_wakesUntilMoisture == 0)
   {
-    ledAnnounceMeasurement();
     g_reading = takeMoistureReading();
     fresh = g_reading.valid;
+    // Announce only after the analog result is complete. The LED shares its rail with the front
+    // end; putting these edges before the sweep made 262165's fitted Rsoil and Cm noisy.
+    ledAnnounceMeasurement();
     // A failed sweep is retried on the next wake rather than left standing for the whole interval.
     g_wakesUntilMoisture = g_reading.valid ? moistureEvery - 1 : 0;
     // After the sweep, so the DC step cannot be in the reading it follows. Once a day.

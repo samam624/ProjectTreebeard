@@ -4,8 +4,21 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-11 19:58 PDT, the display receiver was reflashed on `COM16` with the normal
+As of 2026-10-11 20:48 PDT, the display receiver was reflashed on `COM16` with the normal
 production build:
+
+```text
+Treebeard runtime build 2026-10-11 water-now-region-v2-msv4-262166
+```
+
+It keeps `water-now-region-v2` unchanged and adds the 20:39:37 boot of MSV4 board 1 application
+262166 to the History page's air-baseline table. Before flashing, a 75-second no-reset capture
+proved `COM16` was the receiver: `[Treebeard web]` and `[Treebeard cloud]` logs, sensor 10 wake 8,
+and a successful `HTTP 200` upload. The guarded upload passed all eleven receiver checks and the
+flash hash verified. Afterward, WiFi and BLE came up, sensor 10 was received at wakes 10 and 11,
+uploads returned `HTTP 200` with no queued rows, and `/device` reported the exact build above.
+
+The build before it, at 19:58 PDT, was:
 
 ```text
 Treebeard runtime build 2026-10-11 water-now-region-v2

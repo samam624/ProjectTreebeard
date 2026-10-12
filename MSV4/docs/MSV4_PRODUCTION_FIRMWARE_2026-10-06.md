@@ -904,6 +904,54 @@ built with `-MoistureEveryNWakes 1 -CpCentiPf 869`, sensor 10: still the one-min
 cadence. Before installing: read the board's DIS `Cp` (rebuild if it is no longer `8.69 pF`);
 afterwards the new boot needs its entry in both air-value tables and the receiver a reflash.
 
+### The measurement LED preceded the noisy moisture sweep (262166 fix, 2026-10-11)
+
+At about 20:30 PDT the maintainer noticed that after the battery-offset fix the battery trace was
+clean but the moisture trace had acquired spikes. The stored sensor-10 rows identify the boundary:
+262163 ran from 11:52 to 13:02 PDT and 262165 from 13:03 onward.
+
+**Measured:** using each reading minus the mean of its immediately adjacent readings, over the
+available uninterrupted rows:
+
+| Build | rows | Rsoil scatter (SD) | Cm scatter (SD) | Cd scatter (SD) |
+|---|---:|---:|---:|---:|
+| 262163 | 62 | 5.97 ohm | 0.233 pF | 0.115 pF |
+| 262165 | 436 | 18.18 ohm | 0.701 pF | 0.157 pF |
+
+The increase is in the soil branch (`Rsoil`, `Cm`), not principally in direct capacitance or fit
+residual. It has no five-wake preference: grouping 443 rows by `wake % 5` gave moisture-residual
+standard deviations of 20.83 to 26.96 counts across all five groups. That rules out the
+calibration experiment's once-per-five-wakes DC/DC-off arm as the source of the spikes.
+
+**Cause inferred from the controlled code difference:** 262163 already ran the checked SAADC
+calibration and was quiet. 262165 added two LED pulses immediately before every sweep. D1 draws
+about 1 mA from the same rail used by the analog front end, and the code began the sweep immediately
+after the second falling edge. Merely having the LED off at the first ADC sample did not establish
+that the rail and electrode had settled. This also explains the apparent transfer: the battery is
+read before the LED, while moisture was read after it.
+
+**Fix:** 262166 moves `ledAnnounceMeasurement()` after `takeMoistureReading()`. The two-blink user
+interface is unchanged, but it can no longer perturb the reading it announces and the circuit has
+nearly a minute to settle before the next sweep. The battery calibration check, calibration
+experiment, saver and once-daily mask check are unchanged. Confirmation requires installing the
+image and comparing a substantial post-update interval; the source ordering and build alone prove
+only that the identified coupling path has been removed.
+
+Installed on board 1 at 20:39 PDT. The updater read `fast1min-calexp-2026-10-11` before the jump,
+transferred the complete 156,088-byte image in 49 seconds, and left end-of-image acceptance to the
+bootloader after a late final receipt. DIS then proved
+`MSV4-BUILD:fast1min-ledafter-2026-10-11` / `262166` / `Cp 8.69 pF default`; a 150-second scan
+heard fresh, connectable readings at counters 3 and 4 and passed `--require-progress`. Package:
+`MSV4/.arduino-build/msv4-out/MSV4_Moisture_BLE_Sleep-v262166-fast1min-ledafter-2026-10-11-signed-ota.zip`,
+built with `-MoistureEveryNWakes 1 -CpCentiPf 869`, sensor 10.
+
+**Early result, not yet a settled noise measurement:** among the first eight post-update rows, six
+uninterrupted centre rows had adjacent-reading residual SD 9.09 ohm in Rsoil and 0.340 pF in Cm,
+with maxima 15.00 ohm and 0.600 pF. The twelve uninterrupted centre rows immediately before the
+update were 67.75 ohm / 2.035 pF, maxima 139.05 ohm / 3.550 pF. This is in the intended direction
+and contains no spike, but six rows are far too few to declare the long-run scatter fixed; retain
+the longer 262163/262165 comparison above as the diagnosis and re-check after several hours.
+
 ## The battery reading depended on the boot (found and fixed 2026-10-06)
 
 The maintainer noticed the battery "jump" after the 21:41–21:55 gap. Measured, same cell, in the

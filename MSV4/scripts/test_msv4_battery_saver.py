@@ -3,7 +3,7 @@
 
 From 262165 the wake's battery reading sets one of two levels:
 
-  Full      everything the build does; two LED blinks before each sweep but a boot's first
+  Full      everything the build does; two LED blinks after each sweep but a boot's first
   Saving    below 3500 mV: no LED; moisture (and with it the connectable window) every 30th
             wake at most
 
@@ -49,7 +49,10 @@ for line in (
     "const uint8_t moistureEvery = saverMoistureEveryWakes();",
     "if (g_wakesUntilMoisture > moistureEvery - 1) g_wakesUntilMoisture = moistureEvery - 1;",
     "const bool longWindow = g_wakesUntilMoisture == 0 || g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;",
-    "ledAnnounceMeasurement();\n    g_reading = takeMoistureReading();",
+    # The LED and front end share a rail. The indication must follow the analog result it
+    # announces; 262165 had these in the opposite order and made Rsoil and Cm noisy.
+    "g_reading = takeMoistureReading();\n    fresh = g_reading.valid;\n    // Announce only after the analog result is complete.",
+    "ledAnnounceMeasurement();\n    // A failed sweep is retried on the next wake",
     "g_wakesUntilMoisture = g_reading.valid ? moistureEvery - 1 : 0;",
     "(g_powerLevel != PowerLevel::Full ? ADV_FLAG2_SAVER : 0) |",
     # No level may change what a wake sends or how often the probe wakes.

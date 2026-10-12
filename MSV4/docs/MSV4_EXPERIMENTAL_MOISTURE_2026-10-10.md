@@ -166,6 +166,7 @@ across board 1's boots). So `Cd` in air is a per-boot number:
 | 10 | 2026-10-08 22:07:55 | 13.72 pF | 262161, with that `Cp` compiled in; DIS read `Cp 8.69 pF default` |
 | 10 | 2026-10-11 11:52:48 | 13.72 pF | 262163, the same `Cp` compiled in; DIS read `Cp 8.69 pF default` at 11:56. `Cd` 32.39 pF on the last reading before the update, 32.32 pF on the first after; receiver reflashed 11:59 |
 | 10 | 2026-10-11 13:03:43 | 13.72 pF | 262165, the same `Cp` compiled in; DIS read `Cp 8.69 pF default` at 13:07; receiver reflashed 13:09 |
+| 10 | 2026-10-11 20:39:37 | 13.72 pF | application 262166; built with `Cp` 8.69 pF and DIS read it back after installation; cloud wake 1 fixes the boot time; receiver reflashed 20:48 |
 
 - **Every boot needs its own entry, and a reading from a boot without one gets no value**, on
   the page and in the script alike. `Cp` is not in the packet, so nothing else says which `Cp`
