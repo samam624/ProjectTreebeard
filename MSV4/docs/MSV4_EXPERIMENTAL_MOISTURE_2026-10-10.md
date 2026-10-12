@@ -508,6 +508,14 @@ watering between them, at its own per gram, beside what the scale lost:
 - The settled day with no watering is still the one before the watering. The first whole day
   after it that counts starts at 19:14 on 10-11.
 
+**Update 20:34 on 10-11: the evening weighing.** The maintainer reported 4993, 4992 and
+4992 g "right now" at 20:34. Median 4992 g, a spread of 1 g. The scale therefore fell 68 g
+from the morning median over 9 h 41 min and now reads 319 g above the driest recorded weighing.
+Whether the pot was lifted between readings and whether water was standing in the saucer were
+not stated. The fleet ledger preserves that uncertainty, and the competition script lists this
+weighing but does not score it until the saucer condition is known; the 68 g is a measured scale
+change, not yet a claimed change in soil water.
+
 ## Is the 1 kΩ series resistor the right size? (asked 2026-10-11)
 
 `Rs` (R15) sets how hard the soil loads the SENSE node. The measurement is most sensitive when

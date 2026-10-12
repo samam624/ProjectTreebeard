@@ -25,7 +25,8 @@ readings from the CSV that cloud/scripts/fetch_supabase_history.py --raw writes.
   pot. A weighing taken in those hours is paired with the first hour after them instead; the pot
   loses little in that time and the table says so.
 - A weighing with water standing in the saucer counts water that is not in the soil. It is
-  listed and NOT scored; --with-saucer scores it anyway.
+  listed and NOT scored; --with-saucer scores it anyway. A weighing whose saucer condition was
+  not recorded is listed but never scored.
 
   python cloud/scripts/fetch_supabase_history.py --receiver <id> --sensor 10 --raw --since-hours 110 --csv data/sensor_logs/msv4_s10.csv
   python MSV4/scripts/msv4_moisture_competition.py data/sensor_logs/msv4_s10.csv
@@ -81,14 +82,26 @@ CANDIDATES = (
 )
 
 
+def saucer_state(entry: dict) -> tuple[bool | None, bool]:
+    """Return (standing water, excluded) without interpreting an unknown as dry."""
+    condition = str(entry.get("saucer_water", "")).lower()
+    saucer = True if condition.startswith("yes") else False if condition.startswith("no") else None
+    return saucer, bool(entry.get("exclude_from_gravimetric_fit", False)) or saucer is None
+
+
 def load_pot(sensor: int, fleet: Path = FLEET) -> tuple[list[dict], list[datetime]]:
     """(weighings, watering times) for the pot that sensor is in."""
     pots = json.loads(fleet.read_text(encoding="utf-8"))["pots"]
     for pot in pots.values():
         if isinstance(pot, dict) and sensor in pot.get("sensors", []) and "mass" in pot:
-            weighings = [{"time": datetime.fromisoformat(e["at"]), "grams": float(e["grams"]),
-                          "saucer": str(e.get("saucer_water", "")).lower().startswith("yes")}
-                         for e in pot["mass"].get("log", []) if "at" in e]
+            weighings = []
+            for e in pot["mass"].get("log", []):
+                if "at" not in e:
+                    continue
+                saucer, excluded = saucer_state(e)
+                weighings.append({"time": datetime.fromisoformat(e["at"]), "grams": float(e["grams"]),
+                                  "saucer": saucer,
+                                  "excluded": excluded})
             waterings = [datetime.fromisoformat(e["at"]) for e in pot.get("watering_events", {}).get("events", []) if "at" in e]
             return sorted(weighings, key=lambda w: w["time"]), sorted(waterings)
     raise SystemExit(f"no pot in {fleet} holds sensor {sensor} and has weighings")
@@ -249,19 +262,22 @@ def score(rows: list[dict], pairs: list[dict], waterings: list[datetime]) -> lis
 
 def report(rows: list[dict], weighings: list[dict], waterings: list[datetime], with_saucer: bool = False) -> None:
     listed = pair(rows, merge_repeats(weighings, waterings), waterings)
-    pairs = [p for p in listed if with_saucer or not p["saucer"]]
-    dry = min(p["grams"] for p in listed)
+    pairs = [p for p in listed if not p.get("excluded", False) and (with_saucer or p["saucer"] is False)]
+    dry = min(p["grams"] for p in pairs)
     print(f"\nWeighings (water = grams above the driest, {dry:.0f} g; repeats within {REPEAT_MINUTES} min are one weighing, at their median)")
     print(f"{'weighed':17}  grams  water  saucer  readings paired")
     for p in listed:
         note = f"{p['from']:%m-%d %H:%M} to {p['to']:%H:%M}, {len(p['rows'])} readings"
         if p["late"]:
             note += f" (weighed inside the {WATER_SETTLE_HOURS} h after a watering: paired with the hour after them)"
-        if p["saucer"] and not with_saucer:
+        if p.get("excluded", False):
+            note = "NOT SCORED: saucer condition was not recorded"
+        elif p["saucer"] and not with_saucer:
             note = "NOT SCORED: water standing in the saucer is in this weight and not in the soil"
         if len(p["all"]) > 1:
             note += f"; {len(p['all'])} weighings {', '.join(f'{g:.0f}' for g in p['all'])}"
-        print(f"{p['time']:%Y-%m-%d %H:%M}  {p['grams']:5.0f}  {p['grams'] - dry:5.0f}  {'WATER' if p['saucer'] else 'dry':6}  {note}")
+        condition = "unknown" if p["saucer"] is None else "WATER" if p["saucer"] else "dry"
+        print(f"{p['time']:%Y-%m-%d %H:%M}  {p['grams']:5.0f}  {p['grams'] - dry:5.0f}  {condition:7}  {note}")
     spreads = [p["spread"] for p in listed if len(p["all"]) > 1]
     if spreads:
         print(f"The scale: repeated weighings differ by up to {max(spreads):.0f} g ({len(spreads)} set(s)). "
@@ -305,6 +321,10 @@ def report(rows: list[dict], weighings: list[dict], waterings: list[datetime], w
 
 def self_test() -> None:
     """Made-up pot: one candidate follows the water exactly, another follows the time of day."""
+    assert saucer_state({"saucer_water": "no: dry"}) == (False, False)
+    assert saucer_state({"saucer_water": "yes: standing"}) == (True, False)
+    assert saucer_state({"saucer_water": "unknown: not stated"}) == (None, True)
+    assert saucer_state({"saucer_water": "no", "exclude_from_gravimetric_fit": True}) == (False, True)
     start = datetime.fromisoformat("2026-11-01T00:00:00+00:00")
     watered = start + timedelta(hours=30)
 

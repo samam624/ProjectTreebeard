@@ -351,9 +351,10 @@
       "source": "maintainer stated 2026-10-08 ~21:46 PDT: 'I am going to put the probe into the alcosasia pot moement of truth' (MSV4 board 1, sensor 10; stated as about to happen, not yet as done). That statement covers MSV4 board 1 going into this pot ONLY; whether anything else is in the pot, when it was last watered and where the pot now sits were not stated. Everything else here is from 2026-09-30: maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
       "plant": "Alocasia",
       "mass": {
-        "verified": "2026-10-10",
+        "verified": "2026-10-11",
+        "latest_source": "maintainer stated 2026-10-11 at 20:34 PDT: 'also 4993 4992 4992 weight for pot right now 8:34 pm add that to the tracker'",
         "source": "maintainer stated 2026-10-10 ~13:57 PDT: 'It says 4697 with the pot on after Tate capacity is 11.46lbs' (read as: the kitchen scale shows 4697 g with the pot on it after taring, and the scale's capacity is 11.46 lb). OBSERVED in a photo the maintainer sent at ~13:59 PDT: a glazed black-and-white checkered ceramic pot standing in a terracotta saucer, BOTH on the scale, display 4697; the scale is on a white shelf beside a window. Maintainer stated ~14:05 PDT: '4691 is with saucer, plan is to water it and not remove any excess water, just have it collect in saucer and evaporate'. So the weight INCLUDES the saucer. That message says 4691 where the earlier one and the photo say 4697; the maintainer confirmed ~14:10 PDT that it was 4697 ('Yeah it was 4697'). The watering described is a PLAN, not yet stated as done. The photo shows where the pot was weighed, not where it normally sits. Before that, ~13:50 PDT: 'I do have a kitchen scale but I'm getting the pot is around 10 lbs'. Both stated BEFORE the watering the maintainer plans for that evening; no watering has been stated as done.",
-        "value": "4697 g on the maintainer's kitchen scale, 2026-10-10 ~13:55 PDT: pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer",
+        "value": "4992 g median of 4993, 4992 and 4992 g on the maintainer's kitchen scale, 2026-10-11 20:34 PDT: pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; whether water was standing in the saucer was not stated",
         "weighing_convention": "pot and saucer together, with whatever water is standing in the saucer (maintainer's plan, 2026-10-10: excess water is left in the saucer to evaporate). Water standing in the saucer is in the weight but not in the soil, so each weighing needs a note of whether the saucer held water.",
         "scale": "the maintainer's kitchen scale: capacity 11.46 lb (5198 g) as stated; the reading was given to 1 g, its resolution was not stated. 501 g above the pot as weighed, less anything that was tared out.",
         "log": [
@@ -429,14 +430,41 @@
             "at_note": "confirmed by the maintainer; see the 5062 g entry.",
             "saucer_water": "no: maintainer stated 2026-10-11 ~11:48 PDT, of this weighing: 'Saucer dry, and your timing was correct for weight'",
             "note": "the third of the three weighings of that morning (5062, 5060, 5058); see the 5062 g entry."
+          },
+          {
+            "when": "2026-10-11 20:34 PDT",
+            "grams": 4993,
+            "at": "2026-10-11T20:34:00-07:00",
+            "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
+            "saucer_water": "unknown: the maintainer did not state the saucer condition",
+            "exclude_from_gravimetric_fit": true,
+            "note": "the first of three back-to-back readings reported by the maintainer"
+          },
+          {
+            "when": "2026-10-11 20:34 PDT",
+            "grams": 4992,
+            "at": "2026-10-11T20:34:00-07:00",
+            "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
+            "saucer_water": "unknown: the maintainer did not state the saucer condition",
+            "exclude_from_gravimetric_fit": true,
+            "note": "the second of three back-to-back readings reported by the maintainer"
+          },
+          {
+            "when": "2026-10-11 20:34 PDT",
+            "grams": 4992,
+            "at": "2026-10-11T20:34:00-07:00",
+            "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
+            "saucer_water": "unknown: the maintainer did not state the saucer condition",
+            "exclude_from_gravimetric_fit": true,
+            "note": "the third of three back-to-back readings reported by the maintainer"
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
-        "log_format": "Each entry: 'when' and 'note' are the record as stated; 'at' is the same moment as an ISO time for MSV4/scripts/msv4_moisture_competition.py, which reads this list. 'saucer_water' starts with yes or no. Add 'at' to every new entry.",
+        "log_format": "Each entry: 'when' and 'note' are the record as stated; 'at' is the same moment as an ISO time for MSV4/scripts/msv4_moisture_competition.py, which reads this list. 'saucer_water' starts with yes, no, or unknown. Set 'exclude_from_gravimetric_fit' true when an unknown condition makes the weight unsuitable for scoring. Add 'at' to every new entry.",
         "scale_repeatability": {
-          "verified": "2026-10-10",
+          "verified": "2026-10-11",
           "source": "maintainer stated at about that time: 'I took it fully of and weighed it again and got 5106 and then 1 more time and 5105, so theres like 10-15g of error on the scale itself'.",
-          "measured": "three weighings of the same pot within a few minutes, lifted off in between: 5098, 5106, 5105 g, a range of 8 g. Earlier that evening 4673 and 4674 g two minutes apart (whether the pot was lifted between those was not stated). On the morning of 2026-10-11 three 'back to back': 5062, 5060, 5058 g, a range of 4 g (whether lifted between was not stated).",
+          "measured": "three weighings of the same pot within a few minutes, lifted off in between: 5098, 5106, 5105 g, a range of 8 g. Earlier that evening 4673 and 4674 g two minutes apart (whether the pot was lifted between those was not stated). On the morning of 2026-10-11 three 'back to back': 5062, 5060, 5058 g, a range of 4 g (whether lifted between was not stated). At 20:34 PDT on 2026-10-11 three readings were 4993, 4992, 4992 g, a range of 1 g (whether lifted between was not stated).",
           "maintainer_estimate": "10-15 g of error on the scale",
           "note": "The pot is within 100 g of the scale's stated 5198 g capacity when wet. A difference between two weighings smaller than this is not a difference in water."
         }
