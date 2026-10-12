@@ -54,6 +54,12 @@ AIR_BASELINES = (
     (10, "2026-10-08T22:07:55-07:00", 13.72, 8.69,
      "application 262161, built with that Cp compiled in (-CpCentiPf 869); "
      "DIS read 'Cp 8.69 pF default' at 22:08"),
+    (10, "2026-10-11T11:52:48-07:00", 13.72, 8.69,
+     "application 262163, built with that Cp compiled in (-CpCentiPf 869); "
+     "DIS read 'Cp 8.69 pF default' at 11:56"),
+    (10, "2026-10-11T13:03:43-07:00", 13.72, 8.69,
+     "application 262165, built with that Cp compiled in (-CpCentiPf 869); "
+     "DIS read 'Cp 8.69 pF default' at 13:07"),
 )
 # Which boot a reading belongs to comes from the reading itself: the probe counts one wake a
 # minute from 1 at boot, so its boot began (wake - 1) minutes earlier. An entry is that boot's

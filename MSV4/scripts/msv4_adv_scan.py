@@ -64,6 +64,11 @@ FLAG2_BURN = 1 << 5
 # its first sane reading in air. Rsoil and Cm do not depend on Cp. Clear in every packet from an
 # older image, which calibrated at boot whatever the blade was in.
 FLAG2_CP_DEFAULT = 1 << 6
+# Application version 262165: the battery saver is saving (battery below 3500 mV), so moisture is
+# measured less often than the build's cadence (every 30th wake at most), and only those wakes
+# and the first three of a boot can be connected to. Clear in every packet from an older image,
+# which had no saver.
+FLAG2_SAVER = 1 << 7
 
 RSOIL_DECIOHM_MAX = 4_000_000
 CP_DEFAULT_DECI_PF = 120
@@ -74,7 +79,7 @@ EC_TEMPCO_PER_C = 0.02
 CSV_FIELDS = ["time", "sensor", "counter", "rssi", "battery_mv", "tip_c", "moisture_valid",
               "fresh", "rsoil_ohm", "rsoil_open", "rsoil25_ohm", "cm_pf", "cp_pf", "cp_default",
               "fit_rms", "ota_ok", "die_c", "cd_pf", "connectable", "dcdc", "fit_warm", "burn",
-              "cp_uncalibrated"]
+              "cp_uncalibrated", "saver"]
 
 
 def decode(payload: bytes) -> dict | None:
@@ -129,6 +134,7 @@ def decode(payload: bytes) -> dict | None:
         "fit_warm": bool(valid and flags2 & FLAG2_FIT_WARM),
         "burn": bool(flags2 & FLAG2_BURN),
         "cp_uncalibrated": bool(flags2 & FLAG2_CP_DEFAULT),
+        "saver": bool(flags2 & FLAG2_SAVER),
     }
 
 
@@ -158,6 +164,8 @@ def describe(row: dict) -> str:
         marks += ", BURNING"
     if row["cp_uncalibrated"]:
         marks += ", Cp NOT CALIBRATED this boot (Cd is on the build's Cp)"
+    if row["saver"]:
+        marks += ", BATTERY SAVER (moisture measured less often)"
     return f"sensor {row['sensor']} #{row['counter']} {battery} {tip} | {moisture}{cp} | {marks}"
 
 
@@ -302,6 +310,20 @@ def self_test() -> int:
     check("cp.uncal.off.mark", "Cp NOT CALIBRATED" in describe(air), False)
     check("cp.uncal.off.burn", burning["cp_uncalibrated"], False)
     check("cp.uncal.v262148", row["cp_uncalibrated"], False)
+    # Battery saver in force: its own bit, nothing beside it moves, older packets read it clear.
+    saving = decode(_encode(10, 31, 35290, 3690, FLAG_MSV4 | FLAG_TEMP_OK, 87, 1117, None, 132,
+                            die_q4=101, flags2=FLAG2_DIE_TEMP_OK | FLAG2_SHORT_BURST | FLAG2_DCDC_ON | FLAG2_SAVER,
+                            cd_centi=3232))
+    check("saver.on", saving["saver"], True)
+    check("saver.keeps.rsoil", saving["rsoil_ohm"], 3529.0)
+    check("saver.keeps.cd", saving["cd_pf"], 32.32)
+    check("saver.keeps.battery", saving["battery_mv"], 3690)
+    check("saver.keeps.window", saving["connectable"], False)
+    check("saver.keeps.cp", saving["cp_uncalibrated"], False)
+    check("saver.mark", "BATTERY SAVER" in describe(saving), True)
+    check("saver.off", uncal["saver"], False)
+    check("saver.off.mark", "BATTERY SAVER" in describe(uncal), False)
+    check("saver.v262148", row["saver"], False)
     stale = decode(_encode(10, 6, 0, 3700, FLAG_MSV4 | FLAG_INVALID, 0, 0, None, 0,
                            die_q4=94, flags2=FLAG2_FIT_WARM, cd_centi=0))
     check("warm.invalid", stale["fit_warm"], False)
@@ -356,6 +378,33 @@ def self_test() -> int:
     # Nine LSB is the step that was measured on board 1: 16 mV on the battery.
     check("adc.out", "zero +9 LSB (+15.8 mV on the battery reading, OUT)" in describe_adc_calibration("z+9 n3 r1 b1"), True)
     check("adc.rate", "27 of 1440 wakes" in describe_adc_calibration("z+1 n1 r27 b0", 1440), True)
+    # 262163 judged the zero against nothing, 262164 onward against where a good one sits.
+    check("adc.262163.low", "-6 LSB (-10.5 mV on the battery reading, OUT)" in describe_adc_calibration("z-6 n3 r5 b2", 6, 262163), True)
+    check("adc.262163.high", "+4 LSB (+7.0 mV on the battery reading, in)" in describe_adc_calibration("z+4 n2 r12 b5", 19, 262163), True)
+    check("adc.262165.low", "reading, in of the build's window around -5)" in describe_adc_calibration("z-7 n1 r0 b0", 6, 262165), True)
+    check("adc.262165.high", "reading, OUT of the build's window around -5)" in describe_adc_calibration("z+4 n3 r1 b1", 19, 262165), True)
+    check("adc.262165.edge", "OUT" in describe_adc_calibration("z+0 n3 r1 b1", 19, 262165), True)
+    check("adc.262165.edge.in", "OUT" in describe_adc_calibration("z-1 n1 r1 b1", 19, 262165), False)
+    check("mask.negative", "wrong way" in describe_mask_check("A-3.5 B-3.5 mV"), True)
+    check("mask.negative.small", "within the switch" in describe_mask_check("A-1.8 B-0.9 mV"), True)
+    # 262165 counts the boot's checks after the reading; 262163's text has no count.
+    check("mask.count", parse_mask_check("A-5.3 B-6.2 mV n2"), {"a_mv": -5.3, "b_mv": -6.2, "checks": 2})
+    check("mask.count.mark", "check 2 of this boot" in describe_mask_check("A-5.3 B-6.2 mV n2"), True)
+    check("mask.count.absent", "of this boot" in describe_mask_check("A+0.3 B-0.1 mV"), False)
+    check("mask.count.loose", parse_mask_check("A+0.3 B-0.1 mV n"), None)
+    # The calibration experiment's DIS text.
+    check("exp.parse", parse_calibration_experiment("e5 0 6 2 4 w1440"), {"high": [5, 0, 6, 2, 4], "wakes": 1440})
+    check("exp.unrun", parse_calibration_experiment("not run"), None)
+    check("exp.timeout", parse_calibration_experiment("e5 T 6 2 4 w1440")["high"], [5, None, 6, 2, 4])
+    check("exp.timeout.mark", "oversampled DID NOT FINISH" in describe_calibration_experiment("e5 T 6 2 4 w1440"), True)
+    check("exp.loose", parse_calibration_experiment("e5 0 6 2 w1440"), None)
+    check("exp.passthrough", describe_calibration_experiment("not run"), "not run")
+    told = describe_calibration_experiment("e5 0 6 2 4 w1440")
+    check("exp.names", all(name in told for name in CAL_EXPERIMENT_ARMS), True)
+    check("exp.share", "as built 5 of 288" in told and "oversampled 0 of 288" in told, True)
+    # 1442 wakes: ways 0 and 1 have had one more turn than the others.
+    check("exp.uneven", "as built 1 of 289" in describe_calibration_experiment("e1 0 0 0 0 w1442")
+          and "5 ms later 0 of 288" in describe_calibration_experiment("e1 0 0 0 0 w1442"), True)
     check("mask.passthrough", describe_mask_check("not checked"), "not checked")
     check("mask.floor", "within the switch" in describe_mask_check("A+0.3 B-0.1 mV"), True)
     check("mask.floor.no.path", "DC path" in describe_mask_check("A+2.0 B-0.1 mV"), False)
@@ -434,10 +483,13 @@ def parse_mask_check(text: str):
     Each number is how far SENSE fell below DRV with that plate hot, less the same reading with
     both plates floating. A whole mask passes no DC, so it reads the instrument's own floor.
     """
-    match = re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV", text)
+    match = re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV(?: n(\d+))?", text)
     if not match:
         return None
-    return {"a_mv": float(match.group(1)), "b_mv": float(match.group(2))}
+    drops = {"a_mv": float(match.group(1)), "b_mv": float(match.group(2))}
+    if match.group(3) is not None:
+        drops["checks"] = int(match.group(3))   # 262165 onward: this boot's checks so far
+    return drops
 
 
 # The outcome of the probe's checked ADC offset calibration, application 262163 onward; see
@@ -445,6 +497,11 @@ def parse_mask_check(text: str):
 # text is an ABI with parse_adc_calibration().
 ADC_CAL_UUID = "4d535634-adc0-4e52-a001-000000000001"
 ADC_ZERO_MAX_LSB = 5     # SAADC_ZERO_MAX_LSB in the sketch
+# Where a good calibration leaves the zero, and so what "out" is measured from. Application
+# 262163 judged against nothing; board 1 then read -3 to -7 LSB on good calibrations, and 262165
+# onward judges against SAADC_ZERO_CENTRE_LSB. Which one applies is taken from the build read.
+ADC_ZERO_CENTRE_LSB = -5
+ADC_ZERO_CENTRED_FROM_VERSION = 262165
 ADC_LSB_MV = 3600.0 / 4096.0
 
 
@@ -462,12 +519,15 @@ def parse_adc_calibration(text: str):
             "repeated_wakes": int(match.group(3)), "bad_wakes": int(match.group(4))}
 
 
-def describe_adc_calibration(text: str, wakes: int | None = None) -> str:
+def describe_adc_calibration(text: str, wakes: int | None = None, version: int | None = None) -> str:
     cal = parse_adc_calibration(text)
     if cal is None:
         return text
     zero = cal["zero_lsb"]
-    state = "in" if abs(zero) < ADC_ZERO_MAX_LSB else "OUT"
+    centre = ADC_ZERO_CENTRE_LSB if version is not None and version >= ADC_ZERO_CENTRED_FROM_VERSION else 0
+    state = "in" if abs(zero - centre) < ADC_ZERO_MAX_LSB else "OUT"
+    if centre:
+        state += f" of the build's window around {centre:+d}"
     of = f" of {wakes}" if wakes else ""
     return (f"zero {zero:+d} LSB ({zero * ADC_LSB_MV * 2:+.1f} mV on the battery reading, {state}), "
             f"{cal['tries']} calibration(s) this wake; this boot {cal['repeated_wakes']}{of} wakes "
@@ -480,12 +540,46 @@ def describe_mask_check(text: str) -> str:
         return text
     parts = []
     for plate, mv in (("A", drops["a_mv"]), ("B", drops["b_mv"])):
-        if mv <= MASK_SWITCH_FLOOR_MV:
+        if abs(mv) <= MASK_SWITCH_FLOOR_MV:
             parts.append(f"{plate} {mv:+.1f} mV (within the switch's own {MASK_SWITCH_FLOOR_MV:.0f} mV)")
+        elif mv < 0:
+            # A leak can only pull SENSE down. Board 1 read as low as -3.5 mV on 2026-10-11.
+            parts.append(f"{plate} {mv:+.1f} mV (the wrong way for a DC path: the reading's own scatter)")
         else:
             ohm = MASK_RS_OHM * (MASK_DRIVE_MV - mv) / mv
             parts.append(f"{plate} {mv:+.1f} mV (a DC path of about {ohm / 1000.0:,.0f} kohm)")
+    if "checks" in drops:
+        parts.append(f"check {drops['checks']} of this boot (one a day)")
     return "; ".join(parts)
+
+
+# The calibration experiment of application 262165; see saadcCalibrateArm() in the sketch. Each
+# wake's first calibration is taken one of five ways in rotation, and the text counts the wakes
+# on which it landed high, per way, then the wakes so far. T in place of a count: that way's
+# calibration once failed to finish and it is no longer tried. An ABI with that function.
+CAL_EXPERIMENT_UUID = "4d535634-adc0-4e52-a001-000000000002"
+CAL_EXPERIMENT_ARMS = ("as built", "oversampled", "5 ms later", "DC/DC off", "on the crystal")
+
+
+def parse_calibration_experiment(text: str):
+    """Decode "e5 0 6 2 4 w1440"; None for anything else."""
+    match = re.fullmatch(r"e(\d+|T) (\d+|T) (\d+|T) (\d+|T) (\d+|T) w(\d+)", text)
+    if not match:
+        return None
+    return {"high": [None if match.group(i) == "T" else int(match.group(i)) for i in range(1, 6)],
+            "wakes": int(match.group(6))}
+
+
+def describe_calibration_experiment(text: str) -> str:
+    counts = parse_calibration_experiment(text)
+    if counts is None:
+        return text
+    arms = len(CAL_EXPERIMENT_ARMS)
+    # Way i has had the wakes numbered i, i + 5, i + 10, ... of the boot.
+    turns = [(counts["wakes"] - i + arms - 1) // arms for i in range(arms)]
+    return "first calibration landed high: " + ", ".join(
+        f"{name} DID NOT FINISH (no longer tried)" if high is None else f"{name} {high} of {turn}"
+        for name, high, turn in zip(CAL_EXPERIMENT_ARMS, counts["high"], turns))
 
 
 async def read_build(address: str, timeout: float) -> int:
@@ -531,6 +625,7 @@ async def read_build(address: str, timeout: float) -> int:
     async with BleakClient(device, timeout=20.0) as client:
         # The hardware revision string is where application 262152 onward reports its boot-time
         # Cp calibration ("Cp 8.76 pF", with " default" if the calibration fell back to 12 pF).
+        version = None
         for label, uuid in (("firmware revision", DIS_FIRMWARE_REVISION_UUID),
                             ("software revision", DIS_SOFTWARE_REVISION_UUID),
                             ("hardware revision", DIS_HARDWARE_REVISION_UUID)):
@@ -539,6 +634,8 @@ async def read_build(address: str, timeout: float) -> int:
             except Exception as error:  # noqa: BLE001
                 value = f"unreadable ({type(error).__name__})"
             print(f"{label}: {value}", flush=True)
+            if uuid == DIS_SOFTWARE_REVISION_UUID and value.isdigit():
+                version = int(value)
         # Absent before application 262162, and "not checked" until a measurement wake has run.
         try:
             mask = bytes(await client.read_gatt_char(MASK_CHECK_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
@@ -548,9 +645,15 @@ async def read_build(address: str, timeout: float) -> int:
         # Absent before application 262163, and "not checked" until the first wake has calibrated.
         try:
             cal = bytes(await client.read_gatt_char(ADC_CAL_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
-            print(f"ADC calibration: {describe_adc_calibration(cal, candidate)}", flush=True)
+            print(f"ADC calibration: {describe_adc_calibration(cal, candidate, version)}", flush=True)
         except Exception as error:  # noqa: BLE001
             print(f"ADC calibration: not offered by this build ({type(error).__name__})", flush=True)
+        # Only in application 262165 and builds that keep its experiment.
+        try:
+            exp = bytes(await client.read_gatt_char(CAL_EXPERIMENT_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
+            print(f"calibration experiment: {describe_calibration_experiment(exp)}", flush=True)
+        except Exception as error:  # noqa: BLE001
+            print(f"calibration experiment: not offered by this build ({type(error).__name__})", flush=True)
     return 0
 
 

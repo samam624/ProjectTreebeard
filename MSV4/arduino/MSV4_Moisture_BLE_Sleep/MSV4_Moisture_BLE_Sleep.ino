@@ -71,6 +71,8 @@ constexpr uint8_t PSEL_VDD = 9;      // SAADC_CH_PSELP_PSELP_VDD
 // Declared ahead of every function: the Arduino builder inserts auto-generated prototypes above
 // the first function definition, and those prototypes name these types.
 enum class SwapState : uint8_t { Open, A, B };
+// How much the battery lets a wake do; see the battery saver block above saverWanted().
+enum class PowerLevel : uint8_t { Full, Saving };
 // Minimal complex type. <complex> cannot be used: Arduino.h defines abs()/round() as macros and
 // they break libstdc++'s <complex>.
 struct cplx
@@ -267,6 +269,12 @@ static const uint8_t UUID128_CHR_ADC_CAL[16] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x
 static BLECharacteristic g_adcCalChar(UUID128_CHR_ADC_CAL);
 static bool g_adcCalCharReady = false;
 static char g_adcCalText[23] = "not checked";
+// The calibration experiment's counts, also in DIS (...0002); see saadcCalibrateArm().
+static const uint8_t UUID128_CHR_CAL_EXPERIMENT[16] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xa0,
+                                                       0x52, 0x4e, 0xc0, 0xad, 0x34, 0x56, 0x53, 0x4d};
+static BLECharacteristic g_calExpChar(UUID128_CHR_CAL_EXPERIMENT);
+static bool g_calExpCharReady = false;
+static char g_calExpText[23] = "not run";
 ResetSafeBLEDfu bledfu;
 static bool g_otaServiceReady = false;
 static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
@@ -279,7 +287,7 @@ static uint32_t g_lastAdvertOkMs = 0;
 static MoistureReading g_reading = {false, 0, 0, 0, 0, false};
 static char g_hardwareRev[24];
 static uint8_t g_wakesUntilMoisture = 0;   // 0 = measure on this wake
-static uint8_t g_wakesSinceBoot = 0;       // saturates; only compared with LONG_WINDOW_BOOT_WAKES
+static uint8_t g_wakesSinceBoot = 0;       // saturates; only compared with small counts
 
 // --------------------------------------------------------------------- DC/DC regulator -------
 // The nRF52840's main-stage DC/DC converter (REG1), requested since application version 262155.
@@ -634,10 +642,11 @@ static inline bool readAinMv(uint8_t ain, uint8_t osLog2, uint32_t tacqUs, float
 // which a probe in a window sees every day.
 // OVERSAMPLE is forced to bypass first so every calibration is taken in the same configuration,
 // whatever the previous read left behind.
-static bool saadcCalibrate()
+// The oversample argument exists only for the calibration experiment (saadcCalibrateArm()).
+static bool saadcCalibrate(uint32_t oversample = SAADC_OVERSAMPLE_OVERSAMPLE_Bypass)
 {
   NRF_SAADC->ENABLE = 0;
-  NRF_SAADC->OVERSAMPLE = SAADC_OVERSAMPLE_OVERSAMPLE_Bypass;
+  NRF_SAADC->OVERSAMPLE = oversample;
   NRF_SAADC->ENABLE = 1;
   NRF_SAADC->EVENTS_CALIBRATEDONE = 0;
   NRF_SAADC->TASKS_CALIBRATEOFFSET = 1;
@@ -824,41 +833,147 @@ static void allSafe()
 // of 2026-10-06 again, one wake at a time. Why a calibration lands there is not established.
 // The zero is the battery divider's own midpoint: with VBAT_DIV_EN low Q1 disconnects VBAT and
 // R9 holds AIN0 at ground. After each calibration that pin is read as a signed code, and a zero
-// SAADC_ZERO_MAX_LSB or more from nothing means the calibration is taken again, up to
-// SAADC_CAL_TRIES in all. THE LAST ONE STANDS WHATEVER IT READS: if the zero is not where this
+// SAADC_ZERO_MAX_LSB or more from where a good one sits means the calibration is taken again, up
+// to SAADC_CAL_TRIES in all. THE LAST ONE STANDS WHATEVER IT READS: if the zero is not where this
 // expects (Q1's leakage across R9, say), a wake costs two more calibrations and is otherwise
 // what it was before.
 // The outcome is the text of g_adcCalChar, "z+1 n1 r27 b0": this wake's zero in LSB and how many
 // calibrations it took, then the wakes of this boot that needed more than one, and those whose
 // last zero was still out. That text is an ABI with MSV4/scripts/msv4_adv_scan.py --read-build.
-// NOT MEASURED YET: what the zero reads on this board. 5 LSB is half the step that was seen.
-constexpr int32_t SAADC_ZERO_MAX_LSB = 5;
+// MEASURED on board 1 with 262163 (2026-10-11, wakes 6 to 29 of that boot): after a good
+// calibration the zero reads -3 to -7 LSB, not nothing (-5 in the middle on the wakes where the
+// check did not pick the calibration), and the two wakes that ended at +4 and +6 were the high
+// kind (the +4 wake's battery read 21 mV above its neighbours). 262163 centred its window on
+// nothing, so it repeated most good calibrations and let the +4 through. Since 262165 the window
+// is centred on SAADC_ZERO_CENTRE_LSB. Why a grounded input reads below zero is not established,
+// and neither is whether that moves with temperature: the text below keeps reporting it.
+// The zero itself scatters about 2 LSB either way at 16 samples, and the battery read on the same
+// pin does not follow it (262163, wakes 6 to 27), so it is this reading's own noise. Since 262165
+// it is taken over 64 samples, which is why it is only ever used to tell the two kinds apart and
+// never subtracted from a reading.
+constexpr int32_t SAADC_ZERO_CENTRE_LSB = -5;
+constexpr int32_t SAADC_ZERO_MAX_LSB = 5;   // half the step between the two kinds
+constexpr uint8_t SAADC_ZERO_OVERSAMPLE_LOG2 = 6;
 constexpr uint8_t SAADC_CAL_TRIES = 3;
 constexpr uint16_t SAADC_CAL_COUNT_MAX = 9999;   // what the text has room for
 static uint16_t g_calRepeatedWakes = 0;
 static uint16_t g_calBadWakes = 0;
 
+static bool saadcZeroOut(int32_t zero)
+{
+  const int32_t off = zero - SAADC_ZERO_CENTRE_LSB;
+  return off <= -SAADC_ZERO_MAX_LSB || off >= SAADC_ZERO_MAX_LSB;
+}
+
+// ------------------------------------------------------ calibration experiment (TEST, 262165) --
+// What makes one calibration in fifty land high is not known, so the board is asked. What the
+// record says so far (board 1, 2026-10-06 to 10-11): the high ones are a second, separate outcome
+// 9 to 12 LSB above the usual one with nothing in between; they come on 2.0 % of wakes with the
+// DC/DC converter on and 0.7 % on the linear regulator; and they keep no rhythm, hour of day or
+// memory of the wake before. Nordic's own account of the calibration is a coarse correction
+// ("around +-8 LSB" at 12 bits) set from a reference that noise moves.
+// So each wake's FIRST calibration is taken one of five ways, in rotation, and the wakes on
+// which it landed high are counted per way:
+//   0  as built: at once, converter on, RC clock, no oversampling
+//   1  with OVERSAMPLE at 32x while it calibrates
+//   2  CAL_LATER_US later, the CPU kept awake until then
+//   3  with the DC/DC converter switched off for the calibration
+//   4  with the 32 MHz crystal running
+// A calibration that has to be taken again is always taken way 0, so no reading depends on the
+// way that was being tried. The counts are the text of g_calExpChar, "e5 0 6 2 4 w1440": high
+// first calibrations for ways 0 to 4, then the wakes so far (a fifth of them each). A way whose
+// calibration once failed to finish shows T instead of a count and is not tried again: nothing
+// says a calibration completes with oversampling set, and each failure costs 200 ms awake.
+// That text is an ABI with MSV4/scripts/msv4_adv_scan.py --read-build. A way that reaches a day
+// with none against the others' five or six is the answer; take this block out again once it
+// has given one.
+constexpr uint8_t CAL_ARM_AS_BUILT = 0;
+constexpr uint8_t CAL_ARM_OVERSAMPLED = 1;
+constexpr uint8_t CAL_ARM_LATER = 2;
+constexpr uint8_t CAL_ARM_NO_DCDC = 3;
+constexpr uint8_t CAL_ARM_CRYSTAL = 4;
+constexpr uint8_t CAL_ARMS = 5;
+constexpr uint32_t CAL_LATER_US = 5000;
+constexpr uint32_t CAL_REGULATOR_SETTLE_US = 200;
+constexpr uint8_t CAL_ARM_COUNT_MAX = 99;        // what the text has room for
+constexpr uint32_t CAL_WAKES_SHOWN_MAX = 99999;
+static uint8_t g_calArmHigh[CAL_ARMS] = {};
+static bool g_calArmTimedOut[CAL_ARMS] = {};
+static uint32_t g_calWakes = 0;
+
+static bool saadcCalibrateArm(uint8_t arm)
+{
+  if (g_calArmTimedOut[arm]) return saadcCalibrate();
+  bool ok = false;
+  if (arm == CAL_ARM_OVERSAMPLED)
+  {
+    ok = saadcCalibrate(SAADC_OVERSAMPLE_OVERSAMPLE_Over32x);
+  }
+  else if (arm == CAL_ARM_LATER)
+  {
+    busyWaitUs(CAL_LATER_US);
+    ok = saadcCalibrate();
+  }
+  else if (arm == CAL_ARM_NO_DCDC && dcdcEnabled())
+  {
+    sd_power_dcdc_mode_set(NRF_POWER_DCDC_DISABLE);
+    busyWaitUs(CAL_REGULATOR_SETTLE_US);
+    ok = saadcCalibrate();
+    sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+  }
+  else if (arm == CAL_ARM_CRYSTAL)
+  {
+    requestHfxo();
+    ok = saadcCalibrate();
+    releaseHfxo();
+  }
+  else
+  {
+    ok = saadcCalibrate();
+  }
+  if (!ok) g_calArmTimedOut[arm] = true;
+  return ok;
+}
+
 static void saadcCalibrateChecked()
 {
   pinOutput(PIN_VBAT_DIV_EN, false);   // the zero: divider off, R9 to ground
+  const uint8_t arm = static_cast<uint8_t>(g_calWakes % CAL_ARMS);
+  g_calWakes++;
   int32_t zero = 0;
   uint8_t tries = 0;
   bool zeroRead = false;
   while (tries < SAADC_CAL_TRIES)
   {
-    saadcCalibrate();
+    if (tries == 0) saadcCalibrateArm(arm);
+    else saadcCalibrate();
     tries++;
-    zeroRead = saadcReadCode(static_cast<uint8_t>(AIN_VBAT + 1), 4, 40, zero);
+    zeroRead = saadcReadCode(static_cast<uint8_t>(AIN_VBAT + 1), SAADC_ZERO_OVERSAMPLE_LOG2, 40, zero);
+    if (tries == 1 && zeroRead && zero - SAADC_ZERO_CENTRE_LSB >= SAADC_ZERO_MAX_LSB &&
+        g_calArmHigh[arm] < CAL_ARM_COUNT_MAX)
+    {
+      g_calArmHigh[arm]++;
+    }
     // A zero that cannot be read checks nothing: keep this calibration, as before 262163.
-    if (!zeroRead || (zero > -SAADC_ZERO_MAX_LSB && zero < SAADC_ZERO_MAX_LSB)) break;
+    if (!zeroRead || !saadcZeroOut(zero)) break;
   }
+  char cell[CAL_ARMS][4];
+  for (uint8_t i = 0; i < CAL_ARMS; i++)
+  {
+    if (g_calArmTimedOut[i]) snprintf(cell[i], sizeof(cell[i]), "T");
+    else snprintf(cell[i], sizeof(cell[i]), "%u", (unsigned)g_calArmHigh[i]);
+  }
+  snprintf(g_calExpText, sizeof(g_calExpText), "e%s %s %s %s %s w%lu", cell[0], cell[1], cell[2],
+           cell[3], cell[4],
+           (unsigned long)(g_calWakes > CAL_WAKES_SHOWN_MAX ? CAL_WAKES_SHOWN_MAX : g_calWakes));
+  if (g_calExpCharReady) g_calExpChar.write(g_calExpText, strlen(g_calExpText));
   if (!zeroRead)
   {
     snprintf(g_adcCalText, sizeof(g_adcCalText), "read failed");
   }
   else
   {
-    const bool out = zero <= -SAADC_ZERO_MAX_LSB || zero >= SAADC_ZERO_MAX_LSB;
+    const bool out = saadcZeroOut(zero);
     if (tries > 1 && g_calRepeatedWakes < SAADC_CAL_COUNT_MAX) g_calRepeatedWakes++;
     if (out && g_calBadWakes < SAADC_CAL_COUNT_MAX) g_calBadWakes++;
     long shown = zero > 99 ? 99 : (zero < -99 ? -99 : zero);
@@ -935,12 +1050,23 @@ static bool readFrontEnd(float& senseMv, float& drvMv)
 // The floating reading takes out the two channels' own offsets. What is left besides a leak is
 // the change in U3's leakage between open and closed: 2 uA at most by its data sheet (IOZ), 2 mV
 // across R15. A 1 Mohm path reads 3.3 mV and a 100 kohm path 33 mV.
-// It runs after the sweep on every measurement wake and takes about 20 ms, at the 3.3 V the
-// sweep's own square wave reaches. The result is NOT in the packet (flags2 bit7 is still
-// unused): it is the DIS "String" characteristic, "A+0.3 B-0.1 mV", which
-// MSV4/scripts/msv4_adv_scan.py --read-build reads. That text is an ABI with that script.
-// NOT MEASURED YET: what a whole mask reads on this board. Nothing here judges the number.
+// It takes about 20 ms, at the 3.3 V the sweep's own square wave reaches, and runs after a sweep:
+// on every measurement wake in 262163, and since 262165 once in MASK_CHECK_EVERY_WAKES (a
+// day) and on a boot's first measurement wake. A mask does not change by the minute.
+// The result is NOT in the packet: it is the DIS "String" characteristic, "A+0.3 B-0.1 mV n2",
+// which MSV4/scripts/msv4_adv_scan.py --read-build reads. The number after n counts this boot's
+// checks (262165 onward), so a reader can tell a new result from the one it read before. That
+// text is an ABI with that script.
+// MEASURED on board 1 with 262163 (2026-10-11, 25 checks): -6.2 to +1.8 mV on either plate with
+// the mask whole, so one check cannot show a path above about 500 kohm. Nothing here judges the
+// number.
 constexpr uint32_t MASK_SETTLE_MS = 5;   // 40 or more of the filters' 100 us time constants
+constexpr uint16_t MASK_CHECK_EVERY_WAKES = 1440;
+constexpr uint16_t MASK_CHECK_COUNT_MAX = 9999;   // what the text has room for
+static uint16_t g_wakesSinceMaskCheck = MASK_CHECK_EVERY_WAKES;   // due on a boot's first measurement
+static uint16_t g_maskChecks = 0;
+
+static bool maskCheckDue() { return g_wakesSinceMaskCheck >= MASK_CHECK_EVERY_WAKES; }
 
 // Signed tenths of a millivolt as text; this printf has no %f.
 static void formatDeciMv(char* out, size_t size, char plate, float mv)
@@ -977,7 +1103,10 @@ static void checkMask()
     char a[10], b[10];
     formatDeciMv(a, sizeof(a), 'A', (drv[1] - sense[1]) - floating);
     formatDeciMv(b, sizeof(b), 'B', (drv[2] - sense[2]) - floating);
-    snprintf(g_maskText, sizeof(g_maskText), "%s %s mV", a, b);
+    // A check that could not be read is tried again on the next measurement wake, not a day on.
+    g_wakesSinceMaskCheck = 0;
+    if (g_maskChecks < MASK_CHECK_COUNT_MAX) g_maskChecks++;
+    snprintf(g_maskText, sizeof(g_maskText), "%s %s mV n%u", a, b, (unsigned)g_maskChecks);
   }
   else
   {
@@ -1504,7 +1633,9 @@ static MoistureReading takeMoistureReading()
 //                        calibrateCpAfterOpenReading()). Cd is then on the build's Cp: with the
 //                        usual zero it is the whole node capacitance, Cp included. Rsoil and Cm
 //                        are not affected.
-//                 bit7 = 0
+//                 bit7 = the battery saver is saving (262165 onward; see saverJudge()):
+//                        moisture is measured less often than the build's cadence, so fewer
+//                        packets are fresh and fewer wakes can be connected to.
 // Cp is no longer in the packet: it is published as the DIS hardware revision string instead
 // ("Cp 8.76 pF"; while bit6 is set, "Cp 0.00 pF default" or the build's own value and
 // " default"). The mask check (262162 onward) is not in the packet either: see checkMask().
@@ -1528,6 +1659,7 @@ static MoistureReading takeMoistureReading()
 #define ADV_FLAG2_FIT_WARM       (1U << 4)
 #define ADV_FLAG2_BURN           (1U << 5)
 #define ADV_FLAG2_CP_DEFAULT     (1U << 6)
+#define ADV_FLAG2_SAVER          (1U << 7)
 
 constexpr size_t MFG_LEN = 26;
 static_assert(3 /* Flags */ + 2 /* manufacturer-data header */ + MFG_LEN <= 31,
@@ -1562,6 +1694,98 @@ static_assert(SHORT_ADV_MS % 1000 == 0, "SHORT_ADV_MS must be whole seconds for 
 const uint32_t OTA_CONNECTED_HOLD_MS = 30000;
 // Let the DFU authorize response reach the client before the reset tears the radio down.
 const uint32_t DFU_RESPONSE_SETTLE_MS = 150;
+
+// --------------------------------------------------------------------------- battery saver ---
+// Since application version 262165 the wake's own battery reading decides how much the probe
+// does. The cell works between the BQ25504's load cut-off (3.37 V) and its charge limit (3.82 to
+// 3.83 V as this ADC reads it), and a board that reaches the cut-off stays dark until the panel
+// has brought the cell back above 3.73 V. Two levels (the maintainer, 2026-10-11: "the low
+// should be at the 3500 mv range, and there should be no critical"):
+//
+//   level     battery, falling (back at)   what changes
+//   Full      --                           nothing. The LED blinks twice before each sweep.
+//   Saving    below 3500 mV (3550)         no LED. Moisture on every 30th wake at most: the
+//                                          sweep and fit, and with them the connectable window,
+//                                          which only opens on that wake.
+//
+// NOT touched at either level: the one-minute wake and its packet (the receiver and the History
+// page date a boot by counting wakes of one minute), the +8 dBm transmit power, the short bursts,
+// and the connectable window on every measurement wake and on the first wakes of a boot (the
+// only way in). Saving begins at the OTA floor, so an update is refused there anyway.
+// The level changes only when SAVER_CONFIRM_WAKES wakes in a row read past the threshold: single
+// battery readings have stood 14-22 mV high about one wake in fifty. The first usable reading of
+// a boot sets the level at once, and a reading that cannot be used changes nothing.
+// Board 1's hourly battery readings have only run from 3.71 V (the discharge burn) to 3.84 V, so
+// it has never been near this level. On the receiver's battery scale 3500 mV is 3 %.
+// flags2 bit7 says the saver is saving. MSV4/scripts/test_msv4_battery_saver.py runs this rule
+// on made-up battery records and reads the constants below from this file.
+constexpr float SAVER_SAVING_BELOW_MV = 3500.0f;
+constexpr float SAVER_RETURN_MV = 50.0f;   // this far above the threshold before Saving is left
+constexpr uint8_t SAVER_CONFIRM_WAKES = 2;
+constexpr uint8_t SAVER_SAVING_EVERY_N_WAKES = 30;
+static PowerLevel g_powerLevel = PowerLevel::Full;
+static bool g_powerLevelSet = false;   // a battery reading has set the level this boot
+static uint8_t g_powerPendingWakes = 0;
+
+// The level one battery reading asks for, given the level in force: the threshold is crossed
+// downward at its own value and upward only SAVER_RETURN_MV above it.
+static PowerLevel saverWanted(PowerLevel now, float vbatMv)
+{
+  const float savingBelow = SAVER_SAVING_BELOW_MV + (now == PowerLevel::Saving ? SAVER_RETURN_MV : 0.0f);
+  return vbatMv < savingBelow ? PowerLevel::Saving : PowerLevel::Full;
+}
+
+// Called once per wake with that wake's battery reading.
+static void saverJudge(bool vbatOk, float vbatMv)
+{
+  if (!vbatOk)
+  {
+    g_powerPendingWakes = 0;
+    return;
+  }
+  const PowerLevel wanted = saverWanted(g_powerLevel, vbatMv);
+  if (!g_powerLevelSet || wanted == g_powerLevel)
+  {
+    g_powerLevel = wanted;
+    g_powerLevelSet = true;
+    g_powerPendingWakes = 0;
+    return;
+  }
+  if (++g_powerPendingWakes >= SAVER_CONFIRM_WAKES)
+  {
+    g_powerLevel = wanted;
+    g_powerPendingWakes = 0;
+  }
+}
+
+// Wakes from one moisture measurement to the next at the level in force. Never shorter than the
+// build's own cadence.
+static uint8_t saverMoistureEveryWakes()
+{
+  const uint8_t floorWakes = g_powerLevel == PowerLevel::Saving ? SAVER_SAVING_EVERY_N_WAKES : 0;
+  return MOISTURE_EVERY_N_WAKES > floorWakes ? MOISTURE_EVERY_N_WAKES : floorWakes;
+}
+
+// Two short blinks before a sweep, at Full with a battery reading to say so. One blink is a boot;
+// two are a measurement. The LED is dark again before the front end's first sample: D1 draws
+// about 1 mA through R10 (470 ohm) from the rail the sweep is measured on. Lit through a whole
+// one-second measurement it would add over a quarter to that measurement's charge (modelled);
+// these two blinks add about 2 %.
+// Not on a boot's first wake. That wake always measures and setup() has just blinked once: three
+// flashes together would read as the boot guard's three-blink escape.
+constexpr uint32_t LED_MEASURE_BLINK_MS = 30;
+constexpr uint32_t LED_MEASURE_GAP_MS = 120;
+static void ledAnnounceMeasurement()
+{
+  if (!g_powerLevelSet || g_powerLevel != PowerLevel::Full || g_wakesSinceBoot <= 1) return;
+  ledWrite(true);
+  delay(LED_MEASURE_BLINK_MS);
+  ledWrite(false);
+  delay(LED_MEASURE_GAP_MS);
+  ledWrite(true);
+  delay(LED_MEASURE_BLINK_MS);
+  ledWrite(false);
+}
 
 static void otaConnectCallback(uint16_t connHandle)
 {
@@ -1619,6 +1843,7 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
             (dcdcEnabled() ? ADV_FLAG2_DCDC_ON : 0) |
             (reading.valid && reading.warm ? ADV_FLAG2_FIT_WARM : 0) |
             (burnActive() ? ADV_FLAG2_BURN : 0) |
+            (g_powerLevel != PowerLevel::Full ? ADV_FLAG2_SAVER : 0) |
             (g_cpCalibrated ? 0 : ADV_FLAG2_CP_DEFAULT);
 
   Bluefruit.Advertising.clearData();
@@ -1789,6 +2014,12 @@ void setup()
   g_adcCalChar.setMaxLen(sizeof(g_adcCalText) - 1);
   g_adcCalCharReady = g_adcCalChar.begin() == ERROR_NONE;
   if (g_adcCalCharReady) g_adcCalChar.write(g_adcCalText, strlen(g_adcCalText));
+  // And the calibration experiment's counts. "not run" until the first wake has calibrated.
+  g_calExpChar.setProperties(CHR_PROPS_READ);
+  g_calExpChar.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  g_calExpChar.setMaxLen(sizeof(g_calExpText) - 1);
+  g_calExpCharReady = g_calExpChar.begin() == ERROR_NONE;
+  if (g_calExpCharReady) g_calExpChar.write(g_calExpText, strlen(g_calExpText));
 
   g_otaServiceReady = bledfu.begin() == ERROR_NONE;
   Bluefruit.Periph.setConnectCallback(otaConnectCallback);
@@ -1820,25 +2051,33 @@ void loop()
   float vbatMv = 0;
   const bool vbatOk = measureVbatMv(vbatMv) && vbatMv >= 2500.0f && vbatMv <= 5000.0f;
   burnJudge(vbatOk, vbatMv);
+  saverJudge(vbatOk, vbatMv);
   float tempC = 0;
   const bool tempOk = measureTemp(tempC) && tempC >= -40.0f && tempC <= 85.0f;
   // Taken at the start of the wake, before the sweep and the radio warm the die.
   int16_t dieTempQ4 = 0;
   const bool dieTempOk = measureDieTempQ4(dieTempQ4);
 
+  // The battery saver sets how far apart measurements are. A level that allows them closer is
+  // taken up on this wake instead of after the longer wait already counted out.
+  const uint8_t moistureEvery = saverMoistureEveryWakes();
+  if (g_wakesUntilMoisture > moistureEvery - 1) g_wakesUntilMoisture = moistureEvery - 1;
+
   // The full connectable window goes with every measurement attempt and with the first few wakes
   // after a boot; see SHORT_ADV_MS.
   const bool longWindow = g_wakesUntilMoisture == 0 || g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;
   if (g_wakesSinceBoot < 255) g_wakesSinceBoot++;
+  if (g_wakesSinceMaskCheck < MASK_CHECK_EVERY_WAKES) g_wakesSinceMaskCheck++;
   bool fresh = false;
   if (g_wakesUntilMoisture == 0)
   {
+    ledAnnounceMeasurement();
     g_reading = takeMoistureReading();
     fresh = g_reading.valid;
     // A failed sweep is retried on the next wake rather than left standing for the whole interval.
-    g_wakesUntilMoisture = g_reading.valid ? MOISTURE_EVERY_N_WAKES - 1 : 0;
-    // After the sweep, so the DC step cannot be in the reading it follows.
-    checkMask();
+    g_wakesUntilMoisture = g_reading.valid ? moistureEvery - 1 : 0;
+    // After the sweep, so the DC step cannot be in the reading it follows. Once a day.
+    if (maskCheckDue()) checkMask();
   }
   else
   {

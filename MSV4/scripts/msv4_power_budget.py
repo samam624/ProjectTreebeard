@@ -45,6 +45,7 @@ RX_SLOT_MS = 0.33                    # listen after each channel of a connectabl
 SLEEP_UA = (10.0, 15.0)              # MSV3's measured range, used for MSV4 until it is measured
 POINT_OVERHEAD_MS = 0.15             # front-end start and SAADC setup per phase point
 SETTLE_MS = 1.5                      # delay(2) ends on a tick boundary: 0.98-1.95 ms
+LED_MA = 1.0                         # D1 through R10 (470 ohm) at 3.3 V; never measured
 
 
 def phases(n: int, cap: int = 16) -> int:
@@ -69,6 +70,7 @@ class Config:
     phase_cap: int = 16
     oversample: int = 64
     orientations: int = 2
+    led_ms: float = 0.0          # LED lit per measurement (262165: two 30 ms blinks at Full)
 
     @property
     def interval_s(self) -> float:
@@ -105,8 +107,26 @@ def budget(c: Config, sleep_ua: float) -> dict[str, float]:
     sweep = busy_s * CPU_MA[r] + adc_s * SAADC_MA + total_s * TIMER_HFXO_MA * ratio
     fit = (FIT_AIR_AVERAGE_S if c.warm_fit else FIT_AIR_S) * CPU_MA[r]
     sleep = sleep_ua * 1e-3 * c.interval_s
-    return {"advertising": adv, "sweep": sweep, "fit": fit, "sleep": sleep,
-            "total": adv + sweep + fit + sleep}
+    led = c.led_ms * LED_MA / 1000.0
+    return {"advertising": adv, "sweep": sweep, "fit": fit, "sleep": sleep, "led": led,
+            "total": adv + sweep + fit + sleep + led}
+
+
+# The mask check (checkMask() in the sketch): three switch states, each a 5 ms settle and one
+# read of both front-end channels at 64x, then 1 ms. The CPU spins through the reads. Whether it
+# sleeps through the settles has not been measured, so both ends are given.
+MASK_STATES = 3
+MASK_SETTLE_MS = 5.0
+MASK_OVERSAMPLE = 64
+
+
+def mask_check(dcdc: bool = True) -> tuple[float, float, float]:
+    """(milliseconds, mC if the CPU sleeps through the settles, mC if it does not)."""
+    r = 1 if dcdc else 0
+    read_ms = MASK_STATES * 2 * MASK_OVERSAMPLE * ADC_CONVERSION_US / 1000.0
+    wait_ms = MASK_STATES * MASK_SETTLE_MS + 1.0
+    busy = read_ms * (CPU_MA[r] + SAADC_MA) / 1000.0
+    return read_ms + wait_ms, busy, busy + wait_ms * CPU_MA[r] / 1000.0
 
 
 def per_day(mc: float, interval_s: float) -> float:
@@ -159,6 +179,36 @@ def main() -> None:
     print(f"\nSleep alone is {per_day(budget(BASE, SLEEP_UA[0])['sleep'], 600):.2f}-"
           f"{per_day(budget(BASE, SLEEP_UA[1])['sleep'], 600):.2f} mAh/day at the assumed 10-15 uA; "
           f"at the chip's specified 3.2 uA it would be {3.2 * 24 / 1000:.2f}.")
+
+    # The battery saver of 262165: what each level is modelled to draw. Saving puts a floor under
+    # the wakes between measurements, so both builds come out the same there.
+    blinks = replace(BASE, led_ms=60.0)
+    levels = [
+        ("Full, production build (every 10th wake)", blinks),
+        ("Full, one-minute test build (every wake)", replace(blinks, wakes=1)),
+        ("Saving (below 3500 mV): every 30th wake, no LED", replace(BASE, wakes=30)),
+        ("for scale, LED lit through a 1 s measurement, production", replace(BASE, led_ms=1000.0)),
+        ("for scale, the same on the one-minute test build", replace(BASE, wakes=1, led_ms=1000.0)),
+    ]
+    print("\nBattery saver levels (262165), mAh/day with sleep at 10 / 15 uA")
+    for name, cfg in levels:
+        low, high = (per_day(budget(cfg, s)["total"], cfg.interval_s) for s in SLEEP_UA)
+        print(f"{name:58}{low:>6.2f} /{high:>5.2f}")
+    led = budget(blinks, SLEEP_UA[0])
+    print(f"Two 30 ms blinks are {led['led']:.2f} mC against {led['sweep'] + led['fit']:.1f} mC for the sweep and "
+          f"fit they announce ({led['led'] / (led['sweep'] + led['fit']):.1%}).")
+
+    # The mask check, per check and per day at each of the rates it has run or could run at.
+    ms, low, high = mask_check()
+    measure = led["sweep"] + led["fit"]
+    print(f"\nMask check: {ms:.0f} ms and {low:.3f}-{high:.3f} mC a check (CPU asleep or awake through its settles), "
+          f"{low / measure:.1%}-{high / measure:.1%} of the sweep and fit it follows.")
+    for name, checks, cfg in (("after every sweep, one-minute test build", 1440, replace(blinks, wakes=1)),
+                              ("after every sweep, production build", 144, blinks),
+                              ("once a day (262165)", 1, blinks)):
+        day = per_day(budget(cfg, sum(SLEEP_UA) / 2)["total"], cfg.interval_s)
+        print(f"  {name:42}{checks * low / 3600:>9.5f}-{checks * high / 3600:.5f} mAh/day"
+              f"{checks * low / 3600 / day:>8.2%}-{checks * high / 3600 / day:.2%} of that build's day")
 
     # The receiver listens 25 ms in every 75, on one channel at a time, so it hears any one
     # advertising event with probability about 1/3 (uploads, which stop the scan for 2-3 s, are

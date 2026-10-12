@@ -159,7 +159,9 @@ Inferred, not measured:
 - **The tip thermistor is not reading the temperature of whatever sets the resistance.** It
   peaked 1.5 hours after the die at 80 % of the die's swing; the resistance turned hours after
   that. A thermistor on the board, epoxied at the tip, can be warmed down the board from the end
-  in air faster than the soil around the electrodes warms.
+  in air faster than the soil around the electrodes warms. *(2026-10-11: not borne out. That
+  was the settling day. On the settled dry day and after the watering the resistance follows
+  the tip in step at 2 %/°C: `MSV4_NTC_VS_DIE_TEMPERATURE_2026-10-11.md`.)*
 - **3.7–4.9 %/°C is about twice what ion mobility in water gives** (the 2 %/°C the correction
   assumes). With 15 kΩ and 28 pF where the field solve's wet, full-contact soil gives 355 Ω and
   671 pF, the current is not flowing through bulk wet soil against the whole mask, and nothing

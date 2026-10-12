@@ -164,6 +164,8 @@ across board 1's boots). So `Cd` in air is a per-boot number:
 |---|---|---:|---|
 | 10 | 2026-10-08 21:47:10 | 13.72 pF | in air after the epoxy, 20:39–21:39: `Cd` 13.46–13.50 pF on `Cp` 8.93, so 22.41 pF at the node; this boot calibrated `Cp` 8.69 on its first reading, part-way in |
 | 10 | 2026-10-08 22:07:55 | 13.72 pF | 262161, with that `Cp` compiled in; DIS read `Cp 8.69 pF default` |
+| 10 | 2026-10-11 11:52:48 | 13.72 pF | 262163, the same `Cp` compiled in; DIS read `Cp 8.69 pF default` at 11:56. `Cd` 32.39 pF on the last reading before the update, 32.32 pF on the first after; receiver reflashed 11:59 |
+| 10 | 2026-10-11 13:03:43 | 13.72 pF | 262165, the same `Cp` compiled in; DIS read `Cp 8.69 pF default` at 13:07; receiver reflashed 13:09 |
 
 - **Every boot needs its own entry, and a reading from a boot without one gets no value**, on
   the page and in the script alike. `Cp` is not in the packet, so nothing else says which `Cp`

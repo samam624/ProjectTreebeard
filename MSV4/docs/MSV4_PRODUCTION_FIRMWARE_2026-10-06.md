@@ -20,7 +20,10 @@ unattended: it wakes once a minute, measures, advertises to the DisplayCenter re
 | Eighth build | `MSV4-BUILD:prod-2026-10-07c`, application version 262159: the seventh build under a new label (two bytes differ). On board 1 2026-10-08 13:49–18:59 PDT |
 | Ninth build | `MSV4-BUILD:prod-2026-10-08`, application version 262160: `Cp` is calibrated only after a sane moisture reading in air, never at boot; flags 2 bit 6 says when it has not been. On board 1 2026-10-08 18:59–22:07 PDT. See "`Cp` is calibrated only after an open reading" |
 | One-minute TEST build | `MSV4-BUILD:fast1min-2026-10-08`, application version 262161: the ninth build with `-MoistureEveryNWakes 1` (moisture measured on every wake, every wake connectable) and `-CpCentiPf 869` (the `Cp` board 1 was running on when it was updated in soil). See "One-minute test build" |
-| Mask check TEST build, **built 2026-10-09, NOT installed** | `MSV4-BUILD:fast1min-mask-2026-10-09`, application version 262162: the one-minute test build plus a DC leak test of the solder mask after every sweep, published as a DIS string. See "Mask check" |
+| Mask check TEST build, **built 2026-10-09, never installed** | `MSV4-BUILD:fast1min-mask-2026-10-09`, application version 262162: the one-minute test build plus a DC leak test of the solder mask after every sweep, published as a DIS string. See "Mask check" |
+| Checked-calibration TEST build | `MSV4-BUILD:fast1min-adczero-2026-10-10`, application version 262163: 262162 plus an ADC offset calibration checked against a zero. On board 1 2026-10-11 11:52–13:02 PDT. See "Checked ADC calibration" |
+| Battery saver TEST build, **built 2026-10-11, never installed** | `MSV4-BUILD:fast1min-saver-2026-10-11`, application version 262164: 262163 plus a three-level battery saver. Superseded the same day by 262165 |
+| Calibration-experiment TEST build | `MSV4-BUILD:fast1min-calexp-2026-10-11`, application version 262165, on board 1 from 2026-10-11 13:03 PDT: 262163 plus a battery saver (one saving level, below 3500 mV), two LED blinks before each measurement at full battery, the mask check once a day, the calibration check re-centred on what board 1 read, and an experiment on what makes a calibration land high. See "Battery saver, measurement LED, daily mask check and calibration experiment" |
 | Advertised name | `MSV4-MOISTURE-010` |
 | Build | `MSV4\scripts\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId 10 -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType` |
 | Install | `MSV4\scripts\msv4_ble_ota.py <zip> --board 1` (run `--preflight-only` first) |
@@ -589,8 +592,11 @@ stays; a hand at every reading; soil then air, where it calibrates as usual) and
   bit 4 there"). Its timing has not been taken.
 - **Reading-to-reading scatter at one minute:** `Rsoil` 18.70–18.87 kΩ over four readings
   (0.9 % end to end), `Cm` 16.4–16.8 pF, `Cd` 21.63–21.69 pF.
+- **`Rsoil` came down 7 % in the first quarter of an hour** (20.2 → 18.8 kΩ) while `Cm` and
+  `Cd` crept up, with the tip steady at 25.25 °C. That is what soil closing on a freshly
+  inserted blade would do; inferred, nothing else was observed.
 
-### Mask check (262162, built 2026-10-09, not installed)
+### Mask check (262162, built 2026-10-09; first run on board 1 inside 262163, 2026-10-11)
 
 The maintainer, 2026-10-09 ~21:00 PDT: "can we add this to firmware? mask quality check". It
 came out of the first day in soil (`MSV4_SOIL_THERMAL_FIRST_DAY_2026-10-09.md`): the plates reach
@@ -634,7 +640,7 @@ Before installing, read the board's DIS `Cp` again: if it is no longer `8.69 pF`
 the value it shows. *(Superseded on 2026-10-10 by 262163 below, which contains this check; the
 262162 package was never installed.)*
 
-### Checked ADC calibration (262163, built 2026-10-10, not installed)
+### Checked ADC calibration (262163, built 2026-10-10, installed 2026-10-11 11:52)
 
 The maintainer, 2026-10-10 ~23:15 PDT, on the battery spikes diagnosed in the addendum to "The
 battery reading depended on the boot" below: "set it up for the next probe flash, not important
@@ -677,9 +683,226 @@ cadence. Before installing:
 3. Afterwards the new boot needs its own entry in `AIR_BASELINES`
    (`msv4_experimental_moisture.py`) and `MSV4_AIR_BASELINES` (`MobileAppPage.h`), and the
    receiver a reflash, or the two experimental History cards go blank for that boot by design.
-- **`Rsoil` came down 7 % in the first quarter of an hour** (20.2 → 18.8 kΩ) while `Cm` and
-  `Cd` crept up, with the tip steady at 25.25 °C. That is what soil closing on a freshly
-  inserted blade would do; inferred, nothing else was observed.
+
+**On board 1, in the Alocasia pot, 2026-10-11.** The maintainer, ~11:48 PDT: "Do the flash but
+keep the 1 min cadence". DIS read `Cp 8.69 pF default` at 11:50, so the package stood as built.
+262163 went on over BLE at the 11:51:59 measurement wake (old counter 3705; 38 s of transfer,
+first session, −68 dBm). All of this is measured.
+
+| Time (PDT) | Image, counter | `Rsoil` | `Cm` | `Cd` | Battery | Tip |
+|---|---|---:|---:|---:|---:|---:|
+| 11:50:58 | 262161, 3704 | 3,531 Ω | 109.9 pF | 32.35 pF | 3802 mV | 21.50 °C |
+| 11:51:59 | 262161, 3705 | 3,537 Ω | 110.5 pF | 32.39 pF | 3818 mV | 21.50 °C |
+| 11:52:48 | **262163**, 1 | 3,529 Ω | 111.7 pF | 32.32 pF | 3797 mV | 21.75 °C |
+| 11:53:44 | 262163, 2 | 3,516 Ω | 109.9 pF | 32.18 pF | 3799 mV | 21.75 °C |
+| 11:54:44 | 262163, 3 | 3,513 Ω | 109.9 pF | 32.39 pF | 3802 mV | 21.50 °C |
+| 11:55:44 | 262163, 4 | 3,519 Ω | 109.9 pF | 32.42 pF | 3799 mV | 21.75 °C |
+
+- **The reading carried straight across.** DIS reads `MSV4-BUILD:fast1min-adczero-2026-10-10`
+  / `262163` / `Cp 8.69 pF default`; every wake is fresh and connectable, DC/DC on from
+  counter 2. 262161 had run 3705 wakes without a reset.
+- **The receiver was reflashed at 11:59** with the new boot's air value (build
+  `2026-10-11 msv4-air-baseline-262163`): sensor 10 received at wakes 8 and 9, uploads
+  `HTTP 200`, the served page carries the new entry.
+- **The mask check reads its own scatter and no leak.** 25 reads over wakes 5 to 29: plate A
+  −5.3 to +1.8 mV, plate B −6.2 to +1.8 mV, 22 of the 25 within ±3.5 mV on both, and the two
+  plates move together (the floating reading they share is what scatters). A leak can only read
+  positive. So one reading cannot show a path above about 500 kΩ (6 mV); nothing near the 33 mV
+  of 100 kΩ has been seen.
+- **The calibration check's window was in the wrong place.** The zero it tests against does not
+  read nothing on this board. Last zero of each wake, wakes 6 to 29, as `zero / calibrations`:
+
+  `−6/3 +6/3 −3/2 −4/1 −4/3 −4/3 −5/3 −4/1 −6/3 −4/1 −3/1 −4/1 −4/1 +4/2 −4/3 −6/3 −7/3 −3/1 −4/1 −4/1 −5/3 −5/3 −4/3 −6/3`
+
+  Twenty-two of the twenty-four sit at −3 to −7 LSB and two at +4 and +6. On the twelve wakes
+  where the check ran out of tries, and so did not pick the calibration, the good ones centre
+  on −5. 262163 accepts only zeros under 5 LSB either side of nothing, so it repeated the
+  calibration on 19 of the first 29 wakes and 10 ended outside its window. Of the nine of
+  those whose zero was read, eight were good ones at −5 to −7 and one was the +6.
+- **The zero is the right instrument.** The wake that ended at +4 (counter 19, 12:10:44) is the
+  only one of the 24 the receiver stored from the boot's first 27 whose battery read high:
+  3820 mV against 3797–3802 mV on the others, and its tip read 21.75 °C between wakes at
+  22.00 °C. That is the fault the check was built for, and 262163 let it through because +4 is
+  inside its window. The counter 7 wake (+6) was lost to the receiver's reflash. The last
+  262161 wake before the update, 3818 mV, has the same signature on the old image.
+- **262163 as installed does not fix the high battery readings and may add to them.** It costs
+  up to two more calibrations on most wakes, a few milliseconds each. Worse, a wake now draws
+  up to three calibrations and stops on the first zero inside its window, and a +4 is inside
+  it: so a high calibration has more chances to be the one that stands (inferred from the
+  rule). Counted over its whole run, 11:52 to 13:02: 4 of the 68 stored wakes read 12 mV or
+  more above the rest (counters 19, 32, 46 and 70, at 3816–3820 mV), 5.9 % against 2.0 % on
+  the builds before it; that many by chance is about 1 in 20. At counter 70 its own count
+  stood at 52 of 70 wakes with a repeated calibration and 35 ended outside its window. Only the battery reading and the
+  tip thermistor carry the fault (the tip a quarter-degree low on those wakes); `Rsoil`, `Cm`
+  and `Cd` do not. 262165 moves the window (below).
+- Not established: why a grounded input reads 3 to 7 LSB below zero, and whether that moves
+  with temperature. All twenty-four zeros were taken with the die at 25.0–26.5 °C.
+
+### Battery saver, measurement LED, daily mask check and calibration experiment (262165, built 2026-10-11, installed 13:03 the same day)
+
+The maintainer, 2026-10-11 ~11:48 PDT: "begin work on a battery aware firmware implementation
+that restricts the highest power using features at low battery. In addition add a feature that
+pulses the LED when a measurement is being taken at high battery and goes away at low battery
+to save power." A first build, 262164, had three levels (Saving below 3700 mV, Critical below
+3550 mV); it was never installed. The maintainer, ~12:30 PDT: "I don't like the low and critical
+levels, the low should be at the 3500 mv range, and there should be no critical. Try and figure
+out the battery read spikes, still looks like an ADC or timing error. How much time/ energy does
+the mask check burn? Can we set it to once a day rather than every wake?" 262165 is the answer
+to both messages.
+
+**Battery saver.** Each wake's battery reading puts the probe at one of two levels
+(`saverJudge()` in the sketch):
+
+| Level | Battery, falling (back at) | On the receiver's battery scale | What changes |
+|---|---|---:|---|
+| Full | — | above 3 % | Nothing. The LED blinks twice before each sweep |
+| Saving | below 3500 mV (3550 mV) | 3 % (4 %) | No LED. Moisture on every 30th wake at most; the connectable window only ever opens on a measurement wake, so it thins out with it |
+
+- **The level changes only on two wakes in a row** past the threshold: single battery readings
+  stand 14–22 mV high about one wake in fifty. The first usable reading of a boot sets the
+  level at once. A reading that cannot be used changes nothing, and the LED stays dark until a
+  reading has said Full.
+- **When Saving ends, measurements at the build's own spacing start on that wake**, not after
+  the longer wait already counted out.
+- **Flags 2 bit 7 says the saver is saving.** It was the packet's last free bit.
+  `msv4_adv_scan.py` prints `BATTERY SAVER`; the receiver ignores the bit, so on the History
+  page Saving shows only as fewer fresh readings.
+- **Not touched at either level:** the one-minute wake and its packet (the History page and
+  `msv4_experimental_moisture.py` date a boot by counting one-minute wakes), the +8 dBm
+  transmit power, the short bursts, and the connectable window on every measurement wake and
+  on a boot's first three wakes.
+- **Saving begins exactly at the OTA floor** (3500 mV), so while the battery reads below it an
+  update is refused anyway. In the 50 mV on the way back up an update is allowed and a
+  connectable wake comes every 30 minutes: `msv4_ble_ota.py --app-timeout 1900`.
+- Board 1's hourly battery medians since the evening of 2026-10-06 run from 3705 mV (the
+  discharge burn) to 3839 mV, so it has never been within 200 mV of this level. The load
+  cut-off is 3.37 V.
+
+Modelled (`msv4_power_budget.py`; no current has been measured), mAh/day with sleep at
+10 / 15 µA: Full on the production build 0.57 / 0.69, Full on the one-minute test build
+2.26 / 2.38, Saving on either 0.44 / 0.56.
+
+**The LED.** Two 30 ms blinks 120 ms apart, finished before the front end's first sample: D1
+draws about 1 mA through R10 from the rail the sweep is measured on. Not on a boot's first wake,
+where `setup()` has just blinked once and three flashes together would read as the boot guard's
+escape. **One blink is a boot; two are a measurement.** Until now the start-up blink was the
+only time the LED lit, so a blue blink meant a reset; from this build it does not by itself.
+The two blinks are 0.06 mC against 3.5 mC for the sweep and fit they announce. Lit through a
+whole one-second measurement instead, the LED would cost about 1 mC a measurement: 0.04 mAh/day
+more at the production cadence and 0.38 more on the one-minute build (all modelled).
+
+**The mask check now runs once a day.** What it costs (modelled, `msv4_power_budget.py`):
+
+| | |
+|---|---:|
+| One check: three switch states, a 5 ms settle and two 64-sample reads each | 21 ms |
+| Charge for one check, CPU asleep through the settles / awake through them | 0.021 / 0.074 mC |
+| Against the sweep and fit it follows (3.5 mC) | 0.6 % / 2.1 % |
+| After every sweep on the one-minute build (262163, as installed) | 0.008–0.029 mAh/day, 0.4–1.3 % of that build's day |
+| After every sweep on the production build | 0.0008–0.003 mAh/day, 0.1–0.5 % |
+| Once a day (262165) | nothing that shows |
+
+- It runs on a boot's first measurement wake and then on the first measurement wake after
+  1440 wakes. A check that cannot be read is tried again on the next measurement wake.
+- **The text now ends in a count**, `A-5.3 B-6.2 mV n2`: this boot's checks so far. A result
+  can be a day old, and the count is how a reader tells a new one from the one it read before.
+- One check still scatters about ±6 mV with the mask whole (measured on 262163, above), so one
+  check a day cannot show a path above about 500 kΩ. Averaging several passes in the daily
+  check would narrow that; not built.
+
+**The calibration check, and an experiment to find what makes a calibration land high.** See
+"Addendum 2026-10-11" under "The battery reading depended on the boot" for what the record
+shows. In this build:
+
+- The check's window is centred on −5 LSB, where board 1's usual calibrations leave the zero,
+  and still 5 LSB either side: a zero of −9 to −1 is kept, and the +4 and +6 that 262163 let
+  through or ended on are taken again.
+- The zero is read over 64 samples instead of 16, because the reading itself scatters.
+- **Each wake's first calibration is taken one of five ways, in rotation**, and the wakes on
+  which it landed high are counted per way (`saadcCalibrateArm()`):
+
+  | Way | The first calibration is taken |
+  |---|---|
+  | 0 | as built: at once, converter on, RC clock, no oversampling |
+  | 1 | with `OVERSAMPLE` at 32× while it calibrates |
+  | 2 | 5 ms later, the CPU kept awake until then |
+  | 3 | with the DC/DC converter switched off for the calibration |
+  | 4 | with the 32 MHz crystal running |
+
+  A calibration that has to be taken again is always taken way 0, so no reading depends on
+  the way being tried. The counts are a new DIS string (the sketch's own UUID ending `…0002`),
+  `e5 0 6 2 4 w1440`: high first calibrations for ways 0 to 4, then the wakes so far. `T` in
+  place of a count means that way's calibration once failed to finish and is no longer tried.
+  `msv4_adv_scan.py --read-build` prints it with each way's share of the wakes.
+- **What to expect.** On the one-minute build each way gets 288 wakes a day. At the 2.0 %
+  measured so far that is five or six high ones a day for a way that changes nothing; a way
+  that reaches a day with none has a chance of about 1 in 300 of having done so by luck.
+- The experiment is a test block. It comes out again once it has named a way.
+
+Checks run: `test_msv4_battery_saver.py` (the rule replayed wake by wake on thirteen made-up
+battery records, with its lines checked as source text) passes; the scanner self-test,
+`verify_msv4_packet_abi.mjs` (now also ties bit 7, the window's centre, the mask text's count,
+the experiment's text and UUID, and the one-minute wake) and the other MSV4 tests pass; the
+build compiles with no warnings, 156,048 bytes; `msv4_ble_ota.py --preflight-only` passes for
+board 1 (installed 262163).
+
+**On board 1, in the Alocasia pot, 2026-10-11.** The maintainer, ~13:00 PDT: "ok flash the
+fix". DIS read `Cp 8.69 pF default` at 13:01. 262165 went on over BLE at the 13:02:44 wake (old
+counter 71; 48 s of transfer, first session, −67 dBm; the tool reported the last packet receipt
+as late and the bootloader's image check passed). All of this is measured, over the boot's
+first 33 wakes.
+
+- **It runs.** DIS reads `MSV4-BUILD:fast1min-calexp-2026-10-11` / `262165` /
+  `Cp 8.69 pF default`; counters 1 to 4 heard from 13:03:43, every wake fresh and connectable,
+  DC/DC on from counter 2. The receiver was reflashed at 13:09 with this boot's air value
+  (build `2026-10-11 msv4-air-baseline-262165`).
+- **The check now does what it was built for.** Two first calibrations landed high and were
+  taken again; no wake ended outside the window; none of the 30 stored wakes reads the battery
+  12 mV or more above the rest (3793 to 3807 mV). 262163 had 4 such wakes in 68.
+- **The experiment runs, and every way finishes** (no `T`). After 33 wakes: as built 0 of 7,
+  oversampled 0 of 7, 5 ms later 1 of 7, DC/DC off 1 of 6, on the crystal 0 of 6. Far too few
+  to rank them. What one count already says: switching the converter off for the calibration
+  did not prevent a high one.
+- **The five ways leave no mark on their wakes.** Each way's wakes against the wakes either
+  side: battery within 1.3 mV, tip within 0.03 °C.
+- **The mask check ran once**, `A-1.8 B-2.6 mV n1`, and the count was still 1 thirty wakes
+  later.
+- **The readings across the update: no step that stands clear of the afternoon climb.** Two
+  straight lines, one through the wakes before and one through the wakes after (the first two
+  left out), compared at 13:03:
+
+  | | 30 wakes each side | 20 wakes each side | The 11:52 update, 30 each side |
+  |---|---:|---:|---:|
+  | `Rsoil` | +5.6 Ω (1.4 σ) | +3.2 Ω (0.8 σ) | +2.0 Ω (0.5 σ) |
+  | `Cm` | +0.22 pF (1.9 σ) | +0.37 pF (2.6 σ) | +0.27 pF (1.7 σ) |
+  | `Cd` | +0.07 pF (0.9 σ) | +0.24 pF (3.0 σ) | −0.01 pF (0.1 σ) |
+  | Soil-coupled capacitance | +0.29 pF (1.8 σ) | +0.61 pF (3.2 σ) | +0.26 pF (1.4 σ) |
+  | Moisture number in use | −8 (1.2 σ) | −5 (0.7 σ) | −3 (0.5 σ) |
+  | Tip | +0.01 °C | +0.01 °C | +0.01 °C |
+
+  `Cm` was climbing 1.4 pF an hour with the afternoon and not in a straight line, which is why
+  the two windows disagree. `Cm` comes out 0.2 to 0.4 pF up at both updates of the day, and the
+  11:52 one changed nothing that happens before a sweep; so a restart itself may cost a few
+  tenths of a pF (inferred). In the weight comparison that is 1 to 2 g on `Cm` and the
+  soil-coupled capacitance, and 2 to 8 g on `Cd` if the larger figure is the true one.
+- **Not seen: the LED.** Nothing here can tell whether it blinks.
+
+Not known:
+
+- Whether a calibration completes at all with `OVERSAMPLE` set. If it does not, that wake spins
+  200 ms once and the way shows `T`.
+- What the zero reads over 64 samples. The window's centre was measured at 16.
+- Whether switching the converter off and on around a calibration disturbs anything else on
+  that wake. Compare the battery and tip readings of every fifth wake with the rest.
+- Whether the blinks leave any mark on the reading that follows. Compare `Cd` and `Rsoil`
+  across the update.
+- What the warm-start fit does 30 minutes apart, at Saving. A warm fit that is refused falls
+  back to the four cold starts, about 2 s more awake (measured in air on 2026-10-07).
+
+Package: `MSV4/.arduino-build/msv4-out/MSV4_Moisture_BLE_Sleep-v262165-fast1min-calexp-2026-10-11-signed-ota.zip`,
+built with `-MoistureEveryNWakes 1 -CpCentiPf 869`, sensor 10: still the one-minute test
+cadence. Before installing: read the board's DIS `Cp` (rebuild if it is no longer `8.69 pF`);
+afterwards the new boot needs its entry in both air-value tables and the receiver a reflash.
 
 ## The battery reading depended on the boot (found and fixed 2026-10-06)
 
@@ -737,6 +960,78 @@ consecutive one-minute readings, 2026-10-08 22:10 to 2026-10-10 19:10 (262161):
   wake turned a bias that lasted a whole boot into a one-minute outlier on one wake in fifty.
   **Why a calibration lands about 9 LSB off is not established.**
 - **A fix is built and not installed:** 262163, "Checked ADC calibration" above.
+
+### Addendum 2026-10-11: what makes a calibration land high
+
+The maintainer, ~12:30 PDT: "Try and figure out the battery read spikes, still looks like an ADC
+or timing error." It is the ADC: the chip's own offset calibration has two outcomes on this
+board, and noise decides which. No timing fault was found. What follows is from board 1's
+stored history (6,613 packets, 2026-10-06 20:03 to 2026-10-11 12:36 PDT), 262163's DIS strings,
+and Nordic's sources. A "high" wake is one whose battery reads 12 mV or more above the median
+of the ten wakes either side.
+
+**Measured.**
+
+- **Two outcomes and nothing between them.** On 262161's 3,624 stored wakes the battery sits
+  within ±7 mV of its neighbours or 12 to 22 mV above them (77 wakes, most often 16 mV, which
+  is 9 LSB at the pin); one wake in all read between 8 and 11 mV. The zero 262163 reads says
+  the same: −3 to −7 LSB on 22 wakes, +4 and +6 on two.
+- **It is the stored offset, not one bad sample.** Every reading of a high wake carries the
+  same step: the zero, the battery read after it, and the tip (0.12 °C low is what +9 LSB on
+  both of its readings works out to).
+- **Three times as often with the DC/DC converter on.** Images that calibrate every wake:
+
+  | Regulator | Boots | High wakes |
+  |---|---|---:|
+  | Linear | 262153, 262154, and 262158 while its burn held the converter off | 7 of 964 (0.7 %) |
+  | DC/DC | 262155, 262157, 262158 after its burn, 262159, 262160, 262161 | 110 of 5,487 (2.0 %) |
+
+  Seven where nineteen would be expected is about a 1 in 1,000 chance. The two groups are also
+  different days and builds, so this is an association, not yet a cause.
+- **No rhythm.** Gaps between high wakes run from 1 to 383 wakes with no preferred spacing; the
+  wake after a high one is high 2 times in 72 (2.8 %); no period from 2 s to 130 s folds them
+  together, other than the wake's own 60 s. So it is not a slow, regular outside event such as
+  the harvester's sampling.
+- **No hour of day.** 25 of 1,070 wakes from 09:00 to 17:00 and 31 of 1,654 from 20:00 to
+  06:00 (2.3 % and 1.9 %).
+- **No clear tie to die temperature or battery level.** 1.3 % to 3.4 % across five bands of die
+  temperature, not in order; 1.4 % to 2.7 % across three bands of battery voltage.
+
+**From Nordic.**
+
+- **The sketch calibrates the way upstream does.** The Adafruit core's `analogCalibrateOffset()`
+  and Nordic's `nrfx_saadc_offset_calibrate()` both enable the converter, trigger
+  `CALIBRATEOFFSET` and wait for `CALIBRATEDONE`, as `saadcCalibrate()` does. nrfx then starts
+  and stops once on a scratch buffer to drop "spurious samples that may appear after
+  calibration" (nRF52840 anomaly 237); that concerns samples, not the stored offset.
+- **The calibration is coarse and noise moves it.** A Nordic engineer on DevZone (case 59827,
+  nRF52840, 2020): "The built-in calibration uses an analog reference to compensate for the
+  offset, but this reference is susceptible to thermal noise that will give a slightly
+  different offset each time", and "The calibration DAC is around +-2 LSB10b (+-8 LSB12b)."
+  The customer there saw readings jump 7 and 11 counts after calibrations, now and then. That
+  is this board's 9 to 12.
+
+**Inferred.** The correction is set in steps of about 9 LSB and board 1's true offset sits
+near the edge between two of them. Usually the calibration picks one; when noise at that
+instant tips it, it picks the other. The converter's ripple is more noise, which is why it
+happens more with the converter on. Nothing here tests that directly.
+
+**Tried and dropped: subtracting the zero.** Nordic's advice in that thread is to measure a
+zero and subtract it. The board has a zero (the battery divider's midpoint with the divider
+off), so this was checked on 262163's wakes 6 to 27: it takes the high wake down from +21 mV to
++7 mV but widens the other eighteen from a 3 mV spread to 7 mV, because the zero read on that
+100 kΩ node scatters about 2 LSB either way and the battery read does not follow it. So the
+zero is used only to tell the two outcomes apart, and a high calibration is taken again.
+
+**What 262165 does about it** (built, not installed): the window is put where the usual
+outcome sits, the zero is read over 64 samples, and an experiment rotates the first
+calibration of each wake through five ways (as built, oversampled, 5 ms later, converter off,
+crystal on) and counts the high ones for each. See "Battery saver, measurement LED, daily mask
+check and calibration experiment".
+
+Sources: Nordic DevZone case 59827 "SAADC calibration on nRF52840"; Nordic `nrfx`
+`drivers/src/nrfx_saadc.c`; nRF52840 Rev 3 errata, anomaly 237; the Adafruit nRF52 core 1.7.0
+`wiring_analog_nRF52.c` installed on this machine.
 
 ## Where the code comes from
 

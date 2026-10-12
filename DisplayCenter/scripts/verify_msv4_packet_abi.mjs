@@ -255,9 +255,14 @@ assert.match(page, /function msv3ReferenceExcessPercent\(row\) \{\s*if \(!row\) 
 assert.match(probe, /constexpr uint16_t UUID16_CHR_STRING = 0x2A3D;/);
 assert.match(scanner, /^MASK_CHECK_UUID = "00002a3d-0000-1000-8000-00805f9b34fb"$/m);
 assert.match(probe, /snprintf\(out, size, "%c%c%ld\.%ld", plate, sign, deci \/ 10, deci % 10\);/);
-assert.match(probe, /snprintf\(g_maskText, sizeof\(g_maskText\), "%s %s mV", a, b\);/);
-assert.ok(scanner.includes(String.raw`re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV", text)`),
-  "The scanner must decode the probe's mask text and nothing looser.");
+// From 262165 the text ends in the count of this boot's checks, so a reader can tell a new result
+// from the one it read before; 262163's text has no count and must still decode.
+assert.match(probe, /snprintf\(g_maskText, sizeof\(g_maskText\), "%s %s mV n%u", a, b, \(unsigned\)g_maskChecks\);/);
+assert.ok(scanner.includes(String.raw`re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV(?: n(\d+))?", text)`),
+  "The scanner must decode the probe's mask text, with or without the count, and nothing looser.");
+// Once a day and on a boot's first measurement wake, still after the sweep of the same wake.
+assert.match(probe, /static uint16_t g_wakesSinceMaskCheck = MASK_CHECK_EVERY_WAKES;/);
+assert.match(probe, /if \(maskCheckDue\(\)\) checkMask\(\);/);
 assert.match(probe, /checkMask\(\);\s*\}\s*else\s*\{\s*g_wakesUntilMoisture--;/,
   "The DC step belongs after the sweep of the same wake, never before it.");
 assert.match(probe, /const float floating = drv\[0\] - sense\[0\];/,
@@ -277,11 +282,49 @@ assert.equal(adcUuidBytes?.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$
   scanner.match(/^ADC_CAL_UUID = "([0-9a-f-]+)"$/m)?.[1], "The sketch and the scanner must name the same characteristic.");
 assert.equal(Number(probe.match(/constexpr int32_t SAADC_ZERO_MAX_LSB = (\d+);/)?.[1]),
   Number(scanner.match(/^ADC_ZERO_MAX_LSB = (\d+)\b/m)?.[1]));
+// From 262164 the window is centred where board 1's good calibrations leave the zero, and the
+// scanner judges a build's text against that build's own centre.
+assert.equal(Number(probe.match(/constexpr int32_t SAADC_ZERO_CENTRE_LSB = (-?\d+);/)?.[1]),
+  Number(scanner.match(/^ADC_ZERO_CENTRE_LSB = (-?\d+)$/m)?.[1]));
+assert.match(scanner, /^ADC_ZERO_CENTRED_FROM_VERSION = 262165$/m);
+assert.match(probe, /const int32_t off = zero - SAADC_ZERO_CENTRE_LSB;\s*return off <= -SAADC_ZERO_MAX_LSB \|\| off >= SAADC_ZERO_MAX_LSB;/);
+assert.match(scanner, /state = "in" if abs\(zero - centre\) < ADC_ZERO_MAX_LSB else "OUT"/);
 assert.match(probe, /pinOutput\(PIN_VBAT_DIV_EN, false\);\s*\/\/ the zero: divider off, R9 to ground/,
   "The zero is only a zero with the battery divider switched off.");
 assert.match(probe, /saadcCalibrateChecked\(\);\s*float vbatMv = 0;/,
   "Every wake calibrates, checked, before its first reading.");
-assert.match(probe, /if \(!zeroRead \|\| \(zero > -SAADC_ZERO_MAX_LSB && zero < SAADC_ZERO_MAX_LSB\)\) break;/,
+assert.match(probe, /if \(!zeroRead \|\| !saadcZeroOut\(zero\)\) break;/,
   "A calibration is repeated only on a zero that was read and is out; the last one always stands.");
+
+// ---- Calibration experiment (application 262165): a second DIS string of the sketch's own ----
+// Each wake's first calibration is taken one of five ways in rotation; the text counts the high
+// ones per way. Whatever way is being tried, a calibration taken again is taken the old way.
+assert.match(probe, /snprintf\(g_calExpText, sizeof\(g_calExpText\), "e%s %s %s %s %s w%lu", cell\[0\],/);
+assert.match(probe, /if \(g_calArmTimedOut\[i\]\) snprintf\(cell\[i\], sizeof\(cell\[i\]\), "T"\);\s*else snprintf\(cell\[i\], sizeof\(cell\[i\]\), "%u", \(unsigned\)g_calArmHigh\[i\]\);/);
+assert.ok(scanner.includes(String.raw`re.fullmatch(r"e(\d+|T) (\d+|T) (\d+|T) (\d+|T) (\d+|T) w(\d+)", text)`),
+  "The scanner must decode the probe's experiment text and nothing looser.");
+const expUuidBytes = probe.match(/UUID128_CHR_CAL_EXPERIMENT\[16\] = \{([^}]+)\};/)?.[1]
+  .split(",").map((b) => Number(b).toString(16).padStart(2, "0")).reverse().join("");
+assert.equal(expUuidBytes?.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5"),
+  scanner.match(/^CAL_EXPERIMENT_UUID = "([0-9a-f-]+)"$/m)?.[1], "The sketch and the scanner must name the same characteristic.");
+assert.equal(Number(probe.match(/constexpr uint8_t CAL_ARMS = (\d+);/)?.[1]),
+  scanner.match(/^CAL_EXPERIMENT_ARMS = \(([^)]*)\)$/m)?.[1].split(",").length,
+  "The scanner must name as many ways as the sketch rotates through.");
+assert.match(probe, /if \(tries == 0\) saadcCalibrateArm\(arm\);\s*else saadcCalibrate\(\);/,
+  "Only a wake's first calibration is the experiment's; a repeat is always the plain one.");
+
+// ---- Battery saver (flags2 bit7, application 262165): the last free bit of the packet ----
+// The probe measures moisture less often when its battery is below 3500 mV. The bit says so; the
+// scanner decodes it and the receiver ignores it (the readings mean what they always did, there
+// are only fewer fresh ones). Saving never loosens the rule above: a measurement wake is
+// connectable.
+assert.match(probe, /#define ADV_FLAG2_SAVER\s+\(1U << 7\)/);
+assert.match(probe, /\(g_powerLevel != PowerLevel::Full \? ADV_FLAG2_SAVER : 0\) \|/);
+assert.match(scanner, /^FLAG2_SAVER = 1 << 7$/m);
+assert.match(scanner, /"saver": bool\(flags2 & FLAG2_SAVER\),/);
+assert.match(probe, /const uint8_t moistureEvery = saverMoistureEveryWakes\(\);\s*if \(g_wakesUntilMoisture > moistureEvery - 1\) g_wakesUntilMoisture = moistureEvery - 1;/,
+  "The saver may only ever shorten a wait that is already counted out, never move the wake itself.");
+assert.match(probe, /const uint32_t WAKE_PERIOD_MS = 60000;/,
+  "The History page and msv4_experimental_moisture.py date a boot by counting one-minute wakes.");
 
 console.log("MSV4 packet ABI: probe, receiver, scanner, History page and cloud function agree.");
