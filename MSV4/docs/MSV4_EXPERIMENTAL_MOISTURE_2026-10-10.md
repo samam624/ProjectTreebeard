@@ -511,10 +511,21 @@ watering between them, at its own per gram, beside what the scale lost:
 **Update 20:34 on 10-11: the evening weighing.** The maintainer reported 4993, 4992 and
 4992 g "right now" at 20:34. Median 4992 g, a spread of 1 g. The scale therefore fell 68 g
 from the morning median over 9 h 41 min and now reads 319 g above the driest recorded weighing.
-Whether the pot was lifted between readings and whether water was standing in the saucer were
-not stated. The fleet ledger preserves that uncertainty, and the competition script lists this
-weighing but does not score it until the saucer condition is known; the 68 g is a measured scale
-change, not yet a claimed change in soil water.
+Whether the pot was lifted between readings was not stated. The maintainer subsequently confirmed
+that the saucer will remain dry until the next watering, so this weighing is eligible for scoring.
+
+The comparable dry-saucer mass trend after the watering is:
+
+| Weighing | Median mass | Change over interval | Mean interval rate |
+|---|---:|---:|---:|
+| 10-10 23:54 | 5105 g | baseline | - |
+| 10-11 10:53 | 5060 g | -45 g in 10 h 59 min | -4.1 g/h |
+| 10-11 20:34 | 4992 g | -68 g in 9 h 41 min | -7.0 g/h |
+
+Overall: **-113 g in 20 h 40 min**, averaging **-5.5 g/h** or **-131 g/day**. The current
+mass is about 318 g above the immediate pre-watering mass of 4674 g; about 74% of the first
+dry-saucer post-watering mass gain remains. These are scale-mass changes; the experiment still
+has to determine how much of each interval the probe metrics track.
 
 ## Is the 1 kΩ series resistor the right size? (asked 2026-10-11)
 

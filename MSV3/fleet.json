@@ -352,9 +352,9 @@
       "plant": "Alocasia",
       "mass": {
         "verified": "2026-10-11",
-        "latest_source": "maintainer stated 2026-10-11 at 20:34 PDT: 'also 4993 4992 4992 weight for pot right now 8:34 pm add that to the tracker'",
+        "latest_source": "maintainer stated 2026-10-11 after the 20:34 PDT weighing: 'saucer will remain dry till next watering'. This confirms that the 4993, 4992 and 4992 g readings at 20:34 had no standing saucer water.",
         "source": "maintainer stated 2026-10-10 ~13:57 PDT: 'It says 4697 with the pot on after Tate capacity is 11.46lbs' (read as: the kitchen scale shows 4697 g with the pot on it after taring, and the scale's capacity is 11.46 lb). OBSERVED in a photo the maintainer sent at ~13:59 PDT: a glazed black-and-white checkered ceramic pot standing in a terracotta saucer, BOTH on the scale, display 4697; the scale is on a white shelf beside a window. Maintainer stated ~14:05 PDT: '4691 is with saucer, plan is to water it and not remove any excess water, just have it collect in saucer and evaporate'. So the weight INCLUDES the saucer. That message says 4691 where the earlier one and the photo say 4697; the maintainer confirmed ~14:10 PDT that it was 4697 ('Yeah it was 4697'). The watering described is a PLAN, not yet stated as done. The photo shows where the pot was weighed, not where it normally sits. Before that, ~13:50 PDT: 'I do have a kitchen scale but I'm getting the pot is around 10 lbs'. Both stated BEFORE the watering the maintainer plans for that evening; no watering has been stated as done.",
-        "value": "4992 g median of 4993, 4992 and 4992 g on the maintainer's kitchen scale, 2026-10-11 20:34 PDT: pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; whether water was standing in the saucer was not stated",
+        "value": "4992 g median of 4993, 4992 and 4992 g on the maintainer's kitchen scale, 2026-10-11 20:34 PDT: pot with soil, plant and MSV4 board 1 planted, INCLUDING its dry terracotta saucer",
         "weighing_convention": "pot and saucer together, with whatever water is standing in the saucer (maintainer's plan, 2026-10-10: excess water is left in the saucer to evaporate). Water standing in the saucer is in the weight but not in the soil, so each weighing needs a note of whether the saucer held water.",
         "scale": "the maintainer's kitchen scale: capacity 11.46 lb (5198 g) as stated; the reading was given to 1 g, its resolution was not stated. 501 g above the pot as weighed, less anything that was tared out.",
         "log": [
@@ -436,8 +436,7 @@
             "grams": 4993,
             "at": "2026-10-11T20:34:00-07:00",
             "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
-            "saucer_water": "unknown: the maintainer did not state the saucer condition",
-            "exclude_from_gravimetric_fit": true,
+            "saucer_water": "no: maintainer subsequently confirmed that the saucer will remain dry until the next watering",
             "note": "the first of three back-to-back readings reported by the maintainer"
           },
           {
@@ -445,8 +444,7 @@
             "grams": 4992,
             "at": "2026-10-11T20:34:00-07:00",
             "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
-            "saucer_water": "unknown: the maintainer did not state the saucer condition",
-            "exclude_from_gravimetric_fit": true,
+            "saucer_water": "no: maintainer subsequently confirmed that the saucer will remain dry until the next watering",
             "note": "the second of three back-to-back readings reported by the maintainer"
           },
           {
@@ -454,8 +452,7 @@
             "grams": 4992,
             "at": "2026-10-11T20:34:00-07:00",
             "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
-            "saucer_water": "unknown: the maintainer did not state the saucer condition",
-            "exclude_from_gravimetric_fit": true,
+            "saucer_water": "no: maintainer subsequently confirmed that the saucer will remain dry until the next watering",
             "note": "the third of three back-to-back readings reported by the maintainer"
           }
         ],
