@@ -407,8 +407,9 @@ weighing needs an `at` time there). Each candidate is paired with each weighing 
 grams of water**: how far the weighings sit from its line (miss), how far it strays from a
 straight line through a settled day with no watering (daily wobble: a pot dries through a day,
 and falling with it is not an error), and its scatter inside an hour. A weighing taken within
-two hours of a watering is paired with the hour after those two; one with water in the saucer is
-marked.
+two hours of a watering is paired with the hour after those two; one with standing water in the
+saucer is marked. The porous terracotta saucer can also retain absorbed water after standing
+water is gone, so a "dry" saucer row means no standing water, not zero saucer water.
 
 ```
 python MSV4/scripts/msv4_moisture_competition.py data/sensor_logs/msv4_sensor10_all_2026-10-10.csv
@@ -514,7 +515,7 @@ from the morning median over 9 h 41 min and now reads 319 g above the driest rec
 Whether the pot was lifted between readings was not stated. The maintainer subsequently confirmed
 that the saucer will remain dry until the next watering, so this weighing is eligible for scoring.
 
-The comparable dry-saucer mass trend after the watering is:
+The no-standing-water mass trend after the watering is:
 
 | Weighing | Median mass | Change over interval | Mean interval rate |
 |---|---:|---:|---:|
@@ -524,8 +525,14 @@ The comparable dry-saucer mass trend after the watering is:
 
 Overall: **-113 g in 20 h 40 min**, averaging **-5.5 g/h** or **-131 g/day**. The current
 mass is about 318 g above the immediate pre-watering mass of 4674 g; about 74% of the first
-dry-saucer post-watering mass gain remains. These are scale-mass changes; the experiment still
-has to determine how much of each interval the probe metrics track.
+no-standing-water post-watering mass gain remains. The maintainer confirmed that the terracotta
+saucer absorbed moisture and had been evaporating it all day. Therefore the 113 g is total-system
+mass loss from the pot, plant and saucer, not 113 g of soil moisture loss at the blade.
+
+Rerun through 20:57: all seven candidates undercount the latest 68 g scale loss, reporting 4 to
+26 g. That is expected if part of the 68 g evaporated from the saucer: the probe cannot see that
+water. This interval must not be used by itself to call the soil metrics insensitive or to choose
+a winner; the amount of absorbed saucer water was not measured.
 
 ## Is the 1 kΩ series resistor the right size? (asked 2026-10-11)
 
