@@ -26,8 +26,9 @@ const api = new Function(`${page.slice(start, end)};
            MSV4_SWEEP_DIVISORS };`)();
 const row = (fields) => ({ moisture_scale: 4, ...fields });
 
-// ---- Battery: the receiver logged 74 % for 3825 mV; the plain curve gives 46 % ----
-assert.equal(api.msv4BatteryMvToPercent(3825), 74);
+// ---- Battery: plain curve gives 46 % for 3825 mV; the MSV4 plateau (3820 mV) is 100 % ----
+assert.equal(api.msv4BatteryMvToPercent(3825), 100);
+assert.equal(api.msv4BatteryMvToPercent(3800), 89);
 assert.equal(api.batteryMvToPercent(3825), 46);
 assert.equal(api.msv4BatteryMvToPercent(3889), 100);
 assert.equal(api.msv4BatteryMvToPercent(3369), 0);

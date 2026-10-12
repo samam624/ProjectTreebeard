@@ -1965,10 +1965,19 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     const MSV4_EC_TEMPCO_PER_C = 0.02;
     const MSV4_EC_REFERENCE_C = 25;
     const MSV4_BATTERY_EMPTY_MV = 3369;
-    const MSV4_BATTERY_FULL_MV = 3889;
+    const MSV4_BATTERY_FULL_MV = 3820;
+    const MSV3_BATTERY_FULL_MV = 3870;
+    const MSV3_UNREWORKED_SENSOR_ID = 7;
 
     function isMsv4Row(row) {
       return row != null && Number(row.moisture_scale) === MSV4_MOISTURE_SCALE;
+    }
+
+    // MSV3 (scale 2/3) with the lowered harvester ceiling: the plain curve scaled so
+    // MSV3_BATTERY_FULL_MV is 100 %. Port of msv3BatteryMvToPercent() in the firmware.
+    function msv3BatteryMvToPercent(mv) {
+      const percent = interpolateBatteryPercent(mv) * 100 / interpolateBatteryPercent(MSV3_BATTERY_FULL_MV);
+      return Math.round(Math.min(100, percent));
     }
 
     // Share of the cell's usable charge: the standard curve rescaled between the harvester's
@@ -2141,7 +2150,9 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           continue;
         }
 
-        const rawPct = row.msv4 ? msv4BatteryMvToPercent(row.rawBatteryMv) : batteryMvToPercent(row.rawBatteryMv);
+        const rawPct = row.msv4 ? msv4BatteryMvToPercent(row.rawBatteryMv)
+          : row.msv3Ceiling ? msv3BatteryMvToPercent(row.rawBatteryMv)
+          : batteryMvToPercent(row.rawBatteryMv);
         if (smoothed === null) {
           smoothed = rawPct;
         } else {
@@ -2341,6 +2352,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         rawCharging: r.raw_charging,
         batteryPercent: r.battery_percent,
         msv4: isMsv4Row(r),
+        msv3Ceiling: (Number(r.moisture_scale) === 2 || Number(r.moisture_scale) === 3) &&
+          Number($("historySensorSelect").value) !== MSV3_UNREWORKED_SENSOR_ID,
       }));
       const batteryPercentPoints = smoothBatterySeries(batteryRows, params);
       const batteryMillivoltPoints = rawBatteryMillivoltSeries(batteryRows);

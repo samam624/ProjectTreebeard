@@ -429,7 +429,18 @@ const float MSV4_MOISTURE_UNITS_PER_DECADE = 10000.0f;
 // (nominal resistor values, MSV4/docs/MSV4_PROBE_BOM_2026-09-16.md), so an MSV4 battery only ever
 // moves through that slice of the LiPo curve.
 const float MSV4_BATTERY_EMPTY_MV = 3369.0f;
-const float MSV4_BATTERY_FULL_MV = 3889.0f;
+// The nominal VBAT_OV is 3889 mV, but the BQ25504 tapers the charge current as it nears that
+// ceiling and the cell parks lower: board 1 sat at a median of 3806-3820 mV (max 3832-3857) on
+// 10-09..10-12 with the harvester finished. 3820 mV is that plateau, so a charged cell reads 100 %.
+const float MSV4_BATTERY_FULL_MV = 3820.0f;
+// MSV3 (scale 2/3) probes with the 2026-09-14 VBAT_OV rework: nominal ceiling 3897 mV, but probe 4
+// (the one with a panel) plateaus at p95 3866-3869 / max 3879 mV for days. The curve is scaled so
+// that plateau is 100 %; the bottom of the curve is untouched so the low-battery flag still fires
+// where it did.
+const float MSV3_BATTERY_FULL_MV = 3870.0f;
+// Probe 7 was NOT reworked (R11 5.62M / R14 4.42M, ceiling ~4.26 V) and floats near 4.2 V, so it
+// keeps the plain curve. Mirrored in MobileAppPage.h.
+const uint8_t MSV3_UNREWORKED_SENSOR_ID = 7;
 // MSV4 application version 262150 grew the packet from 23 to 26 bytes: bytes 23-24 are the
 // nRF52840 die temperature (quarter-degrees C, the board end of the probe, not the soil) and
 // byte 25 is a second flags byte whose bit0 marks that temperature valid. The 23-byte packet
@@ -10011,14 +10022,29 @@ uint8_t msv4BatteryMvToPercent(float mvolts)
   return (uint8_t)(percent + 0.5f);
 }
 
-uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool msv4)
+// MSV3 with the lowered harvester ceiling: the plain curve scaled so MSV3_BATTERY_FULL_MV is 100 %.
+uint8_t msv3BatteryMvToPercent(float mvolts)
+{
+  float percent = interpolateBatteryPercent(mvolts) * 100.0f / interpolateBatteryPercent(MSV3_BATTERY_FULL_MV);
+  if (percent > 100.0f) percent = 100.0f;
+  return (uint8_t)(percent + 0.5f);
+}
+
+static uint8_t batteryMvToPercentFor(uint8_t sensorId, float rawMv, bool msv4, bool wideRaw)
+{
+  if (msv4) return msv4BatteryMvToPercent(rawMv);
+  if (wideRaw && sensorId != MSV3_UNREWORKED_SENSOR_ID) return msv3BatteryMvToPercent(rawMv);
+  return batteryMvToPercent(rawMv);
+}
+
+uint8_t calibrateRawBattery(uint8_t sensorId, float rawMv, bool msv4, bool wideRaw)
 {
   if (sensorId > MAX_SENSOR_ID)
   {
-    return msv4 ? msv4BatteryMvToPercent(rawMv) : batteryMvToPercent(rawMv);
+    return batteryMvToPercentFor(sensorId, rawMv, msv4, wideRaw);
   }
 
-  float raw = msv4 ? msv4BatteryMvToPercent(rawMv) : batteryMvToPercent(rawMv);
+  float raw = batteryMvToPercentFor(sensorId, rawMv, msv4, wideRaw);
 
   if (!smoothedBatteryReady[sensorId])
   {
@@ -10382,7 +10408,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
       {
         faulted.rawBatteryMv = rawBatteryMv;
         faulted.rawCharging = rawCharging;
-        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4);
+        faulted.batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4, wideRaw);
       }
       portEXIT_CRITICAL(&sensorsMux);
       sensorDataDirty = true;
@@ -10461,7 +10487,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     // physical wake in the EMA or race another callback for this sensor's filter state.
     if (hasRaw)
     {
-      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4);
+      batteryPercent = calibrateRawBattery(sensorId, (float)rawBatteryMv, msv4, wideRaw);
     }
     const bool useTemperatureCompensatedPresentation =
         temperatureCompensationResult.valid &&
