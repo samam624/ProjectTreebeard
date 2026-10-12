@@ -96,6 +96,26 @@ assert.ok(
   "Local and cloud web apps must use the same three-tier thresholds (0-100 normal, strictly-negative-above-danger warn, at-or-below-danger red).",
 );
 
+// The water-now range is marked under the meter on all three surfaces, between the same two
+// constants, and only for a region-calibrated sensor.
+assert.match(
+  firmware,
+  /void drawWaterNowRange[\s\S]*?MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT \+ \(long\)MOISTURE_DANGER_PERCENT \* positiveSpan \/ 100L/,
+  "Firmware must mark the water-now range from the danger threshold to the watering line.",
+);
+assert.equal(
+  firmware.match(/if \(moistureRangeMarked\(/g)?.length,
+  4,
+  "The range mark belongs to the two full draws and the two value-changed clears of a regular card, and nowhere else.",
+);
+for (const [label, source] of [["Local app", localApp], ["Cloud app", cloudApp]]) {
+  assert.ok(
+    source.includes("barPercent(MOISTURE_DANGER_PCT)") && source.includes("barPercent(MOISTURE_WATER_LINE_PCT) - rangeLow") &&
+      source.includes("water-now-range") && source.includes("autoCal.region === true"),
+    `${label} must mark the same water-now range under its meter, for region-calibrated sensors only.`,
+  );
+}
+
 // The three surfaces must actually flash/blink the danger state, not just color it red -
 // "overdue" is meant to be visually distinct from "just yellow".
 assert.match(firmware, /applyLowMoistureBlink/, "Firmware must still blink the danger state.");

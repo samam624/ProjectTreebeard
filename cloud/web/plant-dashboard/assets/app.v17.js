@@ -478,13 +478,13 @@ function renderPlant(plant) {
   const card = plant.card || {};
   const reading = plant.reading || {};
   const name = card.plant || "Probe " + (plant.sensor ?? "--");
-  const { pct, healthCls: moistureClass, waterNow } = resolveMoisture(card, reading);
+  const { pct, healthCls: moistureClass, waterNow, region } = resolveMoisture(card, reading);
   const battery = reading.batteryPercent;
   const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
   const art = card.art || "sprout_pot";
   return '<article class="plant"><div class="plant-head"><div class="plant-title"><h3 class="plant-name">' + escapeHtml(name) + '</h3><div class="meta">Probe ' + escapeHtml(plant.sensor ?? "--") + '</div></div><img class="plant-art" src="' + escapeHtml(artSrc(art)) + '" alt=""></div>' +
     metric("Moisture", String(reading.moisture ?? "--") + " display / " + (waterNow ? "Water now" : String(pct ?? "--") + "%"), moistureClass) +
-    bar(pct, moistureClass) +
+    bar(pct, moistureClass, region) +
     metric("Battery", battery == null ? "--" : String(battery) + "%", batteryClass) +
     metric("RSSI", String(reading.rssi ?? "--") + " dBm") +
     metric("Age", formatAge(reading.ageMs)) +
@@ -600,7 +600,7 @@ function resolveMoisture(card, reading) {
   // A region-calibrated sensor (autoCal.region, the cloud's water-now region) says so below its
   // watering line, as the physical display and the receiver's own page do.
   const waterNow = autoReady && autoCal.region === true && pct != null && pct < MOISTURE_WATER_LINE_PCT;
-  return { pct, healthCls: healthClass(pct), waterNow };
+  return { pct, healthCls: healthClass(pct), waterNow, region: autoReady && autoCal.region === true };
 }
 
 // pct is signed/unclamped-below-zero - route it through barPercent() for the bar's width,
@@ -608,9 +608,15 @@ function resolveMoisture(card, reading) {
 // (MOISTURE_BAR_NEGATIVE_WIDTH_PCT of the bar's width) - the same position barPercent(0)
 // computes - not at MOISTURE_WATER_LINE_PCT itself, which is now the alert-threshold VALUE
 // (0), not a bar position.
-function bar(pct, className) {
-  return '<div class="bar ' + escapeHtml(className) + '" style="--pct:' + String(barPercent(pct)) + '%">' +
-    '<span></span><div class="water-line" style="left:' + MOISTURE_BAR_NEGATIVE_WIDTH_PCT + '%"></div></div>';
+// markRange: the water-now range, a bracket under the meter from the overdue line to the
+// watering line, on a region-calibrated sensor only. Mirrors drawWaterNowRange() in the sketch.
+function bar(pct, className, markRange = false) {
+  const rangeLow = barPercent(MOISTURE_DANGER_PCT);
+  const range = markRange
+    ? '<div class="water-now-range"><span style="left:' + rangeLow + '%;width:' + (barPercent(MOISTURE_WATER_LINE_PCT) - rangeLow) + '%"></span></div>'
+    : "";
+  return '<div class="bar ' + escapeHtml(className) + (markRange ? " has-range" : "") + '" style="--pct:' + String(barPercent(pct)) + '%">' +
+    '<span></span><div class="water-line" style="left:' + MOISTURE_BAR_NEGATIVE_WIDTH_PCT + '%"></div></div>' + range;
 }
 
 function metric(label, value, className = "") {

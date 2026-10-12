@@ -35,6 +35,13 @@ function gridForCardCount(count) {
   return [4, 4];
 }
 
+const rangeMarkRows = Number(source.match(/const int MOISTURE_RANGE_MARK_ROWS = (\d+);/)?.[1]);
+check(rangeMarkRows > 0, "the water-now range mark height is missing");
+check(
+  source.match(/const int moistRowBottom = y \+ h - 6 \+ MOISTURE_RANGE_MARK_ROWS;/g)?.length === 2,
+  "both value-changed clears must reach down over the water-now range mark",
+);
+
 const panelWidth = 480;
 const panelHeight = 320;
 const padding = 6;
@@ -71,6 +78,7 @@ for (let count = 1; count <= 16; count += 1) {
   const moistureBarY = cardHeight - 14;
   check(artBottom <= moistureLabelY - 4, `${count} cards: sprite and moisture label overlap`);
   check(moistureBarY + 8 <= cardHeight - 6, `${count} cards: moisture bar leaves the card`);
+  check(moistureBarY + 8 + rangeMarkRows <= cardHeight - 2, `${count} cards: the water-now range mark reaches the card border`);
   check(innerWidth >= 82, `${count} cards: Moisture plus a five-digit value cannot fit`);
 }
 

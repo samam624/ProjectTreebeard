@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-11 water-now-region-v1"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-11 water-now-region-v2"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -5712,6 +5712,36 @@ void drawBar(int x, int y, int w, int h, int16_t percent, uint16_t fillColor, ui
   }
 }
 
+// The water-now range, marked under a region-calibrated card's meter (2026-10-11; the
+// maintainer's pick of the two in DisplayCenter/docs/WATER_NOW_METER_MOCKUP_2026-10-11.png). A
+// small bracket from the overdue line (MOISTURE_DANGER_PERCENT) to the watering line
+// (MOISTURE_WATER_LINE_PERCENT, the meter's dotted marker): the stretch of the meter in which
+// the card says WATER NOW.
+//
+// It lies wholly BELOW drawBar()'s own rectangle, so a bar repaint (every blink tick while a
+// card is overdue) never touches it, and it is drawn only where the moisture row has just been
+// painted: once in each full draw, and in the data-only paths only inside the value-changed
+// clear, which reaches down over it for that reason. Regular cards only - a compact card
+// (h < 76, thirteen cards and up) has no rows left under its bar.
+const int MOISTURE_RANGE_MARK_ROWS = 3; // a tick row, then two rows of line
+
+bool moistureRangeMarked(bool stale, bool calibrated, bool region)
+{
+  return !stale && calibrated && region;
+}
+
+void drawWaterNowRange(int barX, int barY, int barW, int barH, uint16_t color)
+{
+  const long positiveSpan = 100L - MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT;
+  const int lowPct = clampInt((int)(MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT + (long)MOISTURE_DANGER_PERCENT * positiveSpan / 100L), 0, 100);
+  const int lowX = barX + 2 + (barW - 4) * lowPct / 100;
+  const int highX = barX + 2 + (barW - 4) * MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT / 100;
+  const int topY = barY + barH;
+  tft.drawFastVLine(lowX, topY, MOISTURE_RANGE_MARK_ROWS, color);
+  tft.drawFastVLine(highX, topY, MOISTURE_RANGE_MARK_ROWS, color);
+  tft.fillRect(lowX, topY + 1, highX - lowX + 1, MOISTURE_RANGE_MARK_ROWS - 1, color);
+}
+
 const PlantSprite* spriteForArt(const char* art)
 {
   return findPlantSpriteByKey(art);
@@ -6242,6 +6272,10 @@ void drawPlantCard(
   }
   drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, surfaceColor);
   drawBar(x + 7, y + h - 14, w - 14, 8, moisturePct, moistureColor, backgroundColor);
+  if (moistureRangeMarked(stale, calibrated, region))
+  {
+    drawWaterNowRange(x + 7, y + h - 14, w - 14, 8, warningColor);
+  }
 }
 
 void drawPlantCardDataOnly(PlantArtSlot& slot)
@@ -6312,12 +6346,16 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
       // Reach exactly to the art band's bottom edge so no uncovered strip can retain a
       // stale sprite pixel after a value-width change.
       const int artBottomY = y + 24 + max(24, h - 57);
-      const int moistRowBottom = y + h - 6;
+      const int moistRowBottom = y + h - 6 + MOISTURE_RANGE_MARK_ROWS; // over the range mark too
       const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
       if (moistureRowShowsLabel(moistureText))
       {
         drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      }
+      if (moistureRangeMarked(stale, slot.calibrated, slot.region))
+      {
+        drawWaterNowRange(x + 7, y + h - 14, w - 14, 8, slot.warningColor);
       }
     }
     drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, slot.surfaceColor);
@@ -6694,6 +6732,10 @@ void drawPlantCardDetail(PlantArtSlot& slot)
   }
   drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);
   drawBar(x + 7, y + h - 14, w - 14, 8, s.moisturePct, s.moistureColor, slot.backgroundColor);
+  if (moistureRangeMarked(s.stale, slot.calibrated, slot.region))
+  {
+    drawWaterNowRange(x + 7, y + h - 14, w - 14, 8, slot.warningColor);
+  }
 
   seedDetailCache(slot, s);
 }
@@ -6894,12 +6936,16 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
     if (moistureValueChanged)
     {
       const int artBottomY = y + 24 + max(24, h - 57);
-      const int moistRowBottom = y + h - 6;
+      const int moistRowBottom = y + h - 6 + MOISTURE_RANGE_MARK_ROWS; // over the range mark too
       const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
       if (moistureRowShowsLabel(s.moistureText))
       {
         drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      }
+      if (moistureRangeMarked(s.stale, slot.calibrated, slot.region))
+      {
+        drawWaterNowRange(x + 7, y + h - 14, w - 14, 8, slot.warningColor);
       }
     }
     drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);

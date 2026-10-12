@@ -87,6 +87,10 @@
        lives at the wet/100% end of the bar; below this dotted line is the actual "time to
        water" alert boundary, matching the physical display's blink/buzzer trigger exactly. */
     .water-line { position: absolute; top: -1px; bottom: -1px; width: 0; border-left: 2px dotted rgba(255,255,255,.55); z-index: 1; }
+    /* The water-now range under the meter - see drawWaterNowRange() in the receiver sketch. */
+    .bar.has-range { margin-bottom: 1px; }
+    .water-now-range { position: relative; height: 4px; margin: 0 0 8px; }
+    .water-now-range span { position: absolute; top: 0; bottom: 0; box-sizing: border-box; border: 2px solid var(--warn); border-top: 0; }
     .ok { color: var(--accent); }
     .warn { color: var(--warn); }
     .danger { color: var(--danger); }
@@ -162,6 +166,6 @@
       </section>
     </div>
   </main>
-  <script src="assets/app.v16.js" defer></script>
+  <script src="assets/app.v17.js" defer></script>
 </body>
 </html>

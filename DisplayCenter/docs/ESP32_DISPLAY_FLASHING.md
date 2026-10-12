@@ -4,8 +4,34 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-11 19:23 PDT, the display receiver was reflashed on `COM16` with the normal
-production build, at the maintainer's word ("yeah lets build this now into the receiver"):
+As of 2026-10-11 19:58 PDT, the display receiver was reflashed on `COM16` with the normal
+production build:
+
+```text
+Treebeard runtime build 2026-10-11 water-now-region-v2
+```
+
+One change from `water-now-region-v1` below: a region-calibrated card gets a small yellow
+bracket under its meter, from the overdue line (−21 %) to the watering line (0 %, the meter's
+dotted marker). It marks the stretch of the meter in which the card says `WATER NOW`. The
+maintainer picked it from two mock-ups ("I like the right one the bar under looks great",
+`WATER_NOW_METER_MOCKUP_2026-10-11.png`); `WATER_NOW_DISPLAY_AS_BUILT_2026-10-11.png` is the
+screen drawn from the sketch's geometry and that evening's values.
+
+- `drawWaterNowRange()` draws it wholly below `drawBar()`'s rectangle, so a bar repaint never
+  touches it. It is drawn in the two full draws of a regular card and inside the two
+  value-changed clears, which now reach three rows further down to cover it.
+- Regular cards only: a compact card (thirteen cards and up) has no rows under its bar.
+- The receiver's page and the dashboard (`app.v17.js`, deployed) draw the same bracket.
+
+Measured: before the flash `COM16` showed `[Treebeard ...]` lines, sensor 4 and an upload.
+After it: `auto-calibration updated` at 19:58:26, sensor 10 received at wakes 416 and 417 (the
+probe did not restart), uploads `HTTP 200` at 19:58:44 and 19:59:47, `/device` reporting the
+build tag above, the served page carrying the bracket's markup, and the live dashboard serving
+`app.v17.js`. **Not seen:** the display itself.
+
+The build before it, 19:23 PDT the same day, at the maintainer's word ("yeah lets build this
+now into the receiver"):
 
 ```text
 Treebeard runtime build 2026-10-11 water-now-region-v1

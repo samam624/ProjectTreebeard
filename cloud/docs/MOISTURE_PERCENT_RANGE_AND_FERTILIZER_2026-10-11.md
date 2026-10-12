@@ -427,9 +427,9 @@ cloud, where the whole history is; the receiver draws what it is handed.
 |---|---|---|
 | The rule | `supabase/functions/receiver-snapshot/region.ts`, `region.test.ts` (12 tests; sensor 3's record is the fixture) | deployed with `receiver-snapshot` |
 | Hourly medians, the stored anchor | migration `041_msv2_water_now_region.sql` | applied |
-| The receiver | build `2026-10-11 water-now-region-v1` | flashed 19:23 PDT (`DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md`) |
+| The receiver | build `2026-10-11 water-now-region-v2` | flashed 19:23 (v1) and 19:58 PDT (v2: the range marked under the meter); `DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md` |
 | The receiver's own page | same build | served |
-| The cloud dashboard | `web/plant-dashboard/assets/app.v16.js` | **in the repo, not deployed** |
+| The cloud dashboard | `web/plant-dashboard/assets/app.v17.js` | deployed to Netlify at about 19:50 (v16) and about 20:00 (v17) on 2026-10-11 |
 
 How it differs from the replay above:
 
@@ -479,6 +479,9 @@ Live at 19:25 (`node cloud/scripts/region_live_check.mjs MSV2088A3104A7AC`, and 
   sensors 3, 4 and 9 from their waterings in the Alocasia pot, sensor 7 from the sun. A stored
   drop holds until that sensor's calibration is reset, which planting it again calls for anyway.
   Sensor 3's is a span (330.5); giving it `region_base` 730 only takes effect after a reset.
+- **The range is marked on the meter**: a yellow bracket under it from −21 % to 0 %, on the
+  display, the receiver's page and the dashboard, for region-calibrated sensors only. The
+  maintainer picked it from two mock-ups (`DisplayCenter/docs/WATER_NOW_METER_MOCKUP_2026-10-11.png`).
 - Not seen: the display itself, and `WATER NOW` on any card.
 
 ## What is published on this

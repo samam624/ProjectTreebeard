@@ -175,6 +175,21 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       border-left: 2px dotted rgba(255,255,255,.55);
       z-index: 1;
     }
+    /* The water-now range, a bracket under the meter from the overdue line to the watering
+       line, on a region-calibrated sensor only. Mirrors drawWaterNowRange() in the sketch. */
+    .water-now-range {
+      position: relative;
+      height: 4px;
+      margin-top: 1px;
+    }
+    .water-now-range span {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      box-sizing: border-box;
+      border: 2px solid var(--warn);
+      border-top: 0;
+    }
     form {
       display: grid;
       gap: 12px;
@@ -1533,7 +1548,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         // its watering line, as the physical display does (formatMoistureText() in the sketch).
         const waterNow = autoReady && autoCal.region === true && moistPct != null && moistPct < MOISTURE_WATER_LINE_PCT;
         const moistValueText = reading.moisture == null ? "--" : waterNow ? "Water now" : (autoReady && moistPct != null ? moistPct + "%" : String(reading.moisture));
-        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct, false, true);
+        const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct, false, true, autoReady && autoCal.region === true);
         const wateredNote = autoReady ? wateredAgoText(autoCal.lastWateredAtMs) : null;
         const trendNote = autoReady && autoCal.dryBoundTrendingLower;
         const tempCompState = reading.temperatureCompensation || null;
@@ -1559,7 +1574,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }).join("");
     }
 
-    function metric(name, value, percent, forceDanger, isMoisture = false) {
+    function metric(name, value, percent, forceDanger, isMoisture = false, markRange = false) {
       const fill = forceDanger ? "danger" : (isMoisture ? moistureFillClass(percent) : batteryFillClass(percent));
       // Moisture's percent is signed/unclamped-below-zero (see pct()'s comment) - the bar
       // itself can't render negative width, so route it through barPercent() first. Battery
@@ -1569,10 +1584,12 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       // bar's width) - the same position barPercent(0) computes - not at MOISTURE_WATER_LINE_PCT
       // itself, which is now the alert-threshold VALUE (0), not a bar position.
       const waterLine = isMoisture ? `<div class="water-line" style="left:${MOISTURE_BAR_NEGATIVE_WIDTH_PCT}%"></div>` : "";
+      const rangeLow = barPercent(MOISTURE_DANGER_PCT);
+      const waterNowRange = markRange ? `<div class="water-now-range"><span style="left:${rangeLow}%;width:${barPercent(MOISTURE_WATER_LINE_PCT) - rangeLow}%"></span></div>` : "";
       return `
         <div class="metric">
           <div class="metric-row"><span>${name}</span><strong>${escapeHtml(value)}</strong></div>
-          <div class="bar"><div class="fill ${fill}" style="width:${width}%"></div>${waterLine}</div>
+          <div class="bar"><div class="fill ${fill}" style="width:${width}%"></div>${waterLine}</div>${waterNowRange}
         </div>
       `;
     }
