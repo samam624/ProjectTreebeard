@@ -1,10 +1,10 @@
-const TREEBEARD_CACHE = "msv2-cloud-app-v15";
+const TREEBEARD_CACHE = "msv2-cloud-app-v16";
 const TREEBEARD_ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
   "/app-icon.svg",
-  "/assets/app.v15.js",
+  "/assets/app.v16.js",
   "/assets/jsQR-1.4.0.min.js",
   "/assets/plant_gifs/cactus_cluster.gif",
   "/assets/plant_gifs/cup_plant.gif",

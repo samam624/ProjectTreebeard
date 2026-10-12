@@ -4,8 +4,62 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-10 21:01 PDT, the display receiver was reflashed on `COM16` with the normal
-production build:
+As of 2026-10-11 19:23 PDT, the display receiver was reflashed on `COM16` with the normal
+production build, at the maintainer's word ("yeah lets build this now into the receiver"):
+
+```text
+Treebeard runtime build 2026-10-11 water-now-region-v1
+```
+
+It takes each sensor's 0 % and 100 % from the cloud's "water now" region and says `WATER NOW`
+on a card below 0 % (`cloud/docs/MOISTURE_PERCENT_RANGE_AND_FERTILIZER_2026-10-11.md`, "Built").
+What changed in the sketch:
+
+- The calibration pull asks for `autocal=1&region=1`. The answer keeps the field names
+  (`ready`, `dryBound`, `wetBound`) and adds `region`; `dryBound` is the top of the region and
+  `wetBound` the level the pot settled at.
+- A region-calibrated card prints `WATER NOW` where it printed a negative percent, and drops the
+  row's "Moisture" label while it does (the two do not fit on a four-column card).
+- The red, blinking, buzzing threshold moved from −10 % to −21 %, on the display, the
+  receiver's page and the dashboard bundle (`app.v16.js`, **not deployed**: the live dashboard
+  still runs `app.v15.js` at −10 %).
+- A sensor with no region yet (`ready` false) shows its manual range, as "learning" did before.
+
+Measured: before the flash `COM16` showed `[Treebeard ...]` lines, sensors 4, 7 and 10 and an
+upload `HTTP 200`. After it: `auto-calibration updated` at 19:23:24, sensor 10 received at wakes
+381 and 382 (the probe did not restart), uploads `HTTP 200` at 19:23:42 and 19:24:45, `/device`
+reporting the build tag above, and `/data` giving sensor 10 `region` true with 14,640 and 20,778
+(96 % at a reading of 20,521) and sensors 1 and 4 not ready. **Not seen:** the display itself,
+and `WATER NOW` on any card (no sensor is below its line).
+
+The build before it, 13:09 PDT the same day:
+
+```text
+Treebeard runtime build 2026-10-11 msv4-air-baseline-262165
+```
+
+One change: the History page's air-value table gains the boot of MSV4 board 1 that began at
+13:03:43 that day (probe application 262165). Measured: before the flash `COM16` showed
+`[Treebeard ...]` lines; after it, WiFi came up at 13:09:44, sensor 10 was received at wake 8
+(13:10:39), snapshot uploads returned `HTTP 200` at 13:09:47 and 13:11:05, and the page served
+at the receiver's address carries the new entry. Wake 7 fell in the flash and was not received.
+Not captured: the boot line with the build tag. Not seen: the cards in a browser.
+
+The build before it, 11:59 PDT the same day:
+
+```text
+Treebeard runtime build 2026-10-11 msv4-air-baseline-262163
+```
+
+One change: the History page's air-value table gains the boot of MSV4 board 1 that began at
+11:52:48 that day (probe application 262163), so the two experimental cards keep their values
+across the probe update. Measured: before the flash `COM16` showed `[Treebeard ...]` lines and
+sensor 10 at wake 6 of the new boot; after it, WiFi came up at 11:59:32, sensor 10 was received
+at wakes 8 and 9, snapshot uploads returned `HTTP 200` at 11:59:54 and 12:00:58, and the page
+served at the receiver's address carries the new entry. Wake 7 fell in the flash and was not
+received. Not captured: the boot line with the build tag. Not seen: the cards in a browser.
+
+The build before it, 2026-10-10 21:01 PDT:
 
 ```text
 Treebeard runtime build 2026-10-10 msv4-relative-residual-v3

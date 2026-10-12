@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
+import { deriveRegion, regionAutoCalRow, type RegionRawSensor } from "./region.ts";
 import {
   isValidInt32,
   isValidRawFdcCount,
@@ -231,6 +232,41 @@ Deno.serve(async (request) => {
         }
 
         return jsonResponse({ ok: true, readings: data ?? [] });
+      }
+
+      if (wantsAutoCal && url.searchParams.get("region") === "1") {
+        // The "water now" region (region.ts, migration 041): bounds from the level each
+        // watering settles at and a watering line learned once, in place of the range learned
+        // from where the last waterings happened. A receiver asks for it with region=1; one
+        // that does not gets the older range below, unchanged. A failure here is an error and
+        // not a fall-back to that older range: the receiver keeps what it last cached, where
+        // falling back would flip its display between two calibrations.
+        const { data, error } = await supabase.rpc("msv2_read_sensor_hourly_moisture", {
+          p_receiver_id: cleanReceiverId,
+        });
+        if (error) {
+          return jsonResponse({ ok: false, error: error.message }, 500);
+        }
+
+        const nowMs = Date.now();
+        const verbose = url.searchParams.get("regionDebug") === "1";
+        const sensors = [];
+        for (const raw of (data ?? []) as RegionRawSensor[]) {
+          const region = deriveRegion(raw, nowMs);
+          if (region.anchorToStore !== null) {
+            const { error: anchorError } = await supabase.rpc("msv2_set_sensor_region_anchor_if_unset", {
+              p_receiver_id: cleanReceiverId,
+              p_sensor_id: region.sensorId,
+              p_region_drop: region.anchorToStore,
+              p_region_mode: region.mode,
+            });
+            if (anchorError) {
+              console.error(`region anchor not stored for sensor ${region.sensorId}: ${anchorError.message}`);
+            }
+          }
+          sensors.push(regionAutoCalRow(region, verbose));
+        }
+        return jsonResponse({ ok: true, regionApi: 1, sensors });
       }
 
       if (wantsAutoCal) {

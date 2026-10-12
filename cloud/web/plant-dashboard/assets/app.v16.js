@@ -478,12 +478,12 @@ function renderPlant(plant) {
   const card = plant.card || {};
   const reading = plant.reading || {};
   const name = card.plant || "Probe " + (plant.sensor ?? "--");
-  const { pct, healthCls: moistureClass } = resolveMoisture(card, reading);
+  const { pct, healthCls: moistureClass, waterNow } = resolveMoisture(card, reading);
   const battery = reading.batteryPercent;
   const batteryClass = typeof battery === "number" && battery < 20 ? "danger" : typeof battery === "number" && battery < 50 ? "warn" : "ok";
   const art = card.art || "sprout_pot";
   return '<article class="plant"><div class="plant-head"><div class="plant-title"><h3 class="plant-name">' + escapeHtml(name) + '</h3><div class="meta">Probe ' + escapeHtml(plant.sensor ?? "--") + '</div></div><img class="plant-art" src="' + escapeHtml(artSrc(art)) + '" alt=""></div>' +
-    metric("Moisture", String(reading.moisture ?? "--") + " display / " + String(pct ?? "--") + "%", moistureClass) +
+    metric("Moisture", String(reading.moisture ?? "--") + " display / " + (waterNow ? "Water now" : String(pct ?? "--") + "%"), moistureClass) +
     bar(pct, moistureClass) +
     metric("Battery", battery == null ? "--" : String(battery) + "%", batteryClass) +
     metric("RSSI", String(reading.rssi ?? "--") + " dBm") +
@@ -563,7 +563,7 @@ function percent(value, dry, wet) {
 // physical display's moistureHealthColor()/slotNeedsBlink()/drawBar() and the receiver's
 // local page exactly (scripts/verify_moisture_alert_thresholds.mjs).
 const MOISTURE_WATER_LINE_PCT = 0;
-const MOISTURE_DANGER_PCT = -10;
+const MOISTURE_DANGER_PCT = -21;
 const MOISTURE_BAR_NEGATIVE_WIDTH_PCT = 30;
 function healthClass(pct) {
   if (pct == null) return "";
@@ -597,7 +597,10 @@ function resolveMoisture(card, reading) {
   const wet = autoReady ? autoCal.wetBound : Number(card?.moisture?.wet ?? 175);
   // pct is already signed (percent() is unclamped below zero).
   const pct = percent(reading?.moisture, dry, wet);
-  return { pct, healthCls: healthClass(pct) };
+  // A region-calibrated sensor (autoCal.region, the cloud's water-now region) says so below its
+  // watering line, as the physical display and the receiver's own page do.
+  const waterNow = autoReady && autoCal.region === true && pct != null && pct < MOISTURE_WATER_LINE_PCT;
+  return { pct, healthCls: healthClass(pct), waterNow };
 }
 
 // pct is signed/unclamped-below-zero - route it through barPercent() for the bar's width,

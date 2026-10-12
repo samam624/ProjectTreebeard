@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-10 msv4-relative-residual-v3"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-11 water-now-region-v1"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -999,6 +999,12 @@ struct AutoCalState
   // Retained for compatibility with older cloud responses. Watering-cycle calibration
   // no longer uses the rolling-percentile floor clamp, so new responses leave this false.
   bool dryBoundTrendingLower = false;
+  // 2026-10-11: dryBound/wetBound are the cloud's "water now" region (receiver-snapshot's
+  // region.ts, asked for with region=1): wetBound is the level the pot settled at after its
+  // last watering and dryBound the top of the region the user waters in. Only then does a card
+  // say WATER NOW below 0 %. On the older learned range 0 % was wherever the last waterings
+  // happened, and saying so there would be a guess.
+  bool region = false;
 };
 
 AutoCalState autoCal[MAX_SENSOR_ID + 1];
@@ -1367,6 +1373,7 @@ bool loadAutoCalCache()
     restored[sensorId].dryBound = dry;
     restored[sensorId].wetBound = wet;
     restored[sensorId].dryBoundTrendingLower = row["trend"] | false;
+    restored[sensorId].region = row["region"] | false;
   }
 
   portENTER_CRITICAL(&autoCalMux);
@@ -1394,6 +1401,7 @@ bool saveAutoCalCache()
     row["dry"] = learned.dryBound;
     row["wet"] = learned.wetBound;
     row["trend"] = learned.dryBoundTrendingLower;
+    row["region"] = learned.region;
   }
 
   String nextJson;
@@ -2652,6 +2660,7 @@ struct PlantArtSlot
   int dry = 120;
   int wet = 175;
   bool calibrated = false; // bounds are auto-cal-derived (ready), not manual/preset
+  bool region = false; // ...and they are the cloud's water-now region (AutoCalState::region)
   bool rangeTrendWarn = false; // dry bound has been trending lower across recent windows
   bool pending = false; // auto mode on but not enough history yet - render like stale
   // Inputs to refreshSlotMoistureBounds(), cached once from ui.json since they can't
@@ -2674,6 +2683,7 @@ struct PlantArtSlot
   uint16_t lastMoistureRaw = 0;
   int16_t lastMoisturePct = 0;
   bool lastMoistureCalibrated = false;
+  bool lastMoistureRegion = false;
   uint16_t lastMoistureColor = 0;
   uint8_t lastBatteryPct = 0;
   // MSV3-only, nullable - a probe without board-temp diagnostics (every MSV2 sensor, or an
@@ -2713,6 +2723,9 @@ struct PlantArtSlot
 // so the two can never drift out of sync on what a given row's "current value" is. Defined
 // up here (not next to computeDetailStats()/drawPlantCardDetail() where it's actually used)
 // for the same reason as the DashboardGrid/PlantArtSlot prototypes below - see that comment.
+// Room for a card's moisture text: "WATER NOW" (formatMoistureText()) is the longest.
+const size_t MOISTURE_TEXT_SIZE = 12;
+
 struct PlantDetailStats
 {
   bool stale;
@@ -2721,7 +2734,7 @@ struct PlantDetailStats
   uint16_t moistureColor;
   uint16_t batteryColor;
   uint16_t rawMoisture;
-  char moistureText[8];
+  char moistureText[MOISTURE_TEXT_SIZE];
   bool hasSignal;
   uint16_t signalColor;
   const char* signalLabel;
@@ -5447,7 +5460,8 @@ void resolveMoistureBounds(
   int& outDry,
   int& outWet,
   bool& outCalibrated,
-  bool& outPending
+  bool& outPending,
+  bool& outRegion
 )
 {
   bool autoEnabled = moistureConfig["auto"] | false;
@@ -5461,6 +5475,7 @@ void resolveMoistureBounds(
     outWet = learned.wetBound;
     outCalibrated = true;
     outPending = false;
+    outRegion = learned.region;
     return;
   }
 
@@ -5480,6 +5495,7 @@ void resolveMoistureBounds(
   outWet = clampInt(moistureConfig["wet"] | card["wet"] | defaultWet, 0, 65535);
   outCalibrated = false;
   outPending = autoEnabled;
+  outRegion = false;
 }
 
 // Re-runs the auto-cal half of resolveMoistureBounds() against a cached PlantArtSlot,
@@ -5506,6 +5522,7 @@ void refreshSlotMoistureBounds(PlantArtSlot& slot)
     slot.dry = learned.dryBound;
     slot.wet = learned.wetBound;
     slot.calibrated = true;
+    slot.region = learned.region;
     slot.rangeTrendWarn = learned.dryBoundTrendingLower;
     slot.pending = false;
     return;
@@ -5513,6 +5530,7 @@ void refreshSlotMoistureBounds(PlantArtSlot& slot)
   slot.dry = slot.manualDry;
   slot.wet = slot.manualWet;
   slot.calibrated = false;
+  slot.region = false;
   slot.rangeTrendWarn = false;
   slot.pending = slot.autoEnabled;
 }
@@ -5554,9 +5572,50 @@ int16_t moisturePercent(uint16_t moisture, int dry, int wet)
 // the moisture color, the blink/buzzer trigger, and the bar so every alert on this display -
 // and both web clients, see scripts/verify_moisture_alert_thresholds.mjs - fires at exactly
 // the same points and renders the same layout.
+//
+// 2026-10-11, the water-now region: on a region-calibrated sensor 100 % is the level the pot
+// settled at after its last watering, 0 % is the top of the region the user waters in, and the
+// bottom of that region always lands on -21 % (100 * (0.925 - 1.12) / 0.925, REGION_OVERDUE_PERCENT
+// in receiver-snapshot's region.ts). So the danger threshold moved from -10 to -21: at -10 the
+// display blinked and buzzed through waterings the maintainer called right on time
+// (cloud/docs/MOISTURE_PERCENT_RANGE_AND_FERTILIZER_2026-10-11.md).
 const int16_t MOISTURE_WATER_LINE_PERCENT = 0;
-const int16_t MOISTURE_DANGER_PERCENT = -10;
+const int16_t MOISTURE_DANGER_PERCENT = -21;
 const uint8_t MOISTURE_BAR_NEGATIVE_WIDTH_PERCENT = 30;
+
+// What a card's moisture row reads. Below its watering line a region-calibrated sensor says
+// WATER NOW in place of a negative percent; every other state is as it was ("--" stale, a
+// percent once calibrated, the raw number otherwise). The same condition as the warning colour,
+// so the words and the yellow arrive together.
+const char MOISTURE_WATER_NOW_TEXT[] = "WATER NOW";
+
+void formatMoistureText(char* out, size_t outSize, bool stale, bool calibrated, bool region, int16_t percent, uint16_t rawMoisture)
+{
+  if (stale)
+  {
+    strlcpy(out, "--", outSize);
+  }
+  else if (calibrated && region && percent < MOISTURE_WATER_LINE_PERCENT)
+  {
+    strlcpy(out, MOISTURE_WATER_NOW_TEXT, outSize);
+  }
+  else if (calibrated)
+  {
+    // percent is already signed (moisturePercent() is unclamped below zero).
+    snprintf(out, outSize, "%d%%", percent);
+  }
+  else
+  {
+    snprintf(out, outSize, "%u", rawMoisture);
+  }
+}
+
+// WATER NOW and the row's "Moisture" label do not fit side by side on a four-column card
+// (98 px inside, 102 px of text), so the label gives way to it.
+bool moistureRowShowsLabel(const char* moistureText)
+{
+  return moistureText == nullptr || strcmp(moistureText, MOISTURE_WATER_NOW_TEXT) != 0;
+}
 
 // Moisture semantics: 0-100 (the full learned dry-to-wet range) is normal, exactly as it has
 // always been. Below 0 is new territory - drier than ever recorded - so color escalates:
@@ -6100,7 +6159,10 @@ void drawCompactCardMetrics(
   moistBarY = max(moistY + 11, moistBarY);
 
   tft.fillRect(x + 5, moistY - 1, w - 10, min(h - (moistY - y) - 3, 22), surfaceColor);
-  drawTextLeft("Moisture", x + 5, moistY, 1, mutedColor, surfaceColor);
+  if (moistureRowShowsLabel(moistureText))
+  {
+    drawTextLeft("Moisture", x + 5, moistY, 1, mutedColor, surfaceColor);
+  }
   drawTextRight(moistureText, x + w - 5, moistY, 1, moistureColor, surfaceColor);
   drawBar(x + 5, moistBarY, w - 10, 5, moisturePct, moistureColor, backgroundColor);
 }
@@ -6131,7 +6193,8 @@ void drawPlantCard(
   int wet;
   bool calibrated;
   bool pending;
-  resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, calibrated, pending);
+  bool region;
+  resolveMoistureBounds(moistureConfig, card, sensorId, 120, 175, dry, wet, calibrated, pending, region);
 
   const bool validSensor = sensorId > 0 && sensorId <= MAX_SENSOR_ID;
   SensorReading readingSnapshot;
@@ -6151,22 +6214,10 @@ void drawPlantCard(
 
   drawCardHeader(x, y, w, h, plant, batteryPct, textColor, batteryColor, surfaceColor);
 
-  char moistureText[8];
-  if (stale)
-  {
-    strlcpy(moistureText, "--", sizeof(moistureText));
-  }
-  else if (calibrated)
-  {
-    // Auto-cal-derived bounds in use: show percent instead of the raw sensor value, as
-    // a visual "calibration done" signal (see docs/STATUS_HANDOFF.md's redesign item 5).
-    // moisturePct is already signed (moisturePercent() is unclamped below zero).
-    snprintf(moistureText, sizeof(moistureText), "%d%%", moisturePct);
-  }
-  else
-  {
-    snprintf(moistureText, sizeof(moistureText), "%u", reading->moisture);
-  }
+  // Auto-cal-derived bounds in use: show percent instead of the raw sensor value, as a
+  // visual "calibration done" signal (see docs/STATUS_HANDOFF.md's redesign item 5).
+  char moistureText[MOISTURE_TEXT_SIZE];
+  formatMoistureText(moistureText, sizeof(moistureText), stale, calibrated, region, moisturePct, stale ? 0 : reading->moisture);
 
   if (h < 76)
   {
@@ -6185,7 +6236,10 @@ void drawPlantCard(
     drawPlantArtInCard(x, y, w, h, art, stale ? mutedColor : accentColor, surfaceColor, 0);
   }
 
-  drawTextLeft("Moisture", x + 7, y + h - 29, 1, mutedColor, surfaceColor);
+  if (moistureRowShowsLabel(moistureText))
+  {
+    drawTextLeft("Moisture", x + 7, y + h - 29, 1, mutedColor, surfaceColor);
+  }
   drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, surfaceColor);
   drawBar(x + 7, y + h - 14, w - 14, 8, moisturePct, moistureColor, backgroundColor);
 }
@@ -6212,23 +6266,12 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
 
   tft.drawRoundRect(x, y, w, h, 5, stale ? slot.mutedColor : moistureColor);
 
-  char moistureText[8];
-  if (stale)
-  {
-    strlcpy(moistureText, "--", sizeof(moistureText));
-  }
-  else if (slot.calibrated)
-  {
-    // moisturePct is already signed (moisturePercent() is unclamped below zero).
-    snprintf(moistureText, sizeof(moistureText), "%d%%", moisturePct);
-  }
-  else
-  {
-    snprintf(moistureText, sizeof(moistureText), "%u", reading->moisture);
-  }
+  char moistureText[MOISTURE_TEXT_SIZE];
+  formatMoistureText(moistureText, sizeof(moistureText), stale, slot.calibrated, slot.region, moisturePct, stale ? 0 : reading->moisture);
 
   const bool moistureValueChanged = !slot.metricsInitialized || stale != slot.lastMoistureStale ||
     slot.calibrated != slot.lastMoistureCalibrated ||
+    slot.region != slot.lastMoistureRegion ||
     (!stale && (reading->moisture != slot.lastMoistureRaw || moisturePct != slot.lastMoisturePct));
   const bool moistureColorChanged = moistureColor != slot.lastMoistureColor;
   const bool batteryValueChanged = !slot.metricsInitialized || batteryPct != slot.lastBatteryPct;
@@ -6245,6 +6288,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
     slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
     slot.lastMoisturePct = moisturePct;
     slot.lastMoistureCalibrated = slot.calibrated;
+    slot.lastMoistureRegion = slot.region;
     slot.lastMoistureColor = moistureColor;
     slot.lastBatteryPct = batteryPct;
     return;
@@ -6271,7 +6315,10 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
       const int moistRowBottom = y + h - 6;
       const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
-      drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      if (moistureRowShowsLabel(moistureText))
+      {
+        drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      }
     }
     drawTextRight(moistureText, x + w - 7, y + h - 29, 1, moistureColor, slot.surfaceColor);
     drawBar(x + 7, y + h - 14, w - 14, 8, moisturePct, moistureColor, slot.backgroundColor);
@@ -6302,6 +6349,7 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
   slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
   slot.lastMoisturePct = moisturePct;
   slot.lastMoistureCalibrated = slot.calibrated;
+  slot.lastMoistureRegion = slot.region;
   slot.lastMoistureColor = moistureColor;
   slot.lastBatteryPct = batteryPct;
 }
@@ -6417,19 +6465,7 @@ void computeDetailStats(PlantArtSlot& slot, PlantDetailStats& s)
     s.moistureColor = applyLowMoistureBlink(s.moistureColor, slot.dangerColor, slot.mutedColor);
   }
   s.batteryColor = batteryHealthColor(s.batteryPct, slot.activeColor, slot.warningColor, slot.dangerColor, slot.mutedColor);
-  if (s.stale)
-  {
-    strlcpy(s.moistureText, "--", sizeof(s.moistureText));
-  }
-  else if (slot.calibrated)
-  {
-    // s.moisturePct is already signed (moisturePercent() is unclamped below zero).
-    snprintf(s.moistureText, sizeof(s.moistureText), "%d%%", s.moisturePct);
-  }
-  else
-  {
-    snprintf(s.moistureText, sizeof(s.moistureText), "%u", s.rawMoisture);
-  }
+  formatMoistureText(s.moistureText, sizeof(s.moistureText), s.stale, slot.calibrated, slot.region, s.moisturePct, s.rawMoisture);
   s.hasSignal = reading != nullptr && reading->seen;
   const int rssi = s.hasSignal ? reading->rssi : 0;
   s.signalColor = !s.hasSignal ? slot.mutedColor : (rssi >= -75 ? slot.activeColor : (rssi >= -90 ? slot.warningColor : slot.dangerColor));
@@ -6518,6 +6554,7 @@ void seedDetailCache(PlantArtSlot& slot, const PlantDetailStats& s)
   slot.lastMoistureRaw = s.stale ? slot.lastMoistureRaw : s.rawMoisture;
   slot.lastMoisturePct = s.moisturePct;
   slot.lastMoistureCalibrated = slot.calibrated;
+  slot.lastMoistureRegion = slot.region;
   slot.lastMoistureColor = s.moistureColor;
   slot.lastBatteryPct = s.batteryPct;
   seedDetailDiagnosticCache(slot, s);
@@ -6651,7 +6688,10 @@ void drawPlantCardDetail(PlantArtSlot& slot)
   const int rightX = x + w - 7;
   drawPlantCardDetailInfoBand(slot, s);
 
-  drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+  if (moistureRowShowsLabel(s.moistureText))
+  {
+    drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+  }
   drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);
   drawBar(x + 7, y + h - 14, w - 14, 8, s.moisturePct, s.moistureColor, slot.backgroundColor);
 
@@ -6737,6 +6777,7 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
   const bool signalChanged = strcmp(s.signalLabel, slot.lastDetailSignalLabel) != 0 || s.signalColor != slot.lastDetailSignalColor;
   const bool moistureValueChanged = !slot.metricsInitialized || s.stale != slot.lastMoistureStale ||
     slot.calibrated != slot.lastMoistureCalibrated ||
+    slot.region != slot.lastMoistureRegion ||
     (!s.stale && (s.rawMoisture != slot.lastMoistureRaw || s.moisturePct != slot.lastMoisturePct));
   const bool moistureColorChanged = s.moistureColor != slot.lastMoistureColor;
   const bool batteryValueChanged = !slot.metricsInitialized || s.batteryPct != slot.lastBatteryPct;
@@ -6856,7 +6897,10 @@ void drawPlantCardDetailDataOnly(PlantArtSlot& slot)
       const int moistRowBottom = y + h - 6;
       const int moistRowTop = min(y + h - 30, artBottomY);
       tft.fillRect(x + 7, moistRowTop, w - 14, max(1, moistRowBottom - moistRowTop), slot.surfaceColor);
-      drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      if (moistureRowShowsLabel(s.moistureText))
+      {
+        drawTextLeft("Moisture", x + 7, y + h - 29, 1, slot.mutedColor, slot.surfaceColor);
+      }
     }
     drawTextRight(s.moistureText, rightX, y + h - 29, 1, s.moistureColor, slot.surfaceColor);
     drawBar(x + 7, y + h - 14, w - 14, 8, s.moisturePct, s.moistureColor, slot.backgroundColor);
@@ -7404,6 +7448,7 @@ String sensorDataJson()
     autoCalItem["daysSinceLastWatering"] = learned.daysSinceLastWatering;
     autoCalItem["lastWateredAtMs"] = learned.lastWateredAtMs;
     autoCalItem["dryBoundTrendingLower"] = learned.dryBoundTrendingLower;
+    autoCalItem["region"] = learned.region;
   }
 
   String output;
@@ -8013,6 +8058,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     autoCalItem["daysSinceLastWatering"] = learned.daysSinceLastWatering;
     autoCalItem["lastWateredAtMs"] = learned.lastWateredAtMs;
     autoCalItem["dryBoundTrendingLower"] = learned.dryBoundTrendingLower;
+    autoCalItem["region"] = learned.region;
   }
 
   if (doc.overflowed())
@@ -8847,7 +8893,9 @@ void runCloudAutoCalPull(uint32_t now)
 
   String autoCalUrl = cloudUploadUrl;
   autoCalUrl += autoCalUrl.indexOf('?') >= 0 ? "&" : "?";
-  autoCalUrl += "autocal=1&receiverId=";
+  // region=1: the cloud's water-now region in place of the range learned from where the last
+  // waterings happened (migration 041, region.ts). It answers in the same field names.
+  autoCalUrl += "autocal=1&region=1&receiverId=";
   autoCalUrl += receiverId;
 
   WiFiClientSecure secureClient;
@@ -8903,6 +8951,7 @@ void runCloudAutoCalPull(uint32_t now)
         learned.daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
         learned.lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
         learned.dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
+        learned.region = sensorRow["region"] | false;
         if (learned.ready &&
             (learned.dryBound < 0 || learned.wetBound <= learned.dryBound || learned.wetBound > 65535))
         {

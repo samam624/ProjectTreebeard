@@ -1013,7 +1013,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // physical display's moistureHealthColor()/slotNeedsBlink()/drawBar() exactly - see
     // scripts/verify_moisture_alert_thresholds.mjs.
     const MOISTURE_WATER_LINE_PCT = 0;
-    const MOISTURE_DANGER_PCT = -10;
+    const MOISTURE_DANGER_PCT = -21;
     const MOISTURE_BAR_NEGATIVE_WIDTH_PCT = 30;
     const moistureFillClass = (p) => p == null ? "muted" : p <= MOISTURE_DANGER_PCT ? "danger" : p < MOISTURE_WATER_LINE_PCT ? "warn" : "";
     // The bar can't render negative width, so 0-100 (pct()'s unchanged dry-to-wet range)
@@ -1529,7 +1529,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         // docs/STATUS_HANDOFF.md's redesign item 5). moistPct is already signed (pct() is
         // unclamped below zero) - metric()/barPercent() handle turning it into bar width.
         const moistPct = pct(reading.moisture, dry, wet);
-        const moistValueText = reading.moisture == null ? "--" : (autoReady && moistPct != null ? moistPct + "%" : String(reading.moisture));
+        // A region-calibrated sensor (autoCal.region, the cloud's water-now region) says so below
+        // its watering line, as the physical display does (formatMoistureText() in the sketch).
+        const waterNow = autoReady && autoCal.region === true && moistPct != null && moistPct < MOISTURE_WATER_LINE_PCT;
+        const moistValueText = reading.moisture == null ? "--" : waterNow ? "Water now" : (autoReady && moistPct != null ? moistPct + "%" : String(reading.moisture));
         const moistureMetric = metric(learning ? "Moisture (learning)" : "Moisture", moistValueText, moistPct, false, true);
         const wateredNote = autoReady ? wateredAgoText(autoCal.lastWateredAtMs) : null;
         const trendNote = autoReady && autoCal.dryBoundTrendingLower;
@@ -2020,6 +2023,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     const MSV4_AIR_BASELINES = [
       { sensor: 10, boot: "2026-10-08T21:47:10-07:00", cdAirPf: 13.72, cpPf: 8.69 },
       { sensor: 10, boot: "2026-10-08T22:07:55-07:00", cdAirPf: 13.72, cpPf: 8.69 },
+      { sensor: 10, boot: "2026-10-11T11:52:48-07:00", cdAirPf: 13.72, cpPf: 8.69 },
+      { sensor: 10, boot: "2026-10-11T13:03:43-07:00", cdAirPf: 13.72, cpPf: 8.69 },
     ];
     // Which boot a reading belongs to comes from the reading: the probe counts one wake a minute
     // from 1 at boot, so its boot began (wake - 1) minutes earlier. An entry is that boot's when

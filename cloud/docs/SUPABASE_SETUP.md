@@ -80,7 +80,7 @@ In Supabase Dashboard:
 37. Paste it into the SQL editor.
 38. Run it.
 39. Apply every remaining file in `supabase/migrations/` from `013` through the
-    highest-numbered migration present (currently `040`) in numerical order. In particular,
+    highest-numbered migration present (currently `041`) in numerical order. In particular,
     024-027 are one staged moisture-calibration rollout;
     030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
     upserts; 034 locks down `msv2_reset_sensor_calibration` to `service_role` and

@@ -2,6 +2,12 @@
 
 Status: deployed and hardware-verified on 2026-08-22.
 
+**Superseded on the receiver 2026-10-11.** Receiver build `water-now-region-v1` asks the cloud
+for the "water now" region instead (`receiver-snapshot?autocal=1&region=1`, migration 041,
+`region.ts`), and its danger threshold is −21 %, not the −10 % in the table below. What this
+document describes is still what the function answers without `region=1`. Why it was replaced,
+and the replacement: `cloud/docs/MOISTURE_PERCENT_RANGE_AND_FERTILIZER_2026-10-11.md`.
+
 ## Purpose
 
 Each probe has its own raw scale, and snapshot upload cadence is not perfectly uniform.
