@@ -1,0 +1,702 @@
+<!-- Repo copy of the MSV4 batch build guide (boards 2-5) published at https://claude.ai/artifact/KEDQQJ9d1iCQkkVA83rbmW. Ticks and readings save to that page; opened from disk they save in this browser only. Content as of 2026-10-11. -->
+<title>MSV4 Batch Build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: one bench-side column; stages run top to bottom in build order, each a checklist card.
+     Same visual language as the MSV3 pull list: verdigris neutrals, copper accent. */
+  :root {
+    --bg: #f2f4f0;
+    --bg-dot: #e4e8e0;
+    --surface: #fdfdfb;
+    --surface-2: #eaece6;
+    --ink: #1c211b;
+    --ink-muted: #59635a;
+    --ink-faint: #7a8578;
+    --line: #d7dbd1;
+    --line-strong: #b9c0b3;
+    --accent: #a8531f;
+    --accent-ink: #7a3c14;
+    --accent-soft: #f0ddc9;
+    --verdigris: #4f7c6c;
+    --verdigris-soft: #dde9e3;
+    --ok: #2f7a4a;
+    --ok-soft: #dcefe2;
+    --warn: #9a6a00;
+    --warn-soft: #f6ebc8;
+    --bad: #b3261e;
+    --bad-soft: #f8dcd9;
+    --shadow: 0 1px 2px rgba(28, 33, 27, 0.06), 0 6px 20px -10px rgba(28, 33, 27, 0.18);
+    --display: "Big Shoulders Display", "Arial Narrow", ui-sans-serif, sans-serif;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14180f; --bg-dot: #1b201a; --surface: #1b201a; --surface-2: #232a20;
+      --ink: #e9ece3; --ink-muted: #a3ac9c; --ink-faint: #7f8a78; --line: #313a2c; --line-strong: #414d38;
+      --accent: #e08a3e; --accent-ink: #f3b57c; --accent-soft: #3a2c1a;
+      --verdigris: #7fb3a0; --verdigris-soft: #1e2e28;
+      --ok: #7cc79a; --ok-soft: #1c3326; --warn: #e3b64f; --warn-soft: #3a3016; --bad: #f08a80; --bad-soft: #3d1f1c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -12px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14180f; --bg-dot: #1b201a; --surface: #1b201a; --surface-2: #232a20;
+    --ink: #e9ece3; --ink-muted: #a3ac9c; --ink-faint: #7f8a78; --line: #313a2c; --line-strong: #414d38;
+    --accent: #e08a3e; --accent-ink: #f3b57c; --accent-soft: #3a2c1a;
+    --verdigris: #7fb3a0; --verdigris-soft: #1e2e28;
+    --ok: #7cc79a; --ok-soft: #1c3326; --warn: #e3b64f; --warn-soft: #3a3016; --bad: #f08a80; --bad-soft: #3d1f1c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -12px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(var(--bg-dot) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 44px 72px; }
+  code, .mono { font-family: var(--mono); }
+  code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; overflow-wrap: anywhere; }
+
+  /* Header */
+  header { display: flex; flex-direction: column; gap: 10px; padding-bottom: 26px; margin-bottom: 26px; border-bottom: 1px solid var(--line-strong); }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--verdigris); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .eyebrow::before { content: ""; width: 7px; height: 7px; background: var(--accent); border-radius: 1px; transform: rotate(45deg); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(40px, 6vw, 60px); line-height: 0.94; margin: 0; text-wrap: balance; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .dek { max-width: 64ch; color: var(--ink-muted); margin: 0; }
+
+  /* Board picker + save status */
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .boards { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .boards .lbl { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); margin-right: 4px; }
+  .boards button {
+    font: 600 14px var(--mono); padding: 7px 13px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  }
+  .boards button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .boards button:focus-visible, .copy:focus-visible, input:focus-visible, textarea:focus-visible, .check input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+  .status[data-s="saved"] .dot { background: var(--ok); }
+  .status[data-s="saving"] .dot { background: var(--warn); }
+  .status[data-s="error"] .dot { background: var(--bad); }
+
+  /* Progress strip */
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 18px; box-shadow: var(--shadow); }
+  .stat { background: var(--surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .stat .n { font-family: var(--display); font-weight: 700; font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .n span { color: var(--accent); }
+  .stat .l { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+
+  .jump { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 30px; }
+  .jump a { font-family: var(--mono); font-size: 12px; text-decoration: none; color: var(--ink-muted); border: 1px solid var(--line); background: var(--surface); padding: 5px 9px; border-radius: 6px; }
+  .jump a.complete { color: var(--ok); border-color: var(--ok); }
+
+  /* Watch-for box */
+  .watch { background: var(--accent-soft); border-radius: 10px; padding: 18px 22px; margin-bottom: 36px; }
+  .watch h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0 0 10px; color: var(--accent-ink); }
+  .watch ul { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; }
+  .watch li { font-size: 14.5px; }
+  .watch b { color: var(--accent-ink); }
+
+  /* Stage */
+  section.stage { margin-bottom: 38px; scroll-margin-top: 16px; }
+  .stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .stage-head h2 { font-family: var(--display); font-weight: 700; font-size: 27px; margin: 0; display: flex; gap: 12px; align-items: baseline; text-wrap: balance; }
+  .stage-head h2 .num { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--accent); }
+  .stage-head .count { font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .stage-head .count.complete { color: var(--ok); }
+  .intro { color: var(--ink-muted); margin: 0 0 14px; max-width: 70ch; font-size: 14.5px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .group-title { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); background: var(--surface-2); padding: 9px 16px; border-bottom: 1px solid var(--line); }
+
+  /* Checklist row */
+  .row { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 4px 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: none; }
+  .row.done { background: color-mix(in srgb, var(--ok-soft) 45%, transparent); }
+  .row.done .txt { color: var(--ink-muted); }
+  .check { position: relative; display: block; width: 22px; height: 22px; margin-top: 2px; cursor: pointer; }
+  .check input { position: absolute; opacity: 0; width: 22px; height: 22px; margin: 0; cursor: pointer; }
+  .check .box { display: block; width: 22px; height: 22px; border: 1.5px solid var(--line-strong); border-radius: 5px; background: var(--surface); }
+  .check input:checked + .box { background: var(--ok); border-color: var(--ok); }
+  .check input:checked + .box::after { content: ""; position: absolute; left: 7.5px; top: 3.5px; width: 6px; height: 11px; border: solid var(--surface); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+  .body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .txt { font-size: 15px; }
+  .detail { color: var(--ink-muted); font-size: 13.5px; }
+
+  /* Pull-list rows */
+  .pull { display: grid; grid-template-columns: minmax(84px, 0.9fr) minmax(0, 2.2fr) minmax(0, 1.4fr); gap: 2px 14px; align-items: baseline; }
+  .pull .ref { font-family: var(--mono); color: var(--verdigris); font-size: 13.5px; overflow-wrap: anywhere; }
+  .pull .part { font-weight: 600; }
+  .pull .part small { display: block; font-weight: 400; color: var(--ink-muted); font-size: 13px; }
+  .pull .src { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+  .pull .qty { font-family: var(--display); font-size: 30px; line-height: 1; color: var(--accent-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+  .pull .qty .pl { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; margin-right: 8px; color: var(--ink-faint); }
+  .pull .note { grid-column: 1 / -1; color: var(--ink-muted); font-size: 13px; }
+  .flag { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-ink); font-family: var(--mono); font-size: 11px; margin-left: 6px; white-space: nowrap; }
+  .row.dnp { background: var(--surface-2); }
+
+  /* Placement rows: step, value, count, designators */
+  .place { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+  .place .step { font-family: var(--mono); font-size: 12.5px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .place .val { font-weight: 600; }
+  .place .qty { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); font-weight: 600; text-align: right; white-space: nowrap; }
+  .place .refs { grid-column: 2 / -1; font-family: var(--mono); font-size: 13.5px; color: var(--verdigris); overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    .pull { grid-template-columns: minmax(0, 1fr); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* Measurements */
+  .measures { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 2px; }
+  .measure { display: flex; align-items: center; gap: 6px; }
+  .measure label { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+  .measure input {
+    width: 92px; font: 500 14px var(--mono); padding: 5px 8px; border-radius: 6px;
+    border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .measure .unit { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .chip { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .chip[data-v="ok"] { background: var(--ok-soft); color: var(--ok); }
+  .chip[data-v="warn"] { background: var(--warn-soft); color: var(--warn); }
+  .chip[data-v="bad"] { background: var(--bad-soft); color: var(--bad); }
+  .chip:empty { display: none; }
+
+  /* Command blocks */
+  .cmd { display: flex; gap: 8px; align-items: stretch; }
+  .cmd pre { flex: 1; min-width: 0; margin: 0; overflow-x: auto; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--ink); }
+  .copy { font: 600 11.5px var(--mono); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-muted); border-radius: 6px; padding: 0 10px; cursor: pointer; }
+
+  /* Notes */
+  .notes textarea { width: 100%; min-height: 120px; resize: vertical; font: 14px/1.5 var(--sans); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+
+  footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .pull .qty .per { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--ink-muted); }
+  .boards button { white-space: nowrap; }
+</style>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MSV4 probe PCB · final netlist 2026-09-18 · boards 2 to 5</div>
+    <h1>Four boards, <em>one sitting</em></h1>
+    <p class="dek">Build the four remaining MSV4 boards together: count, kit, paste, place one value at a time across all
+      four, reflow, inspect. Then each board is powered, flashed and brought up on its own. Ticks, bench readings
+      and notes save to this page.</p>
+  </header>
+
+  <div class="controls">
+    <div class="boards" role="group" aria-label="View">
+      <span class="lbl">View</span>
+      <button type="button" data-board="batch" aria-pressed="true">All four · build</button>
+      <button type="button" data-board="b2" aria-pressed="false">Board 2</button>
+      <button type="button" data-board="b3" aria-pressed="false">Board 3</button>
+      <button type="button" data-board="b4" aria-pressed="false">Board 4</button>
+      <button type="button" data-board="b5" aria-pressed="false">Board 5</button>
+    </div>
+    <div class="status" id="status" data-s="idle"><span class="dot"></span><span id="status-text">Connecting to this page's store…</span></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="st-board">All</div><div class="l" id="st-board-l">Four boards</div></div>
+    <div class="stat"><div class="n"><span id="st-done">0</span>/<span id="st-total" style="color:inherit">0</span></div><div class="l">Steps done</div><div class="bar"><i id="st-bar"></i></div></div>
+    <div class="stat"><div class="n">200</div><div class="l">Parts to place · 50 × 4</div></div>
+    <div class="stat"><div class="n">4</div><div class="l">DNP pads, leave empty</div></div>
+  </div>
+  <nav class="jump" id="jump" aria-label="Stages"></nav>
+
+  <aside class="watch">
+    <h2>Watch for</h2>
+    <ul>
+      <li><b>Board 1's three faults all came from too much paste on fine-pitch parts</b> and none showed from the top: a bridge at U4 pins 8/9, an A/B short on U3, and a tombstoned part under U4. Paste thin on U3, U4, Q1 and U, and run the per-board checks in stage 07 before powering anything.</li>
+      <li><b>The pad labelled DNP stays empty on every board.</b> It is the 100&nbsp;nF on <code>VBAT_DIV</code>; firmware reads the divider 2&nbsp;ms after switching it on and assumes no cap.</li>
+      <li><b>C10 must be the C0G 10&nbsp;nF</b> (Murata, MSV3 stock). It holds the MPPT reference, so leakage becomes charging error.</li>
+      <li><b>Nine MΩ values sit next to each other</b> on the BQ25504 ladders, and four boards means four of each. Pull them in labelled strips and keep them apart.</li>
+      <li><b>D1 is the MSV3 stock LED</b>, not the footprint's part. Check its cathode mark before placing the first one.</li>
+      <li><b>Bench power needs an SP input, at 3.0&nbsp;V or less.</b> A cell alone never starts the BQ25504.</li>
+      <li><b>SWD only through <code>swd_flash_hex.py</code></b>, which waits for 3&nbsp;s of steady contact. No bare serial commands to the flasher. One board at a time, held by hand until it finishes.</li>
+      <li><b>Plain <code>python</code> runs every script here.</b> The portable Python the older docs name does not exist on this machine.</li>
+    </ul>
+  </aside>
+
+  <main id="stages"></main>
+
+  <section class="stage notes" id="notes-section">
+    <div class="stage-head"><h2 id="notes-title">Bench notes</h2><span class="count" id="notes-saved"></span></div>
+    <p class="intro">Anything odd: rework, a swapped part, a reading you want to come back to. Saved per view.</p>
+    <label for="notes" class="intro" style="display:none">Bench notes</label>
+    <textarea id="notes" placeholder="e.g. Board 3: reworked a bridge on U4 pins 8–9 after reflow."></textarea>
+  </section>
+
+  <footer>
+    <span>MSV4/hardware/reference/netlist/MSV4_sch_2026-09-18_final.NET</span>
+    <span>COMPONENT_INDEX.md · PIN_NET_REFERENCE.md</span>
+    <span>MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md · MSV4_PRODUCTION_FIRMWARE_2026-10-06.md</span>
+    <span>MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards_2026-09-19.md</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var N = 4; // boards in this build
+
+  // ---------- Checks on bench readings ----------
+  function num(s) {
+    if (s == null) return NaN;
+    var t = String(s).trim().toLowerCase().replace(/\s+/g, "").replace(/ω|ohms?$/g, "");
+    if (!t) return NaN;
+    if (/^(ol|open|inf|∞|>)/.test(t)) return Infinity;
+    var m = t.match(/^(-?\d*\.?\d+)([kmgµu]?)/);
+    if (!m) return NaN;
+    var v = parseFloat(m[1]);
+    var mult = { k: 1e3, m: 1e6, g: 1e9, "µ": 1e-6, u: 1e-6, "": 1 }[m[2]];
+    return v * mult;
+  }
+  function range(lo, hi, okMsg, lowMsg, highMsg) {
+    return function (v) {
+      var x = num(v.a);
+      if (isNaN(x)) return null;
+      if (x < lo) return ["bad", lowMsg || "low"];
+      if (x > hi) return ["bad", highMsg || "high"];
+      return ["ok", okMsg || "in range"];
+    };
+  }
+  function atLeast(need) {
+    return function (v) {
+      var x = num(v.a);
+      if (isNaN(x)) return null;
+      return x >= need ? ["ok", "enough"] : ["bad", "short by " + (need - x)];
+    };
+  }
+  var notShort = function (v) {
+    var x = num(v.a);
+    if (isNaN(x)) return null;
+    return x >= 1000 ? ["ok", "no short"] : ["bad", "under 1 kΩ: find the bridge"];
+  };
+
+  // ---------- Content ----------
+  // One list, in placement order, shared by Kit and Place: big parts first (MCU, ICs, inductor, then
+  // crystal and LED), then passives by how many go on a board, most-used value first.
+  // Rows: [id, refs, part, sub, role, source, qty per board, note, flag, placement note]
+  var ORDER = [
+    { title: "Big parts first: MCU, ICs, inductor, then crystal and LED", rows: [
+      ["U1", "U1", "E73-2G4M08S1C", "Ebyte · nRF52840, 18×13 mm", "MCU + BLE radio", "Ebyte order", 1, "S1C with the ceramic antenna. Not the S1CX (IPEX connector).", "", "Antenna end at the board edge; pin 1 to the mark."],
+      ["U", "U", "BQ25504RGTR", "TI · VQFN-16 3×3, exposed pad", "Solar harvester", "LCSC 09-19, or MSV3's spare RGTT", 1, "Same die as the RGTT.", "fine pitch", "Pin-1 dot to the mark; exposed pad centred. Thin paste."],
+      ["U3U4", "U3 U4", "FSUSB42UMX", "onsemi · UMLP-10, 1.4×1.8 mm", "U3 A/B swap · U4 chopper + drive monitor", "LCSC 09-19 (12 for 5 boards)", 2, "Spares from the same bag cover rework.", "fine pitch", "Pin 1 to the mark on both. Thin paste: board 1's bridge and tombstone were both at U4."],
+      ["U2", "U2", "TPS7A0233PDBVR", "TI · SOT-23-5", "3.3 V LDO, enabled by VBAT_OK", "LCSC 09-19", 1, "", "", "Three-lead side on the three pads."],
+      ["Q1", "Q1", "NTZD3155CT2G", "onsemi · SOT-563, N+P dual", "Battery-divider high-side switch", "LCSC 09-19", 1, "Pin 1 is S1, the N-channel source.", "fine pitch", "Pin 1 to the mark. It fits backwards just as easily."],
+      ["L1", "L1", "LPS4018-223MRC", "Coilcraft · 22 µH, 4×4 mm", "Harvester boost inductor", "MSV3 stock", 1, "", "", "Not polarized."],
+      ["Y1", "Y1", "SC-32S 32.768 kHz", "Seiko · 3.2×1.5 mm, 7 pF", "LFXO crystal on P0.00 / P0.01", "LCSC 09-19", 1, "", "", "Not polarized. Seat it flat."],
+      ["D1", "D1", "Blue 0805 LED", "HL-PSC-2012H203BC", "Status LED on P1.10 via R10", "MSV3 stock", 1, "Not the footprint's part (SM0805UBWC).", "polarity", "Cathode mark checked against the footprint first, then the same way on all four."]
+    ]},
+    { title: "Passives, most-used value first · 0805 1% resistors carry the usual 4-digit marking, if printed", rows: [
+      ["r100k", "R5 R9 R18 R19 R20 R21 R22 R23", "100 kΩ", "marked 1003", "R5/R9 VBAT divider · R18/R19 filters · R20/R22 Sel pulldowns · R21/R23 /OE pull-ups", "MSV3 stock", 8, "", "", ""],
+      ["c100n", "C4 C6 C12 C15 C17", "100 nF", "X7R 0805", "C6 reset · C12 VSTOR · others bypass", "LCSC 09-19", 5, "", "", "Skip the pad labelled DNP: same footprint, stays empty."],
+      ["r1m", "R1 R3 R24", "1 MΩ", "marked 1004", "R1 Q1 gate pull-up · R3 ROK3 · R24 VBAT_DIV_EN pulldown", "LCSC 09-19", 3, "", "MΩ", ""],
+      ["c47u", "C1 C7 C11", "4.7 µF", "X5R 25 V 0805", "VBAT · VIN_DC · VSTOR", "MSV3 stock + LCSC", 3, "", "count first", ""],
+      ["c1n", "C8 C9 C16", "1 nF", "C0G 0805", "C8 NTC RF bypass · C9 SENSE_OUT filter · C16 DRV_OUT filter", "LCSC 09-19 (YAGEO)", 3, "", "C0G", ""],
+      ["r59", "R4 R12", "5.9 MΩ", "marked 5904", "R4 ROK2 · R12 RUV2, UV top", "MSV3 stock", 2, "", "count first", ""],
+      ["c10p", "C2 C3", "10 pF", "C0G 0805", "Crystal load", "LCSC 09-19 (YAGEO)", 2, "", "C0G", ""],
+      ["c1u", "C13 C14", "1 µF", "X7R 50 V 0805", "C13 on VSTOR · C14 decoupling", "MSV3 stock + LCSC", 2, "", "count first", ""],
+      ["c10u", "C5", "10 µF", "X5R 16 V 0805", "Bulk", "MSV3 stock", 1, "", "", ""],
+      ["c10n", "C10", "10 nF", "C0G 0805, low leakage", "VREF_SAMP: holds the MPPT reference", "MSV3 stock (Murata GRM2195) + LCSC", 1, "Must be this C0G part. Leakage here is charging error.", "C0G", "The Murata C0G from MSV3 stock, nothing else."],
+      ["r10m", "R6", "10 MΩ", "marked 1005", "MPPT bottom, with R8", "MSV3 stock", 1, "", "MΩ", ""],
+      ["r56", "R8", "5.6 MΩ", "marked 5604", "MPPT bottom, with R6", "MSV3 stock", 1, "", "MΩ", ""],
+      ["r536", "R11", "5.36 MΩ", "marked 5364", "ROV2, OV top", "LCSC 09-19", 1, "", "MΩ", ""],
+      ["r499", "R13", "4.99 MΩ", "marked 4994", "ROV1, OV bottom", "LCSC 09-19", 1, "", "MΩ", ""],
+      ["r442", "R2", "4.42 MΩ", "marked 4424", "MPPT top", "MSV3 stock", 1, "", "MΩ", ""],
+      ["r412", "R14", "4.12 MΩ", "marked 4124", "RUV1, UV bottom", "MSV3 stock", 1, "", "MΩ", ""],
+      ["r348", "R7", "3.48 MΩ", "marked 3484", "ROK1, VBAT_OK bottom", "LCSC 09-19", 1, "", "MΩ", ""],
+      ["r10k", "R16", "10 kΩ", "marked 1002", "NTC divider reference", "MSV3 stock", 1, "", "", ""],
+      ["r1k", "R15", "1 kΩ", "marked 1001", "Rs, excitation series resistor", "LCSC 09-19", 1, "Starting value. It may change once |Z| is measured on a real blade.", "", ""],
+      ["r470", "R10", "470 Ω", "marked 4700", "LED series", "MSV3 stock", 1, "", "", ""],
+      ["R17", "R17", "NTC, 10 kΩ", "Murata NCP15XH103F03RC · 0402", "Soil temperature at the blade tip", "LCSC 09-19", 1, "", "0402", "At the blade tip, away from the rest."]
+    ]},
+    { title: "Do not place", rows: [
+      ["dnp", "DNP", "100 nF pad on VBAT_DIV", "", "Leave empty", "—", 0, "The netlist calls this part DNP. Firmware assumes the battery divider has no cap. Same on all four boards.", "DNP", ""]
+    ]}
+  ];
+
+  // Scarce parts: counted before anything else. Need = per-board quantity × N.
+  var SCARCE = [
+    ["cnt-u", "BQ25504RGTR / RGTT (U)", 4, "The MSV3 spare RGTT is one of them if still in the bag."],
+    ["cnt-u3u4", "FSUSB42UMX (U3, U4)", 8, "Eight for four boards, spares on top."],
+    ["cnt-47u", "4.7 µF X5R 25 V (C1 C7 C11)", 12, "MSV3 leftovers plus the LCSC order."],
+    ["cnt-1u", "1 µF X7R 50 V (C13 C14)", 8, "MSV3 leftovers plus the LCSC order."],
+    ["cnt-10n", "10 nF C0G, Murata (C10)", 4, "Must be C0G. Do not substitute."],
+    ["cnt-59", "5.9 MΩ (R4 R12)", 8, "MSV3 stock showed 15 left."],
+    ["cnt-l1", "22 µH LPS4018 (L1)", 4, "MSV3 stock showed 5 left."],
+    ["cnt-e73", "E73-2G4M08S1C (U1)", 4, "Ebyte order. S1C, not S1CX."]
+  ];
+
+  function cmd(s) { return { cmd: s }; }
+
+  var BOARD_IDS = { b2: 11, b3: 12, b4: 13, b5: 14 };
+
+  // Stages with scope "batch" belong to the all-four view; scope "board" repeats on each board's own view.
+  var STAGES = [
+    { id: "count", scope: "batch", n: "01", title: "Count the scarce parts", intro: "Eight values had thin stock when the MSV3 leftovers were pulled. Count each into the box and type the number. Anything short is a reason to stop now, not halfway through placing.", counts: SCARCE },
+    { id: "kit", scope: "batch", n: "02", title: "Kit the parts", intro: "Four boards' worth, laid out in the order you'll place it. Each line shows the total for four and the per-board count. Sources are where each part came from: the 2026-09-19 LCSC order, MSV3 leftover stock, or the Ebyte order.", pull: ORDER },
+    { id: "prep", scope: "batch", n: "03", title: "Paste", intro: "U3, U4, Q1 and U have their pads under the body. They need paste with hot air or a reflow plate; an iron can't reach them. Board 1's faults were all too much paste on these four.", items: [
+      { id: "prep-board", t: "Inspect all four bare boards under magnification: mask intact over the blade plates, clean pads at U3, U4, U and the E73." },
+      { id: "prep-strips", t: "Label each passive strip with its value and designators, in the order of the placement list." },
+      { id: "prep-ladders", t: "Keep the ladder map handy for the double-check after placement.", d: "OV: R11 5.36M top, R13 4.99M bottom (3.889 V). OK: R3 1M + R4 5.9M top, R7 3.48M bottom (3.728 V on, 3.369 V off). UV: R12 5.9M top, R14 4.12M bottom (3.040 V). MPPT: R2 4.42M top, R6 10M + R8 5.6M bottom (77.9 %)." },
+      { id: "prep-paste", t: "Paste all four boards, thinly on the fine-pitch pads." }
+    ]},
+    { id: "place", scope: "batch", n: "04", title: "Place and reflow", intro: "One value at a time across all four boards, top to bottom, so each tick below means four parts placed. Find each designator in Altium as you go.", placeList: ORDER, after: [
+      { id: "pl-ladder-check", t: "Before reflow, check the MΩ ladders on every board against the map: R11/R13, R3/R4/R7, R12/R14, R2/R6/R8." },
+      { id: "pl-reflow", t: "Reflow, in one load or two as the plate holds. Keep track of which boards went together." }
+    ]},
+    { id: "inspect", scope: "batch", n: "05", title: "Inspect and clean", items: [
+      { id: "in-bridges", t: "Under magnification, every board: no bridges on U3, U4, Q1 or U; no tombstoned 0402 or 0805 parts; every E73 pad wetted." },
+      { id: "in-u4", t: "Look again at U4 and its neighbours R23 and R15, on all four.", d: "Board 1's bridge at U4 pins 8/9 and a tombstoned part under U4 were the two faults the eye caught late or not at all." },
+      { id: "in-clean", t: "Wash the flux off around U and the MΩ ladders with IPA, and let it dry completely.", d: "Residue across a 5 MΩ resistor is a parallel leak that moves the charge thresholds." },
+      { id: "in-dnp", t: "DNP pad empty and Y1 seated flat, on every board." }
+    ]},
+    { id: "build", scope: "batch", n: "06", title: "Bring-up image", intro: "The bring-up console is the same image for every board, so it is built once. Production images carry a sensor ID and are built per board in stage 11.", items: [
+      { id: "bd-build", t: "Build and sign the bring-up image. The ZIP already in .arduino-build predates later source edits.", d: "Already built 2026-10-11: MSV4/.arduino-build/msv4-out/MSV4_Probe_Bringup_BLE-v262152-live-2026-10-11.hex (and the signed -signed-ota.zip beside it). Rebuild only if the sketch changes. It adds the LED boot signature and the live stream.", c: "powershell -ExecutionPolicy Bypass -File MSV4\\scripts\\arduino_msv4_probe.ps1 -BuildTag live-2026-10-11 -ApplicationVersion 262152 -Package -AcceptSharedMsv3DeviceType" },
+      { id: "bd-bl", t: "Check the bootloader hex release: the SWD step verifies it against its manifest before writing.", d: "Board 1 ran MSV3 bootloader 1.0.3, MBR + S140 6.1.1. All four boards get the same." }
+    ]},
+
+    { id: "ohms", scope: "board", n: "07", title: "Unpowered checks", intro: "Meter in resistance mode, no cell, no supply. A reading that climbs is the capacitors charging, which is fine. Type OL for open. The last three come from board 1's faults.", items: [
+      { id: "r-vstor", t: "VSTOR to GND.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-3v3", t: "3V3 pad (SW_3V3) to GND.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-vbat", t: "VBAT+ to VBAT−.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-sp", t: "SP+ to SP−.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-ab", t: "MS_A to MS_B. Must be open.", d: "On board 1 a short here, with R15 bypassed, pulled the drive pin down through two switch resistances.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-r15", t: "Across R15, DRV to SENSE: about 1 kΩ.", d: "A tombstoned part under U4 on board 1 read 0 Ω here.", m: [["a", "R", "Ω"]], check: range(800, 1100, "1 kΩ", "low: find the bridge", "high: part not seated") },
+      { id: "r-r23", t: "Across R23, READ_nOE to 3V3: not a short.", d: "A bridge at U4 pins 8/9 on board 1 read 0 Ω here.", m: [["a", "R", "Ω"]], check: notShort }
+    ]},
+    { id: "power", scope: "board", n: "08", title: "First power", intro: "Cell on VBAT, bench supply on SP. The battery and panel solder to bare pads; there is no connector on this board.", items: [
+      { id: "pw-cell", t: "Pick a 60 mAh cell and measure it.", d: "At 3.73 V or more the 3.3 V rail comes up as soon as the supply goes on. A lower cell works too, but 3V3 waits until the supply has charged it past 3.73 V. A factory-fresh cell at 4.05 V is above VBAT_OV, so the supply will draw no current. That is correct, and also what a dead charger looks like.", m: [["a", "Cell", "V"]], check: function (v) { var x = num(v.a); if (isNaN(x)) return null; if (x < 3.0) return ["bad", "too flat: charge it first"]; if (x < 3.73) return ["warn", "3V3 waits until 3.73 V"]; if (x > 3.95) return ["warn", "above VBAT_OV: no charge current expected"]; return ["ok", "3V3 comes up at once"]; } },
+      { id: "pw-leads", t: "Solder the cell leads to VBAT+ and VBAT−, red to VBAT+. Check the polarity twice before the second lead goes on." },
+      { id: "pw-supply", t: "Bench supply on SP+ / SP−: 2.0–2.5 V, current limit 50 mA.", d: "Never above 3.0 V, the BQ25504's VIN_DC limit. The cell alone does nothing: the BQ25504 connects VBAT to VSTOR only once it sees an SP input. A stiff supply sitting at its limit near 1.9–2.0 V is normal while charging." },
+      { id: "pw-rails", t: "Measure the rails. The LED stays dark; there is no firmware yet.", m: [["a", "3V3", "V"], ["b", "VSTOR", "V"], ["c", "Supply", "mA"]], check: function (v) { var a = num(v.a), b = num(v.b); if (isNaN(a) && isNaN(b)) return null; if (!isNaN(a) && (a < 3.25 || a > 3.35)) return ["bad", "3V3 off nominal"]; if (!isNaN(b) && (b < 3.0 || b > 3.95)) return ["bad", "VSTOR out of range"]; return ["ok", "rails look right"]; } },
+      { id: "pw-ov", t: "Leave it charging while you flash, then check VBAT again. It must level off at VBAT_OV, 3.89 V nominal; board 1's own ADC reads its stop at 3.82–3.83 V.", d: "If VBAT passes 3.95 V, cut the supply: R11 or R13 is wrong.", m: [["a", "Highest VBAT", "V"]], check: function (v) { var x = num(v.a); if (isNaN(x)) return null; return x <= 3.95 ? ["ok", "OV holding"] : ["bad", "cut the supply: check R11/R13"]; } }
+    ]},
+    { id: "flash", scope: "board", n: "09", title: "Flash the bootloader and bring-up image", intro: "No USB on MSV4. The bootloader goes on over SWD, and everything after it goes over BLE. Hold the pogo pins by hand until each script finishes.", items: [
+      { id: "fl-swd", t: "SWD: bootloader, SoftDevice AND the bring-up image in one hold. Pogo pins on RST, IO, CLK and SW_GND (the 2.54 mm row).", d: "The script waits for 3 s of steady contact, mass-erases, writes MBR + S140 6.1.1 + bootloader 1.0.3, then the bring-up app, and resets the target over SWD. Expect roughly twice the time of a bootloader-only flash (my estimate, about 1.5 to 2 minutes): do not let go until it prints 'You can let go of the pads now.' Board 1 was on COM4; use the port the flasher shows now. Not yet run on hardware.", c: "python scripts\\swd_flash_hex.py --port COMx --msv3 1.0.3 --app MSV4\\.arduino-build\\msv4-out\\MSV4_Probe_Bringup_BLE-v262152-live-2026-10-11.hex" },
+      { id: "fl-led", t: "Watch the LED: one long flash (CPU and crystal running), two short flashes (Bluetooth up), then a blip every 2 s.", d: "No connection needed. 3 or 5 short flashes followed by a restart is the boot guard escaping to DFU: the crystal or boot counter, not this image." },
+      { id: "fl-dfu", t: "If nothing blinks after 5 s, enter DFU over SWD. The RST pad is not a reset pin right after a mass erase.", c: "python scripts\\swd_enter_dfu.py --port COMx" },
+      { id: "fl-app", t: "Only if the board is in AdaDFU with no application: install the bring-up image over BLE instead. Write down its DFU address first.", d: "Many 'PRN Timeout, continuing anyway' lines are normal on this path; the bootloader still validates and activates.", c: "python scripts\\ble_dfu_recover.py MSV4\\.arduino-build\\msv4-out\\MSV4_Probe_Bringup_BLE-v262152-live-2026-10-11-signed-ota.zip --device <address>" },
+      { id: "fl-adv", t: "The board advertises as MSV4-BU-XXXX. Note the name; it is the board's address suffix.", m: [["a", "Name", ""]], c: "python MSV4\\scripts\\msv4_ble_console.py --cmd info --cmd vbat" }
+    ]},
+    { id: "bringup", scope: "board", n: "10", title: "Bring-up checks", intro: "The console checks that board 1 passed, trimmed to the ones that catch a bad build. The scope timing, the dfu enter reinstall and the ten-cycle test were proved on board 1 and are not repeated.", items: [
+      { id: "bu-lfclk", t: "<code>info</code>: LFCLK reads XTAL running now, RC at setup entry.", d: "Expect a start wait of 250-380 ms. A crystal that doesn't start blinks 5 times and drops into BLE DFU.", m: [["a", "Start wait", "ms"]], check: function (v) { var x = num(v.a); if (isNaN(x)) return null; if (x < 1000) return ["ok", "crystal running"]; if (x < 2000) return ["warn", "slow start"]; return ["bad", "past the 2 s escape"]; } },
+      { id: "bu-vbat", t: "<code>vbat</code> against a meter on VBAT+.", m: [["a", "Console", "mV"], ["b", "Meter", "V"]], check: function (v) { var a = num(v.a), b = num(v.b); if (isNaN(a) || isNaN(b) || b === 0) return null; var e = Math.abs(a / 1000 - b) / b * 100; return e <= 2 ? ["ok", e.toFixed(1) + " % apart"] : ["bad", e.toFixed(1) + " % apart, want ≤ 2 %"]; } },
+      { id: "bu-vdd", t: "<code>vdd</code> reads close to 3300 mV.", m: [["a", "VDD", "mV"]], check: range(3250, 3350, "nominal") },
+      { id: "bu-temp", t: "<code>temp</code> reads room temperature, and a finger on the blade tip moves it.", m: [["a", "Temp", "°C"]], check: range(10, 40, "plausible", "too cold for a room", "too hot for a room") },
+      { id: "bu-drive", t: "<code>drive 16</code>: 1.000 MHz square wave on DRV, and <code>pins</code> shows hi-drive. <code>drive off</code> returns it low.", m: [["a", "Frequency", "MHz"]], check: range(0.999, 1.001, "on frequency") },
+      { id: "bu-swap", t: "<code>swap a</code>, <code>swap b</code> and <code>swap open</code> with <code>chop on</code>, then <code>read</code>: SENSE moves between the states and DRV does not.", d: "If DRV moves with the swap state, look for a SENSE to DRV short." },
+      { id: "bu-iq", t: "<code>iq</code> in air gives a stable φ on repeats, near board 1's 761 mV at −177.5° on <code>swap a</code>, and <code>sweep 16</code> leaves a residual that is small next to A.", m: [["a", "A", "mV"]], check: range(700, 820, "near board 1", "low vs board 1's 761 mV", "high vs board 1's 761 mV") },
+      { id: "bu-cp", t: "<code>spectrum open</code> gives a Cp near board 1's 8.8 pF.", m: [["a", "Cp", "pF"]], check: range(7, 11, "near board 1", "low vs 8.8 pF", "high vs 8.8 pF") },
+      { id: "bu-live", t: "Hand test in MSV4 Lab: Start live, press Zero with the blade in air, then hand on, hand off.", d: "G is a fast 1 MHz conductance index (about 6 per second). In air it sits near zero; a hand should lift it by hundreds of µS and it should fall back when you let go. Run it on each board and compare.", c: "powershell -ExecutionPolicy Bypass -File MSV4\\scripts\\Start-MSV4-Lab.ps1", m: [["a", "G air", "µS"], ["b", "G hand on", "µS"]], check: function (v) { var a = num(v.a), b = num(v.b); if (isNaN(a) || isNaN(b)) return null; var d = b - a; return d > 100 ? ["ok", "+" + d.toFixed(0) + " µS: responds"] : d > 30 ? ["warn", "+" + d.toFixed(0) + " µS: weak"] : ["bad", "no response: check U3, R15, the blade pads"]; } },
+      { id: "bu-safe", t: "<code>pins</code> after a cancel or disconnect shows both /OE released and DRV, TEMP_READ and VBAT_DIV_EN low, with no 1 MHz left." }
+    ]},
+    { id: "prod", scope: "board", n: "11", title: "Production image and identity", intro: "Each board needs its own sensor ID and a record in MSV3/fleet.json before the MSV4 updater will touch it. Sensor IDs 1 to 10 are taken; the receiver accepts 1 to 16. The suggested IDs below are a proposal, not a decision.", items: [
+      { id: "pd-id", t: "Agree this board's sensor ID with Claude and write it down.", d: "Proposed: board 2 → 11, board 3 → 12, board 4 → 13, board 5 → 14.", m: [["a", "Sensor ID", ""]], check: function (v) { var x = num(v.a); if (isNaN(x)) return null; return x >= 11 && x <= 16 ? ["ok", "free slot"] : ["warn", "1–10 are in use; max 16"]; } },
+      { id: "pd-fleet", t: "Tell Claude the application and DFU addresses, the ID and where the board will live. Claude adds its msv4_boards entry to fleet.json first.", d: "No MSV4 tool will target a board that is not in msv4_boards." },
+      { id: "pd-build", t: "Claude builds the production image for this ID. Ask for the current tag and an application version above the one on board 1.", c: "powershell -ExecutionPolicy Bypass -File MSV4\\scripts\\arduino_msv4_probe.ps1 -Sketch arduino/MSV4_Moisture_BLE_Sleep -SensorId <id> -BuildTag <tag> -ApplicationVersion <n> -Package -AcceptSharedMsv3DeviceType" },
+      { id: "pd-pre", t: "Preflight first. It writes nothing.", c: "python MSV4\\scripts\\msv4_ble_ota.py <zip> --board <n> --preflight-only" },
+      { id: "pd-ota", t: "Install over BLE. A failed transfer leaves the board in DFU with no application; re-run with --skip-jump.", d: "Keep the board close: at −78 dBm a weaker client overran the bootloader on board 1 and was refused with status 6.", c: "python MSV4\\scripts\\msv4_ble_ota.py <zip> --board <n>" },
+      { id: "pd-prove", t: "Prove it: the DIS build string, then at least two advancing counters.", c: "python MSV4\\scripts\\msv4_adv_scan.py --sensor <id> --require-progress" }
+    ]},
+    { id: "longterm", scope: "board", n: "12", title: "Panel, housing, placement", items: [
+      { id: "lt-panel", t: "Panel acceptance, in direct sun and disconnected from any board.", d: "Reject a panel whose open-circuit voltage is above 2.8 V. Short-circuit current should be near 60 mA.", m: [["a", "V_OC", "V"], ["b", "I_SC", "mA"]], check: function (v) { var a = num(v.a), b = num(v.b); if (isNaN(a) && isNaN(b)) return null; if (!isNaN(a) && a > 2.8) return ["bad", "reject: V_OC above 2.8 V"]; if (!isNaN(b) && (b < 40 || b > 80)) return ["warn", "I_SC far from 60 mA"]; return isNaN(a) ? null : ["ok", "accept"]; } },
+      { id: "lt-solder", t: "Remove the bench supply, then solder the panel to SP+ and SP−." },
+      { id: "lt-case", t: "Housing: print the reopenable integrated-solar enclosure. Leave the epoxy LED window for a final board." },
+      { id: "lt-place", t: "Decide where it goes (pot, room, sun side, power) and tell Claude, so its physical state is recorded in fleet.json before data starts to count." },
+      { id: "lt-insert", t: "Seat the blade so the soil grips it: moisten the spot, push straight in once without rocking, then firm the soil around it. Note how tight it feels.", d: "On MSV4 the fitted Cm is the contact-quality channel: a daily swing in Cm means the interface is moving." }
+    ]}
+  ];
+
+  // ---------- Build the DOM once ----------
+  var stagesEl = document.getElementById("stages");
+  var ITEMS = {};        // id -> {el, def, stage}
+  var STAGE_IDS = {};    // stage id -> [item ids]
+  var STAGE_EL = {};     // stage id -> section element
+
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function checkbox(id, label) {
+    var lab = el("label", "check");
+    var inp = document.createElement("input");
+    inp.type = "checkbox"; inp.id = "chk-" + id; inp.setAttribute("aria-label", label);
+    inp.addEventListener("change", function () { setDone(id, inp.checked); });
+    lab.appendChild(inp); lab.appendChild(el("span", "box"));
+    return lab;
+  }
+
+  function copyBlock(text) {
+    var wrap = el("div", "cmd");
+    var pre = el("pre"); pre.textContent = text;
+    var btn = el("button", "copy", "Copy"); btn.type = "button";
+    btn.addEventListener("click", function () {
+      var done = function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); };
+      var fallback = function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+    });
+    wrap.appendChild(pre); wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function measures(it, body) {
+    var ms = el("div", "measures");
+    it.m.forEach(function (m) {
+      var w = el("div", "measure");
+      var inId = "in-" + it.id + "-" + m[0];
+      var lab = el("label", "", esc(m[1])); lab.htmlFor = inId;
+      var inp = document.createElement("input"); inp.id = inId; inp.type = "text"; inp.inputMode = "decimal"; inp.autocomplete = "off";
+      inp.addEventListener("input", function () { localVal(it.id, m[0], inp.value); });
+      inp.addEventListener("change", function () { saveVal(it.id); });
+      w.appendChild(lab); w.appendChild(inp); if (m[2]) w.appendChild(el("span", "unit", esc(m[2])));
+      ms.appendChild(w);
+    });
+    var chip = el("span", "chip"); chip.id = "chip-" + it.id; ms.appendChild(chip);
+    body.appendChild(ms);
+  }
+
+  STAGES.forEach(function (st) {
+    var sec = el("section", "stage"); sec.id = st.id;
+    var head = el("div", "stage-head");
+    head.appendChild(el("h2", "", '<span class="num">' + st.n + '</span>' + esc(st.title)));
+    var cnt = el("span", "count"); cnt.id = "cnt-" + st.id; head.appendChild(cnt);
+    sec.appendChild(head);
+    if (st.intro) sec.appendChild(el("p", "intro", esc(st.intro)));
+    STAGE_IDS[st.id] = [];
+    var card = el("div", "card");
+
+    function reg(id, row, def) { ITEMS[id] = { el: row, def: def || {}, stage: st.id }; STAGE_IDS[st.id].push(id); }
+
+    if (st.counts) {
+      card.appendChild(el("div", "group-title", "Counted into the box · need = per board × " + N));
+      st.counts.forEach(function (c) {
+        var it = { id: c[0], m: [["a", "Counted", ""]], check: atLeast(c[2]) };
+        var row = el("div", "row");
+        row.appendChild(checkbox(c[0], "Counted " + c[1]));
+        var body = el("div", "body");
+        body.appendChild(el("div", "txt", esc(c[1]) + '<span class="flag">need ' + c[2] + "</span>"));
+        body.appendChild(el("div", "detail", esc(c[3])));
+        measures(it, body);
+        row.appendChild(body); card.appendChild(row); reg(c[0], row, it);
+      });
+    } else if (st.pull) {
+      st.pull.forEach(function (g) {
+        card.appendChild(el("div", "group-title", esc(g.title)));
+        g.rows.forEach(function (r) {
+          var id = "kit-" + r[0];
+          var row = el("div", "row" + (r[8] === "DNP" ? " dnp" : ""));
+          row.appendChild(checkbox(id, "Pulled " + r[1]));
+          var body = el("div", "body");
+          var p = el("div", "pull");
+          p.appendChild(el("div", "ref", esc(r[1])));
+          p.appendChild(el("div", "part", esc(r[2]) + (r[8] ? '<span class="flag">' + esc(r[8]) + "</span>" : "") + (r[3] ? "<small>" + esc(r[3]) + "</small>" : "")));
+          p.appendChild(el("div", "", '<div class="qty">' + (r[6] ? '<span class="pl">pull</span>' + (r[6] * N) + " <span class=\"per\">" + r[6] + " × " + N + " boards</span>" : "none") + '</div><div class="src">' + esc(r[5]) + "</div>"));
+          p.appendChild(el("div", "note", esc(r[4]) + (r[7] ? ". " + esc(r[7]) : "")));
+          body.appendChild(p); row.appendChild(body); card.appendChild(row);
+          reg(id, row);
+        });
+      });
+    } else if (st.placeList) {
+      var step = 0;
+      st.placeList.forEach(function (g) {
+        card.appendChild(el("div", "group-title", esc(g.title)));
+        g.rows.forEach(function (r) {
+          var dnp = r[8] === "DNP";
+          var id = "pl-" + r[0];
+          var row = el("div", "row" + (dnp ? " dnp" : ""));
+          row.appendChild(checkbox(id, (dnp ? "Left empty " : "Placed ") + r[1] + " on all four"));
+          var body = el("div", "body");
+          var p = el("div", "place");
+          p.appendChild(el("span", "step", dnp ? "—" : String(++step)));
+          p.appendChild(el("span", "val", esc(r[2]) + (r[8] ? '<span class="flag">' + esc(r[8]) + "</span>" : "")));
+          p.appendChild(el("span", "qty", dnp ? "leave empty" : "× " + (r[6] * N) + " · " + r[6] + " each"));
+          p.appendChild(el("span", "refs", esc(r[1])));
+          body.appendChild(p);
+          var note = dnp ? r[7] : r[9];
+          if (note) body.appendChild(el("div", "detail", esc(note)));
+          row.appendChild(body); card.appendChild(row);
+          reg(id, row);
+        });
+      });
+      (st.after || []).forEach(function (it) {
+        var row = el("div", "row");
+        row.appendChild(checkbox(it.id, it.t));
+        var body = el("div", "body"); body.appendChild(el("div", "txt", esc(it.t)));
+        row.appendChild(body); card.appendChild(row); reg(it.id, row, it);
+      });
+    } else {
+      st.items.forEach(function (it) {
+        var row = el("div", "row");
+        row.appendChild(checkbox(it.id, it.t.replace(/<[^>]+>/g, "")));
+        var body = el("div", "body");
+        body.appendChild(el("div", "txt", it.t));
+        if (it.d) body.appendChild(el("div", "detail", esc(it.d)));
+        if (it.c) body.appendChild(copyBlock(it.c));
+        if (it.m) measures(it, body);
+        row.appendChild(body); card.appendChild(row); reg(it.id, row, it);
+      });
+    }
+    if (st.pull) card.appendChild(el("div", "group-title", "Total to pull: " + (50 * N) + " parts, " + N + " boards × 50 · 29 values"));
+    sec.appendChild(card);
+    stagesEl.appendChild(sec);
+    STAGE_EL[st.id] = sec;
+  });
+
+  var jump = document.getElementById("jump");
+  STAGES.forEach(function (st) { var a = el("a", "", esc(st.n + " " + st.title)); a.href = "#" + st.id; a.id = "jmp-" + st.id; jump.appendChild(a); });
+
+  // ---------- State ----------
+  var board = "batch";
+  try { var saved = localStorage.getItem("msv4-batch-view"); if (/^(batch|b[2-5])$/.test(saved || "")) board = saved; } catch (e) {}
+  var state = {};          // id -> {done, v:{}}
+  var notesText = "";
+  var db = null, unsubChecks = null, unsubNotes = null, mode = "pending";
+  var queues = {};
+
+  function setStatus(s, text) { var st = document.getElementById("status"); st.dataset.s = s; document.getElementById("status-text").textContent = text; }
+
+  function verdict(id) {
+    var def = ITEMS[id] && ITEMS[id].def;
+    if (!def || !def.check) return null;
+    var s = state[id]; var v = (s && s.v) || {};
+    try { return def.check(v); } catch (e) { return null; }
+  }
+
+  function inView(st) { return board === "batch" ? st.scope === "batch" : st.scope === "board"; }
+
+  function render() {
+    var total = 0, done = 0;
+    STAGES.forEach(function (st) {
+      var vis = inView(st);
+      STAGE_EL[st.id].hidden = !vis;
+      document.getElementById("jmp-" + st.id).hidden = !vis;
+      var ids = STAGE_IDS[st.id], d = 0;
+      ids.forEach(function (id) {
+        var s = state[id] || {}; var item = ITEMS[id];
+        var box = document.getElementById("chk-" + id);
+        if (box) box.checked = !!s.done;
+        item.el.classList.toggle("done", !!s.done);
+        if (item.def.m) {
+          item.def.m.forEach(function (m) {
+            var inp = document.getElementById("in-" + id + "-" + m[0]);
+            if (inp && document.activeElement !== inp) inp.value = (s.v && s.v[m[0]]) || "";
+          });
+          var chip = document.getElementById("chip-" + id); var vd = verdict(id);
+          chip.textContent = vd ? vd[1] : ""; if (vd) chip.dataset.v = vd[0]; else delete chip.dataset.v;
+        }
+        if (s.done) d++;
+      });
+      var c = document.getElementById("cnt-" + st.id); c.textContent = d + " / " + ids.length; c.classList.toggle("complete", d === ids.length);
+      document.getElementById("jmp-" + st.id).classList.toggle("complete", d === ids.length);
+      if (vis) { total += ids.length; done += d; }
+    });
+    document.getElementById("st-done").textContent = done;
+    document.getElementById("st-total").textContent = total;
+    document.getElementById("st-bar").style.width = (total ? (done / total * 100) : 0) + "%";
+    document.getElementById("st-board").textContent = board === "batch" ? "All" : board.slice(1);
+    document.getElementById("st-board-l").textContent = board === "batch" ? "Four boards" : "Board " + board.slice(1) + " · sensor " + BOARD_IDS[board] + " proposed";
+    document.getElementById("notes-title").textContent = board === "batch" ? "Bench notes · all four" : "Bench notes · board " + board.slice(1);
+    var ta = document.getElementById("notes"); if (document.activeElement !== ta) ta.value = notesText;
+    document.querySelectorAll(".boards button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.board === board)); });
+  }
+
+  // Local fallback when the page's store isn't available in this view.
+  function lsKey() { return "msv4-batch-" + board; }
+  function lsLoad() { try { var o = JSON.parse(localStorage.getItem(lsKey()) || "{}"); state = o.state || {}; notesText = o.notes || ""; } catch (e) { state = {}; notesText = ""; } }
+  function lsSave() { try { localStorage.setItem(lsKey(), JSON.stringify({ state: state, notes: notesText })); } catch (e) {} }
+
+  function persist(id) {
+    var body = { done: !!(state[id] && state[id].done), v: (state[id] && state[id].v) || {}, at: new Date().toISOString() };
+    if (mode !== "db") { lsSave(); return; }
+    var path = "batch4/" + board + "/checks/" + id;
+    setStatus("saving", "Saving…");
+    queues[path] = (queues[path] || Promise.resolve()).then(function () {
+      return db.doc(path).set(body);
+    }).then(function () { setStatus("saved", "Saved to this page"); }, function (e) {
+      setStatus("error", e && e.code === "invalid_argument" ? "You can view this page but not save to it" : "Couldn't save: " + ((e && e.message) || "store unavailable") + ". Try again in a moment.");
+    });
+  }
+
+  function setDone(id, on) { state[id] = state[id] || { v: {} }; state[id].done = on; render(); persist(id); }
+  function localVal(id, k, val) {
+    state[id] = state[id] || { done: false, v: {} }; state[id].v = Object.assign({}, state[id].v || {}); state[id].v[k] = val;
+    var chip = document.getElementById("chip-" + id); var vd = verdict(id);
+    chip.textContent = vd ? vd[1] : ""; if (vd) chip.dataset.v = vd[0]; else delete chip.dataset.v;
+  }
+  function saveVal(id) { persist(id); }
+
+  var notesTimer = null;
+  document.getElementById("notes").addEventListener("input", function (e) {
+    notesText = e.target.value;
+    clearTimeout(notesTimer); notesTimer = setTimeout(saveNotes, 900);
+  });
+  document.getElementById("notes").addEventListener("blur", function () { clearTimeout(notesTimer); saveNotes(); });
+  var lastNotesSaved = null;
+  function saveNotes() {
+    if (notesText === lastNotesSaved) return;
+    lastNotesSaved = notesText;
+    if (mode !== "db") { lsSave(); return; }
+    var path = "batch4/" + board + "/notes/main";
+    setStatus("saving", "Saving…");
+    queues[path] = (queues[path] || Promise.resolve()).then(function () { return db.doc(path).set({ text: notesText, at: new Date().toISOString() }); })
+      .then(function () { setStatus("saved", "Saved to this page"); }, function (e) { setStatus("error", "Couldn't save notes: " + ((e && e.message) || "store unavailable")); });
+  }
+
+  function subscribe() {
+    if (unsubChecks) { unsubChecks(); unsubChecks = null; }
+    if (unsubNotes) { unsubNotes(); unsubNotes = null; }
+    state = {}; notesText = ""; lastNotesSaved = null; render();
+    if (mode !== "db") { lsLoad(); render(); return; }
+    unsubChecks = db.collection("batch4/" + board + "/checks").onSnapshot(function (snap) {
+      var next = {};
+      snap.docs.forEach(function (d) { var o = d.data() || {}; next[d.id] = { done: !!o.done, v: Object.assign({}, o.v || {}) }; });
+      // Keep a value the viewer is typing right now.
+      var a = document.activeElement;
+      if (a && a.id && a.id.indexOf("in-") === 0) {
+        Object.keys(state).forEach(function (id) { if (a.id.indexOf("in-" + id + "-") === 0) { next[id] = next[id] || { done: false, v: {} }; next[id].v = Object.assign({}, next[id].v, state[id].v); } });
+      }
+      state = next; render();
+    }, function () { setStatus("error", "Lost the connection to this page's store. Reload to reconnect."); });
+    unsubNotes = db.doc("batch4/" + board + "/notes/main").onSnapshot(function (d) {
+      var o = d.exists ? (d.data() || {}) : {};
+      if (document.activeElement !== document.getElementById("notes")) { notesText = o.text || ""; lastNotesSaved = notesText; }
+      render();
+    }, function () {});
+  }
+
+  document.querySelectorAll(".boards button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (b.dataset.board === board) return;
+      saveNotes();
+      board = b.dataset.board;
+      try { localStorage.setItem("msv4-batch-view", board); } catch (e) {}
+      subscribe();
+    });
+  });
+
+  // Render at rest first, then connect the store when the viewer provides it.
+  lsLoad(); render();
+  var ready = (window.claude && typeof window.claude.use === "function") ? window.claude.use("db") : Promise.resolve(null);
+  ready.then(function (ns) {
+    if (ns) { db = ns; mode = "db"; setStatus("saved", "Saved to this page"); }
+    else { mode = "local"; setStatus("idle", "Saving in this browser only"); }
+    subscribe();
+  }, function () { mode = "local"; setStatus("idle", "Saving in this browser only"); subscribe(); });
+})();
+</script>
