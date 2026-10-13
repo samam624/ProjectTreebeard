@@ -351,10 +351,10 @@
       "source": "maintainer stated 2026-10-08 ~21:46 PDT: 'I am going to put the probe into the alcosasia pot moement of truth' (MSV4 board 1, sensor 10; stated as about to happen, not yet as done). That statement covers MSV4 board 1 going into this pot ONLY; whether anything else is in the pot, when it was last watered and where the pot now sits were not stated. Everything else here is from 2026-09-30: maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
       "plant": "Alocasia",
       "mass": {
-        "verified": "2026-10-11",
-        "latest_source": "maintainer stated 2026-10-11 after the 20:34 PDT weighing: 'saucer will remain dry till next watering', confirming no standing saucer water at 20:34. The maintainer then stated that the terracotta saucer had absorbed moisture and had been evaporating it all day; therefore dry/no-standing-water does not mean that the porous saucer itself contains no water.",
+        "verified": "2026-10-13",
+        "latest_source": "maintainer stated 2026-10-13 ~08:22 PDT: '4905 4904 4906' (weights only, nothing else in the message). Before that, 2026-10-12 ~21:30 PDT: 'Aslo 4916 4918 4916' (weights only, sent in the middle of an unrelated request). Before that, ~19:49 PDT: '4919 4925 4923' (weights only). Before that, ~15:39 PDT: '4929 4930 4929' (weights, no other detail). Before that, ~10:30 PDT: '4963 4964 4964 for pot weights rn', then 'saucer will always be dry from now on' (standing water only; absorbed water in the terracotta is not covered). Earlier: maintainer stated 2026-10-11 after the 20:34 PDT weighing: 'saucer will remain dry till next watering', confirming no standing saucer water at 20:34. The maintainer then stated that the terracotta saucer had absorbed moisture and had been evaporating it all day; therefore dry/no-standing-water does not mean that the porous saucer itself contains no water.",
         "source": "maintainer stated 2026-10-10 ~13:57 PDT: 'It says 4697 with the pot on after Tate capacity is 11.46lbs' (read as: the kitchen scale shows 4697 g with the pot on it after taring, and the scale's capacity is 11.46 lb). OBSERVED in a photo the maintainer sent at ~13:59 PDT: a glazed black-and-white checkered ceramic pot standing in a terracotta saucer, BOTH on the scale, display 4697; the scale is on a white shelf beside a window. Maintainer stated ~14:05 PDT: '4691 is with saucer, plan is to water it and not remove any excess water, just have it collect in saucer and evaporate'. So the weight INCLUDES the saucer. That message says 4691 where the earlier one and the photo say 4697; the maintainer confirmed ~14:10 PDT that it was 4697 ('Yeah it was 4697'). The watering described is a PLAN, not yet stated as done. The photo shows where the pot was weighed, not where it normally sits. Before that, ~13:50 PDT: 'I do have a kitchen scale but I'm getting the pot is around 10 lbs'. Both stated BEFORE the watering the maintainer plans for that evening; no watering has been stated as done.",
-        "value": "4992 g median of 4993, 4992 and 4992 g on the maintainer's kitchen scale, 2026-10-11 20:34 PDT: pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; no standing water, but the porous saucer retained an unmeasured amount of absorbed water",
+        "value": "4905 g median of 4905, 4904 and 4906 g on the maintainer's kitchen scale, 2026-10-13 ~08:22 PDT (medians on 10-12: 4916 g at ~21:30 PDT, 4923 g at ~19:49 PDT, 4929 g at ~15:39 PDT, 4964 g at ~10:30 PDT): pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; no standing saucer water on 10-12 or 10-13 (maintainer's standing statement of 10-12: saucer will always be dry from now on); on 10-11 20:34 there was no standing water but the porous saucer held unmeasured absorbed water",
         "weighing_convention": "pot and porous terracotta saucer together. Each weighing records whether water was standing in the saucer, but 'dry saucer' means no standing water only: the maintainer confirmed 2026-10-11 that the saucer absorbed moisture and had been evaporating it all day. Both standing and absorbed saucer water are in the scale mass but not in the soil measured by the probe.",
         "saucer_absorption": {
           "verified": "2026-10-11",
@@ -460,6 +460,126 @@
             "at_note": "the maintainer explicitly reported this reading at 20:34 PDT",
             "saucer_water": "no: maintainer subsequently confirmed that the saucer will remain dry until the next watering",
             "note": "the third of three back-to-back readings reported by the maintainer"
+          },
+          {
+            "when": "2026-10-12 ~10:30 PDT",
+            "grams": 4963,
+            "at": "2026-10-12T10:30:00-07:00",
+            "at_note": "the maintainer reported these readings 'rn' (right now); the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: maintainer stated 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three back-to-back readings reported by the maintainer (4963, 4964, 4964)"
+          },
+          {
+            "when": "2026-10-12 ~10:30 PDT",
+            "grams": 4964,
+            "at": "2026-10-12T10:30:00-07:00",
+            "at_note": "the maintainer reported these readings 'rn' (right now); the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: maintainer stated 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three back-to-back readings reported by the maintainer (4963, 4964, 4964)"
+          },
+          {
+            "when": "2026-10-12 ~10:30 PDT",
+            "grams": 4964,
+            "at": "2026-10-12T10:30:00-07:00",
+            "at_note": "the maintainer reported these readings 'rn' (right now); the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: maintainer stated 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three back-to-back readings reported by the maintainer (4963, 4964, 4964)"
+          },
+          {
+            "when": "2026-10-12 ~15:39 PDT",
+            "grams": 4929,
+            "at": "2026-10-12T15:39:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three back-to-back readings reported by the maintainer (4929, 4930, 4929)"
+          },
+          {
+            "when": "2026-10-12 ~15:39 PDT",
+            "grams": 4930,
+            "at": "2026-10-12T15:39:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three back-to-back readings reported by the maintainer (4929, 4930, 4929)"
+          },
+          {
+            "when": "2026-10-12 ~15:39 PDT",
+            "grams": 4929,
+            "at": "2026-10-12T15:39:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three back-to-back readings reported by the maintainer (4929, 4930, 4929)"
+          },
+          {
+            "when": "2026-10-12 ~19:49 PDT",
+            "grams": 4919,
+            "at": "2026-10-12T19:49:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three readings reported by the maintainer (4919, 4925, 4923); a 6 g spread, so not 'back to back' unless stated"
+          },
+          {
+            "when": "2026-10-12 ~19:49 PDT",
+            "grams": 4925,
+            "at": "2026-10-12T19:49:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three readings reported by the maintainer (4919, 4925, 4923); a 6 g spread, so not 'back to back' unless stated"
+          },
+          {
+            "when": "2026-10-12 ~19:49 PDT",
+            "grams": 4923,
+            "at": "2026-10-12T19:49:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three readings reported by the maintainer (4919, 4925, 4923); a 6 g spread, so not 'back to back' unless stated"
+          },
+          {
+            "when": "2026-10-12 ~21:30 PDT",
+            "grams": 4916,
+            "at": "2026-10-12T21:30:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three readings reported by the maintainer (4916, 4918, 4916)"
+          },
+          {
+            "when": "2026-10-12 ~21:30 PDT",
+            "grams": 4918,
+            "at": "2026-10-12T21:30:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three readings reported by the maintainer (4916, 4918, 4916)"
+          },
+          {
+            "when": "2026-10-12 ~21:30 PDT",
+            "grams": 4916,
+            "at": "2026-10-12T21:30:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three readings reported by the maintainer (4916, 4918, 4916)"
+          },
+          {
+            "when": "2026-10-13 ~08:22 PDT",
+            "grams": 4905,
+            "at": "2026-10-13T08:22:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three readings reported by the maintainer (4905, 4904, 4906)"
+          },
+          {
+            "when": "2026-10-13 ~08:22 PDT",
+            "grams": 4904,
+            "at": "2026-10-13T08:22:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three readings reported by the maintainer (4905, 4904, 4906)"
+          },
+          {
+            "when": "2026-10-13 ~08:22 PDT",
+            "grams": 4906,
+            "at": "2026-10-13T08:22:00-07:00",
+            "at_note": "the maintainer reported these readings without a time; the clock time is the session clock when the message arrived, not a time the maintainer stated",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three readings reported by the maintainer (4905, 4904, 4906)"
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
@@ -783,6 +903,13 @@
     ],
     "verified": "2026-10-08",
     "source": "maintainer stated 2026-10-08 ~13:20 PDT that after the overnight LED burn the sun fully hit board 1's panel that morning and the battery came straight back up (see board 1 physical_state for what that does and does not cover). Before that, 2026-10-07 ~12:35 PDT: board 1's panel is in direct sunlight through a window and reading 2.11 V. Before that, 2026-10-06 ~14:57 PDT: 'i have the MSV4 at home now after testing osc readings in the lab, all checked out'; starting an outdoor solar panel test to see whether it can charge the battery over time and whether the BQ chip is wired correctly",
+    "inventory": {
+      "verified": "2026-10-11",
+      "source": "maintainer stated 2026-10-11: 'i have stock for 5 currently i want to make 5 more as i have 5 more PCBs 10 in total'",
+      "msv4_pcbs_total": 10,
+      "parts_stock": "enough for 5 MSV4 boards currently (maintainer wording; whether this count includes already-built board 1 was not stated)",
+      "planned_additional_builds": 5
+    },
     "boards": [
       {
         "board": 1,
