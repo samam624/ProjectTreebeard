@@ -45,6 +45,7 @@
             <label><input type="checkbox" name="capture" value="vbat"> Battery / VBAT</label>
             <label><input type="checkbox" name="capture" value="iq 16"> I/Q at 1 MHz</label>
             <label><input type="checkbox" name="capture" value="spectrum ab"> Spectrum A + B</label>
+            <label><input type="checkbox" name="capture" value="moisture"> Moisture (calibrated fit)</label>
           </div>
           <label for="capture-interval">Seconds between sets</label>
           <div class="field-row"><input id="capture-interval" type="number" min="2" max="3600" value="10"><button id="capture-btn" class="primary">Start capture</button></div>
@@ -53,6 +54,25 @@
       </aside>
 
       <div class="main-column">
+        <section class="panel live-panel">
+          <div class="panel-heading wide"><div><span class="eyebrow">HAND TEST</span><h2>Live response</h2></div><span id="live-state" class="muted">Not streaming</span></div>
+          <div class="live-controls">
+            <button data-command="live" class="primary">Start live</button>
+            <button data-command="live b" class="secondary">Live, electrode B</button>
+            <button data-command="stop" class="secondary">Stop</button>
+            <button id="live-zero" class="secondary">Zero here</button>
+            <button data-command="moisture loop" class="secondary">Calibrated stream (slow)</button>
+          </div>
+          <div class="live-readout">
+            <div class="live-big"><span>G · CONDUCTANCE INDEX</span><strong id="live-g">—</strong><small>µS · rises when wetter</small></div>
+            <div class="live-big"><span>CHANGE FROM ZERO</span><strong id="live-dg">—</strong><small>µS</small></div>
+            <div class="live-big"><span>C · CAPACITANCE INDEX</span><strong id="live-c">—</strong><small>pF</small></div>
+            <div class="live-big"><span>CALIBRATED RSOIL @25 °C</span><strong id="live-rsoil">—</strong><small>Ω · every few seconds</small></div>
+          </div>
+          <div class="chart-frame live-frame"><canvas id="live-chart" aria-label="Live conductance, last 60 seconds"></canvas><div id="live-empty">Press Start live, then put a hand on the blade and take it off.</div></div>
+          <p class="hint">Live is a fast 1 MHz index (about 6 per second) for watching a reaction, referenced to the electrodes-floating reading taken at the start. Zero it with the blade in air; a wet hand or wet soil moves G up. The calibrated Rsoil stream takes a few seconds per reading. Press Stop before sending another command.</p>
+        </section>
+
         <section class="panel overview">
           <div class="panel-heading wide"><div><span class="eyebrow">LIVE / LATEST REPLIES</span><h2>Measurements</h2></div><span id="last-reading" class="muted">Waiting for data</span></div>
           <div class="metric-grid">
@@ -68,14 +88,14 @@
         </section>
 
         <section class="panel chart-panel">
-          <div class="panel-heading wide"><div><span class="eyebrow">SESSION HISTORY</span><h2>Trend</h2></div><select id="chart-metric" aria-label="Chart metric"><option value="temp_c">Tip temperature · °C</option><option value="die_c">Chip temperature · °C</option><option value="sense_mv">Sense output · mV</option><option value="drv_mv">Drive output · mV</option><option value="rsoil_ohm">Soil resistance · Ω</option><option value="cm_pf">Interface Cm · pF</option><option value="vbat_mv">VBAT · mV</option></select></div>
+          <div class="panel-heading wide"><div><span class="eyebrow">SESSION HISTORY</span><h2>Trend</h2></div><select id="chart-metric" aria-label="Chart metric"><option value="temp_c">Tip temperature · °C</option><option value="die_c">Chip temperature · °C</option><option value="sense_mv">Sense output · mV</option><option value="drv_mv">Drive output · mV</option><option value="live_g_us">Live G · µS</option><option value="live_c_pf">Live C · pF</option><option value="rsoil25_ohm">Calibrated Rsoil @25 °C · Ω</option><option value="rsoil_ohm">Soil resistance · Ω</option><option value="cm_pf">Interface Cm · pF</option><option value="vbat_mv">VBAT · mV</option></select></div>
           <div class="chart-frame"><canvas id="trend-chart" aria-label="Selected measurement trend"></canvas><div id="chart-empty">Run a measurement to begin a trend.</div></div>
         </section>
 
         <section class="panel command-panel">
           <div class="panel-heading wide"><div><span class="eyebrow">DIRECT CONTROL</span><h2>Command console</h2></div><span class="muted" id="busy-label">Ready</span></div>
           <div class="quick-actions" id="quick-actions">
-            <button data-command="info">Info</button><button data-command="temp">Temp</button><button data-command="vbat">VBAT</button><button data-command="vdd">VDD</button><button data-command="read">Read</button><button data-command="iq 16">I/Q 1 MHz</button><button data-command="spectrum open">Open ref</button><button data-command="spectrum ab">Spectrum A+B</button><button data-command="safe">Safe</button><button data-command="stop">Stop</button>
+            <button data-command="info">Info</button><button data-command="temp">Temp</button><button data-command="vbat">VBAT</button><button data-command="vdd">VDD</button><button data-command="read">Read</button><button data-command="iq 16">I/Q 1 MHz</button><button data-command="spectrum open">Open ref</button><button data-command="spectrum ab">Spectrum A+B</button><button data-command="moisture">Moisture</button><button data-command="safe">Safe</button><button data-command="stop">Stop</button>
           </div>
           <form id="command-form" class="command-entry"><span class="prompt">&gt;</span><input id="command-input" aria-label="BLE command" placeholder="Type a bring-up command, e.g. swap a" autocomplete="off"><button type="submit" class="primary">Send</button></form>
           <div class="terminal-toolbar"><span>TRANSCRIPT</span><span id="event-count">0 events</span></div>

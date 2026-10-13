@@ -205,6 +205,9 @@ static bool g_rxOverflow = false;
 static char g_pendingCmd[CMD_MAX + 1];
 static volatile bool g_cmdPending = false;
 static volatile bool g_cancel = false;
+// Set by `stop`, cleared only when a streaming command starts. Sweeps clear g_cancel at their own
+// start, so a stop that lands between two readings of a stream would otherwise be lost.
+static volatile bool g_stopStream = false;
 
 static LedMode g_ledMode = LedMode::Blink;
 
@@ -1108,6 +1111,71 @@ static void cmdMoisture()
       best[0] * 1e12, best[2] * 1e12, bestRms, haveT ? "" : " NO_TEMP");
 }
 
+// `live [a|b]`: a fast, continuous readout for moving a hand or a pot around. One 1 MHz lock-in
+// measurement of SENSE/DRV_OUT per sample (about 6 per second), referenced to the electrodes-floating
+// transfer measured once at the start, so the board's own stray capacitance drops out:
+//     Yel = (1/H - 1/H_open) / Rs          admittance the electrodes add to the SENSE node
+//     G   = Re(Yel)                        uS    rises as the medium gets wetter or saltier
+//     C   = Im(Yel) / w                    pF    rises with anything dielectric near the plates
+// This is an index for watching a reaction, not the calibrated moisture value: Rsoil comes from
+// `moisture`, which fits eight frequencies. Interface capacitance Cm in series with the soil
+// compresses G once G approaches w*Cm, so it saturates when very wet.
+constexpr uint16_t LIVE_N = 16;   // 1 MHz
+constexpr uint16_t LIVE_M = 16;
+static void cmdLive(const char* which)
+{
+  const SwapState was = g_swap; const bool chopWas = g_chopEnabled;
+  const SwapState electrode = (which && strchr(which, 'b')) ? SwapState::B : SwapState::A;
+  g_stopStream = false;
+  g_cancel = false;
+  setChopEnabled(true);
+  setSwap(SwapState::Open);
+  cplx h0;
+  if (!specMeasure(LIVE_N, LIVE_M, h0))
+  {
+    frontEndStop(); setChopEnabled(chopWas); setSwap(was);
+    out("live aborted: could not measure the open reference");
+    return;
+  }
+  setSwap(electrode);
+  const double w = 2.0 * M_PI * (double)FE_CLOCK_HZ / LIVE_N;
+  out("live started on electrode %c, 1 MHz, open |H0|=%.4f. G in uS, C in pF. `stop` ends it.",
+      electrode == SwapState::A ? 'A' : 'B', cabs2(h0));
+  uint32_t count = 0;
+  while (!g_stopStream && !g_cancel && Bluefruit.connected())
+  {
+    cplx h;
+    if (!specMeasure(LIVE_N, LIVE_M, h)) break;
+    const cplx yel = (1.0 / h - 1.0 / h0) / cplx(SPEC_RS, 0);
+    out("LIVE G=%.1f C=%.2f A=%.4f PH=%.1f", yel.re * 1e6, yel.im / w * 1e12, cabs2(h),
+        carg(h) * 180.0 / M_PI);
+    ledWrite((++count & 1) != 0);  // flicker = measuring
+  }
+  ledWrite(false);
+  frontEndStop();
+  setChopEnabled(chopWas); setSwap(was);
+  out("live stopped after %lu samples", static_cast<unsigned long>(count));
+}
+
+// `moisture loop`: the calibrated reading, back to back, until `stop`. One open-electrode
+// reference first so Cp is this board's own, not the 12 pF default (the electrodes are floating
+// for that, so the soil cannot affect it). Each fit takes a few seconds, so it follows a trend;
+// use `live` to watch a hand come and go.
+static void cmdMoistureLoop()
+{
+  g_stopStream = false;
+  out("moisture stream started: Cp reference first, then one fit every few seconds. `stop` ends it.");
+  cmdSpectrumOpen();
+  uint32_t count = 0;
+  while (!g_stopStream && Bluefruit.connected())
+  {
+    cmdMoisture();
+    ledWrite(false);
+    count++;
+  }
+  out("moisture stream stopped after %lu readings", static_cast<unsigned long>(count));
+}
+
 // -------------------------------------------------------------------------------- commands ----
 static void cmdHelp()
 {
@@ -1128,6 +1196,8 @@ static void cmdHelp()
   out(" spectrum open     250k-2.7M sweep, electrodes floating -> SENSE parasitic Cp");
   out(" spectrum [a|b|ab] 250k-2.7M sweep, fit Rsoil (moisture) Cm (contact) Cd");
   out(" moisture          one line: temp-corrected Rsoil + contact quality. LOG THIS");
+  out(" moisture loop     the same, back to back, until stop (a fit every few s)");
+  out(" live [a|b]        FAST stream (~6/s) of G (uS) and C (pF) until stop: hand on / off");
   out(" settle <ms> | os <0..8>   phase settle time / log2 oversample");
   out(" cal               SAADC offset calibration");
   out(" dfu on|off|enter  allow buttonless DFU / reboot into BLE DFU now");
@@ -1324,7 +1394,12 @@ static void handleCommand(char* line)
     if (argc > 1 && !strcmp(argv[1], "open")) cmdSpectrumOpen();
     else cmdSpectrum(argc > 1 ? argv[1] : nullptr);
   }
-  else if (!strcmp(c, "moisture")) cmdMoisture();
+  else if (!strcmp(c, "moisture"))
+  {
+    if (argc > 1 && !strcmp(argv[1], "loop")) cmdMoistureLoop();
+    else cmdMoisture();
+  }
+  else if (!strcmp(c, "live")) cmdLive(argc > 1 ? argv[1] : nullptr);
   else if (!strcmp(c, "settle"))
   {
     uint32_t ms = 0;
@@ -1363,7 +1438,7 @@ static void onUartRx(uint16_t)
       if (g_rxOverflow) { g_rxOverflow = false; g_rxLen = 0; continue; }
       if (g_rxLen == 0) continue;
       g_rxLine[g_rxLen] = '\0';
-      if (!strcmp(g_rxLine, "stop")) g_cancel = true;  // must work while a sweep holds loop()
+      if (!strcmp(g_rxLine, "stop")) { g_cancel = true; g_stopStream = true; }  // must work while a sweep holds loop()
       else if (!g_cmdPending)
       {
         memcpy(g_pendingCmd, g_rxLine, g_rxLen + 1);
@@ -1432,6 +1507,13 @@ void setup()
   setChopEnabled(false);
   setSwap(SwapState::Open);
 
+  // "Alive" signature, no connection needed: one LONG flash as soon as the CPU and the 32 kHz
+  // crystal are running. The 3 and 5 short flashes the boot guard makes before it resets into DFU
+  // are 80 ms flashes; this one is half a second.
+  ledWrite(true);
+  delayFeeding(500);
+  ledWrite(false);
+
   // Unique-ish name per board so several can sit on one bench.
   snprintf(g_deviceName, sizeof(g_deviceName), "MSV4-BU-%04lX",
            static_cast<unsigned long>(NRF_FICR->DEVICEADDR[0] & 0xFFFF));
@@ -1476,6 +1558,15 @@ void setup()
 
   // Reached advertising: clear the counter so later resets start fresh.
   writeRetained(0);
+
+  // "Bluetooth is up" signature: two flashes, then the heartbeat in loop().
+  for (uint8_t i = 0; i < 2; i++)
+  {
+    delayFeeding(250);
+    ledWrite(true);
+    delayFeeding(120);
+    ledWrite(false);
+  }
 }
 
 void loop()
@@ -1519,13 +1610,14 @@ void loop()
     case LedMode::On: ledWrite(true); break;
     case LedMode::Off: ledWrite(false); break;
     case LedMode::Blink:
-      // Short blip: every 2 s advertising, every 0.5 s while connected. (3 and 5 slow blinks
-      // before a reset are the boot-counter and dead-crystal DFU escapes.)
+      // Heartbeat: a clearly visible blip every 2 s while advertising, every 0.5 s while
+      // connected. (3 and 5 short flashes before a reset are the boot-counter and dead-crystal
+      // DFU escapes.)
       if (now - lastBlink >= (Bluefruit.connected() ? 500UL : 2000UL))
       {
         lastBlink = now;
         ledWrite(true);
-        delay(15);
+        delay(80);
         ledWrite(false);
       }
       break;

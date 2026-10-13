@@ -77,5 +77,22 @@ class LabTests(unittest.TestCase):
         self.assertEqual(disconnected.exception.code, 400)
 
 
+class StreamParsingTests(unittest.TestCase):
+    """The strings below are what the firmware's printf formats produce (cmdLive, cmdMoisture)."""
+
+    def test_live_line(self):
+        m = parse_metrics("LIVE G=-12.3 C=5.67 A=0.9123 PH=-170.2")
+        self.assertEqual(m, {"live_g_us": -12.3, "live_c_pf": 5.67})
+
+    def test_moisture_line(self):
+        m = parse_metrics("moisture Rsoil25=1234.5 Rsoil=1300.2 T=24.10 Cm=15.2 Cd=21.40 rms=0.00210")
+        self.assertEqual(m, {"rsoil25_ohm": 1234.5})
+
+    def test_other_lines_unaffected(self):
+        m = parse_metrics("  Rsoil 1/Gs      5900.0 ohm +/-  11.5 %  <- MOISTURE. lower = wetter")
+        self.assertEqual(m, {"rsoil_ohm": 5900.0})
+        self.assertEqual(parse_metrics("live started on electrode A, 1 MHz, open |H0|=0.9781. G in uS, C in pF."), {})
+
+
 if __name__ == "__main__":
     unittest.main()

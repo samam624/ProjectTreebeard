@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { token: '', sessionId: '', events: [], lastSeq: 0, connection: 'disconnected', busy: false, capturing: false, polling: false };
+const state = { zero: null, token: '', sessionId: '', events: [], lastSeq: 0, connection: 'disconnected', busy: false, capturing: false, polling: false };
 // Above this the electrode sees no conductive path (open air, or bone-dry media).
 const RSOIL_OPEN_OHM = 1e6;
 
@@ -126,13 +126,89 @@ async function poll() {
     if (data.session.id !== state.sessionId) resetSession(data.session);
     for (const event of data.events) appendEvent(event);
     renderStatus(data);
-    if (data.events.length) { renderMetrics(); drawChart(); }
+    if (data.events.length) { renderMetrics(); drawChart(); renderLive(); }
+    $('live-state').textContent = data.busy && data.connection === 'connected' ? 'Streaming or measuring · Stop ends it' : 'Not streaming';
     if (data.total > state.lastSeq) setTimeout(poll, 0);
   } catch (error) {
     $('connection-text').textContent = 'Server unavailable';
   } finally {
     state.polling = false;
   }
+}
+
+function lastLive() {
+  for (let i = state.events.length - 1; i >= 0; i--) {
+    const m = state.events[i].metrics;
+    if (m && Number.isFinite(m.live_g_us)) return { g: m.live_g_us, c: m.live_c_pf, t: new Date(state.events[i].time).valueOf() };
+  }
+  return null;
+}
+
+// Last 60 s of the live stream, right edge = newest sample, so the picture holds still once stopped.
+function renderLive() {
+  const last = lastLive();
+  $('live-g').textContent = last ? last.g.toFixed(1) : '—';
+  $('live-c').textContent = last && Number.isFinite(last.c) ? last.c.toFixed(2) : '—';
+  $('live-dg').textContent = last && state.zero !== null ? (last.g - state.zero >= 0 ? '+' : '') + (last.g - state.zero).toFixed(1) : '—';
+  let rs = null;
+  for (let i = state.events.length - 1; i >= 0; i--) {
+    const m = state.events[i].metrics;
+    if (m && Number.isFinite(m.rsoil25_ohm)) { rs = m.rsoil25_ohm; break; }
+  }
+  $('live-rsoil').textContent = rs === null ? '—' : rs <= 1 ? 'no fit' : rs >= RSOIL_OPEN_OHM ? 'open (dry)' : formatOhms(rs);
+  drawLive(last);
+}
+
+function drawLive(last) {
+  const canvas = $('live-chart');
+  const box = canvas.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = Math.round(box.width * scale);
+  canvas.height = Math.round(box.height * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  const WINDOW_MS = 60000;
+  const points = [];
+  if (last) {
+    for (let i = state.events.length - 1; i >= 0; i--) {
+      const e = state.events[i];
+      if (!e.metrics || !Number.isFinite(e.metrics.live_g_us)) continue;
+      const t = new Date(e.time).valueOf();
+      if (last.t - t > WINDOW_MS) break;
+      points.push({ x: t, y: e.metrics.live_g_us - (state.zero || 0) });
+    }
+    points.reverse();
+  }
+  $('live-empty').style.display = points.length > 1 ? 'none' : 'grid';
+  if (points.length < 2) return;
+  const w = box.width, h = box.height, left = 58, right = 17, top = 16, bottom = 28;
+  const values = points.map(p => p.y);
+  let min = Math.min(...values, 0), max = Math.max(...values, 0);
+  const pad = Math.max((max - min) * .12, 1);
+  min -= pad; max += pad;
+  const x1 = last.t, x0 = x1 - WINDOW_MS;
+  const xp = x => left + (x - x0) / (x1 - x0) * (w - left - right);
+  const yp = y => top + (max - y) / (max - min) * (h - top - bottom);
+  ctx.font = '11px ui-monospace, Consolas, monospace';
+  ctx.strokeStyle = '#2a4147'; ctx.fillStyle = '#829b9d'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = top + i * (h - top - bottom) / 4;
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(w - right, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText((max - i * (max - min) / 4).toFixed(Math.abs(max - min) > 40 ? 0 : 1), left - 8, y + 3);
+  }
+  if (min < 0 && max > 0) {   // the zero line
+    ctx.strokeStyle = '#80cbd2'; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(left, yp(0)); ctx.lineTo(w - right, yp(0)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.textAlign = 'left'; ctx.fillStyle = '#829b9d';
+  ctx.fillText('60 s ago', left, h - 9); ctx.textAlign = 'right'; ctx.fillText('now', w - right, h - 9);
+  ctx.strokeStyle = '#a8e071'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  points.forEach((p, i) => i ? ctx.lineTo(xp(p.x), yp(p.y)) : ctx.moveTo(xp(p.x), yp(p.y)));
+  ctx.stroke();
+  const tip = points[points.length - 1];
+  ctx.fillStyle = '#a8e071'; ctx.beginPath(); ctx.arc(xp(tip.x), yp(tip.y), 4, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawChart() {
@@ -258,8 +334,13 @@ function wireControls() {
     const value = $('note-input').value.trim();
     if (value && await act('/api/note', { text: value })) $('note-input').value = '';
   });
+  $('live-zero').addEventListener('click', () => {
+    const last = lastLive();
+    if (!last) { toast('Start live first'); return; }
+    state.zero = last.g; renderLive(); toast(`Zero set at ${last.g.toFixed(1)} µS`);
+  });
   $('chart-metric').addEventListener('change', drawChart);
-  window.addEventListener('resize', drawChart);
+  window.addEventListener('resize', () => { drawChart(); renderLive(); });
 }
 
 async function init() {
@@ -268,7 +349,7 @@ async function init() {
     wireControls();
     await refreshSessions();
     await poll();
-    setInterval(poll, 750);
+    setInterval(poll, 300);
   } catch (error) { toast(`Lab failed to start: ${error.message}`); }
 }
 

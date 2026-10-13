@@ -50,6 +50,12 @@ DEFAULT_BOOTLOADER_HEX = (
     / "pca10056_bootloader-0.11.0_s140_6.1.1.hex"
 )
 
+# Application flash on an nRF52840 with S140 6.1.1 and the MSV3 bootloader: above the SoftDevice,
+# below the bootloader (0xF4000, the second segment of the release hex).
+APP_REGION_START = 0x26000
+APP_REGION_END = 0xF4000
+
+
 def resolve_msv3_release(version):
     """Path to an MSV3 release bootloader hex, verified against its own release manifest.
 
@@ -412,6 +418,14 @@ def main():
                           "from MSV3/bootloader/generated/<VERSION>/, VERIFIES its sha256 against "
                           "that release's manifest, then waits for solid contact and mass-erases "
                           "exactly as --bootloader does. This is the correct flag for a fleet probe.")
+    ap.add_argument("--app", metavar="HEX",
+                     help="Also write this application hex in the SAME contact hold, after the "
+                          "bootloader image (needs --msv3 or --bootloader, which mass-erase first). "
+                          "Meant for a bring-up image on a board you want running at once; the "
+                          "bootloader accepts a debugger-written application whose vector table "
+                          "is plausible. It does NOT seed the anti-rollback floor, so finish a "
+                          "production board with a signed OTA install. Refused if any segment "
+                          "falls outside the application region.")
     ap.add_argument("--no-reset", action="store_true",
                      help="Leave the target halted after a successful flash instead of resetting "
                           "it over SWD. Only useful when you intend to attach a debugger to the "
@@ -475,6 +489,26 @@ def main():
     if not segments:
         print("No data records found in hex file -- nothing to do.")
         return 1
+
+    if args.app:
+        if not bootloader_mode:
+            ap.error("--app goes with --msv3 or --bootloader: it relies on their mass erase")
+        app_segments = parse_intel_hex(args.app)
+        if not app_segments:
+            print(f"No data records in {args.app} -- nothing to write.")
+            return 1
+        for addr, data in app_segments:
+            if addr < APP_REGION_START or addr + len(data) > APP_REGION_END:
+                print(f"{args.app}: segment 0x{addr:08X}-0x{addr + len(data):08X} is outside the "
+                      f"application region 0x{APP_REGION_START:X}-0x{APP_REGION_END:X}. "
+                      "This is not an application-only hex; refusing before touching the target.")
+                return 1
+        reset_vec = dict(app_segments).get(APP_REGION_START)
+        if reset_vec is None or len(reset_vec) < 8 or reset_vec[:4] == bytes(4 * [0xFF]):
+            print(f"{args.app}: nothing at 0x{APP_REGION_START:X}, where the bootloader looks for "
+                  "the vector table. Refusing.")
+            return 1
+        segments = segments + app_segments
 
     total_bytes = sum(len(d) for _, d in segments)
     print(f"{hex_path}: {len(segments)} segment(s), {total_bytes} bytes total")

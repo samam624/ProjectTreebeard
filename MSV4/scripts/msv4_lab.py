@@ -38,6 +38,11 @@ METRIC_PATTERNS = {
     "rsoil_ohm": re.compile(r"\bRsoil 1/Gs\s+([-+\d.]+) ohm"),
     "cm_pf": re.compile(r"\bCm interface\s+([-+\d.]+) pF"),
     "cp_pf": re.compile(r"\bCp = ([-+\d.]+) pF"),
+    # `live` stream: "LIVE G=123.4 C=5.67 A=0.9123 PH=-170.2"
+    "live_g_us": re.compile(r"\bLIVE G=([-+\d.]+)"),
+    "live_c_pf": re.compile(r"\bLIVE G=[-+\d.]+ C=([-+\d.]+)"),
+    # `moisture` one-liner: "moisture Rsoil25=1234.5 Rsoil=... T=... Cm=..."
+    "rsoil25_ohm": re.compile(r"\bmoisture Rsoil25=([-+\d.]+)"),
 }
 
 
@@ -275,7 +280,7 @@ class BleBridge:
                 raise RuntimeError(f"BLE console pipe closed: {exc}") from exc
 
     def start_capture(self, commands: list[str], interval: float) -> None:
-        allowed = {"read", "temp", "vbat", "vdd", "iq 16", "spectrum ab"}
+        allowed = {"read", "temp", "vbat", "vdd", "iq 16", "spectrum ab", "moisture"}
         if not isinstance(commands, list) or not commands or len(commands) > 3 or any(c not in allowed for c in commands):
             raise ValueError("Choose one to three supported measurement commands")
         if not 2 <= interval <= 3600:
