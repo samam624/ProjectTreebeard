@@ -86,7 +86,18 @@ class SessionStore:
         folder = self._folder(self.active["id"])
         temp = folder / "session.json.tmp"
         temp.write_text(json.dumps(self.active, indent=2) + "\n", encoding="utf-8")
-        temp.replace(folder / "session.json")
+        # The repo lives under OneDrive, which briefly locks files while it syncs them. A replace
+        # that lands in that window raises PermissionError (WinError 5); on 2026-10-13 that killed
+        # the console reader thread mid-stream and every later command hung. session.json is only
+        # metadata (title, updated_at) -- events.jsonl is the record -- so retry briefly, then skip.
+        for attempt in range(10):
+            try:
+                temp.replace(folder / "session.json")
+                return
+            except PermissionError:
+                time.sleep(0.05 * (attempt + 1))
+        print(f"warning: could not update {folder / 'session.json'} (file locked); continuing",
+              file=sys.stderr)
 
     def list_sessions(self) -> list[dict]:
         result = []
