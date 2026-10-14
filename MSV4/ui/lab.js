@@ -297,9 +297,11 @@ function wireControls() {
     { device: $('device-input').value.trim() || $('board-select').value }, 'Connecting…'));
   $('disconnect-btn').addEventListener('click', () => act('/api/disconnect', {}, 'Disconnected'));
   $('command-form').addEventListener('submit', event => { event.preventDefault(); send($('command-input').value); });
-  $('quick-actions').addEventListener('click', event => {
+  // Every [data-command] button sends its command, wherever it sits. This used to listen on the
+  // command console's row only, so the Live response buttons (a separate panel) did nothing.
+  document.addEventListener('click', event => {
     const button = event.target.closest('[data-command]');
-    if (button) send(button.dataset.command);
+    if (button && !button.disabled) send(button.dataset.command);
   });
   $('capture-btn').addEventListener('click', async () => {
     if (state.capturing) { await act('/api/capture/stop', {}, 'Capture stopped'); return; }

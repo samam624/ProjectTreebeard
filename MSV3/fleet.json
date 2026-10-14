@@ -918,7 +918,10 @@
             "R15": "3.3 kOhm, NOT the 1 kOhm build-guide starting value. Any drive-amplitude, |Z| or sensitivity comparison against board 1 (R15 = 1 kOhm) must account for this.",
             "U2": "AP2112K had been placed in error on the TPS7A0233 footprint on batch boards; maintainer said they would swap back to TPS7A0233. Not confirmed done per board.",
             "unpowered_3v3_to_gnd": "80-150 Ohm, intermittent, on this board; 500 and 600 Ohm on two other batch boards. Cause not established (meter reading through the unpowered nRF/caps is the leading inference); a current-limited power-up is the deciding check.",
-            "status": "flashed over SWD 2026-10-13 with bootloader msv3-1.0.3 + bring-up v262152 (MSV4-BUILD:bringup-live-2026-10-11, hex sha256 e876a85d...58f0c9). The first attempt stopped at 95 % of verifying the app on a host-side 60 s timeout (fixed in scripts/swd_flash_hex.py); the rerun completed. Maintainer reported the LED blinking and the board 'alive'. BLE name/address NOT YET RECORDED; live hand test not yet run.",
+            "status": "flashed over SWD 2026-10-13 with bootloader msv3-1.0.3 + bring-up v262152 (MSV4-BUILD:bringup-live-2026-10-11, hex sha256 e876a85d...58f0c9). The first attempt stopped at 95 % of verifying the app on a host-side 60 s timeout (fixed in scripts/swd_flash_hex.py); the rerun completed. Maintainer reported the LED blinking and the board 'alive'. Live hand test not yet run.",
+            "ble_name": "MSV4-BU-6528",
+            "application_address": "CB:23:3B:C2:65:28",
+            "identity_basis": "OBSERVED 2026-10-13 17:22 PDT in the MSV4 Lab session log: auto-select (matches MSV4-BU-* only) connected to MSV4-BU-6528 at CB:23:3B:C2:65:28 while this was the only bring-up board powered.",
             "firmware_note": "Bring-up firmware hardcodes SPEC_RS = 1000 Ohm (R15). With 3.3 kOhm fitted, live G/C, the iq amplitude, Cp and calibrated Rsoil are not comparable to board 1 until Rs is made per-board."
           }
         ]
