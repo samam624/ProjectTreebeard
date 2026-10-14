@@ -298,11 +298,19 @@ def send_segment(ser, reader, addr, data, verbose=True):
 
     ok = False
     bar_open = False
-    deadline = time.time() + 60  # erase+program+verify of ~150KB can take a while
-    while time.time() < deadline:
+    # Wait on PROGRESS, not on a wall clock -- the same fix the mass erase got. A fixed 60 s budget
+    # (sized for ~150 KB) expired at 95 % of verifying the 177 KB MSV4 bring-up app on 2026-10-13
+    # and reported a segment failure the adapter never printed. Any adapter line resets the idle
+    # timer; only genuine silence, or the overall cap, gives up.
+    IDLE_TIMEOUT = 30
+    HARD_CAP = 600
+    started = time.time()
+    idle_deadline = time.time() + IDLE_TIMEOUT
+    while time.time() < idle_deadline and (time.time() - started) < HARD_CAP:
         line = reader.read_line(timeout_s=5)
         if line is None:
             continue
+        idle_deadline = time.time() + IDLE_TIMEOUT
         bar = render_progress_bar(line)
         if bar is not None:
             print(bar, end="", flush=True)
@@ -319,6 +327,12 @@ def send_segment(ser, reader, addr, data, verbose=True):
         if "verify FAILED" in line or "FAILED" in line or "failed" in line:
             ok = False
             break
+    else:
+        if bar_open:
+            print()
+            bar_open = False
+        print("  HOST TIMEOUT: the adapter reported neither 'verify OK' nor a failure "
+              f"(silent for {IDLE_TIMEOUT} s, or past the {HARD_CAP} s cap).")
     if bar_open:
         print()
     return ok
