@@ -397,6 +397,10 @@ Board 1 (measured values through that arithmetic):
 
 ## The competition: every candidate against the pot's weight (set up 2026-10-10 ~23:55)
 
+(Annotated 2026-10-17: the single all-weighing line used here is tilted by a one-way shift
+between the pre-watering weighings and the rest, and the dry-day temperature coefficients are
+about 2.5 times too weak for the capacitances. See `MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md`.)
+
 The maintainer: "which of all of these many metrics at this point, is the best proxy for
 moisutre? Can we do a competion between them to see vs the mass of water in the pot which one
 tracks it the best?"
