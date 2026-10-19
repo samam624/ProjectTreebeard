@@ -15,17 +15,71 @@ with AI coding agents (Claude Code and Codex) under his direction. The project s
 keeps the failures alongside the things that worked.
 
 <p align="center">
-  <img src="MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png" width="43%" alt="MSV3 probe and adjustable solar panel enclosure render">
-  &nbsp;&nbsp;
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png" width="43%" alt="DisplayCenter tabletop enclosure render">
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_probe_in_pot.jpg" height="300" alt="MSV3 probe in its solar enclosure in a pot">
+  &nbsp;
+  <img src="MSV3/docs/images/alocasia_five_probe_test.jpg" height="300" alt="Five probes sharing one Alocasia pot for a side-by-side test">
+  &nbsp;
+  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="300" alt="DisplayCenter receiver showing plant cards">
 </p>
 
-<p align="center"><em>The MSV3 solar probe design and the DisplayCenter receiver.</em></p>
+<p align="center"><em>An MSV3 probe in its pot, five probes sharing one pot for a side-by-side test,
+and the DisplayCenter receiver.</em></p>
 
 [Open the hosted dashboard](https://msv2-plants.netlify.app) ·
 [See where every probe is right now](MSV3/fleet.json) ·
 [Read the latest write-up](MSV4/docs/MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md) ·
 [Follow the engineering story](docs/paper/MSV_EVOLUTION_IEEE_PAPER_DRAFT.md)
+
+## The hardware
+
+Every board was designed in Altium. Each one links to its schematic, layout and the Gerbers it was
+built from.
+
+**MSV4 probe** (current): a lock-in impedance front end built from two analog switches, a guarded
+two-electrode blade, a soil-temperature NTC at the tip and solar charging. 2 layers.
+[Board page](MSV4/hardware/MSV4_Probe_PCB/) ·
+[Schematic](MSV4/hardware/MSV4_Probe_PCB/images/MSV4_schematic_overview.png) ·
+[Gerbers](MSV4/hardware/MSV4_Probe_PCB/MSV4_Probe_PCB_fabrication_2026-09-18.zip)
+
+<p>
+  <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_pcb_layout.png" height="300" alt="MSV4 PCB layout">
+  <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_pcb_3d.png" height="300" alt="MSV4 PCB 3D view">
+  <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_lockin_front_end.png" height="300" alt="MSV4 lock-in front end schematic">
+</p>
+
+**MSV3 probe**: an FDC2214 capacitance-to-digital converter, an electrode-swap multiplexer and a
+BQ25504 solar harvester on an nRF52840 module. 4 layers.
+[Board page](MSV3/hardware/MSV3_Probe_PCB/) ·
+[Schematic (PDF)](MSV3/hardware/MSV3_Probe_PCB/MSV3_schematic_export_2026-07-26.pdf) ·
+[Gerbers](MSV3/hardware/MSV3_Probe_PCB/MSV3_Probe_PCB_fabrication_2026-08-10.zip)
+
+<p>
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_assembly_paste_dispensing.jpg" height="300" alt="MSV3 board during assembly">
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_pcb_layout.png" height="300" alt="MSV3 PCB layout">
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_pcb_3d.png" height="300" alt="MSV3 PCB 3D view">
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_fdc2214_front_end.png" height="300" alt="MSV3 FDC2214 front end schematic">
+</p>
+
+**DisplayCenter receiver**: an ESP32-S3 board that hears every probe, drives a 480 × 320 touch
+display and uploads over Wi-Fi. 2 layers.
+[Board page](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/) ·
+[Schematic](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_schematic_overview.png) ·
+[Gerbers](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/DisplayCenter_controller_fabrication_2026-07-14.zip)
+
+<p>
+  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_layout.png" height="260" alt="DisplayCenter PCB layout">
+  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_3d.png" height="260" alt="DisplayCenter PCB 3D view">
+</p>
+
+**MSV2 probe**: a XIAO nRF52840 module counting a moisture-controlled oscillator, with solar
+charging. **MSV1**: the analog 555-timer prototype.
+[MSV2 board page](MSV2/hardware/) · [MSV1 board page](MSV1/hardware/)
+
+<p>
+  <img src="MSV2/hardware/images/MSV2_probe_in_pot.jpg" height="260" alt="MSV2 probe outdoors in a pot">
+  <img src="MSV2/hardware/images/MSV2_pcb_layout.png" height="260" alt="MSV2 PCB layout">
+  <img src="MSV1/hardware/images/MSV1_pcb_3d.png" height="260" alt="MSV1 PCB 3D view">
+</p>
 
 ## Engineering highlights
 
