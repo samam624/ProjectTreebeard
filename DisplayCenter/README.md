@@ -1,8 +1,18 @@
-# DisplayCenter
+# DisplayCenter: the receiver
 
-The shared ESP32-S3 receiver/display product. Continuously scans for BLE advertisements from
-**both** MSV2 and MSV3 probes, renders readings on a local TFT, hosts a phone-facing setup/status
-web app, and bootstraps itself with the cloud backend (`../cloud/`) for remote history.
+The ESP32-S3 receiver every probe generation reports to. It scans continuously for Bluetooth LE
+advertisements from MSV2, MSV3 and MSV4 probes, shows the readings on a local touch display, hosts
+a phone-facing setup and status web app, and uploads history to the [cloud backend](../cloud/).
+
+| | |
+| --- | --- |
+| **Hardware** | [Controller PCB](hardware/MSV2_ESP32_DisplayCenter/pcb/) · [Tabletop enclosure](hardware/MSV2_ESP32_DisplayCenter/V2/) |
+| **Firmware** | [`arduino/Treebeard_ESP32_Display_Runtime`](arduino/Treebeard_ESP32_Display_Runtime/) (production) and the hardware test sketches beside it |
+| **Tools** | [`scripts/`](scripts/): build and flash, and the `verify_*.mjs` checks that hold the probe, receiver and cloud formats equal |
+| **Write-ups** | [`docs/`](docs/) |
+
+The rest of this page is the developer guide: libraries and wiring, the phone app and Wi-Fi setup,
+cloud status, the dashboard schema, the plant art pipeline, flashing and packet-loss testing.
 
 ## Fast ESP32 Display Update Loop
 
