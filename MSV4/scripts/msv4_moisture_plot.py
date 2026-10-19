@@ -7,7 +7,11 @@ the pot". A candidate that tracked the scale perfectly would lie on the black li
 hourly medians; the black line joins the weighings (repeats merged to their median, bars show the
 scale's spread). Hollow marker = water standing in the saucer (not scored); x = saucer unknown.
 
-    python MSV4/scripts/msv4_moisture_plot.py data/sensor_logs/<sensor10 history>.csv [-o out.png] [--corrected]
+By default this writes ``msv4_moisture_vs_mass.png`` beside the input CSV and replaces the
+previous plot. The temperature-corrected view is the normal view; use ``--raw`` only when the
+uncorrected diagnostic comparison is wanted.
+
+    python MSV4/scripts/msv4_moisture_plot.py data/sensor_logs/<sensor10 history>.csv [-o out.png] [--raw]
 """
 from __future__ import annotations
 
@@ -32,8 +36,11 @@ def main() -> None:
     parser.add_argument("csv", type=Path)
     parser.add_argument("-o", "--out", type=Path)
     parser.add_argument("--with-saucer", action="store_true", help="fit through weighings with standing saucer water too")
-    parser.add_argument("--corrected", action="store_true",
-                        help="temperature-correct every raw candidate first (msv4_moisture_tempcorr.py)")
+    correction = parser.add_mutually_exclusive_group()
+    correction.add_argument("--corrected", dest="corrected", action="store_true", default=True,
+                            help="temperature-correct every raw candidate first (default)")
+    correction.add_argument("--raw", dest="corrected", action="store_false",
+                            help="plot the uncorrected diagnostic candidates instead")
     args = parser.parse_args()
     rows = [r for r in reading.load(args.csv, None) if r["coupled"] is not None]
     if not rows:
@@ -88,7 +95,7 @@ def main() -> None:
     ax.grid(alpha=0.25)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), fontsize=8, ncol=2, frameon=False)
     fig.tight_layout()
-    out = args.out or args.csv.with_name(f"msv4_moisture_vs_mass_{rows[-1]['time']:%Y-%m-%d_%H%M}.png")
+    out = args.out or args.csv.with_name("msv4_moisture_vs_mass.png")
     fig.savefig(out, dpi=130)
     print(out)
 

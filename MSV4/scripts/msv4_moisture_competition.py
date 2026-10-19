@@ -11,6 +11,9 @@ water in it. Every candidate reading is paired with each weighing and judged in 
   daily wobble     how far the candidate strays from a straight line through a day with no
                    watering, in grams (a pot dries through a day; falling with it is not an error);
   scatter          one hour's reading-to-reading scatter, in grams.
+  watering trigger how early or late the candidate reaches the weighed dry point if its recent
+                   trend continues. This is the end-use metric: when would the probe actually
+                   tell the owner to water, and how many grams early or late would that be?
 
 Lower is better for every column in grams. A second table takes each two neighbouring weighings
 with no watering between them and sets what the scale lost beside what each candidate lost. The candidates are all made from the three numbers
@@ -54,6 +57,7 @@ MIN_LEVELS_TO_RANK = 4
 # Board 1's contact capacitance was still climbing 21 hours after it was planted
 # (MSV4_SOIL_THERMAL_FIRST_DAY_2026-10-09.md), so no day that starts sooner is a settled one.
 INSERTION_SETTLE_HOURS = 21
+FORECAST_HOURS = 36      # Long enough not to mistake one day/night swing for the drying rate.
 
 
 def _log_ohm(value: float) -> float:
@@ -260,6 +264,68 @@ def score(rows: list[dict], pairs: list[dict], waterings: list[datetime]) -> lis
     return results
 
 
+def watering_forecast(rows: list[dict], pairs: list[dict]) -> dict | None:
+    """Project each candidate to the weighed dry point from its latest 36-hour trend.
+
+    The candidate's reading is first converted to grams with the same all-weighing linear fit
+    used by the competition. ``trigger_error`` is the scale's projected grams above the dry
+    point when that candidate reaches zero: positive is an early watering call, negative is a
+    late call. This is deliberately a forecast, not another fit score; it should be trusted only
+    while the recent drying trend remains representative.
+    """
+    if len(pairs) < 3:
+        return None
+    dry = min(p["grams"] for p in pairs)
+    latest = pairs[-1]
+    remaining = latest["grams"] - dry
+    if remaining <= 0.0:
+        return None
+    window_start = latest["time"] - timedelta(hours=FORECAST_HOURS)
+    scale_points = [p for p in pairs if window_start <= p["time"] <= latest["time"]]
+    if len(scale_points) < 3:
+        return None
+    scale_x = [(p["time"] - latest["time"]).total_seconds() / 86400.0 for p in scale_points]
+    scale_slope, _ = statistics.linear_regression(scale_x, [p["grams"] for p in scale_points])
+    scale_burn = -scale_slope
+    if scale_burn <= 0.0:
+        return None
+
+    recent = [r for r in rows if window_start <= r["time"] <= latest["time"]]
+    candidates = []
+    for name, unit, value in CANDIDATES:
+        medians = []
+        points = []
+        for p in pairs:
+            data = [v for v in (value(r) for r in p["rows"]) if v is not None]
+            median = statistics.median(data) if len(data) >= MIN_PAIR_READINGS else None
+            medians.append(median)
+            if median is not None:
+                points.append((p["grams"] - dry, median))
+        if medians[-1] is None or len({round(g / LEVEL_GRAMS) for g, _ in points}) < 2:
+            continue
+        slope, intercept = statistics.linear_regression([g for g, _ in points], [v for _, v in points])
+        hours = hourly(recent, value)
+        if slope <= 0.0 or len(hours) < 12:
+            continue
+        trend_per_hour, _ = statistics.linear_regression([h for h, _, _ in hours], [m for _, m, _ in hours])
+        burn = -trend_per_hour * 24.0 / slope
+        if burn <= 0.0:
+            continue
+        now = (medians[-1] - intercept) / slope
+        days = now / burn
+        candidates.append({
+            "name": name,
+            "now": now,
+            "bias": now - remaining,
+            "burn": burn,
+            "days": days,
+            "delta_days": days - remaining / scale_burn,
+            "trigger_error": latest["grams"] - scale_burn * days - dry,
+        })
+    return {"dry": dry, "remaining": remaining, "scale_burn": scale_burn,
+            "scale_days": remaining / scale_burn, "candidates": candidates}
+
+
 def report(rows: list[dict], weighings: list[dict], waterings: list[datetime], with_saucer: bool = False) -> None:
     listed = pair(rows, merge_repeats(weighings, waterings), waterings)
     pairs = [p for p in listed if not p.get("excluded", False) and (with_saucer or p["saucer"] is False)]
@@ -308,6 +374,21 @@ def report(rows: list[dict], weighings: list[dict], waterings: list[datetime], w
             cells = [f"{(r['medians'][b] - r['medians'][a]) / r['slope']:+26.1f}"
                      if r["medians"][a] is not None and r["medians"][b] is not None else f"{'-':>26}" for a, b in between]
             print(f"{r['name']:42}" + "".join(f"  {cell}" for cell in cells))
+    forecast = watering_forecast(rows, pairs)
+    if forecast and forecast["candidates"]:
+        print(f"\nWatering trigger forecast from the latest {FORECAST_HOURS} h trend "
+              f"(weighed dry point {forecast['dry']:.0f} g)")
+        print(f"Scale: {forecast['remaining']:.1f} g remain, losing {forecast['scale_burn']:.1f} g/day -> "
+              f"dry in {forecast['scale_days']:.2f} days")
+        print(f"{'candidate':42}  {'water now':>9}  {'loss/day':>8}  {'days':>5}  {'vs scale':>8}  {'trigger error':>13}")
+        for f in sorted(forecast["candidates"], key=lambda item: item["days"]):
+            timing = f"{f['delta_days']:+.2f} d"
+            trigger = f"{abs(f['trigger_error']):.1f} g {'early' if f['trigger_error'] >= 0 else 'late'}"
+            print(f"{f['name']:42}  {f['now']:7.1f} g  {f['burn']:6.1f} g  {f['days']:5.2f}  "
+                  f"{timing:>8}  {trigger:>13}")
+        print("This is the end-use score: positive/early means water remains at the call; late means the "
+              "scale would already be below the weighed dry point. It is an extrapolation, so re-run it "
+              "after every weighing and confirm it across another watering cycle.")
     days = max((r.get("dry_days", 0) for r in results), default=0)
     print(f"\nOrder: smallest first of miss and daily wobble taken together. {levels} amounts of water weighed, "
           f"{days} settled day(s) with no watering.")
@@ -366,6 +447,15 @@ def self_test() -> None:
         assert drying(pairs, [watered]) == [(0, 1), (2, 3), (3, 4), (4, 5)]
         lost = (results["true"]["medians"][4] - results["true"]["medians"][3]) / results["true"]["slope"]
         assert abs(lost - (pairs[4]["grams"] - pairs[3]["grams"])) < 2.0
+        forecast_weighings = sorted(
+            weighings + [{"time": start + timedelta(hours=70),
+                           "grams": 4000.0 + water_at(70), "saucer": False}],
+            key=lambda w: w["time"],
+        )
+        forecast = watering_forecast(rows, pair(rows, forecast_weighings, [watered]))
+        assert forecast is not None
+        true_forecast = next(r for r in forecast["candidates"] if r["name"] == "true")
+        assert abs(true_forecast["trigger_error"]) < 2.0 and abs(true_forecast["delta_days"]) < 0.05
         # With the planting further back it is the day BEFORE the watering that counts, and the
         # record ends before a whole day after it has passed.
         later = dry_days(rows, [start + timedelta(hours=50)])
@@ -387,7 +477,7 @@ def self_test() -> None:
     for name, _, value in CANDIDATES:
         assert value(after) > value(before), name
     assert abs(_soil(before)[0] - 9.80) < 0.01 and abs(_soil(after)[0] - 26.22) < 0.01
-    print("PASS moisture competition: pairing, settling hours, scoring in grams, wrong-way and ranking rules")
+    print("PASS moisture competition: pairing, settling hours, scoring, ranking and watering-trigger forecast")
 
 
 def main() -> None:

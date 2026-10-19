@@ -63,6 +63,22 @@ AIR_BASELINES = (
     (10, "2026-10-11T20:39:37-07:00", 13.72, 8.69,
      "application 262166, built with that Cp compiled in (-CpCentiPf 869); "
      "DIS read 'Cp 8.69 pF default' after install and cloud wake 1 fixed the boot time"),
+    (11, "2026-10-13T22:47:17-07:00", 13.52, 8.74,
+     "board 2 (R15 3.3 kohm) in plain air outside overnight (maintainer), 2026-10-13 23:00 - 10-14 10:00: "
+     "median Cd of 66 readings, range 13.25-13.69 pF, tip 10.8-17.0 C; application 262167 built with "
+     "-RsOhms 3300 -CpCentiPf 874, DIS 'Cp 8.74 pF default'"),
+    (11, "2026-10-14T11:38:16-07:00", 13.52, 8.74,
+     "application 262168 on the same built-in Cp (-CpCentiPf 874, DIS 'Cp 8.74 pF default'); the overnight "
+     "value carried at the maintainer's choice; dry on the desk its first 7 readings had a median of 13.61 pF"),
+    (11, "2026-10-14T23:28:49-07:00", 13.74, 8.74,
+     "application 262169 (-CpCentiPf 874); dry in air on the desk its whole boot, 2026-10-14 23:28 - 10-15 13:47: "
+     "median Cd of 851 readings, range 13.37-14.27 pF, tip 23.0-25.8 C"),
+    (11, "2026-10-15T17:35:51-07:00", 13.74, 8.74,
+     "application 262171 on the same built-in Cp (-CpCentiPf 874); booted in moist soil, so the 262169 air "
+     "value is carried"),
+    (11, "2026-10-15T20:16:38-07:00", 13.74, 8.74,
+     "application 262172 (raw sweep in the scan response) on the same built-in Cp; booted in its own pot of "
+     "moist soil, so the 262169 air value is carried"),
 )
 # Which boot a reading belongs to comes from the reading itself: the probe counts one wake a
 # minute from 1 at boot, so its boot began (wake - 1) minutes earlier. An entry is that boot's

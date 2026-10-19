@@ -1,0 +1,257 @@
+﻿Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2169 ph  -64.59 deg
+   333333 Hz M=16 |H| 0.1707 ph  -64.93 deg
+   500000 Hz M=16 |H| 0.1222 ph  -63.12 deg
+   666667 Hz M=12 |H| 0.0973 ph  -60.30 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -56.03 deg
+  1333333 Hz M=12 |H| 0.0626 ph  -52.19 deg
+  2000000 Hz M= 8 |H| 0.0514 ph  -47.17 deg
+  2666667 Hz M= 6 |H| 0.0463 ph  -44.71 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00266 of drive:
+  Rsoil 1/Gs        74.0 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2166.98 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       572.33 pF  +/-   9.4 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 993 kHz
+  Rsoil @25C        75.6 ohm  (tip 26.07 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2172 ph  -64.78 deg
+   333333 Hz M=16 |H| 0.1699 ph  -64.87 deg
+   500000 Hz M=16 |H| 0.1219 ph  -63.25 deg
+   666667 Hz M=12 |H| 0.0971 ph  -60.52 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -55.88 deg
+  1333333 Hz M=12 |H| 0.0625 ph  -52.18 deg
+  2000000 Hz M= 8 |H| 0.0517 ph  -47.70 deg
+  2666667 Hz M= 6 |H| 0.0457 ph  -43.75 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00257 of drive:
+  Rsoil 1/Gs        73.2 ohm +/-   5.6 %  <- MOISTURE. lower = wetter
+  Cm interface   2172.05 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       567.84 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 1001 kHz
+  Rsoil @25C        74.8 ohm  (tip 26.09 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2175 ph  -64.67 deg
+   333333 Hz M=16 |H| 0.1701 ph  -64.91 deg
+   500000 Hz M=16 |H| 0.1216 ph  -63.14 deg
+   666667 Hz M=12 |H| 0.0973 ph  -60.44 deg
+  1000000 Hz M=16 |H| 0.0743 ph  -56.08 deg
+  1333333 Hz M=12 |H| 0.0628 ph  -51.97 deg
+  2000000 Hz M= 8 |H| 0.0519 ph  -47.05 deg
+  2666667 Hz M= 6 |H| 0.0457 ph  -44.04 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00255 of drive:
+  Rsoil 1/Gs        73.3 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2173.17 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       564.26 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 999 kHz
+  Rsoil @25C        74.7 ohm  (tip 25.99 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2173 ph  -64.55 deg
+   333333 Hz M=16 |H| 0.1700 ph  -64.82 deg
+   500000 Hz M=16 |H| 0.1222 ph  -63.06 deg
+   666667 Hz M=12 |H| 0.0974 ph  -60.49 deg
+  1000000 Hz M=16 |H| 0.0743 ph  -55.80 deg
+  1333333 Hz M=12 |H| 0.0626 ph  -51.90 deg
+  2000000 Hz M= 8 |H| 0.0516 ph  -48.17 deg
+  2666667 Hz M= 6 |H| 0.0460 ph  -44.74 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00264 of drive:
+  Rsoil 1/Gs        74.9 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2159.45 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       582.59 pF  +/-   9.1 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 984 kHz
+  Rsoil @25C        76.5 ohm  (tip 26.11 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2174 ph  -64.78 deg
+   333333 Hz M=16 |H| 0.1701 ph  -64.93 deg
+   500000 Hz M=16 |H| 0.1220 ph  -63.25 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.62 deg
+  1000000 Hz M=16 |H| 0.0744 ph  -55.92 deg
+  1333333 Hz M=12 |H| 0.0628 ph  -52.08 deg
+  2000000 Hz M= 8 |H| 0.0518 ph  -46.67 deg
+  2666667 Hz M= 6 |H| 0.0467 ph  -44.21 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00249 of drive:
+  Rsoil 1/Gs        73.1 ohm +/-   5.4 %  <- MOISTURE. lower = wetter
+  Cm interface   2174.05 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       560.75 pF  +/-   9.0 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 1002 kHz
+  Rsoil @25C        74.6 ohm  (tip 26.07 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2174 ph  -64.63 deg
+   333333 Hz M=16 |H| 0.1701 ph  -64.98 deg
+   500000 Hz M=16 |H| 0.1217 ph  -63.09 deg
+   666667 Hz M=12 |H| 0.0978 ph  -60.67 deg
+  1000000 Hz M=16 |H| 0.0737 ph  -55.84 deg
+  1333333 Hz M=12 |H| 0.0627 ph  -52.55 deg
+  2000000 Hz M= 8 |H| 0.0525 ph  -46.88 deg
+  2666667 Hz M= 6 |H| 0.0458 ph  -44.60 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00260 of drive:
+  Rsoil 1/Gs        73.8 ohm +/-   5.6 %  <- MOISTURE. lower = wetter
+  Cm interface   2166.44 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       571.61 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 995 kHz
+  Rsoil @25C        75.3 ohm  (tip 26.00 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2171 ph  -64.75 deg
+   333333 Hz M=16 |H| 0.1697 ph  -65.01 deg
+   500000 Hz M=16 |H| 0.1220 ph  -63.25 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.19 deg
+  1000000 Hz M=16 |H| 0.0739 ph  -55.71 deg
+  1333333 Hz M=12 |H| 0.0622 ph  -52.33 deg
+  2000000 Hz M= 8 |H| 0.0517 ph  -47.10 deg
+  2666667 Hz M= 6 |H| 0.0460 ph  -44.73 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00250 of drive:
+  Rsoil 1/Gs        73.5 ohm +/-   5.4 %  <- MOISTURE. lower = wetter
+  Cm interface   2171.57 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       570.93 pF  +/-   8.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 997 kHz
+  Rsoil @25C        75.0 ohm  (tip 26.03 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2170 ph  -64.76 deg
+   333333 Hz M=16 |H| 0.1700 ph  -64.90 deg
+   500000 Hz M=16 |H| 0.1223 ph  -63.15 deg
+   666667 Hz M=12 |H| 0.0976 ph  -60.58 deg
+  1000000 Hz M=16 |H| 0.0745 ph  -55.96 deg
+  1333333 Hz M=12 |H| 0.0621 ph  -52.56 deg
+  2000000 Hz M= 8 |H| 0.0516 ph  -47.35 deg
+  2666667 Hz M= 6 |H| 0.0459 ph  -44.47 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00263 of drive:
+  Rsoil 1/Gs        74.0 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2162.94 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       576.82 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 995 kHz
+  Rsoil @25C        75.5 ohm  (tip 26.07 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2169 ph  -64.71 deg
+   333333 Hz M=16 |H| 0.1699 ph  -64.97 deg
+   500000 Hz M=16 |H| 0.1218 ph  -63.37 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.35 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -56.14 deg
+  1333333 Hz M=12 |H| 0.0625 ph  -52.21 deg
+  2000000 Hz M= 8 |H| 0.0513 ph  -47.44 deg
+  2666667 Hz M= 6 |H| 0.0461 ph  -45.14 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00256 of drive:
+  Rsoil 1/Gs        74.2 ohm +/-   5.6 %  <- MOISTURE. lower = wetter
+  Cm interface   2161.75 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       582.28 pF  +/-   8.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 992 kHz
+  Rsoil @25C        75.7 ohm  (tip 26.00 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2170 ph  -64.65 deg
+   333333 Hz M=16 |H| 0.1699 ph  -64.98 deg
+   500000 Hz M=16 |H| 0.1217 ph  -63.30 deg
+   666667 Hz M=12 |H| 0.0974 ph  -60.44 deg
+  1000000 Hz M=16 |H| 0.0742 ph  -55.74 deg
+  1333333 Hz M=12 |H| 0.0629 ph  -52.18 deg
+  2000000 Hz M= 8 |H| 0.0518 ph  -46.96 deg
+  2666667 Hz M= 6 |H| 0.0465 ph  -43.79 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00255 of drive:
+  Rsoil 1/Gs        73.1 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2179.27 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       561.28 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 999 kHz
+  Rsoil @25C        74.6 ohm  (tip 26.01 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2172 ph  -64.72 deg
+   333333 Hz M=16 |H| 0.1700 ph  -64.95 deg
+   500000 Hz M=16 |H| 0.1221 ph  -63.21 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.64 deg
+  1000000 Hz M=16 |H| 0.0738 ph  -55.71 deg
+  1333333 Hz M=12 |H| 0.0627 ph  -52.19 deg
+  2000000 Hz M= 8 |H| 0.0519 ph  -47.14 deg
+  2666667 Hz M= 6 |H| 0.0457 ph  -44.31 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00255 of drive:
+  Rsoil 1/Gs        73.3 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2170.56 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       567.74 pF  +/-   9.1 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 1000 kHz
+  Rsoil @25C        74.8 ohm  (tip 26.00 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2175 ph  -64.71 deg
+   333333 Hz M=16 |H| 0.1700 ph  -65.03 deg
+   500000 Hz M=16 |H| 0.1219 ph  -63.24 deg
+   666667 Hz M=12 |H| 0.0978 ph  -60.43 deg
+  1000000 Hz M=16 |H| 0.0742 ph  -55.80 deg
+  1333333 Hz M=12 |H| 0.0624 ph  -52.32 deg
+  2000000 Hz M= 8 |H| 0.0518 ph  -47.39 deg
+  2666667 Hz M= 6 |H| 0.0465 ph  -44.64 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00251 of drive:
+  Rsoil 1/Gs        73.8 ohm +/-   5.4 %  <- MOISTURE. lower = wetter
+  Cm interface   2164.80 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       572.62 pF  +/-   8.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 996 kHz
+  Rsoil @25C        75.4 ohm  (tip 26.03 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2169 ph  -64.76 deg
+   333333 Hz M=16 |H| 0.1702 ph  -65.12 deg
+   500000 Hz M=16 |H| 0.1219 ph  -63.34 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.41 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -55.86 deg
+  1333333 Hz M=12 |H| 0.0625 ph  -52.29 deg
+  2000000 Hz M= 8 |H| 0.0511 ph  -47.12 deg
+  2666667 Hz M= 6 |H| 0.0463 ph  -45.03 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00251 of drive:
+  Rsoil 1/Gs        73.6 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2165.81 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       574.55 pF  +/-   8.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 999 kHz
+  Rsoil @25C        75.1 ohm  (tip 26.00 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2173 ph  -64.76 deg
+   333333 Hz M=16 |H| 0.1705 ph  -64.96 deg
+   500000 Hz M=16 |H| 0.1223 ph  -63.18 deg
+   666667 Hz M=12 |H| 0.0971 ph  -60.46 deg
+  1000000 Hz M=16 |H| 0.0742 ph  -56.01 deg
+  1333333 Hz M=12 |H| 0.0623 ph  -52.08 deg
+  2000000 Hz M= 8 |H| 0.0522 ph  -47.29 deg
+  2666667 Hz M= 6 |H| 0.0461 ph  -44.10 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00253 of drive:
+  Rsoil 1/Gs        73.3 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2169.86 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       564.86 pF  +/-   9.1 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 1001 kHz
+  Rsoil @25C        74.7 ohm  (tip 26.00 C, 2 %/C EC tempco)
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2171 ph  -64.72 deg
+   333333 Hz M=16 |H| 0.1699 ph  -64.94 deg
+   500000 Hz M=16 |H| 0.1224 ph  -63.17 deg
+   666667 Hz M=12 |H| 0.0979 ph  -60.28 deg
+  1000000 Hz M=16 |H| 0.0735 ph  -55.83 deg
+  1333333 Hz M=12 |H| 0.0627 ph  -52.38 deg
+  2000000 Hz M= 8 |H| 0.0515 ph  -47.25 deg
+  2666667 Hz M= 6 |H| 0.0459 ph  -44.75 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00259 of drive:
+  Rsoil 1/Gs        73.9 ohm +/-   5.6 %  <- MOISTURE. lower = wetter
+  Cm interface   2165.60 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       575.02 pF  +/-   9.1 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 994 kHz
+  Rsoil @25C        75.4 ohm  (tip 25.99 C, 2 %/C EC tempco)

@@ -1,0 +1,51 @@
+14003 readings, 2026-10-08 21:47 to 2026-10-18 17:18, sensor 10; 64 weighings, 1 watering(s) on record
+
+Weighings (water = grams above the driest, 4613 g; repeats within 10 min are one weighing, at their median)
+weighed            grams  water  saucer  readings paired
+2026-10-10 13:55   4697     84  dry      10-10 13:25 to 14:25, 45 readings
+2026-10-10 19:14   4674     60  dry      10-10 18:44 to 19:44, 30 readings; 2 weighings 4673, 4674
+2026-10-10 19:16   5135    522  WATER    NOT SCORED: water standing in the saucer is in this weight and not in the soil
+2026-10-10 23:54   5105    492  dry      10-10 23:24 to 00:24, 60 readings; 3 weighings 5098, 5106, 5105
+2026-10-11 10:53   5060    447  dry      10-11 10:23 to 11:23, 60 readings; 3 weighings 5062, 5060, 5058
+2026-10-11 20:34   4992    379  dry      10-11 20:04 to 21:04, 58 readings; 3 weighings 4993, 4992, 4992
+2026-10-12 10:30   4964    351  dry      10-12 10:00 to 11:00, 60 readings; 3 weighings 4963, 4964, 4964
+2026-10-12 15:39   4929    316  dry      10-12 15:09 to 16:09, 60 readings; 3 weighings 4929, 4930, 4929
+2026-10-12 19:49   4923    310  dry      10-12 19:19 to 20:19, 60 readings; 3 weighings 4919, 4925, 4923
+2026-10-12 21:30   4916    303  dry      10-12 21:00 to 22:00, 60 readings; 3 weighings 4916, 4918, 4916
+2026-10-13 08:22   4905    292  dry      10-13 07:52 to 08:52, 60 readings; 3 weighings 4905, 4904, 4906
+2026-10-13 22:00   4859    246  dry      10-13 21:30 to 22:30, 60 readings; 3 weighings 4859, 4856, 4860
+2026-10-14 09:48   4839    226  dry      10-14 09:18 to 10:18, 60 readings; 3 weighings 4841, 4839, 4837
+2026-10-14 17:33   4814    201  dry      10-14 17:03 to 18:03, 60 readings; 3 weighings 4814, 4814, 4814
+2026-10-14 23:04   4807    194  dry      10-14 22:34 to 23:34, 59 readings; 3 weighings 4807, 4807, 4807
+2026-10-15 09:09   4792    179  dry      10-15 08:39 to 09:39, 60 readings; 3 weighings 4792, 4791, 4792
+2026-10-15 19:55   4759    146  dry      10-15 19:25 to 20:25, 60 readings; 3 weighings 4759, 4758, 4759
+2026-10-16 10:30   4742    129  dry      10-16 10:00 to 11:00, 60 readings; 3 weighings 4741, 4742, 4744
+2026-10-16 14:53   4717    104  dry      10-16 14:23 to 15:23, 60 readings; 3 weighings 4713, 4717, 4717
+2026-10-16 22:46   4702     89  dry      10-16 22:16 to 23:16, 60 readings; 3 weighings 4705, 4702, 4700
+2026-10-17 12:16   4692     79  dry      10-17 11:46 to 12:46, 59 readings; 3 weighings 4694, 4692, 4692
+2026-10-18 00:27   4653     40  dry      10-17 23:57 to 00:57, 60 readings; 3 weighings 4653, 4657, 4653
+2026-10-18 17:20   4613      0  dry      10-18 16:50 to 17:50, 29 readings; 3 weighings 4615, 4612, 4613
+The scale: repeated weighings differ by up to 8 g (21 set(s)). A miss or a difference in water smaller than that is not one.
+
+candidate                                   per gram        miss g  rank  daily wobble g  scatter g
+soil capacitance (derived)                    0.0307 pF       23.4  +0.98           19.3        3.1
+direct capacitance above air                  0.0266 pF       28.5  +0.98           19.7        2.7
+soil resistance behind the mask (derived)    12.6479 units    45.0  +0.98           20.1        1.4
+soil-coupled capacitance (Cm + Cd - air)      0.1928 pF       55.9  +0.98           21.3        2.1
+moisture number in use                       13.6314 units    57.5  +0.99           16.7        1.1
+soil resistance, no temp. correction         13.0359 units    58.8  +0.98           19.7        1.1
+contact capacitance Cm                        0.1661 pF       60.7  +0.98           22.3        2.1
+
+Between one weighing and the next with no watering between them: grams of water gained or lost, by the scale and by each candidate at its own per gram
+                                            10-10 13:55 to 10-10 19:14  10-10 23:54 to 10-11 10:53  10-11 10:53 to 10-11 20:34  10-11 20:34 to 10-12 10:30  10-12 10:30 to 10-12 15:39  10-12 15:39 to 10-12 19:49  10-12 19:49 to 10-12 21:30  10-12 21:30 to 10-13 08:22  10-13 08:22 to 10-13 22:00  10-13 22:00 to 10-14 09:48  10-14 09:48 to 10-14 17:33  10-14 17:33 to 10-14 23:04  10-14 23:04 to 10-15 09:09  10-15 09:09 to 10-15 19:55  10-15 19:55 to 10-16 10:30  10-16 10:30 to 10-16 14:53  10-16 14:53 to 10-16 22:46  10-16 22:46 to 10-17 12:16  10-17 12:16 to 10-18 00:27  10-18 00:27 to 10-18 17:20
+tip, C                                                  27.00 to 25.38              24.25 to 21.25              21.25 to 23.75              23.75 to 21.25              21.25 to 26.50              26.50 to 24.25              24.25 to 23.75              23.75 to 21.00              21.00 to 23.75              23.75 to 21.00              21.00 to 26.75              26.75 to 25.50              25.50 to 22.00              22.00 to 25.25              25.25 to 22.75              22.75 to 27.75              27.75 to 25.75              25.75 to 23.50              23.50 to 24.25              24.25 to 26.25
+the scale                                                          -24                         -45                         -68                         -28                         -35                          -6                          -7                         -11                         -46                         -20                         -25                          -7                         -15                         -33                         -17                         -25                         -15                         -10                         -39                         -40
+soil capacitance (derived)                                       -10.9                       -85.0                       -28.5                       -39.6                       +13.0                       -33.3                       -11.3                       -29.1                       -42.0                       -41.4                        +7.1                       -16.0                       -35.7                       -10.7                       -33.7                        +7.9                       -23.5                       -25.1                       -11.4                       -14.2
+direct capacitance above air                                      -8.3                       -80.4                       -25.0                       -38.5                       +13.5                       -31.8                       -10.7                       -30.4                       -39.8                       -40.6                        +8.5                       -16.7                       -35.9                       -11.3                       -33.3                        +7.1                       -23.3                       -26.3                       -10.7                       -16.3
+soil resistance behind the mask (derived)                        -14.3                       -56.4                       -14.5                       -29.7                        +7.9                       -22.8                        -7.2                       -31.3                       -33.7                       -35.4                        +6.8                       -17.4                       -37.7                       -13.4                       -34.8                        +7.7                       -26.0                       -30.8                       -19.3                       -26.9
+soil-coupled capacitance (Cm + Cd - air)                          -1.9                       -55.7                        -7.8                       -32.1                       +17.5                       -25.2                        -7.5                       -36.0                       -32.1                       -35.6                       +15.2                       -19.0                       -40.1                       -13.3                       -35.5                        +4.4                       -24.8                       -34.1                       -10.0                       -21.6
+moisture number in use                                            -1.2                       -28.3                       -26.8                       -11.4                       -25.1                        -7.1                        -1.8                       -12.3                       -47.4                       -13.8                       -29.6                        -8.8                       -12.7                       -34.3                       -16.7                       -24.8                       -12.2                       -15.5                       -23.5                       -39.2
+soil resistance, no temp. correction                             -10.6                       -52.0                       -10.8                       -28.3                        +8.9                       -21.5                        -6.9                       -31.0                       -31.2                       -32.7                        +7.9                       -17.7                       -36.9                       -13.5                       -34.5                        +7.0                       -25.0                       -32.5                       -18.0                       -28.5
+contact capacitance Cm                                            -0.6                       -52.4                        -5.4                       -30.4                       +18.1                       -24.4                        -7.2                       -36.1                       -31.3                       -34.3                       +16.9                       -20.5                       -40.3                       -13.9                       -35.8                        +4.2                       -25.0                       -35.5                        -9.6                       -22.9
+
+Order: smallest first of miss and daily wobble taken together. 19 amounts of water weighed, 7 settled day(s) with no watering.

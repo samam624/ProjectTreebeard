@@ -1,0 +1,139 @@
+=== 2026-10-15T17:09:56
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2174 ph  -64.68 deg
+   333333 Hz M=16 |H| 0.1705 ph  -64.81 deg
+   500000 Hz M=16 |H| 0.1216 ph  -63.22 deg
+  1000000 Hz M=16 |H| 0.0745 ph  -56.12 deg
+  1333333 Hz M=12 |H| 0.0623 ph  -52.62 deg
+  2000000 Hz M= 8 |H| 0.0511 ph  -47.90 deg
+  2666667 Hz M= 6 |H| 0.0457 ph  -44.08 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00271 of drive:
+  Rsoil 1/Gs        73.8 ohm +/-   5.9 %  <- MOISTURE. lower = wetter
+  Cm interface   2161.29 pF  +/-   2.4 %  <- contact quality: gaps/crusts move this
+  Cd direct       576.14 pF  +/-   9.6 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 998 kHz
+  Rsoil @25C        75.6 ohm  (tip 26.19 C, 2 %/C EC tempco)
+=== 2026-10-15T17:10:25
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2172 ph  -64.64 deg
+   333333 Hz M=16 |H| 0.1700 ph  -64.96 deg
+   500000 Hz M=16 |H| 0.1218 ph  -63.24 deg
+   666667 Hz M=12 |H| 0.0974 ph  -60.71 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -56.00 deg
+  1333333 Hz M=12 |H| 0.0631 ph  -51.76 deg
+  2000000 Hz M= 8 |H| 0.0519 ph  -47.69 deg
+  2666667 Hz M= 6 |H| 0.0464 ph  -44.46 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00254 of drive:
+  Rsoil 1/Gs        74.1 ohm +/-   5.5 %  <- MOISTURE. lower = wetter
+  Cm interface   2165.13 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       575.16 pF  +/-   8.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 991 kHz
+  Rsoil @25C        75.9 ohm  (tip 26.17 C, 2 %/C EC tempco)
+=== 2026-10-15T17:10:55
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2173 ph  -64.70 deg
+   333333 Hz M=16 |H| 0.1704 ph  -65.06 deg
+   500000 Hz M=16 |H| 0.1220 ph  -63.10 deg
+   666667 Hz M=12 |H| 0.0972 ph  -60.62 deg
+  1000000 Hz M=16 |H| 0.0743 ph  -55.65 deg
+  1333333 Hz M=12 |H| 0.0628 ph  -52.10 deg
+  2000000 Hz M= 8 |H| 0.0520 ph  -47.17 deg
+  2666667 Hz M= 6 |H| 0.0471 ph  -43.63 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00250 of drive:
+  Rsoil 1/Gs        73.0 ohm +/-   5.4 %  <- MOISTURE. lower = wetter
+  Cm interface   2177.89 pF  +/-   2.2 %  <- contact quality: gaps/crusts move this
+  Cd direct       556.81 pF  +/-   9.1 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 1001 kHz
+  Rsoil @25C        74.6 ohm  (tip 26.13 C, 2 %/C EC tempco)
+=== 2026-10-15T17:11:25
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2174 ph  -64.66 deg
+   333333 Hz M=16 |H| 0.1701 ph  -65.09 deg
+   500000 Hz M=16 |H| 0.1224 ph  -63.17 deg
+   666667 Hz M=12 |H| 0.0974 ph  -60.42 deg
+  1000000 Hz M=16 |H| 0.0740 ph  -55.91 deg
+  1333333 Hz M=12 |H| 0.0627 ph  -52.67 deg
+  2000000 Hz M= 8 |H| 0.0511 ph  -47.24 deg
+  2666667 Hz M= 6 |H| 0.0460 ph  -44.43 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00263 of drive:
+  Rsoil 1/Gs        73.6 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2163.54 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       572.76 pF  +/-   9.3 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 999 kHz
+  Rsoil @25C        75.2 ohm  (tip 26.10 C, 2 %/C EC tempco)
+=== 2026-10-15T17:11:55
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2171 ph  -64.68 deg
+   333333 Hz M=16 |H| 0.1701 ph  -64.90 deg
+   500000 Hz M=16 |H| 0.1220 ph  -63.42 deg
+   666667 Hz M=12 |H| 0.0973 ph  -60.26 deg
+  1000000 Hz M=16 |H| 0.0741 ph  -55.99 deg
+  1333333 Hz M=12 |H| 0.0628 ph  -52.40 deg
+  2000000 Hz M= 8 |H| 0.0517 ph  -47.12 deg
+  2666667 Hz M= 6 |H| 0.0457 ph  -44.31 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00260 of drive:
+  Rsoil 1/Gs        73.6 ohm +/-   5.6 %  <- MOISTURE. lower = wetter
+  Cm interface   2168.46 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       571.29 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 997 kHz
+  Rsoil @25C        75.1 ohm  (tip 26.03 C, 2 %/C EC tempco)
+=== 2026-10-15T17:12:24
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2169 ph  -64.54 deg
+   333333 Hz M=16 |H| 0.1700 ph  -64.93 deg
+   500000 Hz M=16 |H| 0.1220 ph  -63.33 deg
+   666667 Hz M=12 |H| 0.0976 ph  -60.55 deg
+  1000000 Hz M=16 |H| 0.0740 ph  -55.78 deg
+  1333333 Hz M=12 |H| 0.0626 ph  -51.80 deg
+  2000000 Hz M= 8 |H| 0.0516 ph  -47.76 deg
+  2666667 Hz M= 6 |H| 0.0461 ph  -44.06 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00267 of drive:
+  Rsoil 1/Gs        73.7 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2171.47 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       570.19 pF  +/-   9.5 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 994 kHz
+  Rsoil @25C        75.3 ohm  (tip 26.07 C, 2 %/C EC tempco)
+=== 2026-10-15T17:12:54
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.2172 ph  -64.68 deg
+   333333 Hz M=16 |H| 0.1697 ph  -65.08 deg
+   500000 Hz M=16 |H| 0.1222 ph  -63.05 deg
+   666667 Hz M=12 |H| 0.0975 ph  -60.40 deg
+  1000000 Hz M=16 |H| 0.0747 ph  -56.37 deg
+  1333333 Hz M=12 |H| 0.0628 ph  -52.93 deg
+  2000000 Hz M= 8 |H| 0.0514 ph  -47.23 deg
+  2666667 Hz M= 6 |H| 0.0463 ph  -44.22 deg
+fit (Cp 28.88 pF, Rs 1000 ohm), rms residual 0.00264 of drive:
+  Rsoil 1/Gs        74.2 ohm +/-   5.7 %  <- MOISTURE. lower = wetter
+  Cm interface   2161.59 pF  +/-   2.3 %  <- contact quality: gaps/crusts move this
+  Cd direct       578.84 pF  +/-   9.2 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 992 kHz
+  Rsoil @25C        75.7 ohm  (tip 26.04 C, 2 %/C EC tempco)

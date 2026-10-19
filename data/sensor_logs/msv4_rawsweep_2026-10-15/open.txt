@@ -1,0 +1,102 @@
+﻿Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum open
+   250000 Hz M=16 |H| 0.9809 ph   -2.78 deg
+   333333 Hz M=16 |H| 0.9801 ph   -3.67 deg
+   500000 Hz M=16 |H| 0.9766 ph   -5.52 deg
+   666667 Hz M=12 |H| 0.9718 ph   -7.29 deg
+  1000000 Hz M=16 |H| 0.9606 ph  -10.84 deg
+  1333333 Hz M=12 |H| 0.9459 ph  -14.20 deg
+  2000000 Hz M= 8 |H| 0.9082 ph  -20.03 deg
+  2666667 Hz M= 6 |H| 0.8692 ph  -24.82 deg
+Cp = 28.89 pF (+/- 2.4 %), fit rms 0.01342 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9804 ph   -2.80 deg
+   333333 Hz M=16 |H| 0.9797 ph   -3.69 deg
+   500000 Hz M=16 |H| 0.9762 ph   -5.48 deg
+   666667 Hz M=12 |H| 0.9721 ph   -7.23 deg
+  1000000 Hz M=16 |H| 0.9605 ph  -10.85 deg
+  1333333 Hz M=12 |H| 0.9457 ph  -14.16 deg
+  2000000 Hz M= 8 |H| 0.9083 ph  -20.03 deg
+  2666667 Hz M= 6 |H| 0.8694 ph  -24.87 deg
+Cp = 28.88 pF (+/- 2.4 %), fit rms 0.01345 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9803 ph   -2.77 deg
+   333333 Hz M=16 |H| 0.9794 ph   -3.71 deg
+   500000 Hz M=16 |H| 0.9763 ph   -5.50 deg
+   666667 Hz M=12 |H| 0.9720 ph   -7.21 deg
+  1000000 Hz M=16 |H| 0.9608 ph  -10.90 deg
+  1333333 Hz M=12 |H| 0.9457 ph  -14.19 deg
+  2000000 Hz M= 8 |H| 0.9086 ph  -20.10 deg
+  2666667 Hz M= 6 |H| 0.8688 ph  -24.86 deg
+Cp = 28.93 pF (+/- 2.4 %), fit rms 0.01345 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9807 ph   -2.73 deg
+   333333 Hz M=16 |H| 0.9793 ph   -3.73 deg
+   500000 Hz M=16 |H| 0.9764 ph   -5.51 deg
+   666667 Hz M=12 |H| 0.9717 ph   -7.25 deg
+  1000000 Hz M=16 |H| 0.9615 ph  -10.90 deg
+  1333333 Hz M=12 |H| 0.9464 ph  -14.18 deg
+  2000000 Hz M= 8 |H| 0.9095 ph  -20.07 deg
+  2666667 Hz M= 6 |H| 0.8693 ph  -24.85 deg
+Cp = 28.90 pF (+/- 2.4 %), fit rms 0.01353 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9799 ph   -2.77 deg
+   333333 Hz M=16 |H| 0.9803 ph   -3.68 deg
+   500000 Hz M=16 |H| 0.9764 ph   -5.52 deg
+   666667 Hz M=12 |H| 0.9720 ph   -7.18 deg
+  1000000 Hz M=16 |H| 0.9608 ph  -10.89 deg
+  1333333 Hz M=12 |H| 0.9450 ph  -14.10 deg
+  2000000 Hz M= 8 |H| 0.9091 ph  -20.02 deg
+  2666667 Hz M= 6 |H| 0.8702 ph  -24.86 deg
+Cp = 28.85 pF (+/- 2.4 %), fit rms 0.01360 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9808 ph   -2.74 deg
+   333333 Hz M=16 |H| 0.9791 ph   -3.64 deg
+   500000 Hz M=16 |H| 0.9769 ph   -5.52 deg
+   666667 Hz M=12 |H| 0.9715 ph   -7.22 deg
+  1000000 Hz M=16 |H| 0.9606 ph  -10.86 deg
+  1333333 Hz M=12 |H| 0.9458 ph  -14.11 deg
+  2000000 Hz M= 8 |H| 0.9083 ph  -20.03 deg
+  2666667 Hz M= 6 |H| 0.8684 ph  -24.82 deg
+Cp = 28.86 pF (+/- 2.3 %), fit rms 0.01320 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9810 ph   -2.76 deg
+   333333 Hz M=16 |H| 0.9793 ph   -3.69 deg
+   500000 Hz M=16 |H| 0.9762 ph   -5.51 deg
+   666667 Hz M=12 |H| 0.9722 ph   -7.27 deg
+  1000000 Hz M=16 |H| 0.9610 ph  -10.86 deg
+  1333333 Hz M=12 |H| 0.9459 ph  -14.14 deg
+  2000000 Hz M= 8 |H| 0.9081 ph  -20.05 deg
+  2666667 Hz M= 6 |H| 0.8689 ph  -24.85 deg
+Cp = 28.90 pF (+/- 2.3 %), fit rms 0.01332 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9805 ph   -2.76 deg
+   333333 Hz M=16 |H| 0.9791 ph   -3.66 deg
+   500000 Hz M=16 |H| 0.9765 ph   -5.50 deg
+   666667 Hz M=12 |H| 0.9730 ph   -7.25 deg
+  1000000 Hz M=16 |H| 0.9606 ph  -10.86 deg
+  1333333 Hz M=12 |H| 0.9456 ph  -14.20 deg
+  2000000 Hz M= 8 |H| 0.9088 ph  -20.03 deg
+  2666667 Hz M= 6 |H| 0.8689 ph  -24.84 deg
+Cp = 28.89 pF (+/- 2.4 %), fit rms 0.01343 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9803 ph   -2.74 deg
+   333333 Hz M=16 |H| 0.9800 ph   -3.65 deg
+   500000 Hz M=16 |H| 0.9769 ph   -5.50 deg
+   666667 Hz M=12 |H| 0.9721 ph   -7.27 deg
+  1000000 Hz M=16 |H| 0.9613 ph  -10.84 deg
+  1333333 Hz M=12 |H| 0.9460 ph  -14.16 deg
+  2000000 Hz M= 8 |H| 0.9077 ph  -20.00 deg
+  2666667 Hz M= 6 |H| 0.8689 ph  -24.84 deg
+Cp = 28.87 pF (+/- 2.3 %), fit rms 0.01324 -- stored for `spectrum`
+> spectrum open
+   250000 Hz M=16 |H| 0.9807 ph   -2.77 deg
+   333333 Hz M=16 |H| 0.9798 ph   -3.67 deg
+   500000 Hz M=16 |H| 0.9771 ph   -5.52 deg
+   666667 Hz M=12 |H| 0.9721 ph   -7.25 deg
+  1000000 Hz M=16 |H| 0.9607 ph  -10.90 deg
+  1333333 Hz M=12 |H| 0.9457 ph  -14.14 deg
+  2000000 Hz M= 8 |H| 0.9085 ph  -20.09 deg
+  2666667 Hz M= 6 |H| 0.8699 ph  -24.79 deg
+Cp = 28.88 pF (+/- 2.4 %), fit rms 0.01357 -- stored for `spectrum`
