@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError
@@ -75,6 +76,89 @@ class LabTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as disconnected:
             self.post("/api/command", {"command": "read"}, token)
         self.assertEqual(disconnected.exception.code, 400)
+
+
+FAKE_CONSOLE = '''
+import sys
+print("Connecting to MSV4-BU-TEST at 00:00:00:00:00:00 ...", flush=True)
+print("Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.", flush=True)
+for line in sys.stdin:
+    print("GOT " + line.strip(), flush=True)
+print("Disconnecting (input closed).", flush=True)
+'''
+
+
+class ReconnectTests(unittest.TestCase):
+    """A stand-in for msv4_ble_console.py that echoes what the lab sends it."""
+
+    def setUp(self):
+        import msv4_lab
+        self.temp = tempfile.TemporaryDirectory()
+        fake = Path(self.temp.name) / "fake_console.py"
+        fake.write_text(FAKE_CONSOLE, encoding="utf-8")
+        self.lab, self.real_console = msv4_lab, msv4_lab.CONSOLE
+        msv4_lab.CONSOLE = fake
+        self.store = SessionStore(Path(self.temp.name) / "sessions")
+        self.bridge = BleBridge(self.store)
+
+    def tearDown(self):
+        self.lab.CONSOLE = self.real_console
+        self.bridge.disconnect()
+        self.wait_for(lambda: self.bridge.status()["connection"] == "disconnected")
+        self.temp.cleanup()
+
+    def wait_for(self, condition, timeout=10.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if condition():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def texts(self):
+        return [e["text"] for e in self.store.events]
+
+    def test_connect_stops_leftover_stream_and_disconnect_closes_cleanly(self):
+        self.bridge.connect("MSV4-BU-TEST")
+        self.assertTrue(self.wait_for(lambda: "GOT stop" in self.texts()), self.texts())
+        self.assertEqual(self.bridge.status()["connection"], "connected")
+        self.assertFalse(self.bridge.status()["busy"], "stop has no prompt, so it must not mark busy")
+        process = self.bridge.process
+        self.bridge.disconnect()
+        self.assertTrue(self.wait_for(lambda: self.bridge.status()["connection"] == "disconnected"))
+        texts = self.texts()
+        # The console saw stop and then end of input, and left on its own: no terminate().
+        self.assertEqual(texts.count("GOT stop"), 2, texts)
+        self.assertIn("Disconnecting (input closed).", texts)
+        self.assertEqual(process.returncode, 0)
+
+    def test_reconnect_gets_a_fresh_connection_marker(self):
+        for _ in range(2):
+            self.bridge.connect("MSV4-BU-TEST")
+            self.assertTrue(self.wait_for(lambda: self.bridge.status()["connection"] == "connected"))
+            self.bridge.disconnect()
+            self.assertTrue(self.wait_for(lambda: self.bridge.status()["connection"] == "disconnected"))
+        # lab.js starts a new live segment at every "Connecting to" status line.
+        self.assertEqual(sum(1 for t in self.texts() if t.startswith("Connecting to MSV4-BU-TEST")
+                             and not t.endswith("...")), 2)
+
+
+class SeqTests(unittest.TestCase):
+    def test_reload_renumbers_so_state_slices_never_repeat(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = SessionStore(Path(temp))
+            for text in ("a", "b", "c"):
+                store.append("note", text)
+            path = Path(temp) / store.active["id"] / "events.jsonl"
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            rows[2]["seq"] = 2   # a repeated seq, as two writers or a merged sync copy would leave
+            path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+            store.activate(store.active["id"])
+            self.assertEqual([e["seq"] for e in store.events], [1, 2, 3])
+            store.append("note", "d")
+            snapshot = store.snapshot(after=3)
+            self.assertEqual([e["text"] for e in snapshot["events"]], ["d"])
+            self.assertEqual(snapshot["events"][0]["seq"], 4)
 
 
 class StreamParsingTests(unittest.TestCase):

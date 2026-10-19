@@ -33,6 +33,12 @@ param(
   # probe stays planted. 0 (the default) leaves it out. Never guess it or copy another board's.
   [ValidateRange(0, 2550)]
   [int]$CpCentiPf = 0,
+  # arduino/MSV4_Moisture_BLE_Sleep only. This board's R15 in ohms when it is not the netlist's
+  # 1 kohm (board 2: 3300). The fit's admittances scale with it, so a wrong value reads every
+  # Cp, Cd and Cm off by the ratio and Rsoil by its inverse. 0 (the default) leaves 1000. Read
+  # the value from fleet.json msv4_boards (physical_state.mods), never from another board.
+  [ValidateRange(0, 20000)]
+  [int]$RsOhms = 0,
   # Also produce a signed BLE DFU package (needs the MSV3 signing key and DFU tools).
   [switch]$Package,
   # Required with -Package. The package is signed with the MSV3 key and tagged with MSV3's device
@@ -134,6 +140,7 @@ if ($MoistureEveryNWakes -gt 0) {
   $defines += "-DMSV4_MOISTURE_EVERY_N_WAKES=$MoistureEveryNWakes"
 }
 if ($CpCentiPf -gt 0) { $defines += "-DMSV4_CP_CENTI_PF=$CpCentiPf" }
+if ($RsOhms -gt 0) { $defines += "-DMSV4_RS_OHMS=$RsOhms" }
 $defineFlags = $defines -join " "
 
 # Forward slashes: these strings pass through arduino-cli property expansion into gcc/ld arguments.

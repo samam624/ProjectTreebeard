@@ -169,15 +169,17 @@ async def run(args: argparse.Namespace) -> int:
             for task in pending:
                 task.cancel()
             if disconnect_task in done or not client.is_connected:
+                print("Disconnected by the board.", flush=True)
                 break
             line = line_task.result()
             if not line:
+                # stdin closed: the lab's Disconnect, or end of piped input. Leaving the block
+                # disconnects BLE, so the board sees the link drop and stops any stream.
+                print("Disconnecting (input closed).", flush=True)
                 break
             line = line.rstrip("\r\n")
             if line:
                 await send(line)
-        if not client.is_connected:
-            print("Disconnected by the board.", flush=True)
     return 0
 
 

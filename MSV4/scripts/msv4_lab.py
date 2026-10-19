@@ -131,6 +131,11 @@ class SessionStore:
                 for line in events_path.read_text(encoding="utf-8").splitlines():
                     if line:
                         self.events.append(json.loads(line))
+            # /api/state slices by index and the page asks for "after seq N", so seq must equal
+            # index + 1. A file with a gap or a repeat would otherwise make the page receive old
+            # events again, appended after new ones.
+            for index, event in enumerate(self.events, 1):
+                event["seq"] = index
             return dict(self.active)
 
     def append(self, kind: str, text: str, metrics: dict | None = None) -> dict:
@@ -140,8 +145,19 @@ class SessionStore:
             if metrics:
                 event["metrics"] = metrics
             path = self._folder(self.active["id"]) / "events.jsonl"
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+            line = json.dumps(event, ensure_ascii=False) + "\n"
+            # Same OneDrive lock as session.json (see _save_meta). The console reader thread calls
+            # this for every line, and an exception here ends that thread mid-stream.
+            for attempt in range(10):
+                try:
+                    with path.open("a", encoding="utf-8") as handle:
+                        handle.write(line)
+                    break
+                except PermissionError:
+                    time.sleep(0.05 * (attempt + 1))
+            else:
+                print(f"warning: could not append event {event['seq']} to {path} (file locked); "
+                      "kept for this run only", file=sys.stderr)
             self.events.append(event)
             self.active["updated_at"] = event["time"]
             self._save_meta()
@@ -247,9 +263,11 @@ class BleBridge:
                 if line == "__MSV4_PROMPT__":
                     self.busy = False
                     continue
+                self.store.append("rx", line, parse_metrics(line))
                 if line.startswith("Connected. "):
                     self.state = "connected"
-                self.store.append("rx", line, parse_metrics(line))
+                    self._stop_leftover(process)
+        process.stdout.close()
         code = process.wait()
         with self.lock:
             if self.process is process:
@@ -260,16 +278,45 @@ class BleBridge:
                 self.capture_commands = []
                 self.store.append("status", f"BLE console closed (exit {code})")
 
+    def _stop_leftover(self, process: subprocess.Popen) -> None:
+        # Windows can keep a BLE link up for a few seconds after the process that opened it is
+        # gone, so a quick reconnect can land on a board still running `live` from the previous
+        # connection: old open reference, and a `live` pressed now is queued behind it and starts
+        # the moment Stop is pressed. `stop` ends any stream or sweep; on an idle board it does
+        # nothing and no prompt follows, so it is not marked busy.
+        try:
+            process.stdin.write("stop\n")
+            process.stdin.flush()
+        except (OSError, AttributeError):
+            return
+        self.store.append("status", "Sent stop: ends anything left running from an earlier connection")
+
     def disconnect(self) -> None:
         with self.lock:
             self.capture_stop.set()
             self.capture_commands = []
-            if self.process and self.process.poll() is None:
+            process = self.process
+            if process and process.poll() is None:
                 self.state = "disconnecting"
-                self.process.terminate()
+                # Stop the board, then close stdin so the console leaves its BleakClient block and
+                # disconnects BLE properly. Killing it outright can leave the link, and a running
+                # `live`, up after the process has gone.
+                try:
+                    process.stdin.write("stop\n")
+                    process.stdin.close()
+                except (OSError, AttributeError):
+                    pass
+                threading.Thread(target=self._terminate_if_stuck, args=(process,), daemon=True).start()
             else:
                 self.state = "disconnected"
             self.busy = False
+
+    @staticmethod
+    def _terminate_if_stuck(process: subprocess.Popen, grace: float = 5.0) -> None:
+        try:
+            process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            process.terminate()
 
     def send(self, command: str) -> None:
         command = command.strip()

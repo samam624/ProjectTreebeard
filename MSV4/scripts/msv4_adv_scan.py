@@ -138,6 +138,34 @@ def decode(payload: bytes) -> dict | None:
     }
 
 
+# The raw sweep in the scan response (application version 262172 onward), Service Data under its
+# own 16-bit UUID so Bleak's per-company-ID merge cannot overwrite the advertisement. Layout: the
+# comment above SWEEP_RSP_LEN in the sketch. Bleak hands over the data WITHOUT the two UUID bytes.
+SWEEP_UUID = "00004d34-0000-1000-8000-00805f9b34fb"
+SWEEP_LAYOUT = 1
+SWEEP_LEN = 27
+SWEEP_N = (64, 48, 32, 24, 16, 12, 8, 6)   # SPEC_N, 250 kHz .. 2.67 MHz
+SWEEP_CSV_FIELDS = (["time", "address", "rssi", "sensor", "counter_lo", "counter"]
+                    + [f"{part}{i}" for i in range(len(SWEEP_N)) for part in ("re", "im")])
+
+
+def decode_sweep(payload: bytes) -> dict | None:
+    """The scan response's raw sweep: H at the 8 SWEEP_N points, in units of drive."""
+    if len(payload) != SWEEP_LEN or payload[0] != SWEEP_LAYOUT:
+        return None
+
+    def s12(v: int) -> int:
+        return v - 4096 if v & 0x800 else v
+
+    points = []
+    for i in range(len(SWEEP_N)):
+        b0, b1, b2 = payload[3 + 3 * i: 6 + 3 * i]
+        re = s12(b0 | ((b1 & 0x0F) << 8))
+        im = s12((b1 >> 4) | (b2 << 4))
+        points.append(complex(re / 2048.0, im / 2048.0))
+    return {"sensor": payload[1], "counter_lo": payload[2], "h": points}
+
+
 def describe(row: dict) -> str:
     battery = f"{row['battery_mv']} mV" if row["battery_mv"] else "battery ?"
     tip = f"tip {row['tip_c']:.2f} C" if row["tip_c"] is not None else "tip ?"
@@ -385,6 +413,15 @@ def self_test() -> int:
     check("adc.262165.high", "reading, OUT of the build's window around -5)" in describe_adc_calibration("z+4 n3 r1 b1", 19, 262165), True)
     check("adc.262165.edge", "OUT" in describe_adc_calibration("z+0 n3 r1 b1", 19, 262165), True)
     check("adc.262165.edge.in", "OUT" in describe_adc_calibration("z-1 n1 r1 b1", 19, 262165), False)
+    # 262169 accepts both measured boards' good zeros (-3..-7 and about -11), but rejects the
+    # alternate non-negative calibration population that creates the battery spikes.
+    check("adc.262169.board1", "reading, in of the build's window around -8)" in describe_adc_calibration("z-5 n1 r0 b0", 6, 262169), True)
+    check("adc.262169.board2", "reading, in of the build's window around -8)" in describe_adc_calibration("z-11 n1 r0 b0", 6, 262169), True)
+    check("adc.262169.high", "reading, OUT of the build's window around -8)" in describe_adc_calibration("z+4 n2 r1 b0", 19, 262169), True)
+    check("adc.262169.edge.low", "OUT" in describe_adc_calibration("z-16 n2 r1 b0", 19, 262169), True)
+    check("adc.262169.edge.high", "OUT" in describe_adc_calibration("z+0 n2 r1 b0", 19, 262169), True)
+    check("adc.262169.edge.low.in", "OUT" in describe_adc_calibration("z-15 n1 r0 b0", 19, 262169), False)
+    check("adc.262169.edge.high.in", "OUT" in describe_adc_calibration("z-1 n1 r0 b0", 19, 262169), False)
     check("mask.negative", "wrong way" in describe_mask_check("A-3.5 B-3.5 mV"), True)
     check("mask.negative.small", "within the switch" in describe_mask_check("A-1.8 B-0.9 mV"), True)
     # 262165 counts the boot's checks after the reading; 262163's text has no count.
@@ -412,6 +449,29 @@ def self_test() -> int:
     check("mask.100k", "about 99 kohm" in describe_mask_check("A+33.0 B+0.0 mV"), True)
     check("mask.1M", "about 999 kohm" in describe_mask_check("A+0.0 B+3.3 mV"), True)
 
+    # The scan-response sweep, encoded here from the sketch's layout comment, not from decode_sweep().
+    def encode_sweep(sensor, counter, values):
+        out = bytearray([SWEEP_LAYOUT, sensor, counter & 0xFF])
+        for v in values:
+            re, im = (max(-2048, min(2047, round(x * 2048))) & 0xFFF for x in (v.real, v.imag))
+            out += bytes([re & 0xFF, (re >> 8) | ((im & 0x0F) << 4), im >> 4])
+        return bytes(out)
+
+    # Board 2 in soil and salt water as the console measured them, plus both saturations.
+    values = [0.8424 - 0.3624j, 0.0457 + 0.1967j, -0.0004 + 0.0001j, 1.5 - 1.5j,
+              -1.0 + 0.99951171875j, 0.25 - 0.125j, -0.5 + 0.5j, 0.0 + 0.0j]
+    sweep = decode_sweep(encode_sweep(11, 0x0123AB, values))
+    check("sweep.len", len(encode_sweep(11, 0x0123AB, values)), SWEEP_LEN)
+    check("sweep.sensor", sweep["sensor"], 11)
+    check("sweep.counter_lo", sweep["counter_lo"], 0xAB)
+    want = [complex(max(-2048, min(2047, round(v.real * 2048))) / 2048,
+                    max(-2048, min(2047, round(v.imag * 2048))) / 2048) for v in values]
+    check("sweep.points", sweep["h"], want)
+    check("sweep.quantum", max(abs(a - b) for a, b in zip(sweep["h"][:3], values[:3])) <= 0.5 / 2048 * 2 ** 0.5, True)
+    check("sweep.saturate", sweep["h"][3], complex(2047 / 2048, -1.0))
+    check("sweep.short", decode_sweep(encode_sweep(11, 1, values)[:-1]), None)
+    check("sweep.layout", decode_sweep(b"\x02" + encode_sweep(11, 1, values)[1:]), None)
+
     for line in failures:
         print("FAIL", line)
     print(f"self-test: {'FAILED' if failures else 'passed'} ({len(failures)} failure(s))")
@@ -419,7 +479,8 @@ def self_test() -> int:
 
 
 # -------------------------------------------------------------------------------------- scan --
-async def scan(seconds: float, sensor: int | None, csv_path: Path | None) -> dict[int, list[int]]:
+async def scan(seconds: float, sensor: int | None, csv_path: Path | None,
+               sweep_csv: Path | None = None) -> dict[int, list[int]]:
     from bleak import BleakScanner
 
     seen: dict[int, list[int]] = {}
@@ -431,8 +492,46 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None) -> dic
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
         if new_file:
             writer.writeheader()
+    sweep_writer = sweep_handle = None
+    if sweep_csv:
+        sweep_csv.parent.mkdir(parents=True, exist_ok=True)
+        new_file = not sweep_csv.exists()
+        sweep_handle = sweep_csv.open("a", newline="", encoding="utf-8")
+        sweep_writer = csv.DictWriter(sweep_handle, fieldnames=SWEEP_CSV_FIELDS)
+        if new_file:
+            sweep_writer.writeheader()
+    sweeps_seen: set[tuple] = set()
+
+    def sweep_callback(device, advertisement):
+        data = advertisement.service_data.get(SWEEP_UUID)
+        sw = decode_sweep(bytes(data)) if data else None
+        if sw is None or (sensor is not None and sw["sensor"] != sensor):
+            return
+        key = (device.address, sw["counter_lo"], tuple(sw["h"]))
+        if key in sweeps_seen:
+            return
+        sweeps_seen.add(key)
+        # The full counter is the latest advertisement's whose low byte matches: the same wake.
+        counter = next((c for c in reversed(seen.get(sw["sensor"], [])) if c & 0xFF == sw["counter_lo"]), None)
+        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        mags = " ".join(f"{abs(h):.4f}" for h in sw["h"])
+        print(f"{now} {device.address} sweep sensor {sw['sensor']} #{counter if counter is not None else '?'} "
+              f"(low byte {sw['counter_lo']}) |H| {mags}", flush=True)
+        if sweep_writer:
+            row = {"time": now, "address": device.address, "rssi": advertisement.rssi, "sensor": sw["sensor"],
+                   "counter_lo": sw["counter_lo"], "counter": counter if counter is not None else ""}
+            for i, h in enumerate(sw["h"]):
+                row[f"re{i}"], row[f"im{i}"] = h.real, h.imag
+            sweep_writer.writerow(row)
+            sweep_handle.flush()
 
     def callback(device, advertisement):
+        try:
+            main_callback(device, advertisement)
+        finally:
+            sweep_callback(device, advertisement)
+
+    def main_callback(device, advertisement):
         payload = advertisement.manufacturer_data.get(COMPANY_ID)
         row = decode(bytes(payload)) if payload else None
         if row is None or (sensor is not None and row["sensor"] != sensor):
@@ -461,6 +560,8 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None) -> dic
         await scanner.stop()
         if handle:
             handle.close()
+        if sweep_handle:
+            sweep_handle.close()
     return seen
 
 
@@ -496,12 +597,16 @@ def parse_mask_check(text: str):
 # saadcCalibrateChecked() in the sketch. A characteristic of the sketch's own in DIS, and its
 # text is an ABI with parse_adc_calibration().
 ADC_CAL_UUID = "4d535634-adc0-4e52-a001-000000000001"
-ADC_ZERO_MAX_LSB = 5     # SAADC_ZERO_MAX_LSB in the sketch
+ADC_ZERO_MAX_LSB = 8     # SAADC_ZERO_MAX_LSB in the current sketch (262169 onward)
+# Accepts the measured board-1 and board-2 populations, -15..-1.
+ADC_ZERO_CENTRE_LSB = -8
+ADC_ZERO_MAX_LSB_OLD = 5
+ADC_ZERO_CENTRE_LSB_OLD = -5
 # Where a good calibration leaves the zero, and so what "out" is measured from. Application
-# 262163 judged against nothing; board 1 then read -3 to -7 LSB on good calibrations, and 262165
-# onward judges against SAADC_ZERO_CENTRE_LSB. Which one applies is taken from the build read.
-ADC_ZERO_CENTRE_LSB = -5
+# 262163 judged against nothing; 262165..262168 used board 1's -5 +/-5 LSB window; 262169 widens
+# it to -8 +/-8 after board 2 established that a good zero can sit around -11 LSB.
 ADC_ZERO_CENTRED_FROM_VERSION = 262165
+ADC_ZERO_SHARED_FROM_VERSION = 262169
 ADC_LSB_MV = 3600.0 / 4096.0
 
 
@@ -524,8 +629,13 @@ def describe_adc_calibration(text: str, wakes: int | None = None, version: int |
     if cal is None:
         return text
     zero = cal["zero_lsb"]
-    centre = ADC_ZERO_CENTRE_LSB if version is not None and version >= ADC_ZERO_CENTRED_FROM_VERSION else 0
-    state = "in" if abs(zero - centre) < ADC_ZERO_MAX_LSB else "OUT"
+    if version is not None and version >= ADC_ZERO_SHARED_FROM_VERSION:
+        centre, radius = ADC_ZERO_CENTRE_LSB, ADC_ZERO_MAX_LSB
+    elif version is not None and version >= ADC_ZERO_CENTRED_FROM_VERSION:
+        centre, radius = ADC_ZERO_CENTRE_LSB_OLD, ADC_ZERO_MAX_LSB_OLD
+    else:
+        centre, radius = 0, ADC_ZERO_MAX_LSB_OLD
+    state = "in" if abs(zero - centre) < radius else "OUT"
     if centre:
         state += f" of the build's window around {centre:+d}"
     of = f" of {wakes}" if wakes else ""
@@ -668,6 +778,8 @@ def main() -> int:
     parser.add_argument("--require-progress", action="store_true",
                         help="Exit 1 unless at least two advancing counters were seen")
     parser.add_argument("--csv", type=Path, help="Append one row per new advertisement")
+    parser.add_argument("--sweep-csv", type=Path,
+                        help="Append one row per raw sweep heard in a scan response (262172 onward)")
     parser.add_argument("--read-build", metavar="ADDRESS",
                         help="Connect to this address and read its DIS build strings, then exit")
     args = parser.parse_args()
@@ -678,7 +790,7 @@ def main() -> int:
         # Connectable windows can be ten minutes apart, so the default wait covers one full cycle.
         return asyncio.run(read_build(args.read_build, max(args.seconds, 700.0)))
     try:
-        seen = asyncio.run(scan(args.seconds, args.sensor, args.csv))
+        seen = asyncio.run(scan(args.seconds, args.sensor, args.csv, args.sweep_csv))
     except KeyboardInterrupt:
         return 0
     if not seen:

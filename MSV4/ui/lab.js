@@ -123,8 +123,15 @@ async function poll() {
   state.polling = true;
   try {
     const data = await request(`/api/state?after=${state.lastSeq}`);
-    if (data.session.id !== state.sessionId) resetSession(data.session);
-    for (const event of data.events) appendEvent(event);
+    if (data.session.id !== state.sessionId || data.total < state.lastSeq) {
+      // Another session, or a restarted server holding fewer events than this page has seen:
+      // these events were cut at the old position, so start over from the first one.
+      const refetch = state.lastSeq !== 0;
+      resetSession(data.session);
+      if (refetch) { renderStatus(data); setTimeout(poll, 0); return; }
+    }
+    // Never append an event twice: a repeat lands after newer samples and the live chart jumps back.
+    for (const event of data.events) if (event.seq > state.lastSeq) appendEvent(event);
     renderStatus(data);
     if (data.events.length) { renderMetrics(); drawChart(); renderLive(); }
     $('live-state').textContent = data.busy && data.connection === 'connected' ? 'Streaming or measuring · Stop ends it' : 'Not streaming';
@@ -136,30 +143,52 @@ async function poll() {
   }
 }
 
-function lastLive() {
+const isConnectionStart = e => e.kind === 'status' && e.text.startsWith('Connecting to');
+
+// Each `live` stream's G and C are relative to the open reference it measured when it started, so
+// samples from an earlier stream, or from before a reconnect, sit on another baseline. The live
+// panel shows only the newest stream: the events after the last "live started" line or new
+// connection. Returns that boundary's index (-1: the whole session).
+function liveStart() {
   for (let i = state.events.length - 1; i >= 0; i--) {
+    const e = state.events[i];
+    if (isConnectionStart(e) || (e.kind === 'rx' && e.text.startsWith('live started'))) return i;
+  }
+  return -1;
+}
+
+function lastLive(start = liveStart()) {
+  for (let i = state.events.length - 1; i > start; i--) {
     const m = state.events[i].metrics;
     if (m && Number.isFinite(m.live_g_us)) return { g: m.live_g_us, c: m.live_c_pf, t: new Date(state.events[i].time).valueOf() };
   }
   return null;
 }
 
+// The zero belongs to the stream it was taken in: a new stream has a new baseline.
+function liveZero(start) {
+  const id = start >= 0 ? state.events[start].seq : 0;
+  return state.zero && state.zero.stream === id ? state.zero.g : null;
+}
+
 // Last 60 s of the live stream, right edge = newest sample, so the picture holds still once stopped.
 function renderLive() {
-  const last = lastLive();
+  const start = liveStart();
+  const last = lastLive(start);
+  const zero = liveZero(start);
   $('live-g').textContent = last ? last.g.toFixed(1) : '—';
   $('live-c').textContent = last && Number.isFinite(last.c) ? last.c.toFixed(2) : '—';
-  $('live-dg').textContent = last && state.zero !== null ? (last.g - state.zero >= 0 ? '+' : '') + (last.g - state.zero).toFixed(1) : '—';
+  $('live-dg').textContent = last && zero !== null ? (last.g - zero >= 0 ? '+' : '') + (last.g - zero).toFixed(1) : '—';
   let rs = null;
-  for (let i = state.events.length - 1; i >= 0; i--) {
+  for (let i = state.events.length - 1; i >= 0 && !isConnectionStart(state.events[i]); i--) {
     const m = state.events[i].metrics;
     if (m && Number.isFinite(m.rsoil25_ohm)) { rs = m.rsoil25_ohm; break; }
   }
   $('live-rsoil').textContent = rs === null ? '—' : rs <= 1 ? 'no fit' : rs >= RSOIL_OPEN_OHM ? 'open (dry)' : formatOhms(rs);
-  drawLive(last);
+  drawLive(last, start, zero || 0);
 }
 
-function drawLive(last) {
+function drawLive(last, start, zero) {
   const canvas = $('live-chart');
   const box = canvas.getBoundingClientRect();
   if (!box.width || !box.height) return;
@@ -171,12 +200,12 @@ function drawLive(last) {
   const WINDOW_MS = 60000;
   const points = [];
   if (last) {
-    for (let i = state.events.length - 1; i >= 0; i--) {
+    for (let i = state.events.length - 1; i > start; i--) {
       const e = state.events[i];
       if (!e.metrics || !Number.isFinite(e.metrics.live_g_us)) continue;
       const t = new Date(e.time).valueOf();
       if (last.t - t > WINDOW_MS) break;
-      points.push({ x: t, y: e.metrics.live_g_us - (state.zero || 0) });
+      points.push({ x: t, y: e.metrics.live_g_us - zero });
     }
     points.reverse();
   }
@@ -337,9 +366,11 @@ function wireControls() {
     if (value && await act('/api/note', { text: value })) $('note-input').value = '';
   });
   $('live-zero').addEventListener('click', () => {
-    const last = lastLive();
+    const start = liveStart();
+    const last = lastLive(start);
     if (!last) { toast('Start live first'); return; }
-    state.zero = last.g; renderLive(); toast(`Zero set at ${last.g.toFixed(1)} µS`);
+    state.zero = { g: last.g, stream: start >= 0 ? state.events[start].seq : 0 };
+    renderLive(); toast(`Zero set at ${last.g.toFixed(1)} µS`);
   });
   $('chart-metric').addEventListener('change', drawChart);
   window.addEventListener('resize', () => { drawChart(); renderLive(); });

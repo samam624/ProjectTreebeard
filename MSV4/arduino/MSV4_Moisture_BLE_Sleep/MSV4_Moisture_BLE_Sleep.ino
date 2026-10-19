@@ -843,16 +843,19 @@ static void allSafe()
 // MEASURED on board 1 with 262163 (2026-10-11, wakes 6 to 29 of that boot): after a good
 // calibration the zero reads -3 to -7 LSB, not nothing (-5 in the middle on the wakes where the
 // check did not pick the calibration), and the two wakes that ended at +4 and +6 were the high
-// kind (the +4 wake's battery read 21 mV above its neighbours). 262163 centred its window on
-// nothing, so it repeated most good calibrations and let the +4 through. Since 262165 the window
-// is centred on SAADC_ZERO_CENTRE_LSB. Why a grounded input reads below zero is not established,
-// and neither is whether that moves with temperature: the text below keeps reporting it.
+// kind (the +4 wake's battery read 21 mV above its neighbours). Board 2 then established that
+// this offset is a BOARD property: its good zero is around -11 LSB and its high kind is at or
+// above zero. A window centred only on board 1 made 694 of board 2's first 697 wakes retry and
+// 689 end outside the window, producing +17 to +27 mV battery spikes on 8.8% of stored wakes.
+// From 262169 the common window accepts -15..-1 LSB: both measured good populations are inside
+// and both measured high populations are outside. Why grounded inputs differ by board is not
+// established; the text below keeps reporting the actual zero.
 // The zero itself scatters about 2 LSB either way at 16 samples, and the battery read on the same
 // pin does not follow it (262163, wakes 6 to 27), so it is this reading's own noise. Since 262165
 // it is taken over 64 samples, which is why it is only ever used to tell the two kinds apart and
 // never subtracted from a reading.
-constexpr int32_t SAADC_ZERO_CENTRE_LSB = -5;
-constexpr int32_t SAADC_ZERO_MAX_LSB = 5;   // half the step between the two kinds
+constexpr int32_t SAADC_ZERO_CENTRE_LSB = -8;
+constexpr int32_t SAADC_ZERO_MAX_LSB = 8;   // strict bounds: accept -15..-1, reject zero and above
 constexpr uint8_t SAADC_ZERO_OVERSAMPLE_LOG2 = 6;
 constexpr uint8_t SAADC_CAL_TRIES = 3;
 constexpr uint16_t SAADC_CAL_COUNT_MAX = 9999;   // what the text has room for
@@ -879,8 +882,9 @@ static bool saadcZeroOut(int32_t zero)
 //   2  CAL_LATER_US later, the CPU kept awake until then
 //   3  with the DC/DC converter switched off for the calibration
 //   4  with the 32 MHz crystal running
-// A calibration that has to be taken again is always taken way 0, so no reading depends on the
-// way that was being tried. The counts are the text of g_calExpChar, "e5 0 6 2 4 w1440": high
+// A calibration that has to be taken again is always oversampled, the only arm with zero high
+// outcomes on both boards (0/896 board 1 and 0/140 board 2). The counts are the text of
+// g_calExpChar, "e5 0 6 2 4 w1440": high
 // first calibrations for ways 0 to 4, then the wakes so far (a fifth of them each). A way whose
 // calibration once failed to finish shows T instead of a count and is not tried again: nothing
 // says a calibration completes with oversampling set, and each failure costs 200 ms awake.
@@ -946,7 +950,7 @@ static void saadcCalibrateChecked()
   while (tries < SAADC_CAL_TRIES)
   {
     if (tries == 0) saadcCalibrateArm(arm);
-    else saadcCalibrate();
+    else saadcCalibrate(SAADC_OVERSAMPLE_OVERSAMPLE_Over32x);
     tries++;
     zeroRead = saadcReadCode(static_cast<uint8_t>(AIN_VBAT + 1), SAADC_ZERO_OVERSAMPLE_LOG2, 40, zero);
     if (tries == 1 && zeroRead && zero - SAADC_ZERO_CENTRE_LSB >= SAADC_ZERO_MAX_LSB &&
@@ -1125,7 +1129,15 @@ static void checkMask()
 //   Cm = mask/interface series capacitance, Gs = soil conductance (ions),
 //   Cd = direct board/fringe capacitance that never reaches soil.
 // Divider node: H(w) = 1 / (1 + Rs*(Ye + jw*Cp)), Rs = R15, Cp = SENSE-node parasitics.
-constexpr double SPEC_RS = 1000.0;       // R15
+// Rs appears only in the product Rs*Y, so a wrong Rs scales every fitted admittance by the ratio:
+// board 2 (R15 = 3.3 kohm) read Cp 28.8 pF and Cd 44.8 pF through a 1 kohm fit, 3.3x its real
+// 8.7 / 13.6 pF. A board whose R15 is not the netlist's 1 kohm is built with -RsOhms.
+#ifdef MSV4_RS_OHMS
+static_assert(MSV4_RS_OHMS >= 500 && MSV4_RS_OHMS <= 20000, "MSV4_RS_OHMS is this board's R15 in ohms: 500..20000");
+constexpr double SPEC_RS = MSV4_RS_OHMS;
+#else
+constexpr double SPEC_RS = 1000.0;       // R15 as in the netlist
+#endif
 // The value in use until calibrateCpAfterOpenReading() accepts a measured one (board 1 reads
 // 8.66-8.83 pF in air). ZERO, so that Cd until then is the whole node capacitance, Cp included.
 // Zero and not a typical value (it was 12 pF up to 262159) because the fit keeps Cd positive: a
@@ -1432,11 +1444,17 @@ static bool fitNearAnchor(const double* p)
          p[2] <= g_fitAnchor[2] * FIT_WARM_MAX_MOVE && g_fitAnchor[2] <= p[2] * FIT_WARM_MAX_MOVE;
 }
 
+// The averaged sweep the last fit was made from, for the scan response (see SWEEP_RSP_LEN).
+// Cleared at the start of every sweep, so a failed one cannot resend the previous points.
+static SpecSet g_lastSweep;
+static bool g_lastSweepValid = false;
+
 // Sweeps both orientations, averages the complex transfers, and fits {Cm, Gs, Cd}. `warm` says
 // whether the answer is an accepted warm fit.
 static bool runSpectrumFit(double* best, double& bestRms, bool& warm)
 {
   warm = false;
+  g_lastSweepValid = false;
   setChopEnabled(true);
   SpecSet acc, s;
   for (int o = 0; o < 2; o++)
@@ -1449,6 +1467,8 @@ static bool runSpectrumFit(double* best, double& bestRms, bool& warm)
   // Analog path off before the fit: the arithmetic below takes seconds and needs none of it.
   allSafe();
   for (int i = 0; i < acc.count; i++) acc.h[i] /= 2.0;
+  g_lastSweep = acc;
+  g_lastSweepValid = true;
 
   const bool freeP[3] = {true, true, true};
   bestRms = 1e30;
@@ -1665,6 +1685,66 @@ constexpr size_t MFG_LEN = 26;
 static_assert(3 /* Flags */ + 2 /* manufacturer-data header */ + MFG_LEN <= 31,
               "advertising payload exceeds the 31-byte legacy PDU limit");
 
+// Scan response on a wake that measured (application version 262172 onward): the raw averaged
+// sweep the fit was made from, so electrode models other than the firmware's can be fitted to
+// stored data (MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md). Every other long-window
+// wake keeps the name there. An OTA client does not need the name: msv4_ble_ota.py accepts the
+// production advertisement alone.
+//
+// It is Service Data, not a second manufacturer-data record: Bleak on Windows merges the
+// advertisement and the scan response into one dict keyed by company ID, so a record under 0xFFFF
+// would replace the advertisement's and hide the production packet from the PC tools.
+//
+// [0-1]   16-bit service UUID SWEEP_UUID16, LE (not a SIG-assigned value)
+// [2]     layout version, 1
+// [3]     sensorId
+// [4]     advertisement counter, low byte: the same wake as the advertisement's [7]
+// [5-28]  8 points in SPEC_N order (250 kHz .. 2.67 MHz), 3 bytes each: the transfer H's real
+//         and imaginary parts as signed 12-bit integers in units of 1/2048 of drive, saturating
+//         at -2048..2047. Byte 0 = re[7:0], byte 1 = re[11:8] | im[3:0] << 4, byte 2 = im[11:4].
+//         M for each point is specPhases(N); the PC side reproduces it.
+// Measured |H| stays under 0.99 from open to salt water, and a 1/2048 step adds 1.4e-4 rms, under
+// the 2.7e-4 sweep-to-sweep scatter.
+//
+// THIS LAYOUT IS AN ABI with MSV4/scripts/msv4_adv_scan.py and with the receiver. Change one side,
+// change the others.
+constexpr uint16_t SWEEP_UUID16 = 0x4D34;   // "M4"
+constexpr uint8_t SWEEP_LAYOUT = 1;
+constexpr size_t SWEEP_RSP_LEN = 5 + 3 * SPEC_NF;
+static_assert(SPEC_NF == 8, "the scan-response sweep layout carries exactly 8 points");
+static_assert(2 /* AD header */ + SWEEP_RSP_LEN <= 31, "scan response exceeds the 31-byte legacy PDU limit");
+
+static int16_t sweepQ12(double v)
+{
+  const long q = lround(v * 2048.0);
+  return (int16_t)(q < -2048 ? -2048 : q > 2047 ? 2047 : q);
+}
+
+static void packSweep(uint8_t* out)
+{
+  out[0] = lowByte(SWEEP_UUID16);
+  out[1] = highByte(SWEEP_UUID16);
+  out[2] = SWEEP_LAYOUT;
+  out[3] = SENSOR_ID;
+  out[4] = (uint8_t)(g_advertCount & 0xFF);
+  for (int i = 0; i < SPEC_NF; i++)
+  {
+    const uint16_t re = (uint16_t)sweepQ12(g_lastSweep.h[i].re) & 0x0FFF;
+    const uint16_t im = (uint16_t)sweepQ12(g_lastSweep.h[i].im) & 0x0FFF;
+    out[5 + 3 * i] = (uint8_t)(re & 0xFF);
+    out[6 + 3 * i] = (uint8_t)((re >> 8) | ((im & 0x0F) << 4));
+    out[7 + 3 * i] = (uint8_t)(im >> 4);
+  }
+}
+
+static bool sweepSendable()
+{
+  if (!g_lastSweepValid || g_lastSweep.count != SPEC_NF) return false;
+  for (int i = 0; i < SPEC_NF; i++)
+    if (g_lastSweep.n[i] != SPEC_N[i]) return false;
+  return true;
+}
+
 // Fast for the first second, then 250 ms for the rest of the window: the schedule MSV3 arrived at
 // after a single 500 ms check kept losing Windows OTA clients.
 const uint32_t OTA_ADV_LISTEN_MS = 5000;
@@ -1866,8 +1946,18 @@ static bool startAdv(const MoistureReading& reading, bool fresh, bool vbatOk, fl
     Bluefruit.Advertising.setFastTimeout(SHORT_ADV_MS / 1000);
     return Bluefruit.Advertising.start(SHORT_ADV_MS / 1000);
   }
-  ok &= Bluefruit.ScanResponse.addName();
-  // A partial packet is useless as telemetry and, without the name, invisible to an OTA client.
+  // The sweep only on the wake that measured it; see SWEEP_RSP_LEN.
+  if (fresh && sweepSendable())
+  {
+    uint8_t sweep[SWEEP_RSP_LEN];
+    packSweep(sweep);
+    ok &= Bluefruit.ScanResponse.addData(BLE_GAP_AD_TYPE_SERVICE_DATA, sweep, sizeof(sweep));
+  }
+  else
+  {
+    ok &= Bluefruit.ScanResponse.addName();
+  }
+  // A partial packet is useless as telemetry.
   if (!ok) return false;
   Bluefruit.Advertising.setType(BLE_GAP_ADV_TYPE_CONNECTABLE_SCANNABLE_UNDIRECTED);
   Bluefruit.Advertising.setInterval(ADV_FAST_INTERVAL_UNITS, ADV_SLOW_INTERVAL_UNITS);
