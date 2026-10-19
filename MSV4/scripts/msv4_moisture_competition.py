@@ -94,16 +94,30 @@ def saucer_state(entry: dict) -> tuple[bool | None, bool]:
 
 
 def load_pot(sensor: int, fleet: Path = FLEET) -> tuple[list[dict], list[datetime]]:
-    """(weighings, watering times) for the pot that sensor is in."""
+    """(weighings, watering times) for the pot that sensor is in.
+
+    Every weighing is returned on the pot-and-saucer scale the log started on. From 2026-10-19
+    the pot is weighed without its saucer ("weighed": "pot_only"); those get the saucer's weight
+    measured at the switch (mass.pot_only_join_offset_g) added back, and are excluded if it is
+    missing. A weighing of the saucer alone is not a pot weighing and is skipped.
+    """
     pots = json.loads(fleet.read_text(encoding="utf-8"))["pots"]
     for pot in pots.values():
         if isinstance(pot, dict) and sensor in pot.get("sensors", []) and "mass" in pot:
+            offset = pot["mass"].get("pot_only_join_offset_g")
             weighings = []
             for e in pot["mass"].get("log", []):
-                if "at" not in e:
+                weighed = e.get("weighed", "pot_and_saucer")
+                if "at" not in e or weighed == "saucer_only":
                     continue
                 saucer, excluded = saucer_state(e)
-                weighings.append({"time": datetime.fromisoformat(e["at"]), "grams": float(e["grams"]),
+                grams = float(e["grams"])
+                if weighed == "pot_only":
+                    if offset is None:
+                        excluded = True
+                    else:
+                        grams += float(offset)
+                weighings.append({"time": datetime.fromisoformat(e["at"]), "grams": grams,
                                   "saucer": saucer,
                                   "excluded": excluded})
             waterings = [datetime.fromisoformat(e["at"]) for e in pot.get("watering_events", {}).get("events", []) if "at" in e]

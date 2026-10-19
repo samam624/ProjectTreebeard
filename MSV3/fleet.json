@@ -351,11 +351,11 @@
       "source": "maintainer stated 2026-10-08 ~21:46 PDT: 'I am going to put the probe into the alcosasia pot moement of truth' (MSV4 board 1, sensor 10; stated as about to happen, not yet as done). That statement covers MSV4 board 1 going into this pot ONLY; whether anything else is in the pot, when it was last watered and where the pot now sits were not stated. Everything else here is from 2026-09-30: maintainer stated 2026-09-30 (evening): the Alocasia test is being fully disassembled; ALL probes are leaving ALL pots, except sensor 1 (Thaumatophilum, outdoors); 'both of the ESP32s' and some of the probes are being reclaimed for a presentation",
       "plant": "Alocasia",
       "mass": {
-        "verified": "2026-10-18",
-        "latest_source": "maintainer stated 2026-10-18 ~20:44 PDT (session clock when read): 'I am going to water the alocasia right now ... its definitley time to water it' (stated as ABOUT to happen; time, amount and weights before/after NOT STATED yet; not entered in watering_events until stated as done). Before that, 2026-10-18 ~17:20 PDT: 'also 4615, 4612, 4613 right now'. Before that, 2026-10-18 ~00:27 PDT: '4653 4657 4653', then, of that weighing: 'Moisture still says 30% above, even though the water is back to nominal now'",
+        "verified": "2026-10-19",
+        "latest_source": "maintainer reported 2026-10-19 ~00:45 PDT: 'empty dish by itself 608g / pot by itself with water 4356 / everything back in place, dish no water, and pot 4968g'. maintainer reported 2026-10-19 ~00:39 PDT: '5066 5068 5068 with dish and water and pot' (after the 2-cup watering, standing saucer water included). maintainer reported 2026-10-19 ~00:32 PDT: '4606 4605 4603 before watering'. maintainer stated 2026-10-19 ~00:28 PDT (session clock): 'gonna do my watering of alocasia rn, ill get weight right before' (about to happen; before-weight, amount and after-weight NOT STATED yet; goes into watering_events once stated as done). Previously: maintainer stated 2026-10-18 ~20:44 PDT (session clock when read): 'I am going to water the alocasia right now ... its definitley time to water it' (stated as ABOUT to happen; time, amount and weights before/after NOT STATED yet; not entered in watering_events until stated as done). Before that, 2026-10-18 ~17:20 PDT: 'also 4615, 4612, 4613 right now'. Before that, 2026-10-18 ~00:27 PDT: '4653 4657 4653', then, of that weighing: 'Moisture still says 30% above, even though the water is back to nominal now'",
         "source": "maintainer stated 2026-10-10 ~13:57 PDT: 'It says 4697 with the pot on after Tate capacity is 11.46lbs' (read as: the kitchen scale shows 4697 g with the pot on it after taring, and the scale's capacity is 11.46 lb). OBSERVED in a photo the maintainer sent at ~13:59 PDT: a glazed black-and-white checkered ceramic pot standing in a terracotta saucer, BOTH on the scale, display 4697; the scale is on a white shelf beside a window. Maintainer stated ~14:05 PDT: '4691 is with saucer, plan is to water it and not remove any excess water, just have it collect in saucer and evaporate'. So the weight INCLUDES the saucer. That message says 4691 where the earlier one and the photo say 4697; the maintainer confirmed ~14:10 PDT that it was 4697 ('Yeah it was 4697'). The watering described is a PLAN, not yet stated as done. The photo shows where the pot was weighed, not where it normally sits. Before that, ~13:50 PDT: 'I do have a kitchen scale but I'm getting the pot is around 10 lbs'. Both stated BEFORE the watering the maintainer plans for that evening; no watering has been stated as done.",
-        "value": "4613 g (median of 4615, 4612, 4613) on the maintainer's kitchen scale, 2026-10-18 ~17:20 PDT, 61 g below the 4674 g weighed just before the 10-10 watering and the driest on record; no watering stated since 10-10 (4653 g at ~00:27 PDT that day, 4692 g at ~12:16 PDT on 10-17, 4702 g at ~22:46 PDT on 10-16, 4717 g at ~14:53 PDT that day, 4742 g at ~10:30 PDT that day, 4759 g at ~19:55 PDT on 10-15, 4792 g at ~09:09 PDT that day, 4807 g at ~23:04 PDT on 10-14, 4814 g at ~17:33 PDT and 4839 g at ~09:48 PDT that day, 4859 g at ~22:00 PDT on 10-13, 4905 g at ~08:22 PDT that morning; medians on 10-12: 4916 g at ~21:30 PDT, 4923 g at ~19:49 PDT, 4929 g at ~15:39 PDT, 4964 g at ~10:30 PDT): pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; no standing saucer water on 10-12 through 10-18 (maintainer's standing statement of 10-12: saucer will always be dry from now on); on 10-11 20:34 there was no standing water but the porous saucer held unmeasured absorbed water",
-        "weighing_convention": "pot and porous terracotta saucer together. Each weighing records whether water was standing in the saucer, but 'dry saucer' means no standing water only: the maintainer confirmed 2026-10-11 that the saucer absorbed moisture and had been evaporating it all day. Both standing and absorbed saucer water are in the scale mass but not in the soil measured by the probe.",
+        "value": "4605 g (median of 4606, 4605, 4603) on the maintainer's kitchen scale, 2026-10-19 ~00:32 PDT, immediately before a watering; 69 g below the 4674 g weighed before the 2026-10-10 watering (4613 g at ~17:20 PDT on 10-18, 4692 g at ~12:16 PDT on 10-17, 4702 g at ~22:46 PDT on 10-16, 4717 g at ~14:53 PDT that day, 4742 g at ~10:30 PDT that day, 4759 g at ~19:55 PDT on 10-15, 4792 g at ~09:09 PDT that day, 4807 g at ~23:04 PDT on 10-14, 4814 g at ~17:33 PDT and 4839 g at ~09:48 PDT that day, 4859 g at ~22:00 PDT on 10-13, 4905 g at ~08:22 PDT that morning; medians on 10-12: 4916 g at ~21:30 PDT, 4923 g at ~19:49 PDT, 4929 g at ~15:39 PDT, 4964 g at ~10:30 PDT): pot with soil, plant and MSV4 board 1 planted, INCLUDING its terracotta saucer; no standing saucer water on 10-12 through 10-18 (maintainer's standing statement of 10-12: saucer will always be dry from now on); on 10-11 20:34 there was no standing water but the porous saucer held unmeasured absorbed water",
+        "weighing_convention": "pot and porous terracotta saucer together. Each weighing records whether water was standing in the saucer, but 'dry saucer' means no standing water only: the maintainer confirmed 2026-10-11 that the saucer absorbed moisture and had been evaporating it all day. Both standing and absorbed saucer water are in the scale mass but not in the soil measured by the probe. CHANGED 2026-10-19 ~00:45 PDT: the maintainer now dumps excess saucer water after a watering settles and weighs the POT ALONE ('that way we get only in-pot water when i weight it, no dish', ~00:37). Each log entry carries 'weighed': pot_and_saucer (the default for every earlier entry), pot_only, or saucer_only. MSV4/scripts/msv4_moisture_competition.py adds pot_only_join_offset_g to pot-only weighings and skips saucer-only ones.",
         "saucer_absorption": {
           "verified": "2026-10-11",
           "source": "maintainer stated after the 20:34 PDT weighing that the saucer absorbed moisture and had been evaporating it all day",
@@ -868,17 +868,94 @@
             "at_note": "the maintainer reported these as 'right now' without a clock time; the clock time is the session clock when the message arrived",
             "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
             "note": "the third of three readings reported by the maintainer (4615, 4612, 4613); which pot was NOT STATED (read as shared-alocasia, the only pot weighed). No watering of this pot stated since 2026-10-10."
+          },
+          {
+            "when": "2026-10-19 ~00:32 PDT",
+            "grams": 4606,
+            "at": "2026-10-19T00:32:00-07:00",
+            "at_note": "reported as 'before watering' without a clock time; the clock time is the session clock when the message arrived",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the first of three readings reported by the maintainer as 'before watering' (4606, 4605, 4603): the weight immediately BEFORE the watering announced at ~00:28 PDT. The watering itself, its amount and the after-weight NOT STATED yet."
+          },
+          {
+            "when": "2026-10-19 ~00:32 PDT",
+            "grams": 4605,
+            "at": "2026-10-19T00:32:00-07:00",
+            "at_note": "reported as 'before watering' without a clock time; the clock time is the session clock when the message arrived",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the second of three readings reported by the maintainer as 'before watering' (4606, 4605, 4603): the weight immediately BEFORE the watering announced at ~00:28 PDT. The watering itself, its amount and the after-weight NOT STATED yet."
+          },
+          {
+            "when": "2026-10-19 ~00:32 PDT",
+            "grams": 4603,
+            "at": "2026-10-19T00:32:00-07:00",
+            "at_note": "reported as 'before watering' without a clock time; the clock time is the session clock when the message arrived",
+            "saucer_water": "no: standing statement 2026-10-12 'saucer will always be dry from now on' (no standing water; the porous saucer may still hold some absorbed water)",
+            "note": "the third of three readings reported by the maintainer as 'before watering' (4606, 4605, 4603): the weight immediately BEFORE the watering announced at ~00:28 PDT. The watering itself, its amount and the after-weight NOT STATED yet."
+          },
+          {
+            "when": "2026-10-19 ~00:39 PDT",
+            "grams": 5066,
+            "at": "2026-10-19T00:39:00-07:00",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "yes: maintainer stated 'with dish and water and pot' (water standing in the saucer after the 2-cup watering; not yet dumped)",
+            "note": "the first of three readings reported by the maintainer (5066, 5068, 5068) 'with dish and water and pot': the weight just AFTER the 2026-10-19 ~00:36 watering, saucer included, standing water included"
+          },
+          {
+            "when": "2026-10-19 ~00:39 PDT",
+            "grams": 5068,
+            "at": "2026-10-19T00:39:00-07:00",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "yes: maintainer stated 'with dish and water and pot' (water standing in the saucer after the 2-cup watering; not yet dumped)",
+            "note": "the second of three readings reported by the maintainer (5066, 5068, 5068) 'with dish and water and pot': the weight just AFTER the 2026-10-19 ~00:36 watering, saucer included, standing water included"
+          },
+          {
+            "when": "2026-10-19 ~00:39 PDT",
+            "grams": 5068,
+            "at": "2026-10-19T00:39:00-07:00",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "yes: maintainer stated 'with dish and water and pot' (water standing in the saucer after the 2-cup watering; not yet dumped)",
+            "note": "the third of three readings reported by the maintainer (5066, 5068, 5068) 'with dish and water and pot': the weight just AFTER the 2026-10-19 ~00:36 watering, saucer included, standing water included"
+          },
+          {
+            "when": "2026-10-19 ~00:45 PDT",
+            "grams": 608,
+            "at": "2026-10-19T00:45:00-07:00",
+            "weighed": "saucer_only",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "no: the maintainer dumped the standing saucer water after the 00:36 watering settled ('dish no water')",
+            "note": "the empty terracotta dish by itself, after its standing water was dumped. Porous: it still holds some absorbed water, amount unknown, so its dry mass is at most this. Not a pot weighing; the loader skips it."
+          },
+          {
+            "when": "2026-10-19 ~00:45 PDT",
+            "grams": 4356,
+            "at": "2026-10-19T00:45:00-07:00",
+            "weighed": "pot_only",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "no: weighed without the dish",
+            "note": "'pot by itself with water': the pot alone, without the dish, about 10 min after the 00:36 watering. The first weighing in the pot-only convention (see weighing_convention)."
+          },
+          {
+            "when": "2026-10-19 ~00:45 PDT",
+            "grams": 4968,
+            "at": "2026-10-19T00:45:00-07:00",
+            "weighed": "pot_and_saucer",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "no: the maintainer dumped the standing saucer water after the 00:36 watering settled ('dish no water')",
+            "note": "'everything back in place, dish no water, and pot': pot and emptied dish together, the last weighing in the old convention. 100 g less than the 5068 g with standing water, so about 100 g was dumped. 4356 + 608 = 4964, 4 g from this, inside the scale's repeat spread."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
-        "log_format": "Each entry: 'when' and 'note' are the record as stated; 'at' is the same moment as an ISO time for MSV4/scripts/msv4_moisture_competition.py, which reads this list. 'saucer_water' starts with yes, no, or unknown. Set 'exclude_from_gravimetric_fit' true when an unknown condition makes the weight unsuitable for scoring. Add 'at' to every new entry.",
+        "log_format": "Each entry: 'when' and 'note' are the record as stated; 'at' is the same moment as an ISO time for MSV4/scripts/msv4_moisture_competition.py, which reads this list. 'saucer_water' starts with yes, no, or unknown. Set 'exclude_from_gravimetric_fit' true when an unknown condition makes the weight unsuitable for scoring. Add 'at' to every new entry. 'weighed' is pot_and_saucer (default when absent), pot_only or saucer_only.",
         "scale_repeatability": {
           "verified": "2026-10-11",
           "source": "maintainer stated at about that time: 'I took it fully of and weighed it again and got 5106 and then 1 more time and 5105, so theres like 10-15g of error on the scale itself'.",
           "measured": "three weighings of the same pot within a few minutes, lifted off in between: 5098, 5106, 5105 g, a range of 8 g. Earlier that evening 4673 and 4674 g two minutes apart (whether the pot was lifted between those was not stated). On the morning of 2026-10-11 three 'back to back': 5062, 5060, 5058 g, a range of 4 g (whether lifted between was not stated). At 20:34 PDT on 2026-10-11 three readings were 4993, 4992, 4992 g, a range of 1 g (whether lifted between was not stated).",
           "maintainer_estimate": "10-15 g of error on the scale",
           "note": "The pot is within 100 g of the scale's stated 5198 g capacity when wet. A difference between two weighings smaller than this is not a difference in water."
-        }
+        },
+        "pot_only_join_offset_g": 612,
+        "pot_only_join_offset_source": "4968 g (pot + emptied dish) - 4356 g (pot alone), weighed together at ~00:45 PDT on 2026-10-19 (maintainer reported 2026-10-19 ~00:45 PDT: 'empty dish by itself 608g / pot by itself with water 4356 / everything back in place, dish no water, and pot 4968g'). The dish alone read 608 g, 4 g off. Pot-only weighings + 612 g are on the same scale as every earlier (pot + dish) weighing, to within what the dish's absorbed water does afterwards (it held some at the join, and will dry by an unknown amount)."
       },
       "sensors": [
         10
@@ -908,7 +985,7 @@
           "are the transfer calibration that makes AM millivolts, FDC counts and MSV2 RC counts",
           "comparable. Record every one. A watering day must be excluded from thermal fits."
         ],
-        "verified": "2026-09-29",
+        "verified": "2026-10-19",
         "source": "maintainer stated 2026-09-24 that there has been exactly one watering since the test began, and confirmed 2026-09-29 no watering since (all rigs dry down continuously 09-22 -> 09-29); the time is located from the simultaneous step in all four in-pot rigs",
         "uniform_saturation": "MAINTAINER, stated directly 2026-09-24: the pot is small, so treat a watering as UNIFORM SATURATION throughout. Every Alocasia sensor sees the same amount of water, and each rig's watering step is a valid common calibration. Do not attribute differences in step size between Alocasia rigs to uneven water delivery. Differences in later drying rates between rigs are NOT evidence against this.",
         "events": [
@@ -934,6 +1011,22 @@
             "at": "2026-10-10T19:14:30-07:00",
             "at_note": "between sensor 10's readings of 19:13:57 and 19:14:59; an ISO time for the analysis scripts",
             "saucer_dry_at": "2026-10-10T23:52:11-07:00"
+          },
+          {
+            "when": "2026-10-19 ~00:36 PDT (the maintainer's message '2 cups of water went in' arrived at ~00:36; the before-weight message at ~00:32). Sensor 10's cloud rows through 00:35:47 show no step yet, so the minute the water reached the blade is to be taken from its record once uploaded",
+            "at": "2026-10-19T00:36:00-07:00",
+            "at_note": "CONFIRMED by sensor 10's record: between its readings of 00:35:47 and 00:36:49 PDT the moisture number went 15,837 -> 23,629 (wake 10317 -> 10318), tip 24.25 -> 25.75 C; 22,779 at 00:37:47. The first readings are the water running past the blade, not the settled response.",
+            "verified": "2026-10-19",
+            "source": "maintainer stated 2026-10-19 ~00:28 PDT: 'gonna do my watering of alocasia rn, ill get weight right before'; ~00:32: '4606 4605 4603 before watering'; ~00:36: '2 cups of water went in'",
+            "timing": "maintainer stated 2026-10-18 ~20:44 PDT: 'its definitley time to water it'. Whether this watering counts as on time, early or late NOT STATED.",
+            "amount": "2 cups (maintainer). Which cup measure NOT STATED (2 US cups is 473 mL); the 10-10 watering was also 2 cups and the scale gained 461 g then. The scale gained 463 g (4605 -> 5068, medians), against 461 g for the 2 cups on 10-10; that is the figure to use.",
+            "fertilized": "NOT STATED",
+            "pot_mass_before_g": 4605,
+            "pot_mass_after_g": 5068,
+            "saucer": "Water stood in the saucer after the watering (5068 g with it). The maintainer dumped it at ~00:45 PDT: about 100 g (5068 -> 4968 g with the emptied dish). Retained after the dump: 363 g on the scale (4605 -> 4968), part of it absorbed by the porous dish (608 g alone). From here the pot is weighed without the dish.",
+            "sensors_in_pot": "sensor 10 (MSV4 board 1) only, as recorded for this pot",
+            "region_note": "sensor 10's SECOND teaching watering for the receiver's water-now region (taught 1 before it). The region stores the anchor at the first pull after this watering settles (12-24 h). Sensor 10 read 15,881 (card 20 %) at 00:28, against 14,142 before the 10-10 watering at 4674 g.",
+            "detected_by": "sensor 10, between 00:35:47 and 00:36:49 PDT: moisture number 15,837 -> 23,629. No restart (wake counter continuous)."
           }
         ]
       },
