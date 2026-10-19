@@ -7,9 +7,12 @@ and gets watered again. A small probe sits in the soil and runs on a battery top
 solar panel. A receiver on a shelf listens to the probes over Bluetooth and shows each plant on a
 screen. A phone dashboard keeps the history.
 
-Everything here was designed from scratch: the circuit boards, the firmware, the enclosures, the
-receiver and the cloud backend. It is an active engineering project, not a finished product, and
-the repository keeps the failures alongside the things that worked.
+Sam Amezcua designed the hardware: the circuit boards, the analog front ends and sensing
+electrodes, the solar power path, the enclosures, and every bench and field test. He specified,
+debugged and validated the firmware, receiver software and cloud backend, which were implemented
+with AI coding agents (Claude Code and Codex) under his direction. The project started in April
+2026 with MSV1. It is an active engineering project, not a finished product, and the repository
+keeps the failures alongside the things that worked.
 
 <p align="center">
   <img src="MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png" width="43%" alt="MSV3 probe and adjustable solar panel enclosure render">
@@ -21,8 +24,44 @@ the repository keeps the failures alongside the things that worked.
 
 [Open the hosted dashboard](https://msv2-plants.netlify.app) ·
 [See where every probe is right now](MSV3/fleet.json) ·
-[Read the latest work log](MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md) ·
+[Read the latest write-up](MSV4/docs/MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md) ·
 [Follow the engineering story](docs/paper/MSV_EVOLUTION_IEEE_PAPER_DRAFT.md)
+
+## Engineering highlights
+
+The write-ups worth reading first. Each one is a problem that was measured to the bottom rather
+than patched around.
+
+- **A firmware hang that no watchdog could catch.** The MSV3 board froze solid after almost exactly
+  115–122 sensor reads, every time. Four real bugs were found and fixed along the way; none was the
+  cause. The operating system's tick runs from the low-frequency clock, and the board has no
+  32.768 kHz crystal for it. Every build now selects the internal oscillator before the OS and
+  radio stack start, and the build scripts refuse anything else. Verified with 900 consecutive
+  reads and no hangs.
+  ([Root cause](MSV3/docs/MSV3_LFCLK_RTC1_HANG_2026-08-21.md))
+- **Twenty bootloader builds, then one look upstream.** Wired firmware updates failed through a
+  long series of local fixes. The cause was a single local change to the vendored bootloader: it
+  ran wired updates with the radio stack enabled, which upstream never does. Every race chased
+  afterwards came from that one change.
+  ([What it cost](MSV3/docs/MSV3_WIRED_DFU_RESOLVED_2026-09-21.md))
+- **A solar charger cannot protect a battery from the wrong panel.** A 6 V panel drove current
+  through the charger chip into the cell, which reached 4.49 V against a 3.89 V limit.
+  ([Root cause](MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md))
+- **Electrode or electronics?** Four sensor combinations shared one pot so each could be swapped
+  independently. The daily temperature wobble entered at the electrode, not the circuit.
+  ([Write-up](MSV3/docs/MSV3_ALOCASIA_ELECTRODE_VS_CIRCUIT_2026-09-29.md))
+- **A lock-in impedance measurement on a microcontroller.** MSV4 drives its electrodes at eight
+  frequencies from 250 kHz to 2.67 MHz, demodulates in firmware and fits a circuit model. A
+  simulation of the analog front end matches the first board within a few degrees of phase.
+  ([Notes](MSV4/docs/MSV4_LOCKIN_MEASUREMENT_NOTES_2026-10-01.md),
+  [electrode models on raw sweeps](MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md))
+- **Checked against a kitchen scale.** The MSV4 test pot is weighed every day, so every candidate
+  reading can be scored in grams of water.
+  ([Why the readings miss the scale](MSV4/docs/MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md))
+- **A receiver that stopped uploading for 6.7 hours with Wi-Fi up.** Nothing was lost: 1,812 rows
+  were queued and delivered after a reset. The receiver now records the real TLS error and
+  restarts itself after a stall.
+  ([Incident report](DisplayCenter/docs/RECEIVER_TLS_STALL_2026-10-14.md))
 
 ## How it works
 
@@ -62,18 +101,31 @@ this project has been about separating those effects from the water.
 
 ## Where things stand
 
-*As of 2026-10-08.*
+*As of 2026-10-18.*
 
 | Piece | State |
 | --- | --- |
-| **MSV4 probe** (newest) | The first board is built and running. Its solar charging is verified, it takes firmware over Bluetooth, and on 2026-10-08 it went into a real pot for the first time. Its soil readings are brand new and not yet turned into a moisture scale. |
-| **MSV3 probes** | Five boards built. They have been out of the soil since a two-week comparison experiment was taken apart on 2026-09-30. Two are still powered and reporting as test units. |
+| **MSV4 probe** (newest) | Two boards built and running. Board 1 has been in an Alocasia pot since 2026-10-08, and the pot is weighed daily so its readings can be scored against grams of water. Board 2 is in a pot of its own and sends its raw measurement sweeps to the cloud. Ten PCBs are on hand; more boards are being assembled. |
+| **MSV3 probes** | Five boards built. One is back in soil and being watered; the others are on the desk or out of soil since a two-week comparison experiment was taken apart on 2026-09-30. |
 | **MSV2 probes** | The original working system, which monitored real plants for months. One probe is still in a pot outdoors. |
-| **DisplayCenter receiver** | Running. It hears all three probe generations and uploads to the cloud. |
+| **DisplayCenter receiver** | Running. It hears all three probe generations, shows a "water now" region learned from each plant's own waterings, and uploads to the cloud. |
 | **Cloud dashboard** | Live at the link above. |
 
 ### Recent milestones (September and October 2026)
 
+- **MSV4 saw its first watering.** On 2026-10-10 the test pot took 461 g of water. Board 1's soil
+  resistance fell from 15.3 kΩ to 3.0 kΩ.
+- **Seven candidate readings, scored in grams.** Eighteen weighings over eight days put every
+  MSV4 reading on the same scale as the water in the pot. The best candidate, a derived soil
+  capacitance, stays within about 23 g of the scale over a 460 g watering. The number the
+  firmware uses today misses by about 57 g. Most of that miss is a steady offset, not temperature;
+  the next watering will show whether it is the probe settling in or something each watering adds.
+- **A second MSV4 board, and raw sweeps in the cloud.** Board 2 was built with a different sense
+  resistor, so the firmware now takes that value per board. It went through filtered, tap and
+  salted water and a warm bath. Its raw eight-point sweeps are stored so other electrode models can
+  be fitted later; a constant-phase-element model fits soil best.
+- **"Water now", learned from the plant.** The receiver marks a watering region on each plant's
+  meter from where that plant was actually watered, and recalibrates at every watering.
 - **MSV4 came to life.** The boards arrived on 2026-09-23. The first one was assembled and brought
   up on 2026-10-01, and it has run its real wake-measure-sleep firmware since 2026-10-06.
 - **MSV4's solar charging works.** The battery was drained on purpose overnight. The next morning
@@ -81,14 +133,9 @@ this project has been about separating those effects from the water.
   charger stopped at its programmed limit, the same level it had stopped at the day before.
 - **MSV4 read real soil for the first time.** In air it reports "nothing conducting". Ten minutes
   after going into an Alocasia pot it reported a soil resistance of about 20 kΩ.
-- **A two-week side-by-side test answered an old argument.** Four sensor combinations shared one
-  pot so that the electrode and the electronics could be swapped independently. The daily
-  temperature wobble turned out to enter at the electrode, not the electronics.
 - **A probe now checks it is in clean air before calibrating itself.** A board that restarted
   while being held calibrated against a hand and reported a wrong value for hours. The firmware
   now takes a moisture reading first and only calibrates if that reading looks like air.
-- **MSV3 probes update over Bluetooth.** A signed bootloader and a registry of which probe is
-  which mean a probe buried in a pot can take new firmware safely.
 
 ## The four generations
 
@@ -96,8 +143,8 @@ this project has been about separating those effects from the water.
 | --- | --- | --- | --- |
 | **MSV1** | A printed-circuit sensor read by two 555 timers and analog filtering | Soil moisture can be measured this way, but the analog output squeezed most of the useful range together | Finished proof of concept |
 | **MSV2** | Count a capacitance-controlled oscillator digitally and broadcast it from a sleeping radio chip | A useful monitor is a whole system: sensing, power, radio, display, calibration and history all matter | Worked in the field for months |
-| **MSV3** | A custom board with a precision capacitance chip, solar charging and a purpose-built enclosure | Resolution was never the bottleneck. Electrode shape, soil temperature and the solar panel's voltage were | Five built; now test units |
-| **MSV4** | A new electrode, a new way of measuring, and a solar panel that suits the charger | Still being learned | First board running and in soil |
+| **MSV3** | A custom board with a precision capacitance chip, solar charging and a purpose-built enclosure | Resolution was never the bottleneck. Electrode shape, soil temperature and the solar panel's voltage were | Five built; one back in soil |
+| **MSV4** | A new electrode, a new way of measuring, and a solar panel that suits the charger | Still being learned | Two boards running, one in a weighed pot |
 
 All generations report to the same DisplayCenter and appear in the same dashboards.
 
@@ -142,12 +189,15 @@ MSV4 changes three things at once.
 - **A new solar panel.** One small 2 V panel that stays well inside the charger's input limit,
   instead of a 6 V panel that was far outside it.
 
-The first board has been measured in air, on a damp towel, in a hand, and now in a pot. Its power
-draw is modelled at a fraction of MSV3's but has not been measured yet.
+Board 1 has been through a watering in a pot that is weighed every day. Board 2 has been through
+filtered, tap and salted water, a warm bath and soil. Power draw is modelled at a fraction of
+MSV3's but has not been measured yet.
 
 Start here: [board 1 bring-up](MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md),
-[production firmware and first soil reading](MSV4/docs/MSV4_PRODUCTION_FIRMWARE_2026-10-06.md),
+[lock-in measurement notes](MSV4/docs/MSV4_LOCKIN_MEASUREMENT_NOTES_2026-10-01.md),
 [solar charge test](MSV4/docs/MSV4_OUTDOOR_SOLAR_CHARGE_TEST_2026-10-06.md),
+[moisture against the scale](MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md),
+[board 2 in water and salt](MSV4/docs/MSV4_BOARD2_CUP_WATER_SALT_TEST_2026-10-14.md),
 [electrode design](MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md).
 
 ## What the project has learned
@@ -259,15 +309,12 @@ directly to the internet. Wi-Fi passwords stay on the receiver.
 
 ## What comes next
 
-1. **Watch MSV4 through a watering.** The first soil readings exist; the next step is seeing how
-   they move when the pot is watered and as the probe settles in.
-2. **Turn MSV4's soil resistance into a moisture scale** a person can read, once there is enough
-   data to trust it.
+1. **A second weighed watering.** Weights just before and after it will show whether MSV4's offset
+   is the probe settling in or something each watering adds.
+2. **Pick MSV4's moisture reading by the scale.** Derived soil capacitance leads so far; its
+   temperature correction rests on a few days and needs more dry days to confirm.
 3. **Measure MSV4's real power draw.** Every energy figure for it is still modelled.
-4. **Find out why the board restarts when it is handled.** It happened twice in one day. The
-   firmware copes, but nothing yet reports the cause.
-5. **Give MSV4 its own firmware-update identity** so an MSV3 image can never be sent to it by
-   mistake.
+4. **Build and bring up the next MSV4 boards** from the ten PCBs on hand.
 
 Only after those does it make sense to call any probe production-ready.
 
@@ -278,5 +325,6 @@ working deployments alongside unfinished research, failed approaches, diagnostic
 manufacturing iterations. That history is intentional: it is often the most useful part of the
 repository for anyone building a low-power environmental sensor.
 
-This repository does not currently include an open-source license. Please do not assume permission
-to redistribute the hardware or software as a product.
+© 2026 Sam Amezcua. All rights reserved. The repository is public so the work can be read and
+reviewed; no license is granted to copy, modify or redistribute the hardware designs, firmware or
+software.
