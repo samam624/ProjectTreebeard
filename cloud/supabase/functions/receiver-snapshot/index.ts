@@ -10,6 +10,7 @@ import {
   validateHistoryRowIdentity,
 } from "./history-batch.ts";
 import { MSV4_MOISTURE_SCALE, parseMsv3Diagnostics, parseMsv4DieTempQuarterC } from "./msv3-diagnostics.ts";
+import { selectRawSweepRows } from "./raw-sweeps.ts";
 import { parseTemperatureCompensation } from "./temperature-compensation.ts";
 
 // Permissive on purpose - not a full RFC 791/4291 validator, just enough to keep obviously
@@ -64,6 +65,8 @@ type PlantReading = {
       fitRmsE4?: number;
       dieTempQuarterC?: number;
       cdCentiPf?: number;
+      // The latest raw scan-response sweep (probe 262172 onward), stored by raw-sweeps.ts.
+      sweep?: { wake?: number; ageMs?: number; hex?: string };
     };
   };
   batteryPercent?: number;
@@ -599,6 +602,22 @@ Deno.serve(async (request) => {
             `of ${historySelection.rows.length}; the remainder stays queued for retry`,
         );
       }
+    }
+
+    // MSV4 raw sweeps (migration 042). Best effort and last: the receiver resends its latest
+    // sweep on every upload, so a failure here is retried by the next one, and it must never
+    // change the history acknowledgement above.
+    try {
+      const sweepRows = selectRawSweepRows(snapshot, historyServerNowMs);
+      if (sweepRows.length > 0) {
+        const { error: sweepError } = await supabase.rpc("msv4_store_raw_sweeps", {
+          p_receiver_id: receiverId,
+          p_rows: sweepRows,
+        });
+        if (sweepError) console.error(`raw sweeps not stored for receiver ${receiverId}: ${sweepError.message}`);
+      }
+    } catch (sweepException) {
+      console.error(`raw sweeps not stored for receiver ${receiverId}: ${String(sweepException)}`);
     }
 
     return jsonResponse({
