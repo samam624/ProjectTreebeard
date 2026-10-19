@@ -16,12 +16,15 @@
 //   4. Ions (a fertilizing) change the scale. On a linear reading the drop is a SHARE of
 //      (settled - base) and scales with it; on MSV4's log-conductance number the drop is a fixed
 //      SPAN and slides with it.
-//   5. A settled level above the one in force (share mode) is first held as a shift, which
-//      cannot hide dryness, and judged a change of scale only if the first day's loss says so.
-//      A settled level BELOW the one in force may be a small watering, so only LEAK of the fall
-//      is taken.
-//   6. A fall of STEP_DOWN of the scale with no watering is a disturbed probe: no region until
-//      the next watering, and that cycle teaches nothing.
+//   5. Every watering recalibrates: a settled level at or above the one in force is the new
+//      scale. A settled level BELOW it may be a small watering, so only LEAK of the fall is taken.
+//      (Until 2026-10-18 a higher level was first held as a shift on the old scale and judged
+//      against two earlier first days. Probe 7 never had two, so its 10-11, 10-14 and 10-17
+//      waterings stayed on a range from before them and it read overdue a day after watering.)
+//   6. A fall of STEP_DOWN of the scale within an hour, no sooner than DRYDOWN_HOURS after a
+//      watering, is a disturbed probe: no region until the next watering, and that cycle teaches
+//      nothing. Deliberately almost never true: the maintainer (2026-10-18) wants calibration
+//      kept between waterings above all, and the user can see a knocked or pulled probe.
 //
 // Everything is causal: the result at `nowMs` uses only hours at or before it.
 
@@ -48,7 +51,6 @@ export type RegionResult = {
   anchorStored: boolean;
   anchorToStore: number | null;                // set once, when TEACH_CYCLES waterings are in
   disturbed: boolean;
-  heldAsShift: boolean;
   lastWateredAtMs: number | null;
   daysSinceLastWatering: number | null;
   waterings: RegionWatering[];
@@ -65,7 +67,9 @@ export type RegionWatering = {
 
 export const REGION = {
   STEP_UP: 0.15,
-  STEP_DOWN: 0.20,
+  // A fall of the whole scale within an hour. 0.20 until 2026-10-18, when probe 7's first noon
+  // after a watering fell 22 % and lost its region; sensor 9's noon sun falls reach 29 %.
+  STEP_DOWN: 1.0,
   TOLERANCE: 0.10,
   LEAK: 0.5,
   TOP: 0.925,
@@ -75,6 +79,10 @@ export const REGION = {
   FIRST_DAY_HOURS: [36, 48] as const,
   QUIET_AFTER_WATERING_HOURS: 6,
   QUIET_AFTER_INSERT_HOURS: 24,
+  // No fall is a disturbance this soon after a watering: the water is still spreading through
+  // the pot (maintainer). Probe 7's first noon after each watering fell 18-23 % of its scale in
+  // an hour, 14-25 h after it; 36 h covers the first noon after a watering at any hour.
+  DRYDOWN_HOURS: 36,
   PRE_WINDOW_HOURS: 9,
   // The reading the water-dependent part scales about, where it is the probe's own in-air value.
   // MSV3 capless (scale 3): sensor 8 read 40,511-40,567 in dry air on 2026-09-21.
@@ -117,19 +125,15 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
   const base = mode === "share" ? configuredBase : null;
 
   let settled: number | null = null;           // the scale in force
-  let shift = 0;                               // share mode: a higher settled level held as a shift
   let lastWateredHour: number | null = null;
   let quietUntilHour = -Infinity;
   let waitingToSettle = false;
   let firstDayDue = false;
   let settledFromGap = false;
-  let pendingUp: { old: number; neu: number } | null = null;
   let disturbed = false;
   let scaleVoid = false;                       // the last cycle was disturbed: the next settled level starts a new scale
   let scaleBeforeWatering: number | null = null;
-  let shiftBeforeWatering = 0;
   let teachThisWatering = false;
-  const firstDays: number[] = [];
   const taughtDrops: number[] = [];
   const waterings: RegionWatering[] = [];
 
@@ -165,7 +169,6 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
         quietUntilHour = hour + REGION.QUIET_AFTER_INSERT_HOURS;
       } else if (stepUp > 0 && current - pre >= stepUp) {
         scaleBeforeWatering = settled;
-        shiftBeforeWatering = shift;
         teachThisWatering = !disturbed;
         scaleVoid = disturbed;
         lastWateredHour = hour;
@@ -173,11 +176,10 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
         waitingToSettle = true;
         firstDayDue = true;
         settledFromGap = false;
-        pendingUp = null;
         disturbed = false;
-        shift = 0;
         waterings.push({ atMs: hour * 3600_000, levelBefore: pre, settled: null, verdict: "", firstDay: null, taughtDrop: null });
-      } else if (scale !== null && pre - current >= REGION.STEP_DOWN * scale && !disturbed && lastWateredHour !== null) {
+      } else if (scale !== null && pre - current >= REGION.STEP_DOWN * scale && !disturbed && lastWateredHour !== null &&
+          hour >= lastWateredHour + REGION.DRYDOWN_HOURS) {
         disturbed = true;
         waterings[waterings.length - 1].verdict += " disturbed";
       }
@@ -198,7 +200,7 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
         const reference = scaleBeforeWatering ?? neu;
         if (teachThisWatering && storedDrop === null && taughtDrops.length < REGION.TEACH_CYCLES) {
           const drop = mode === "share"
-            ? 1 - (watering.levelBefore - shiftBeforeWatering - base!) / (reference - base!)
+            ? 1 - (watering.levelBefore - base!) / (reference - base!)
             : reference - watering.levelBefore;
           if (Number.isFinite(drop) && drop > 0 && (mode === "span" || drop < 1)) {
             taughtDrops.push(drop);
@@ -215,13 +217,10 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
           if (change < -REGION.TOLERANCE) {
             settled = settled - REGION.LEAK * (settled - neu);
             watering.verdict = `lower by ${Math.round(-100 * change)} % of scale: half of the fall taken` + watering.verdict;
-          } else if (change > REGION.TOLERANCE && mode === "share") {
-            pendingUp = { old: settled, neu };
-            shift = neu - settled;
-            watering.verdict = `higher by ${Math.round(100 * change)} % of scale: held as a shift` + watering.verdict;
           } else {
             settled = neu;
-            watering.verdict = "same scale" + watering.verdict;
+            watering.verdict = (change > REGION.TOLERANCE ? `higher by ${Math.round(100 * change)} % of scale: the new scale` : "same scale") +
+              watering.verdict;
           }
         }
         scaleVoid = false;
@@ -233,27 +232,9 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
       if (later !== null || hour >= lastWateredHour + 60) {
         firstDayDue = false;
         const watering = waterings[waterings.length - 1];
+        // Recorded for the replay tools only: the first day's loss as a share of the scale.
         if (later !== null && !disturbed && !settledFromGap && mode === "share" && watering.settled !== null) {
-          const loss = watering.settled - later;
-          if (pendingUp) {
-            const asScale = loss / (pendingUp.neu - base!);
-            const asShift = loss / (pendingUp.old - base!);
-            const usual = firstDays.length >= 2 ? median(firstDays) : null;
-            watering.firstDay = asScale;
-            if (usual !== null && usual > 0 && asScale > 0 && asShift > 0 &&
-                Math.abs(Math.log(asScale / usual)) < Math.abs(Math.log(asShift / usual))) {
-              settled = pendingUp.neu;
-              shift = 0;
-              firstDays.push(asScale);
-              watering.verdict += ", then a change of scale";
-            } else {
-              watering.verdict += ", kept as a shift";
-            }
-            pendingUp = null;
-          } else {
-            watering.firstDay = loss / (watering.settled - base!);
-            firstDays.push(watering.firstDay);
-          }
+          watering.firstDay = (watering.settled - later) / (watering.settled - base!);
         }
       }
     }
@@ -268,13 +249,12 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
     base,
     top: null,
     bottom: null,
-    settled: settled === null ? null : Math.round(settled + shift),
+    settled: settled === null ? null : Math.round(settled),
     drop,
     taught: storedDrop !== null ? REGION.TEACH_CYCLES : Math.min(taughtDrops.length, REGION.TEACH_CYCLES),
     anchorStored: storedDrop !== null,
     anchorToStore: storedDrop === null && taughtDrops.length >= REGION.TEACH_CYCLES ? drop : null,
     disturbed,
-    heldAsShift: shift !== 0,
     lastWateredAtMs: lastWateredHour === null ? null : lastWateredHour * 3600_000,
     daysSinceLastWatering: lastWateredHour === null ? null : (nowHour - lastWateredHour) / 24,
     waterings,
@@ -283,9 +263,9 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
   else if (drop === null) result.reason = "no watering to learn the watering line from yet";
   else if (disturbed) result.reason = "the probe was disturbed; waiting for the next watering";
   else {
-    const top = mode === "share" ? base! + (1 - REGION.TOP * drop) * (settled - base!) + shift : settled - REGION.TOP * drop;
-    const bottom = mode === "share" ? base! + (1 - REGION.BOTTOM * drop) * (settled - base!) + shift : settled - REGION.BOTTOM * drop;
-    const full = settled + shift;
+    const top = mode === "share" ? base! + (1 - REGION.TOP * drop) * (settled - base!) : settled - REGION.TOP * drop;
+    const bottom = mode === "share" ? base! + (1 - REGION.BOTTOM * drop) * (settled - base!) : settled - REGION.BOTTOM * drop;
+    const full = settled;
     if (!(bottom < top && top < full) || top < 1 || full > 65535) result.reason = "the region does not fit the reading's range";
     else {
       result.ready = true;
@@ -322,7 +302,6 @@ export function regionAutoCalRow(region: RegionResult, verbose = false) {
     regionTaught: region.taught,
     regionAnchorStored: region.anchorStored,
     regionDisturbed: region.disturbed,
-    regionHeldAsShift: region.heldAsShift,
     waterings: region.waterings,
   };
 }

@@ -61,17 +61,20 @@ test("learns the watering line from the first two waterings and then stops", () 
 
 test("says water now before each on-time watering and not yet before the early one", () => {
   // Hours the Python reference had it on for: 21, 34, 15 and 24 (waterings 2, 4, 5 and 7).
+  // Waterings 4 and 5 run longer here, 50 and 25 h: the probe was knocked on 08-28 and reads lower
+  // since. That is no longer called disturbed (2026-10-18), so each later watering settles lower
+  // than the scale in force and only half of the fall is taken; the reference takes all of it.
   const second = saidBefore(alocasia, "2026-08-24T19:35:00Z");
   assert.equal(second.said, "water now");
   assert.ok(second.hours >= 15 && second.hours <= 24, `watering 2: ${second.hours} h`);
 
   const fourth = saidBefore(alocasia, "2026-09-07T20:20:00Z");
   assert.equal(fourth.said, "water now");
-  assert.ok(fourth.hours >= 30 && fourth.hours <= 38, `watering 4: ${fourth.hours} h`);
+  assert.ok(fourth.hours >= 46 && fourth.hours <= 54, `watering 4: ${fourth.hours} h`);
 
   const fifth = saidBefore(alocasia, "2026-09-15T01:40:00Z");
   assert.equal(fifth.said, "water now");
-  assert.ok(fifth.hours >= 8 && fifth.hours <= 18, `watering 5: ${fifth.hours} h`);
+  assert.ok(fifth.hours >= 21 && fifth.hours <= 29, `watering 5: ${fifth.hours} h`);
 
   const fertilized = saidBefore(alocasia, "2026-09-22T17:50:00Z");
   assert.equal(fertilized.said, "not yet");
@@ -88,30 +91,53 @@ test("never says overdue on a record where every watering was on time or early",
   }
 });
 
-test("a knocked probe gets no region until the next watering, and teaches nothing", () => {
+test("a knock a drying pot could also make keeps its region (the user can see a knocked probe)", () => {
+  // 08-28: 1000 -> 880 inside an hour, 28 % of the scale. Disturbed under the 20 % rule until
+  // 2026-10-18; the maintainer would rather keep the calibration.
   const knocked = at(alocasia, "2026-08-29T06:00:00Z");
-  assert.equal(knocked.ready, false);
-  assert.equal(knocked.disturbed, true);
+  assert.equal(knocked.ready, true);
+  assert.equal(knocked.disturbed, false);
 
   const settledAgain = at(alocasia, "2026-08-31T12:00:00Z");
   assert.equal(settledAgain.ready, true);
-  assert.equal(settledAgain.disturbed, false);
   assert.equal(settledAgain.waterings[2].taughtDrop, null);
-  assert.match(settledAgain.waterings[2].verdict, /new scale after a disturbance/);
+  assert.match(settledAgain.waterings[2].verdict, /half of the fall taken/);
 });
 
-test("a fertilized watering is held as a shift for a day and then moves the region with the scale", () => {
-  const held = at(alocasia, "2026-09-23T23:00:00Z");
-  assert.equal(held.heldAsShift, true);
-  // Moved up by the whole step: the region sits where the old one was plus (1381 - 1084).
-  assert.ok(held.top! > 1100, `held top ${held.top}`);
+// Probe 7, 2026-09-22 to 2026-10-18 (live hourly medians, stored anchor as in the cloud). Watered
+// 10-11, 10-14 and 10-17. On 10-18 the noon drydown fell 502 in an hour, 22 % of its scale, and
+// the old 20 % guard called it disturbed (maintainer: the water spreads through the pot); before
+// that, each watering had been held as a shift on an older range and never resolved.
+const probe7 = JSON.parse(
+  readFileSync(new URL("./fixtures/region-probe7-hourly.json", import.meta.url), "utf8"),
+) as RegionRawSensor;
 
-  const judged = at(alocasia, "2026-09-25T12:00:00Z");
-  assert.equal(judged.heldAsShift, false);
-  assert.match(judged.waterings[5].verdict, /change of scale/);
-  assert.ok(Math.abs(judged.top! - 976) <= 4, `rescaled top ${judged.top}`);
-  assert.ok(Math.abs(judged.bottom! - 890) <= 4, `rescaled bottom ${judged.bottom}`);
-  assert.ok(Math.abs(judged.settled! - 1381) <= 3);
+test("probe 7 keeps its calibration through the drydown after a watering", () => {
+  // 30 h after the 10-17 watering: settled 44,822, reading 43,675.
+  const nextDay = at(probe7, "2026-10-19T03:00:00Z");
+  assert.equal(nextDay.disturbed, false);
+  assert.equal(nextDay.ready, true);
+  assert.match(nextDay.waterings.at(-1)!.verdict, /the new scale/);
+  const reading = probe7.hours.at(-1)![1];
+  const percent = 100 * (reading - nextDay.top!) / (nextDay.settled! - nextDay.top!);
+  assert.ok(percent > 5 && percent < 40, `probe 7 at ${percent.toFixed(0)} %`);
+
+  // Before each of its real waterings it was above the overdue line.
+  for (const iso of ["2026-10-11T22:00:00Z", "2026-10-15T06:00:00Z", "2026-10-17T20:00:00Z"]) {
+    const hour = Date.parse(iso) / HOUR_MS - 1;
+    const before = deriveRegion({ ...probe7, hours: probe7.hours.filter((h) => h[0] <= hour) }, (hour + 1) * HOUR_MS);
+    const level = probe7.hours.find((h) => h[0] === hour)![1];
+    assert.ok(before.ready && level >= before.bottom!, `overdue before ${iso}`);
+  }
+});
+
+test("a fertilized watering moves the region with the scale as soon as it settles", () => {
+  // Until 2026-10-18 this was held as a shift for a day first and reached the same numbers on 09-25.
+  const settled = at(alocasia, "2026-09-23T23:00:00Z");
+  assert.match(settled.waterings[5].verdict, /the new scale/);
+  assert.ok(Math.abs(settled.top! - 976) <= 4, `rescaled top ${settled.top}`);
+  assert.ok(Math.abs(settled.bottom! - 890) <= 4, `rescaled bottom ${settled.bottom}`);
+  assert.ok(Math.abs(settled.settled! - 1381) <= 3);
 });
 
 test("a stored anchor is used as it stands and nothing is offered for storing", () => {
@@ -161,7 +187,6 @@ test("MSV4: more ions slide the region up with the settled level; the span does 
   const before = deriveRegion({ sensorId: 10, scale: 4, hours: hours.slice(0, 360) }, (hours[359][0] + 1) * HOUR_MS);
   const after = deriveRegion({ sensorId: 10, scale: 4, hours }, endOf(hours));
   assert.equal(after.taught, 2);
-  assert.equal(after.heldAsShift, false);
   const moved = after.settled! - before.settled!;
   assert.ok(Math.abs(moved - 3000) < 60, `settled moved ${moved}`);
   assert.ok(Math.abs((after.top! - before.top!) - moved) <= 2);
@@ -199,8 +224,8 @@ test("the receiver's row carries the region in the names it has always read", as
   assert.ok(ready.dryBound! > 0 && ready.wetBound! > ready.dryBound!);
   assert.ok(JSON.stringify(ready).length < 200, "sixteen of these must fit the receiver's 4 kB document");
 
-  const knocked = regionAutoCalRow(at(alocasia, "2026-08-29T06:00:00Z"));
-  assert.equal(knocked.ready, false);
-  assert.equal(knocked.region, false);
-  assert.equal(knocked.dryBound, 0);
+  const unsettled = regionAutoCalRow(at(alocasia, "2026-08-12T12:00:00Z"));
+  assert.equal(unsettled.ready, false);
+  assert.equal(unsettled.region, false);
+  assert.equal(unsettled.dryBound, 0);
 });

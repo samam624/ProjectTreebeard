@@ -8,12 +8,11 @@ The rule (a reference for a build; nothing here is in the receiver or the cloud)
          share = (reading - base) / (settled - base)
   3. "Water now" is on while the share is at or below `--top`, and it is "overdue" below
      `--bottom`. The first 24 h after a watering are "just watered".
-  4. A settled level more than 10 % of the scale ABOVE the one in force is either a change of
-     scale (ions: a fertilizing) or a shifted probe. Until the pot has dried for a day the region
-     is moved up by the whole step, which cannot hide dryness. Then the first day's loss is put
-     over both scales and the one nearer the pot's own earlier first days is kept.
-  5. A fall of 20 % of the scale inside a few hours with no watering is a disturbed probe; the
-     reading is not judged again until the next watering.
+  4. Every watering recalibrates: a settled level at or above the one in force is the new scale
+     (until 2026-10-18 a higher one was first held as a shift; probe 7 stayed stuck on it).
+  5. A fall of the whole scale within an hour, 36 h or more after a watering, is a disturbed
+     probe; the reading is not judged again until the next watering. Deliberately almost never
+     true (maintainer, 2026-10-18: the user can see a knocked or pulled probe).
 
 Also prints, for each watering, how long the PRESENT calibration (autocal_replay.py) had shown 0 %
 or less.
@@ -37,7 +36,8 @@ H = pd.Timedelta(hours=1)
 STEP = pd.Timedelta(minutes=30)
 TOL = 0.10            # a settled level within this share of the scale of the one in force is the same scale
 STEP_UP = 0.15        # of the scale: a watering
-STEP_DOWN = 0.20      # of the scale, with no watering: a disturbed probe
+STEP_DOWN = 1.0       # of the scale within an hour, with no watering: a disturbed probe (0.20 until 2026-10-18)
+DRYDOWN = 36 * H      # no fall is a disturbance this soon after a watering: the water is still spreading
 HYSTERESIS = 0.02     # "water now" does not switch off for a wobble this size
 
 
@@ -49,11 +49,9 @@ def median_of(vis: pd.Series, t0, t1, least: int = 6) -> float:
 def replay(b: pd.Series, base: float, top: float, bottom: float) -> tuple[pd.DataFrame, list[dict]]:
     """b: five-minute medians (UTC index) starting just after a watering."""
     settled = None                 # the scale in force
-    shift = 0.0                    # the region is moved up by this while a higher settled level is unresolved or judged a shift
     last_w = b.index[0]
-    waiting, first_day_due, pending_up, from_gap = True, True, None, False
+    waiting, first_day_due, from_gap = True, True, False
     disturbed, on = False, False
-    first_days: list[float] = []
     events = [dict(watered=last_w, level_before=np.nan, settled=np.nan, verdict="record starts", first_day=np.nan)]
     rows = []
     t = b.index[0] + 3 * H
@@ -70,8 +68,8 @@ def replay(b: pd.Series, base: float, top: float, bottom: float) -> tuple[pd.Dat
                 rose = vis[(vis.index > before.index[-1]) & (vis >= pre + 0.5 * (cur - pre))]
                 last_w = rose.index[0] if len(rose) else t
                 events.append(dict(watered=last_w, level_before=pre, settled=np.nan, verdict="", first_day=np.nan))
-                waiting, first_day_due, pending_up, disturbed, on, shift, from_gap = True, True, None, False, False, 0.0, False
-            elif scale and pre - cur >= STEP_DOWN * scale and not disturbed:
+                waiting, first_day_due, disturbed, on, from_gap = True, True, False, False, False
+            elif scale and pre - cur >= STEP_DOWN * scale and not disturbed and t - last_w >= DRYDOWN:
                 disturbed = True
                 events[-1]["disturbed_at"] = t
 
@@ -86,48 +84,28 @@ def replay(b: pd.Series, base: float, top: float, bottom: float) -> tuple[pd.Dat
                     settled, events[-1]["verdict"] = new, "first scale"
                 else:
                     change = (new - settled) / (settled - base)
-                    if change > TOL:
-                        pending_up, shift = (settled, new), new - settled
-                        events[-1]["verdict"] = f"{100 * change:+.0f} % of scale: held as a shift until the first day is in"
-                    else:
-                        settled = new
-                        events[-1]["verdict"] = "same scale" if change >= -TOL else f"{100 * change:+.0f} % of scale: taken as the new scale"
+                    settled = new
+                    events[-1]["verdict"] = "same scale" if abs(change) <= TOL else f"{100 * change:+.0f} % of scale: taken as the new scale"
 
         if first_day_due and not waiting and t >= last_w + 48 * H:
             later = median_of(vis, last_w + 36 * H, last_w + 48 * H)
             if not np.isnan(later) or t >= last_w + 60 * H:
                 first_day_due = False
                 if not np.isnan(later) and not disturbed and not from_gap:
-                    new = events[-1]["settled"]
-                    loss = new - later
-                    if pending_up:
-                        old, _ = pending_up
-                        as_scale, as_shift = loss / (new - base), loss / (old - base)
-                        usual = float(np.median(first_days)) if len(first_days) >= 2 else None
-                        if usual and as_scale > 0 and abs(np.log(as_scale / usual)) < abs(np.log(as_shift / usual)):
-                            settled, shift = new, 0.0
-                            first_days.append(as_scale)
-                            events[-1]["verdict"] += f" -> SCALE (first day {as_scale:.3f} of scale; as a shift {as_shift:.3f}; usual {usual:.3f})"
-                        else:
-                            events[-1]["verdict"] += f" -> SHIFT (first day as scale {as_scale:.3f}, as shift {as_shift:.3f})"
-                        events[-1]["first_day"] = as_scale
-                        pending_up = None
-                    else:
-                        first_days.append(loss / (settled - base))
-                        events[-1]["first_day"] = first_days[-1]
+                    events[-1]["first_day"] = (events[-1]["settled"] - later) / (settled - base)
 
         if settled is None or waiting or t < last_w + 24 * H:
             state, share = "just watered", np.nan
         elif np.isnan(cur):                                   # the probe is off the air: nothing new to judge
             state, share = "no data", np.nan
         else:
-            share = (cur - shift - base) / (settled - base)
+            share = (cur - base) / (settled - base)
             if disturbed:
                 state = "disturbed"
             else:
                 on = share <= top if not on else share <= top + HYSTERESIS
                 state = "overdue" if on and share < bottom else "water now" if on else "not yet"
-        edge = (base + top * (settled - base) + shift, base + bottom * (settled - base) + shift) if settled else (np.nan, np.nan)
+        edge = (base + top * (settled - base), base + bottom * (settled - base)) if settled else (np.nan, np.nan)
         rows.append(dict(t=t, reading=cur, settled=settled, share=share, top_raw=edge[0], bottom_raw=edge[1], state=state))
         t += STEP
     return pd.DataFrame(rows).set_index("t"), events

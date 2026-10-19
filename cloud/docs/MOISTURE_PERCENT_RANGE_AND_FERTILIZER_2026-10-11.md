@@ -1,5 +1,27 @@
 # Moisture percent: why the range moves, and what a fertilizing does to it (2026-10-11)
 
+> **Changed 2026-10-18 (receiver-snapshot v33). Rules 4 and 5 below are no longer what runs.**
+> Probe 7 lost its region the day after a watering: the noon drydown fell 502 in an hour, 22 %
+> of its scale, and the 20 % rule called it disturbed. Under that, each of its waterings
+> (10-11, 10-14, 10-17) had been held as a shift on an older range. That hold is resolved only
+> against two earlier "first days", and a held cycle never adds one, so probe 7 never had two.
+> With the guard out of the way it read -25 % (overdue) 31 h after watering. The maintainer:
+> the disturbance signal should be "SUPER hard to trigger ... the user will know if its disturbed
+> or out of the pot. The most important thing is to keep callibration to the best of its ability
+> between watering".
+> - Every watering now recalibrates: a settled level at or above the one in force is the new
+>   scale at once, in both modes (there is no hold). A lower one still takes half of the fall.
+> - Disturbed now needs a fall of the WHOLE scale within one hour, 36 h or more after a
+>   watering (`STEP_DOWN` 1.0, `DRYDOWN_HOURS` 36).
+> - Effect on the 08-09 to 09-30 sensor 3 record: the 08-29 watering (on time, after the 08-28
+>   knock) now gets 26 h of "water now" instead of "disturbed". With the knock no longer
+>   detected, waterings 4 and 5 get 50 h and 25 h of "water now" (the Python reference, which
+>   takes a lower settled level whole, says 34 h and 15 h). The fertilized 09-22 watering reaches
+>   its rescaled region (top 976, bottom 890) as soon as it settles, instead of on 09-25.
+> - Live on 10-18: probe 7 is READY at 19 % (0 % at 43,408, 100 % at 44,822). Sensor 4 is out of
+>   soil and now reads overdue (-178 %) where it said "disturbed". Every other sensor reads as
+>   it did before.
+
 The maintainer, 2026-10-11: the percentage "still favor[s] increase in watering over time ... if
 you dont water exactly when it says 0% and you were over it will jump up and set a new max
 level", and there is "a big jump in Alocaisa GP when adding fertilizer to the soil". Absolute
