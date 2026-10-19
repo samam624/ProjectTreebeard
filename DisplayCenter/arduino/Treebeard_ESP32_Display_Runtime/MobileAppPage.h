@@ -2052,6 +2052,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       { sensor: 10, boot: "2026-10-11T11:52:48-07:00", cdAirPf: 13.72, cpPf: 8.69 },
       { sensor: 10, boot: "2026-10-11T13:03:43-07:00", cdAirPf: 13.72, cpPf: 8.69 },
       { sensor: 10, boot: "2026-10-11T20:39:37-07:00", cdAirPf: 13.72, cpPf: 8.69 },
+      { sensor: 11, boot: "2026-10-13T22:47:17-07:00", cdAirPf: 13.52, cpPf: 8.74 },
+      { sensor: 11, boot: "2026-10-14T11:38:16-07:00", cdAirPf: 13.52, cpPf: 8.74 },
+      { sensor: 11, boot: "2026-10-14T23:28:49-07:00", cdAirPf: 13.74, cpPf: 8.74 },
+      { sensor: 11, boot: "2026-10-15T17:35:51-07:00", cdAirPf: 13.74, cpPf: 8.74 },
+      { sensor: 11, boot: "2026-10-15T20:16:38-07:00", cdAirPf: 13.74, cpPf: 8.74 },
     ];
     // Which boot a reading belongs to comes from the reading: the probe counts one wake a minute
     // from 1 at boot, so its boot began (wake - 1) minutes earlier. An entry is that boot's when

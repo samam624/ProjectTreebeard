@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-11 water-now-region-v2-msv4-262166"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-15 msv4-raw-sweep-v3"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -151,6 +151,7 @@ void loop()
 #if TREEBEARD_ENABLE_BLE
 #include <BLEDevice.h>
 #include <BLEScan.h>
+#include "BleScanFlush.h"
 #endif
 #include <esp_system.h>
 #include <string.h>
@@ -464,6 +465,17 @@ const int16_t MSV4_DIE_TEMP_HISTORY_OFFSET = 1000;
 // converted on arrival, so history never has to know which firmware sent a row.
 const uint8_t MSV4_ADV_FLAG2_LAYOUT_B = 0x02;
 const uint32_t MSV4_RSOIL_MASK = 0x00FFFFFFUL;
+// 2026-10-15: the MSV4 raw sweep, Service Data in the probe's scan response from application
+// version 262172. Layout (an ABI with the comment above SWEEP_RSP_LEN in
+// MSV4_Moisture_BLE_Sleep.ino and with MSV4/scripts/msv4_adv_scan.py): UUID 0x4D34, then
+// [0] layout 1, [1] sensor ID, [2] the advertisement counter's low byte, [3-26] 8 points x 3 bytes.
+// The points are forwarded untouched; the cloud and the PC decode them.
+const uint16_t MSV4_SWEEP_UUID16 = 0x4D34;
+const uint8_t MSV4_SWEEP_LAYOUT = 1;
+const size_t MSV4_SWEEP_POINT_BYTES = 24;
+const size_t MSV4_SWEEP_DATA_LEN = 3 + MSV4_SWEEP_POINT_BYTES;
+// A sweep older than this is not sent; the cloud rejects older ones too (raw-sweeps.ts).
+const uint32_t MSV4_SWEEP_MAX_AGE_MS = 60UL * 60UL * 1000UL;
 // Keep a passive scan session alive long enough that advertisements from several probes do
 // not repeatedly collide with stop/clear/restart gaps. Results are still cleared between
 // sessions, bounding NimBLE's discovered-device storage, but the allocator churn now happens
@@ -585,6 +597,16 @@ const uint32_t CLOUD_LOW_HEAP_RETRY_MS = 15000;
 // on the next success. Capped well below cloudSyncIntervalSeconds's own ceiling so a bad
 // patch backs off but still eventually retries on its own.
 const uint32_t CLOUD_UPLOAD_BACKOFF_MAX_MS = 180000;
+// 2026-10-14: every TLS connect failed for 6.7 h (03:05-10:00 PDT) while WiFi, DNS and the server
+// were all healthy, with the largest internal free block pinned at 31,732 bytes, and only a reset
+// cleared it (DisplayCenter/docs/RECEIVER_TLS_STALL_2026-10-14.md). After this long with no
+// successful upload while WiFi has stayed connected, the receiver restarts itself; queued history
+// survives (RTC staging + LittleFS journal). A boot caused by such a restart may not do it again
+// until it has been up CLOUD_STALL_RESTART_SPACING_MS, so an internet outage costs at most one
+// restart per spacing window, and that boot skips the startup chime.
+const uint32_t CLOUD_STALL_RESTART_AFTER_MS = 30UL * 60UL * 1000UL;
+const uint32_t CLOUD_STALL_RESTART_SPACING_MS = 6UL * 60UL * 60UL * 1000UL;
+const uint32_t CLOUD_STALL_RESTART_MAGIC = 0x544C5352; // "TLSR"
 // 2026-08-29: relaxed from 30000 (both) to cut Supabase Edge Function invocations - at 30s
 // these two polls alone were ~5,760/day (~173,000/month) from a single receiver, ~38% of the
 // free-tier 500,000/month invocation quota. A cloud-pushed config/display change now takes up
@@ -681,8 +703,28 @@ static inline uint32_t historyFdcCountsField(uint32_t rawFdcCounts, uint8_t mois
   return moistureScale == MSV4_MOISTURE_SCALE_VERSION ? (rawFdcCounts & MSV4_RSOIL_MASK) : rawFdcCounts;
 }
 
+// The 24 packed sweep bytes as 48 lower-case hex digits, NUL-terminated.
+static void msv4SweepHex(const uint8_t* sweep, char* out)
+{
+  static const char digits[] = "0123456789abcdef";
+  for (size_t i = 0; i < MSV4_SWEEP_POINT_BYTES; i++)
+  {
+    out[2 * i] = digits[sweep[i] >> 4];
+    out[2 * i + 1] = digits[sweep[i] & 0x0F];
+  }
+  out[2 * MSV4_SWEEP_POINT_BYTES] = '\0';
+}
+
+// The sweep goes out only while it is younger than MSV4_SWEEP_MAX_AGE_MS.
+static inline bool msv4SweepSendable(bool valid, uint32_t atMs, uint32_t nowMs)
+{
+  return valid && (uint32_t)(nowMs - atMs) <= MSV4_SWEEP_MAX_AGE_MS;
+}
+
+// sweep is non-null only for the latest-value cache (latestPlants), never for history rows.
 static void appendMsv4RawJson(String& output, uint32_t packed, uint8_t fitRmsE4, uint8_t cpDeciPf,
-                              bool dieTempValid, int16_t dieTempQuarterC)
+                              bool dieTempValid, int16_t dieTempQuarterC,
+                              const uint8_t* sweep = nullptr, uint32_t sweepWake = 0, uint32_t sweepAgeMs = 0)
 {
   output += F(",\"msv4\":{\"cmDeciPf\":");
   output += msv4CmDeciPf(packed);
@@ -702,6 +744,18 @@ static void appendMsv4RawJson(String& output, uint32_t packed, uint8_t fitRmsE4,
   {
     output += F(",\"dieTempQuarterC\":");
     output += dieTempQuarterC;
+  }
+  if (sweep != nullptr)
+  {
+    char hex[2 * MSV4_SWEEP_POINT_BYTES + 1];
+    msv4SweepHex(sweep, hex);
+    output += F(",\"sweep\":{\"wake\":");
+    output += (unsigned long)sweepWake;
+    output += F(",\"ageMs\":");
+    output += (unsigned long)sweepAgeMs;
+    output += F(",\"hex\":\"");
+    output += hex;
+    output += F("\"}");
   }
   output += '}';
 }
@@ -810,6 +864,13 @@ struct SensorReading
   // (layout A; 0 = not sent). rawFdcCounts above is the resistance alone.
   uint8_t msv4FitRmsE4 = 0;
   uint8_t msv4CpDeciPf = 0;
+  // MSV4 raw sweep from the probe's scan response (probe 262172 onward), kept as the 24 packed
+  // bytes it arrived as, with the full wake it belongs to and when it arrived. Forwarded to the
+  // cloud as raw.msv4.sweep; see handleMsv4SweepScanResponse().
+  bool msv4SweepValid = false;
+  uint32_t msv4SweepWake = 0;
+  uint32_t msv4SweepAtMs = 0;
+  uint8_t msv4Sweep[MSV4_SWEEP_POINT_BYTES] = {};
   // Receiver-derived shadow channel. This never overwrites rawFdcCounts or the original
   // measuredMoisture. In Active mode (and only after two accepted daily fits), the equivalent
   // corrected count may feed the presentation filter; cloud history still receives both.
@@ -1129,6 +1190,9 @@ DNSServer* dnsServerPtr = nullptr;
 #endif
 #if TREEBEARD_ENABLE_BLE
 BLEScan* bleScan = nullptr;
+// The scan's callbacks, kept so the scan task can hand them the reports a session still holds;
+// see BleScanFlush.h.
+BLEAdvertisedDeviceCallbacks* bleScanCallbacks = nullptr;
 TaskHandle_t bleScanTaskHandle = nullptr;
 volatile bool cloudRadioExclusive = false;
 // 2026-08-31 diagnostic, live-hardware investigation into intermittent snapshot-upload
@@ -2944,6 +3008,19 @@ uint32_t minLoopTaskStackFreeEverBytes = UINT32_MAX;
 uint32_t lastCloudUploadFreeHeapBeforeBytes = 0;
 uint32_t lastCloudUploadFreeHeapAfterBytes = 0;
 uint16_t cloudConsecutiveUploadFailures = 0;
+// 2026-10-14: what the last failed upload TLS connect actually was, instead of one fixed string.
+// NetworkClientSecure::lastError() after a failed connect(): 0 = DNS lookup failed (hostByName
+// returns before start_ssl_client), -1 = socket/TCP connect failed, anything else is the mbedTLS
+// code (-32512 = -0x7F00 = MBEDTLS_ERR_SSL_ALLOC_FAILED, the 2026-08-31 failure).
+int cloudLastTlsErrorCode = 0;
+uint32_t cloudLastTlsFailAtMs = 0;
+uint32_t cloudLastTlsFailLargestBlockBytes = 0;
+uint32_t cloudLastTlsFailFreeHeapBytes = 0;
+uint32_t cloudTlsConnectFailuresThisBoot = 0;
+// Set just before a stall restart (CLOUD_STALL_RESTART_AFTER_MS), consumed at the top of setup().
+// RTC_NOINIT survives ESP.restart(); after a power loss the magic cannot match.
+RTC_NOINIT_ATTR uint32_t rtcCloudStallRestartMagic;
+bool bootWasCloudStallRestart = false;
 uint8_t currentRotation = 1;
 uint32_t lastArtFrameMs = 0;
 const uint16_t ART_FRAME_DEFAULT_MS = 500;
@@ -3648,6 +3725,17 @@ String cloudConfigJson()
   historyQueue["capacity"] = HISTORY_QUEUE_CAPACITY;
   historyQueue["batchSize"] = HISTORY_UPLOAD_BATCH_SIZE;
   historyQueue["dropped"] = droppedHistoryCount();
+  // 2026-10-14: see cloudLastTlsErrorCode and CLOUD_STALL_RESTART_AFTER_MS.
+  JsonObject tlsFailure = upload.createNestedObject("lastTlsFailure");
+  tlsFailure["code"] = cloudLastTlsErrorCode;
+  tlsFailure["atMs"] = cloudLastTlsFailAtMs;
+  tlsFailure["largestFreeBlockInternalBytes"] = cloudLastTlsFailLargestBlockBytes;
+  tlsFailure["freeHeapBytes"] = cloudLastTlsFailFreeHeapBytes;
+  tlsFailure["countThisBoot"] = cloudTlsConnectFailuresThisBoot;
+  JsonObject stallRestart = upload.createNestedObject("stallRestart");
+  stallRestart["afterMs"] = CLOUD_STALL_RESTART_AFTER_MS;
+  stallRestart["spacingMs"] = CLOUD_STALL_RESTART_SPACING_MS;
+  stallRestart["bootWasStallRestart"] = bootWasCloudStallRestart;
   JsonObject tasking = doc.createNestedObject("tasking");
   tasking["core"] = 0;
   tasking["cloudPriority"] = CLOUD_SYNC_TASK_PRIORITY;
@@ -7516,19 +7604,25 @@ String sensorDataJson()
 String historyOutboxPrefixJson(uint32_t serializedAtMs)
 {
   size_t seenSensors = 0;
+  size_t sweeps = 0;
   for (uint8_t sensorId = 1; sensorId <= MAX_SENSOR_ID; sensorId++)
   {
     SensorReading reading;
     if (copySensorReading(sensorId, reading) && reading.seen)
     {
       seenSensors++;
+      if (reading.msv4 && msv4SweepSendable(reading.msv4SweepValid, reading.msv4SweepAtMs, serializedAtMs))
+      {
+        sweeps++;
+      }
     }
   }
 
   // Only the receiver metadata and latest-value cache are retained as one String. History
-  // rows are emitted by HistoryOutboxStream below, one bounded row at a time.
+  // rows are emitted by HistoryOutboxStream below, one bounded row at a time. A raw sweep
+  // adds at most 96 characters.
   String output;
-  if (!output.reserve(512 + seenSensors * 480))
+  if (!output.reserve(512 + seenSensors * 480 + sweeps * 96))
   {
     Serial.println("[Treebeard cloud] could not reserve compact history prefix");
     return "";
@@ -7622,9 +7716,12 @@ String historyOutboxPrefixJson(uint32_t serializedAtMs)
           output += reading.tankPhase;
           if (reading.msv4)
           {
+            const bool sendSweep =
+                msv4SweepSendable(reading.msv4SweepValid, reading.msv4SweepAtMs, serializedAtMs);
             appendMsv4RawJson(output, reading.rawBareTankFdcCounts, reading.msv4FitRmsE4,
                               reading.msv4CpDeciPf, reading.msv4DieTempValid,
-                              reading.msv4DieTempQuarterC);
+                              reading.msv4DieTempQuarterC, sendSweep ? reading.msv4Sweep : nullptr,
+                              reading.msv4SweepWake, serializedAtMs - reading.msv4SweepAtMs);
           }
         }
       }
@@ -8071,6 +8168,15 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
             }
             if (r.msv4CpDeciPf != 0) msv4Item["cpDeciPf"] = r.msv4CpDeciPf;
             if (r.msv4DieTempValid) msv4Item["dieTempQuarterC"] = r.msv4DieTempQuarterC;
+            if (msv4SweepSendable(r.msv4SweepValid, r.msv4SweepAtMs, serializedAtMs))
+            {
+              char hex[2 * MSV4_SWEEP_POINT_BYTES + 1];
+              msv4SweepHex(r.msv4Sweep, hex);
+              JsonObject sweepItem = msv4Item.createNestedObject("sweep");
+              sweepItem["wake"] = r.msv4SweepWake;
+              sweepItem["ageMs"] = (uint32_t)(serializedAtMs - r.msv4SweepAtMs);
+              sweepItem["hex"] = String(hex);   // a String is always copied; hex is a local buffer
+            }
           }
         }
       }
@@ -9288,11 +9394,31 @@ void runCloudSnapshotUploader(uint32_t now)
     {
       // Report the real reason rather than POST()'s generic "connection refused". Rows stay
       // queued (nothing was dequeued above), so this is a clean retry.
+      char tlsErrorText[48];
+      const int tlsErrorCode =
+          parsedCloudEndpoint ? secureClient.lastError(tlsErrorText, sizeof(tlsErrorText)) : 0;
       endCloudRadioSlot();
       http.end();
       stopCloudClients(secureClient, plainClient);
-      setCloudLastError("TLS connect failed (pre-connect)");
-      Serial.println("[Treebeard cloud] upload failed: TLS pre-connect");
+      cloudLastTlsErrorCode = tlsErrorCode;
+      cloudLastTlsFailAtMs = millis();
+      cloudLastTlsFailLargestBlockBytes =
+          heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      cloudLastTlsFailFreeHeapBytes = ESP.getFreeHeap();
+      cloudTlsConnectFailuresThisBoot++;
+      char error[sizeof(cloudLastError)];
+      if (!parsedCloudEndpoint)
+      {
+        strlcpy(error, "TLS connect failed (pre-connect): bad upload URL", sizeof(error));
+      }
+      else
+      {
+        snprintf(error, sizeof(error), "TLS connect failed (pre-connect): code %d, largest block %lu",
+                 tlsErrorCode, (unsigned long)cloudLastTlsFailLargestBlockBytes);
+      }
+      setCloudLastError(error);
+      Serial.print("[Treebeard cloud] upload failed: TLS pre-connect code ");
+      Serial.println(tlsErrorCode);
       nextCloudSyncMs = millis() + noteCloudUploadFailureAndGetBackoffMs();
       return;
     }
@@ -10182,7 +10308,60 @@ void parseBenchAdvertisement(const uint8_t* buffer, size_t len, int packetRssi)
 
 class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
+  // Active scanning (2026-10-15): NimBLE reports a scannable advertiser once its scan response
+  // has arrived, with both PDUs parsed into one device, so the advertisement is handled first and
+  // a sweep in the same report then finds that wake already in sensors[].
   void onResult(BLEAdvertisedDevice advertisedDevice)
+  {
+    handleProductionAdvertisement(advertisedDevice);
+    handleMsv4SweepScanResponse(advertisedDevice);
+  }
+
+  void handleMsv4SweepScanResponse(BLEAdvertisedDevice& advertisedDevice)
+  {
+    if (!advertisedDevice.haveServiceData())
+    {
+      return;
+    }
+    // NimBLE appends every service-data record it has parsed for this address during the scan
+    // session; the last matching one is the newest.
+    String data;
+    const BLEUUID sweepUuid((uint16_t)MSV4_SWEEP_UUID16);
+    for (int i = advertisedDevice.getServiceDataCount() - 1; i >= 0; i--)
+    {
+      if (advertisedDevice.getServiceDataUUID(i).equals(sweepUuid))
+      {
+        data = advertisedDevice.getServiceData(i);
+        break;
+      }
+    }
+    const uint8_t* buffer = reinterpret_cast<const uint8_t*>(data.c_str());
+    if (data.length() != MSV4_SWEEP_DATA_LEN || buffer[0] != MSV4_SWEEP_LAYOUT)
+    {
+      return;
+    }
+    const uint8_t sensorId = buffer[1];
+    if (sensorId == 0 || sensorId > MAX_SENSOR_ID)
+    {
+      return;
+    }
+    // Kept only against the wake it was measured on: the latest MSV4 advertisement of this
+    // sensor must carry the same counter low byte. Anything else is dropped, never guessed.
+    const uint32_t nowMs = millis();
+    portENTER_CRITICAL(&sensorsMux);
+    SensorReading& reading = sensors[sensorId];
+    if (reading.seen && reading.msv4 && (reading.wake & 0xFF) == buffer[2] &&
+        !(reading.msv4SweepValid && reading.msv4SweepWake == reading.wake))
+    {
+      memcpy(reading.msv4Sweep, &buffer[3], MSV4_SWEEP_POINT_BYTES);
+      reading.msv4SweepWake = reading.wake;
+      reading.msv4SweepAtMs = nowMs;
+      reading.msv4SweepValid = true;
+    }
+    portEXIT_CRITICAL(&sensorsMux);
+  }
+
+  void handleProductionAdvertisement(BLEAdvertisedDevice& advertisedDevice)
   {
     if (!advertisedDevice.haveManufacturerData())
     {
@@ -10635,6 +10814,8 @@ void bleScanTask(void* parameter)
     {
       setBleCheckpoint("ble task: scan start");
       bleScan->start(BLE_SCAN_SECONDS, false);
+      // Active scanning holds reports that a cloud slot's stop() would otherwise discard.
+      ble_scan_flush::deliverStoredResults(bleScan, bleScanCallbacks);
       bleScan->clearResults();
       setBleCheckpoint("ble task: scan done");
     }
@@ -10644,6 +10825,43 @@ void bleScanTask(void* parameter)
 #endif
 
 #if TREEBEARD_ENABLE_WIFI
+// 2026-10-14: see CLOUD_STALL_RESTART_AFTER_MS. Runs at the end of a cloud-task iteration, so no
+// TLS session or journal write of this task is in flight. Keyed on the last SUCCESS rather than on
+// cloudConsecutiveUploadFailures, because a low-heap skip returns without counting as a failure.
+// wifiLastConnectedMs moves only on a (re)connect, so a WiFi outage is left to
+// maintainWifiConnection() and never triggers this.
+void serviceCloudStallRestart(uint32_t now)
+{
+  if (!cloudEnabled || cloudUploadUrl[0] == '\0')
+  {
+    return;
+  }
+  if (!wifiStationConnected || wifiSetupPortalActive || wifiLocalOnly)
+  {
+    return;
+  }
+  if ((uint32_t)(now - cloudLastSuccessMs) < CLOUD_STALL_RESTART_AFTER_MS ||
+      (uint32_t)(now - wifiLastConnectedMs) < CLOUD_STALL_RESTART_AFTER_MS)
+  {
+    return;
+  }
+  if (bootWasCloudStallRestart && now < CLOUD_STALL_RESTART_SPACING_MS)
+  {
+    return;
+  }
+  Serial.print("[Treebeard cloud] no successful upload for ");
+  Serial.print((now - cloudLastSuccessMs) / 60000UL);
+  Serial.print(" min with WiFi up (last TLS code ");
+  Serial.print(cloudLastTlsErrorCode);
+  Serial.println("); restarting");
+  Serial.flush();
+  setCloudCheckpoint("cloud task: stall restart");
+  rtcCloudStallRestartMagic = CLOUD_STALL_RESTART_MAGIC;
+  intentionalRestartPending = true;
+  delay(50);
+  ESP.restart();
+}
+
 // Runs the five cloud network calls (bootstrap, display settings, config pull,
 // auto-cal pull, snapshot
 // upload) on their own task instead of inline in loop(), mirroring bleScanTask above -
@@ -10735,6 +10953,7 @@ void cloudSyncTask(void* parameter)
       }
     }
     setCloudCheckpoint("cloud task: iteration done");
+    serviceCloudStallRestart(millis());
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -11351,6 +11570,8 @@ void setup()
   strlcpy(prevCheckpointCloud, lastCheckpointCloud, sizeof(prevCheckpointCloud));
   bool wasIntentionalRestart = intentionalRestartPending;
   intentionalRestartPending = false;
+  bootWasCloudStallRestart = rtcCloudStallRestartMagic == CLOUD_STALL_RESTART_MAGIC;
+  rtcCloudStallRestartMagic = 0;
 
   randomSeed(esp_random());
   historyQueueBootId = esp_random();
@@ -11379,6 +11600,7 @@ void setup()
     StaticJsonDocument<384> bootRecord;
     bootRecord["resetReason"] = resetReasonName(resetReason);
     bootRecord["wasIntentionalRestart"] = wasIntentionalRestart;
+    bootRecord["wasCloudStallRestart"] = bootWasCloudStallRestart;
     bootRecord["prevCheckpointMain"] = prevCheckpointMain;
     bootRecord["prevCheckpointBle"] = prevCheckpointBle;
     bootRecord["prevCheckpointCloud"] = prevCheckpointCloud;
@@ -11545,8 +11767,12 @@ void setup()
     bootLog("initializing BLE scanner");
     BLEDevice::init("MSV2-DISPLAY");
     bleScan = BLEDevice::getScan();
-    bleScan->setAdvertisedDeviceCallbacks(new Msv2AdvertisedDeviceCallbacks(), true);
-    bleScan->setActiveScan(false);
+    bleScanCallbacks = new Msv2AdvertisedDeviceCallbacks();
+    bleScan->setAdvertisedDeviceCallbacks(bleScanCallbacks, true);
+    // Active since 2026-10-15, so MSV4 probes' scan responses (their raw sweeps) are requested.
+    // NimBLE then holds a scannable advertiser's report until its scan response arrives, or
+    // until the 30 s session ends if it never does; see Msv2AdvertisedDeviceCallbacks::onResult().
+    bleScan->setActiveScan(true);
     bleScan->setInterval(120);
     bleScan->setWindow(40);
     if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", BLE_SCAN_TASK_STACK_BYTES, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
@@ -11590,8 +11816,12 @@ void setup()
   // ESP.restart() (WiFi retry-exhausted reboot, config-change reboot), and "the
   // receiver came alive" is still an accurate chime in each of those cases. The WiFi
   // self-heal radio-reset path (maintainWifiConnection) does not call ESP.restart() and
-  // does not replay this.
-  startBuzzerPattern(BUZZER_STARTUP_SOUND, sizeof(BUZZER_STARTUP_SOUND) / sizeof(BUZZER_STARTUP_SOUND[0]), 1, 0);
+  // does not replay this. A cloud stall restart (serviceCloudStallRestart) is unattended and
+  // can come at night, so it stays silent.
+  if (!bootWasCloudStallRestart)
+  {
+    startBuzzerPattern(BUZZER_STARTUP_SOUND, sizeof(BUZZER_STARTUP_SOUND) / sizeof(BUZZER_STARTUP_SOUND[0]), 1, 0);
+  }
   bootLog("setup complete");
 }
 

@@ -171,4 +171,37 @@ assert.ok(96 >= 2 * oneFastPlusFifteenNormalRowsPerMinute, "One fast plus fiftee
 assert.ok(allSixteenFastRowsPerMinute > 96, "The verifier must keep the all-probes-fast unsupported boundary explicit.");
 assert.ok(8192 / normalSixteenRowsPerMinute >= 8 * 60, "The durable outage queue must cover at least eight hours at sixteen normal rows/minute.");
 
+// 2026-10-14 TLS stall (DisplayCenter/docs/RECEIVER_TLS_STALL_2026-10-14.md).
+const stallRestartBody = functionBody("void serviceCloudStallRestart\\(uint32_t now\\)");
+assert.match(
+  uploaderBody,
+  /secureClient\.lastError\([\s\S]*?cloudLastTlsErrorCode = tlsErrorCode;[\s\S]*?noteCloudUploadFailureAndGetBackoffMs\(\)/,
+  "A failed upload TLS connect must record NetworkClientSecure::lastError() (0 DNS, -1 TCP, else mbedTLS).",
+);
+assert.match(
+  cloudTaskBody,
+  /setCloudCheckpoint\("cloud task: iteration done"\);\s*serviceCloudStallRestart\(millis\(\)\);/,
+  "The stall restart must run between cloud-task iterations, never inside a TLS call or journal write.",
+);
+assert.match(
+  stallRestartBody,
+  /now - cloudLastSuccessMs\) < CLOUD_STALL_RESTART_AFTER_MS[\s\S]*?now - wifiLastConnectedMs\) < CLOUD_STALL_RESTART_AFTER_MS/,
+  "The stall restart must key on time since the last success with WiFi continuously up, not on a failure count.",
+);
+assert.match(
+  stallRestartBody,
+  /bootWasCloudStallRestart && now < CLOUD_STALL_RESTART_SPACING_MS/,
+  "A boot caused by a stall restart must not restart again inside the spacing window.",
+);
+assert.match(
+  firmware,
+  /RTC_NOINIT_ATTR uint32_t rtcCloudStallRestartMagic;/,
+  "The stall-restart marker must be RTC_NOINIT_ATTR, the documented survivor of ESP.restart().",
+);
+assert.match(
+  firmware,
+  /if \(!bootWasCloudStallRestart\)\s*\{\s*startBuzzerPattern\(BUZZER_STARTUP_SOUND/,
+  "An unattended stall restart must not play the startup chime.",
+);
+
 console.log("PASS receiver cloud recovery protects RTC ingress, spills outages durably, paces TLS, and prevents state-pull starvation");

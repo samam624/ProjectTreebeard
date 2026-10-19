@@ -4,8 +4,27 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-11 20:48 PDT, the display receiver was reflashed on `COM16` with the normal
+As of 2026-10-14 10:47 PDT, the display receiver was reflashed on `COM16` with the normal
 production build:
+
+```text
+Treebeard runtime build 2026-10-14 tls-stall-restart
+```
+
+It follows a 6.7 h upload stall (`DisplayCenter/docs/RECEIVER_TLS_STALL_2026-10-14.md`).
+- **Error capture:** each failed upload connect now records its real `lastError()` code, shown in
+  `/cloud` under `upload.lastTlsFailure`.
+- **Stall restart:** after 30 min with no successful upload while WiFi stays up, the receiver
+  restarts itself. After such a restart it waits 6 h before another, and that boot has no chime.
+- **Checks:** all twelve `DisplayCenter/scripts/verify_*.mjs` checks passed and the flash hash
+  verified. `/device` reports the build above, and the first upload returned `HTTP 200` at 27 s
+  of uptime with the queue empty.
+
+Inferred from timing: the build below also carries commit `e048a60` (battery percent scaled to
+the charge plateau). It was committed at 22:29:37 PDT on 10-11, and the receiver booted at
+~22:29 PDT under the unchanged `-262166` tag, which ran until the stall.
+
+The 2026-10-11 20:48 PDT flash on `COM16` used this production build:
 
 ```text
 Treebeard runtime build 2026-10-11 water-now-region-v2-msv4-262166

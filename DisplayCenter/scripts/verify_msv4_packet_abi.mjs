@@ -282,13 +282,14 @@ assert.equal(adcUuidBytes?.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$
   scanner.match(/^ADC_CAL_UUID = "([0-9a-f-]+)"$/m)?.[1], "The sketch and the scanner must name the same characteristic.");
 assert.equal(Number(probe.match(/constexpr int32_t SAADC_ZERO_MAX_LSB = (\d+);/)?.[1]),
   Number(scanner.match(/^ADC_ZERO_MAX_LSB = (\d+)\b/m)?.[1]));
-// From 262164 the window is centred where board 1's good calibrations leave the zero, and the
-// scanner judges a build's text against that build's own centre.
+// The current window covers the measured good populations of boards 1 and 2, and the scanner
+// retains the narrower board-1 window when it decodes 262165..262168.
 assert.equal(Number(probe.match(/constexpr int32_t SAADC_ZERO_CENTRE_LSB = (-?\d+);/)?.[1]),
   Number(scanner.match(/^ADC_ZERO_CENTRE_LSB = (-?\d+)$/m)?.[1]));
 assert.match(scanner, /^ADC_ZERO_CENTRED_FROM_VERSION = 262165$/m);
+assert.match(scanner, /^ADC_ZERO_SHARED_FROM_VERSION = 262169$/m);
 assert.match(probe, /const int32_t off = zero - SAADC_ZERO_CENTRE_LSB;\s*return off <= -SAADC_ZERO_MAX_LSB \|\| off >= SAADC_ZERO_MAX_LSB;/);
-assert.match(scanner, /state = "in" if abs\(zero - centre\) < ADC_ZERO_MAX_LSB else "OUT"/);
+assert.match(scanner, /state = "in" if abs\(zero - centre\) < radius else "OUT"/);
 assert.match(probe, /pinOutput\(PIN_VBAT_DIV_EN, false\);\s*\/\/ the zero: divider off, R9 to ground/,
   "The zero is only a zero with the battery divider switched off.");
 assert.match(probe, /saadcCalibrateChecked\(\);\s*float vbatMv = 0;/,
@@ -298,7 +299,7 @@ assert.match(probe, /if \(!zeroRead \|\| !saadcZeroOut\(zero\)\) break;/,
 
 // ---- Calibration experiment (application 262165): a second DIS string of the sketch's own ----
 // Each wake's first calibration is taken one of five ways in rotation; the text counts the high
-// ones per way. Whatever way is being tried, a calibration taken again is taken the old way.
+// ones per way. Whatever way is being tried, a calibration taken again is oversampled.
 assert.match(probe, /snprintf\(g_calExpText, sizeof\(g_calExpText\), "e%s %s %s %s %s w%lu", cell\[0\],/);
 assert.match(probe, /if \(g_calArmTimedOut\[i\]\) snprintf\(cell\[i\], sizeof\(cell\[i\]\), "T"\);\s*else snprintf\(cell\[i\], sizeof\(cell\[i\]\), "%u", \(unsigned\)g_calArmHigh\[i\]\);/);
 assert.ok(scanner.includes(String.raw`re.fullmatch(r"e(\d+|T) (\d+|T) (\d+|T) (\d+|T) (\d+|T) w(\d+)", text)`),
@@ -310,8 +311,8 @@ assert.equal(expUuidBytes?.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$
 assert.equal(Number(probe.match(/constexpr uint8_t CAL_ARMS = (\d+);/)?.[1]),
   scanner.match(/^CAL_EXPERIMENT_ARMS = \(([^)]*)\)$/m)?.[1].split(",").length,
   "The scanner must name as many ways as the sketch rotates through.");
-assert.match(probe, /if \(tries == 0\) saadcCalibrateArm\(arm\);\s*else saadcCalibrate\(\);/,
-  "Only a wake's first calibration is the experiment's; a repeat is always the plain one.");
+assert.match(probe, /if \(tries == 0\) saadcCalibrateArm\(arm\);\s*else saadcCalibrate\(SAADC_OVERSAMPLE_OVERSAMPLE_Over32x\);/,
+  "Only a wake's first calibration is the experiment's; a repeat uses the proven oversampled arm.");
 
 // ---- Battery saver (flags2 bit7, application 262165): the last free bit of the packet ----
 // The probe measures moisture less often when its battery is below 3500 mV. The bit says so; the
