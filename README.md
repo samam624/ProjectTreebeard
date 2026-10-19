@@ -15,15 +15,17 @@ with AI coding agents (Claude Code and Codex) under his direction. The project s
 keeps the failures alongside the things that worked.
 
 <p align="center">
-  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_probe_in_pot.jpg" height="300" alt="MSV3 probe in its solar enclosure in a pot">
+  <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg" height="260" alt="Four assembled MSV4 probe boards">
   &nbsp;
-  <img src="MSV3/docs/images/alocasia_five_probe_test.jpg" height="300" alt="Five probes sharing one Alocasia pot for a side-by-side test">
+  <img src="MSV3/hardware/MSV3_Probe_PCB/images/MSV3_probe_in_pot.jpg" height="260" alt="MSV3 probe in its solar enclosure in a pot">
   &nbsp;
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="300" alt="DisplayCenter receiver showing plant cards">
+  <img src="MSV3/docs/images/alocasia_five_probe_test.jpg" height="260" alt="Five probes sharing one Alocasia pot for a side-by-side test">
+  &nbsp;
+  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="260" alt="DisplayCenter receiver showing plant cards">
 </p>
 
-<p align="center"><em>An MSV3 probe in its pot, five probes sharing one pot for a side-by-side test,
-and the DisplayCenter receiver.</em></p>
+<p align="center"><em>Four assembled MSV4 boards, an MSV3 probe in its pot, five probes sharing one
+pot for a side-by-side test, and the DisplayCenter receiver.</em></p>
 
 [Open the hosted dashboard](https://msv2-plants.netlify.app) ·
 [See where every probe is right now](MSV3/fleet.json) ·
@@ -42,6 +44,7 @@ two-electrode blade, a soil-temperature NTC at the tip and solar charging. 2 lay
 [Gerbers](MSV4/hardware/MSV4_Probe_PCB/MSV4_Probe_PCB_fabrication_2026-09-18.zip)
 
 <p>
+  <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg" height="300" alt="Four assembled MSV4 boards">
   <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_pcb_layout.png" height="300" alt="MSV4 PCB layout">
   <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_pcb_3d.png" height="300" alt="MSV4 PCB 3D view">
   <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_lockin_front_end.png" height="300" alt="MSV4 lock-in front end schematic">

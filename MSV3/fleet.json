@@ -1201,7 +1201,13 @@
         "verified": "2026-10-13",
         "source": "maintainer stated 2026-10-13 during the boards 2-5 batch build",
         "assembled_unflashed": [],
-        "note": "MSV4-BU-6528 (the first batch board finished) moved to msv4_boards.boards as board 2 on 2026-10-13 ~22:40 PDT, with every fact this entry held. Add further batch boards here until they are flashed and identified."
+        "note": "MSV4-BU-6528 (the first batch board finished) moved to msv4_boards.boards as board 2 on 2026-10-13 ~22:40 PDT, with every fact this entry held. Add further batch boards here until they are flashed and identified.",
+        "photo_2026_10_18": {
+          "source": "maintainer sent Downloads/IMG_6649.HEIC on 2026-10-18 ~22:50 PDT with the words '4 MSV4 assembled boards'",
+          "stated": "four MSV4 boards, assembled",
+          "not_stated": "which board numbers they are (whether board 2, now in its own pot as sensor 11, is among them), whether any are flashed, and when the photo was taken",
+          "repo_copy": "MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg (metadata stripped)"
+        }
       }
     },
     "boards": [

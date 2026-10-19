@@ -14,6 +14,8 @@ lock-in (I/Q) front end built from two analog switches, at eight frequencies fro
 | NCP15XH103 (0402 NTC) | Soil temperature at the blade tip |
 
 <p align="center">
+  <img src="images/MSV4_four_assembled_boards.jpg" height="420" alt="Four assembled MSV4 boards">
+  &nbsp;
   <img src="images/MSV4_pcb_layout.png" height="420" alt="MSV4 PCB layout">
   &nbsp;
   <img src="images/MSV4_pcb_3d.png" height="420" alt="MSV4 PCB 3D view">
