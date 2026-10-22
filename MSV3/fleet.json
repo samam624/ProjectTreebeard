@@ -1410,6 +1410,16 @@
       "notes": "Probe 6 sits on the desk with no sun; probe 8 is unplugged and unpowered. From 2026-09-30: sensors 2, 3, 4, 5, 7 and 9 were also removed from their pots (whereabouts and power not stated)."
     }
   },
+  "conditions_log": [
+    {
+      "verified": "2026-10-22",
+      "source": "maintainer stated 2026-10-22 ~14:07 PDT (session clock): 'It has been dark and rainy the last 2 days and i have noticied that the probes arent able to charge in the window and also it looks like the plants arent able to process as much water, is that reflected in the data?'",
+      "period": "the 2 days before 2026-10-22 ~14:07 PDT (read as 2026-10-21 and 2026-10-22; exact start NOT STATED)",
+      "light": "dark and rainy (maintainer's observation; no light or weather instrument)",
+      "charging": "the maintainer observed that 'the probes' in 'the window' are not able to charge. WHICH probes and WHICH window NOT STATED; do not infer either from telemetry.",
+      "plants": "the maintainer's impression that the plants are not taking up as much water. Which plants NOT STATED. The shared-alocasia pot is the only one weighed."
+    }
+  ],
   "power_topology": {
     "_comment": [
       "CONFOUND, recorded 2026-09-19. Three of the four electrode x readout corners in the shared",
