@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type AutoCalRawSensor, deriveAutoCal } from "./autocal.ts";
 import { deriveRegion, regionAutoCalRow, type RegionRawSensor } from "./region.ts";
 import {
   isValidInt32,
@@ -237,13 +236,15 @@ Deno.serve(async (request) => {
         return jsonResponse({ ok: true, readings: data ?? [] });
       }
 
-      if (wantsAutoCal && url.searchParams.get("region") === "1") {
-        // The "water now" region (region.ts, migration 041): bounds from the level each
-        // watering settles at and a watering line learned once, in place of the range learned
-        // from where the last waterings happened. A receiver asks for it with region=1; one
-        // that does not gets the older range below, unchanged. A failure here is an error and
-        // not a fall-back to that older range: the receiver keeps what it last cached, where
-        // falling back would flip its display between two calibrations.
+      if (wantsAutoCal) {
+        // The "water now" region (region.ts, migrations 041 and 043): a watering line learned
+        // once and then fixed, which no later watering can raise. Since 2026-10-22 every
+        // autocal=1 request gets it, with or without region=1: the older range
+        // (autocal.ts, msv2_read_sensor_auto_calibration) learned 0 % from where the last
+        // waterings happened and moved up with every early one, and no receiver build still
+        // asks for it. The row keeps the names the older range used, so an older build reads
+        // it. A failure here is an error and not a fall-back to that older range: the
+        // receiver keeps what it last cached.
         const { data, error } = await supabase.rpc("msv2_read_sensor_hourly_moisture", {
           p_receiver_id: cleanReceiverId,
         });
@@ -284,20 +285,6 @@ Deno.serve(async (request) => {
           sensors.push(regionAutoCalRow(region, verbose));
         }
         return jsonResponse({ ok: true, regionApi: 1, sensors });
-      }
-
-      if (wantsAutoCal) {
-        const { data, error } = await supabase.rpc("msv2_read_sensor_auto_calibration", {
-          p_receiver_id: cleanReceiverId,
-        });
-        if (error) {
-          return jsonResponse({ ok: false, error: error.message }, 500);
-        }
-
-        const nowMs = Date.now();
-        const rawSensors = (data ?? []) as AutoCalRawSensor[];
-        const sensors = rawSensors.map((sensor) => deriveAutoCal(sensor, nowMs));
-        return jsonResponse({ ok: true, sensors });
       }
 
       if (wantsConfig) {

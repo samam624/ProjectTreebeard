@@ -92,5 +92,30 @@ in it, and rule 7 holds it there.
 the dish was emptied at 10-19 00:45 (2.2 g/h), and 28 g in the last 23.4 h (1.2 g/h). At those
 rates it is back at 4605 g in 3.9 to 7.2 days.
 
+## 2026-10-22: probe 7 set back; every calibration on the fixed region
+
+The maintainer: "set calibration back to earlier on the curve before it ratcheted up, make this
+logic fix for all probe calibrations but do not reset the other ones yet".
+
+- **Probe 7: calibration reset backdated to 2026-10-11 00:00 PDT** (07:00 UTC), at their word.
+  Done 00:11 PDT by updating `reset_at` on its `msv2_sensor_calibration_reset` row; the 041/043
+  trigger cleared the stored drop. The region relearns from the 10-11 and 10-14 waterings and
+  fixes at the 10-14 one: water now 42,761, overdue below 42,545, 100 % at 43,788 (drop 0.3376).
+  That is the region in force before the 10-17 watering raised it. Whether the probe had been in
+  this Begonia continuously since before 10-11 was not stated. Undo: set `reset_at` back to
+  2026-09-17 00:51:24.42+00, `region_drop` 0.35352309743152843, `region_mode` 'share',
+  `region_set_at` 2026-10-12 02:23:23.616246+00, and clear the region_top/bottom/full/line_hour
+  columns.
+- **No other sensor was reset.** Rule 7 already covers every region-calibrated sensor; sensor 11
+  is still on its first watering and is fixed by its second.
+- **The older range is retired** (receiver-snapshot v35): every `autocal=1` request now gets the
+  region, with or without `region=1`. `autocal.ts` learned 0 % from where waterings happened and
+  moved up with each early one. No receiver build still asked for it, so nothing that runs
+  changes; it can no longer be served.
+- **Nothing else learns a range.** The receiver, its local page and the dashboard all show the
+  bounds the receiver pulls from the cloud every 10 minutes (`runCloudAutoCalPull`). The
+  receiver's own smoothing (`smoothMoistureForDisplay`) is symmetric and display-only. Cards
+  without a ready region use the range set by hand on the card.
+
 Tests: `node --test supabase/functions/receiver-snapshot/region.test.ts`, 15 pass, including the
 probe 7 record from 10-11 as a fixture (`fixtures/region-probe7-pot2-hourly.json`).

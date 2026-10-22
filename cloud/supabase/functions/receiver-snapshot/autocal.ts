@@ -1,3 +1,6 @@
+// RETIRED 2026-10-22: receiver-snapshot answers every autocal=1 request with region.ts. This
+// range learned 0 % from where the last waterings happened, so each early watering moved it up
+// (cloud/docs/WATER_NOW_RATCHET_2026-10-21.md). Kept for autocal.test.ts and the replay tools.
 export type AutoCalRise = {
   at: string;
   delta: number;
