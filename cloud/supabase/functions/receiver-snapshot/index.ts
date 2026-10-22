@@ -267,6 +267,20 @@ Deno.serve(async (request) => {
               console.error(`region anchor not stored for sensor ${region.sensorId}: ${anchorError.message}`);
             }
           }
+          // The fixed region (region.ts rule 7, migration 043), when first fixed and when lowered.
+          if (region.lineToStore !== null) {
+            const { error: lineError } = await supabase.rpc("msv2_set_sensor_region_line_if_lower", {
+              p_receiver_id: cleanReceiverId,
+              p_sensor_id: region.sensorId,
+              p_region_top: region.lineToStore.top,
+              p_region_bottom: region.lineToStore.bottom,
+              p_region_full: region.lineToStore.full,
+              p_region_line_hour: region.lineToStore.hour,
+            });
+            if (lineError) {
+              console.error(`region line not stored for sensor ${region.sensorId}: ${lineError.message}`);
+            }
+          }
           sensors.push(regionAutoCalRow(region, verbose));
         }
         return jsonResponse({ ok: true, regionApi: 1, sensors });

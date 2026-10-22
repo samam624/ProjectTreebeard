@@ -59,7 +59,7 @@ test("learns the watering line from the first two waterings and then stops", () 
   assert.equal(atEnd.drop, afterTwo.drop);
 });
 
-test("says water now before each on-time watering and not yet before the early one", () => {
+test("says water now before each on-time watering and not yet before the two early ones", () => {
   // Hours the Python reference had it on for: 21, 34, 15 and 24 (waterings 2, 4, 5 and 7).
   // Waterings 4 and 5 run longer here, 50 and 25 h: the probe was knocked on 08-28 and reads lower
   // since. That is no longer called disturbed (2026-10-18), so each later watering settles lower
@@ -79,9 +79,11 @@ test("says water now before each on-time watering and not yet before the early o
   const fertilized = saidBefore(alocasia, "2026-09-22T17:50:00Z");
   assert.equal(fertilized.said, "not yet");
 
+  // The maintainer: "the ones toward the end were probably a little early". Until 2026-10-21 the
+  // fertilized settled level raised the line to 976 and this said "water now" for 24 h; the line
+  // is no longer raised by a watering (rule 7), so it stays at 864 and the pot at 947 is not due.
   const seventh = saidBefore(alocasia, "2026-09-30T18:15:00Z");
-  assert.equal(seventh.said, "water now");
-  assert.ok(seventh.hours >= 20 && seventh.hours <= 28, `watering 7: ${seventh.hours} h`);
+  assert.equal(seventh.said, "not yet");
 });
 
 test("never says overdue on a record where every watering was on time or early", () => {
@@ -101,7 +103,7 @@ test("a knock a drying pot could also make keeps its region (the user can see a 
   const settledAgain = at(alocasia, "2026-08-31T12:00:00Z");
   assert.equal(settledAgain.ready, true);
   assert.equal(settledAgain.waterings[2].taughtDrop, null);
-  assert.match(settledAgain.waterings[2].verdict, /half of the fall taken/);
+  assert.match(settledAgain.waterings[2].verdict, /region lowered by half of the fall/);
 });
 
 // Probe 7, 2026-09-22 to 2026-10-18 (live hourly medians, stored anchor as in the cloud). Watered
@@ -113,14 +115,17 @@ const probe7 = JSON.parse(
 ) as RegionRawSensor;
 
 test("probe 7 keeps its calibration through the drydown after a watering", () => {
-  // 30 h after the 10-17 watering: settled 44,822, reading 43,675.
+  // 30 h after the 10-17 watering: settled 44,822, reading 43,675. Not disturbed, and the wetter
+  // settled level did not raise the line (rule 7).
   const nextDay = at(probe7, "2026-10-19T03:00:00Z");
+  const dayBefore = at(probe7, "2026-10-17T19:00:00Z");
   assert.equal(nextDay.disturbed, false);
   assert.equal(nextDay.ready, true);
-  assert.match(nextDay.waterings.at(-1)!.verdict, /the new scale/);
+  assert.match(nextDay.waterings.at(-1)!.verdict, /region fixed, not raised/);
+  assert.equal(nextDay.top, dayBefore.top);
+  assert.equal(nextDay.scaleSettled, 44822);
   const reading = probe7.hours.at(-1)![1];
-  const percent = 100 * (reading - nextDay.top!) / (nextDay.settled! - nextDay.top!);
-  assert.ok(percent > 5 && percent < 40, `probe 7 at ${percent.toFixed(0)} %`);
+  assert.ok(reading > nextDay.top!, `probe 7 at ${reading} against ${nextDay.top}`);
 
   // Before each of its real waterings it was above the overdue line.
   for (const iso of ["2026-10-11T22:00:00Z", "2026-10-15T06:00:00Z", "2026-10-17T20:00:00Z"]) {
@@ -131,13 +136,73 @@ test("probe 7 keeps its calibration through the drydown after a watering", () =>
   }
 });
 
-test("a fertilized watering moves the region with the scale as soon as it settles", () => {
-  // Until 2026-10-18 this was held as a shift for a day first and reached the same numbers on 09-25.
+test("a fertilized watering does not raise the region", () => {
+  // 2026-10-11 to 10-21 it was rescaled to 976 / 890 / 1381 (until 10-18 a day later, as a held
+  // shift). A wetter settled level cannot be told from water the pot kept because it was watered
+  // early, and following that is the ratchet (rule 7). The cost: water now comes later while the
+  // ions are in.
+  const before = at(alocasia, "2026-09-22T17:00:00Z");
   const settled = at(alocasia, "2026-09-23T23:00:00Z");
-  assert.match(settled.waterings[5].verdict, /the new scale/);
-  assert.ok(Math.abs(settled.top! - 976) <= 4, `rescaled top ${settled.top}`);
-  assert.ok(Math.abs(settled.bottom! - 890) <= 4, `rescaled bottom ${settled.bottom}`);
-  assert.ok(Math.abs(settled.settled! - 1381) <= 3);
+  assert.match(settled.waterings[5].verdict, /region fixed, not raised/);
+  assert.equal(settled.top, before.top);
+  assert.equal(settled.bottom, before.bottom);
+  assert.equal(settled.settled, before.settled);
+  assert.ok(Math.abs(settled.scaleSettled! - 1381) <= 3);
+});
+
+// Probe 7 in the pot it went into after the Begonia, from 2026-10-11 00:00 PDT, as after a
+// calibration reset there: its first two waterings in this pot, 10-11 and 10-14, then 10-17 and
+// 10-19 (the maintainer waters when the display says to). Each settled wetter than the last
+// (43,769, 43,788, 44,822, 46,902); until 2026-10-21 the line followed (42,623 -> 44,903) and the
+// watering interval fell from 3.3 to 2.1 days.
+const probe7Pot = JSON.parse(
+  readFileSync(new URL("./fixtures/region-probe7-pot2-hourly.json", import.meta.url), "utf8"),
+) as RegionRawSensor;
+
+test("a pot watered at the line, settling wetter each time, does not drag the line up", () => {
+  const fixedAt = at(probe7Pot, "2026-10-16T07:00:00Z");     // 10-14's watering has settled
+  assert.equal(fixedAt.fixed, true);
+  assert.equal(fixedAt.taught, 2);
+  assert.ok(Math.abs(fixedAt.top! - 42761) <= 2, `line ${fixedAt.top}`);
+  assert.deepEqual(fixedAt.lineToStore, { top: fixedAt.top, bottom: fixedAt.bottom, full: fixedAt.settled, hour: fixedAt.waterings[1].atMs / HOUR_MS });
+
+  const end = deriveRegion(probe7Pot, (probe7Pot.hours.at(-1)![0] + 1) * HOUR_MS);
+  assert.equal(end.waterings.length, 4);
+  assert.equal(end.top, fixedAt.top);
+  assert.equal(end.bottom, fixedAt.bottom);
+  assert.equal(end.settled, fixedAt.settled);
+  assert.equal(end.scaleSettled, 46902);
+  // 10-21 23:00 PDT: 44,694, where the old rule said water now (-10 %); the pot is far above the line.
+  assert.ok(probe7Pot.hours.at(-1)![1] > end.settled!);
+});
+
+test("a stored region is used as it stands; only a lower one is offered for storing", () => {
+  const stored = { top: 42761, bottom: 42545, full: 43788 };
+  const withStored = { ...probe7Pot, regionDrop: 0.3376, regionMode: "share", regionTop: stored.top, regionBottom: stored.bottom, regionFull: stored.full };
+  const early = at(withStored, "2026-10-13T07:00:00Z");     // only one watering settled in the record
+  assert.equal(early.ready, true);
+  assert.equal(early.top, stored.top);
+  assert.equal(early.lineStored, true);
+  assert.equal(early.lineToStore, null);
+  const end = deriveRegion(withStored, (probe7Pot.hours.at(-1)![0] + 1) * HOUR_MS);
+  assert.deepEqual([end.top, end.bottom, end.settled], [stored.top, stored.bottom, stored.full]);
+  assert.equal(end.lineToStore, null);
+
+  // A stored region above where a later watering settles is lowered (half the fall) and offered
+  // for storing, so the lowering outlives the 60-day window.
+  const higher = { ...withStored, regionTop: 44000, regionBottom: 43800, regionFull: 46000 };
+  const lowered = deriveRegion(higher, (probe7Pot.hours.at(-1)![0] + 1) * HOUR_MS);
+  assert.ok(lowered.top! < 44000, `top ${lowered.top}`);
+  assert.equal(lowered.settled, Math.round(46000 - REGION.LEAK * (46000 - 44822)));
+  const watered1017 = lowered.waterings[2].atMs / HOUR_MS;
+  assert.deepEqual(lowered.lineToStore, { top: lowered.top, bottom: lowered.bottom, full: lowered.settled, hour: watered1017 });
+
+  // Once that is stored with the hour of the watering that lowered it, the next pull does not
+  // apply the same watering again (it would lower the region a little more on every pull).
+  const restored = { ...higher, regionTop: lowered.top, regionBottom: lowered.bottom, regionFull: lowered.settled, regionLineHour: watered1017 };
+  const again = deriveRegion(restored, (probe7Pot.hours.at(-1)![0] + 1) * HOUR_MS);
+  assert.deepEqual([again.top, again.bottom, again.settled], [lowered.top, lowered.bottom, lowered.settled]);
+  assert.equal(again.lineToStore, null);
 });
 
 test("a stored anchor is used as it stands and nothing is offered for storing", () => {
@@ -177,7 +242,9 @@ test("MSV4: going into soil is not a watering; the first watering teaches a span
   assert.ok(Math.abs(region.bottom! - (region.settled! - REGION.BOTTOM * drop)) <= 2);
 });
 
-test("MSV4: more ions slide the region up with the settled level; the span does not stretch", () => {
+test("MSV4: a wetter settled level, ions or kept water, does not slide the region up", () => {
+  // Until 2026-10-21 the region slid up 3000 with this settled level (rule 4); now it is fixed
+  // after the second watering (rule 7).
   const dryDown = (from: number) => (k: number) => from - k * 40;
   const hours = record(
     [30, 14000], [170, dryDown(21000)],        // watering 1 at 14000, settles ~20400
@@ -187,10 +254,9 @@ test("MSV4: more ions slide the region up with the settled level; the span does 
   const before = deriveRegion({ sensorId: 10, scale: 4, hours: hours.slice(0, 360) }, (hours[359][0] + 1) * HOUR_MS);
   const after = deriveRegion({ sensorId: 10, scale: 4, hours }, endOf(hours));
   assert.equal(after.taught, 2);
-  const moved = after.settled! - before.settled!;
-  assert.ok(Math.abs(moved - 3000) < 60, `settled moved ${moved}`);
-  assert.ok(Math.abs((after.top! - before.top!) - moved) <= 2);
-  assert.ok(Math.abs((after.bottom! - before.bottom!) - moved) <= 2);
+  assert.equal(before.fixed, true);
+  assert.ok(Math.abs(after.scaleSettled! - before.settled! - 3000) < 60, `scale moved ${after.scaleSettled! - before.settled!}`);
+  assert.deepEqual([after.top, after.bottom, after.settled], [before.top, before.bottom, before.settled]);
 });
 
 test("a small watering takes only half of the fall, so the region cannot drop out from under a dry pot", () => {
@@ -204,7 +270,7 @@ test("a small watering takes only half of the fall, so the region cannot drop ou
   const small = deriveRegion({ sensorId: 10, scale: 4, hours }, endOf(hours));
   const fall = full.settled! - (17500 - 18 * 40);
   assert.ok(Math.abs((full.top! - small.top!) - REGION.LEAK * fall) <= 40, `top moved ${full.top! - small.top!} of a ${fall} fall`);
-  assert.match(small.waterings[2].verdict, /half of the fall taken/);
+  assert.match(small.waterings[2].verdict, /region lowered by half of the fall/);
 });
 
 test("nothing is ready before a watering has settled", () => {

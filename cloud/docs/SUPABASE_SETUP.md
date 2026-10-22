@@ -80,7 +80,7 @@ In Supabase Dashboard:
 37. Paste it into the SQL editor.
 38. Run it.
 39. Apply every remaining file in `supabase/migrations/` from `013` through the
-    highest-numbered migration present (currently `041`) in numerical order. In particular,
+    highest-numbered migration present (currently `043`) in numerical order. In particular,
     024-027 are one staged moisture-calibration rollout;
     030-032 add queued history/raw-battery support; 033 fixes receiver display-setting
     upserts; 034 locks down `msv2_reset_sensor_calibration` to `service_role` and
@@ -93,8 +93,10 @@ In Supabase Dashboard:
     `msv2_read_share_sensor_history`, and `msv2_read_share_sensor_history_sampled`; and 038 adds
     an optional `p_until` upper bound to the density/sampled reader pair so the History tab can
     query an arbitrary closed date range, not just "since X through whatever's newest now";
-    039 fixes concurrent receiver-config upserts; and 040 adds the receiver-derived MSV3
-    temperature-compensated log-ratio and model version to lossless history and all readers.
+    039 fixes concurrent receiver-config upserts; 040 adds the receiver-derived MSV3
+    temperature-compensated log-ratio and model version to lossless history and all readers;
+    041 adds the "water now" region (hourly medians, the stored drop); 042 stores MSV4 raw
+    sweeps; and 043 stores the fixed water-now region, which no later watering can raise.
     Do not skip directly to the latest file because the migration history and rollback trail are
     part of the deployment record.
 

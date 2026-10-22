@@ -1,5 +1,11 @@
 # Moisture percent: why the range moves, and what a fertilizing does to it (2026-10-11)
 
+> **2026-10-21: the region's "a share of each settled level" ratchets in a real pot.** The
+> closed-loop simulation below assumed every full watering returns the pot to the same level.
+> Probe 7's pot settled wetter after each early watering and its line climbed 42,623 -> 44,903
+> in ten days. The region is now fixed once taught and never raised by a watering
+> (`region.ts` rule 7). See [WATER_NOW_RATCHET_2026-10-21.md](WATER_NOW_RATCHET_2026-10-21.md).
+
 > **Changed 2026-10-18 (receiver-snapshot v33). Rules 4 and 5 below are no longer what runs.**
 > Probe 7 lost its region the day after a watering: the noon drydown fell 502 in an hour, 22 %
 > of its scale, and the 20 % rule called it disturbed. Under that, each of its waterings
