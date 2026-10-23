@@ -60,7 +60,7 @@ top.
 |---|---|---|---|
 | 1 | Suspected by eye | 0 Ω across R23 (READ_nOE to 3V3) | Bridge at U4 pins 8/9. Wicked. Caught before firmware ever drove READ_nOE low |
 | 2 | `swap a/b`: SENSE **and DRV** fell from 820 to 53 mV mean | MS_A to MS_B 0 Ω | A/B short (U3 D+/D− side). Fixed |
-| 3 | Same as 2 | 0 Ω across R15 (DRV to SENSE) | **Tombstoned part under U4**, not visible from the top. Reflowed; R15 now reads 1 kΩ |
+| 3 | Same as 2 | 0 Ω across R15 (DRV to SENSE) | **Solder short under R15** from excess paste, not visible from the top. Reflowed; R15 now reads 1 kΩ. (Corrected 2026-10-23 by the maintainer: first written here as a tombstoned part; there was no tombstone.) |
 
 How the diagnosis worked: with R15 bypassed **and** A shorted to B, U3 in A or B mode connects DRV
 straight to GND through two switch on-resistances, so the hi-drive GPIO itself sags. Either fault

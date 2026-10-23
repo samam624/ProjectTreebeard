@@ -220,7 +220,7 @@
   <aside class="watch">
     <h2>Watch for</h2>
     <ul>
-      <li><b>Board 1's three faults all came from too much paste on fine-pitch parts</b> and none showed from the top: a bridge at U4 pins 8/9, an A/B short on U3, and a tombstoned part under U4. Paste thin on U3, U4, Q1 and U, and run the per-board checks in stage 07 before powering anything.</li>
+      <li><b>Board 1's three faults all came from too much paste on fine-pitch parts</b> and none showed from the top: a bridge at U4 pins 8/9, an A/B short on U3, and a solder short under R15 from excess paste (not a tombstone; corrected 2026-10-23 by the maintainer). Paste thin on U3, U4, Q1 and U, and run the per-board checks in stage 07 before powering anything.</li>
       <li><b>The pad labelled DNP stays empty on every board.</b> It is the 100&nbsp;nF on <code>VBAT_DIV</code>; firmware reads the divider 2&nbsp;ms after switching it on and assumes no cap.</li>
       <li><b>C10 must be the C0G 10&nbsp;nF</b> (Murata, MSV3 stock). It holds the MPPT reference, so leakage becomes charging error.</li>
       <li><b>Nine MΩ values sit next to each other</b> on the BQ25504 ladders, and four boards means four of each. Pull them in labelled strips and keep them apart.</li>
@@ -296,7 +296,7 @@
     { title: "Big parts first: MCU, ICs, inductor, then crystal and LED", rows: [
       ["U1", "U1", "E73-2G4M08S1C", "Ebyte · nRF52840, 18×13 mm", "MCU + BLE radio", "Ebyte order", 1, "S1C with the ceramic antenna. Not the S1CX (IPEX connector).", "", "Antenna end at the board edge; pin 1 to the mark."],
       ["U", "U", "BQ25504RGTR", "TI · VQFN-16 3×3, exposed pad", "Solar harvester", "LCSC 09-19, or MSV3's spare RGTT", 1, "Same die as the RGTT.", "fine pitch", "Pin-1 dot to the mark; exposed pad centred. Thin paste."],
-      ["U3U4", "U3 U4", "FSUSB42UMX", "onsemi · UMLP-10, 1.4×1.8 mm", "U3 A/B swap · U4 chopper + drive monitor", "LCSC 09-19 (12 for 5 boards)", 2, "Spares from the same bag cover rework.", "fine pitch", "Pin 1 to the mark on both. Thin paste: board 1's bridge and tombstone were both at U4."],
+      ["U3U4", "U3 U4", "FSUSB42UMX", "onsemi · UMLP-10, 1.4×1.8 mm", "U3 A/B swap · U4 chopper + drive monitor", "LCSC 09-19 (12 for 5 boards)", 2, "Spares from the same bag cover rework.", "fine pitch", "Pin 1 to the mark on both. Thin paste: board 1's bridge was at U4 and its 0 Ω short was under R15 beside it."],
       ["U2", "U2", "TPS7A0233PDBVR", "TI · SOT-23-5", "3.3 V LDO, enabled by VBAT_OK", "LCSC 09-19", 1, "", "", "Three-lead side on the three pads."],
       ["Q1", "Q1", "NTZD3155CT2G", "onsemi · SOT-563, N+P dual", "Battery-divider high-side switch", "LCSC 09-19", 1, "Pin 1 is S1, the N-channel source.", "fine pitch", "Pin 1 to the mark. It fits backwards just as easily."],
       ["L1", "L1", "LPS4018-223MRC", "Coilcraft · 22 µH, 4×4 mm", "Harvester boost inductor", "MSV3 stock", 1, "", "", "Not polarized."],
@@ -363,7 +363,7 @@
     ]},
     { id: "inspect", scope: "batch", n: "05", title: "Inspect and clean", items: [
       { id: "in-bridges", t: "Under magnification, every board: no bridges on U3, U4, Q1 or U; no tombstoned 0402 or 0805 parts; every E73 pad wetted." },
-      { id: "in-u4", t: "Look again at U4 and its neighbours R23 and R15, on all four.", d: "Board 1's bridge at U4 pins 8/9 and a tombstoned part under U4 were the two faults the eye caught late or not at all." },
+      { id: "in-u4", t: "Look again at U4 and its neighbours R23 and R15, on all four.", d: "Board 1's bridge at U4 pins 8/9 and a solder short under R15 were the two faults the eye caught late or not at all." },
       { id: "in-clean", t: "Wash the flux off around U and the MΩ ladders with IPA, and let it dry completely.", d: "Residue across a 5 MΩ resistor is a parallel leak that moves the charge thresholds." },
       { id: "in-dnp", t: "DNP pad empty and Y1 seated flat, on every board." }
     ]},
@@ -378,7 +378,7 @@
       { id: "r-vbat", t: "VBAT+ to VBAT−.", m: [["a", "R", "Ω"]], check: notShort },
       { id: "r-sp", t: "SP+ to SP−.", m: [["a", "R", "Ω"]], check: notShort },
       { id: "r-ab", t: "MS_A to MS_B. Must be open.", d: "On board 1 a short here, with R15 bypassed, pulled the drive pin down through two switch resistances.", m: [["a", "R", "Ω"]], check: notShort },
-      { id: "r-r15", t: "Across R15, DRV to SENSE: about 1 kΩ.", d: "A tombstoned part under U4 on board 1 read 0 Ω here.", m: [["a", "R", "Ω"]], check: range(800, 1100, "1 kΩ", "low: find the bridge", "high: part not seated") },
+      { id: "r-r15", t: "Across R15, DRV to SENSE: about 1 kΩ.", d: "Board 1 read 0 Ω here: a solder short under R15 from excess paste.", m: [["a", "R", "Ω"]], check: range(800, 1100, "1 kΩ", "low: find the bridge", "high: part not seated") },
       { id: "r-r23", t: "Across R23, READ_nOE to 3V3: not a short.", d: "A bridge at U4 pins 8/9 on board 1 read 0 Ω here.", m: [["a", "R", "Ω"]], check: notShort }
     ]},
     { id: "power", scope: "board", n: "08", title: "First power", intro: "Cell on VBAT, bench supply on SP. The battery and panel solder to bare pads; there is no connector on this board.", items: [
