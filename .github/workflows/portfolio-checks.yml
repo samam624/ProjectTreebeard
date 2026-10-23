@@ -1,0 +1,26 @@
+name: Portfolio and software checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portfolio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check public claims and evidence paths
+        run: python scripts/check_portfolio_claims.py
+      - name: Check dashboard JavaScript syntax
+        run: node --check cloud/web/plant-dashboard/assets/app.v18.js
+      - name: Verify moisture-alert parity checks
+        run: node DisplayCenter/scripts/verify_moisture_alert_thresholds.mjs

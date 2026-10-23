@@ -1,0 +1,26 @@
+# Keep source and documentation hashes stable across Windows and Linux clones.
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.ino text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Fabrication, firmware and captured-data artifacts are binary.
+*.3mf binary
+*.bin binary
+*.gif binary
+*.hex binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.png binary
+*.step binary
+*.stp binary
+*.wav binary
+*.zip binary

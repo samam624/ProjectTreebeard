@@ -10,9 +10,11 @@ const QR_DECODER_URL = "assets/jsQR-1.4.0.min.js";
 // kind of hash/file drift that broke the decoder once before (2026-08-11).
 const QR_DECODER_INTEGRITY = "sha384-hStSInNIZ8ljtOVrmrgf7zdHMapaLBWoSnPTtF0nzsybp4+LuhDz6sHuEVpWIX8o";
 const params = new URLSearchParams(window.location.search);
+const demoMode = ["1", "true", "yes"].includes((params.get("demo") || "").toLowerCase());
 const state = {
   shareToken: loadShareToken(),
   snapshots: [],
+  demoMode,
   scanStream: null,
   scanFrame: 0,
   scanSession: 0,
@@ -20,6 +22,33 @@ const state = {
   qrDecoderReady: false,
   qrDecoderPromise: null,
 };
+
+function demoSnapshots() {
+  return [{
+    household_name: "Illustrative demo",
+    receiver_id: "DEMO-RECEIVER",
+    config_version: 1,
+    received_at: new Date().toISOString(),
+    snapshot: {
+      config: {
+        title: "Treebeard Dashboard Demo",
+        version: 1,
+        cards: [
+          { sensor: 10, plant: "Alocasia", art: "color_round_pot", moisture: { auto: true } },
+          { sensor: 7, plant: "Monstera", art: "monstera", moisture: { auto: true } },
+          { sensor: 2, plant: "Basil", art: "color_grass_planter", moisture: { auto: true } },
+          { sensor: 4, plant: "Fern", art: "color_hanging_clump", moisture: { auto: true } },
+        ],
+      },
+      plants: [
+        { sensor: 10, moisture: 158, batteryPercent: 82, rssi: -58, ageMs: 14000, received: 1482, missedTotal: 7, autoCal: { ready: true, region: true, dryBound: 105, wetBound: 180 } },
+        { sensor: 7, moisture: 118, batteryPercent: 64, rssi: -66, ageMs: 33000, received: 1327, missedTotal: 18, autoCal: { ready: true, region: true, dryBound: 120, wetBound: 178 } },
+        { sensor: 2, moisture: 146, batteryPercent: 47, rssi: -72, ageMs: 49000, received: 1194, missedTotal: 29, autoCal: { ready: true, region: false, dryBound: 100, wetBound: 170 } },
+        { sensor: 4, moisture: 91, batteryPercent: 16, rssi: -76, ageMs: 67000, received: 1068, missedTotal: 41, autoCal: { ready: true, region: true, dryBound: 120, wetBound: 175 } },
+      ],
+    },
+  }];
+}
 
 const byId = (id) => document.getElementById(id);
 const setNotice = (text, type = "") => {
@@ -118,11 +147,15 @@ function shouldAutoConnect() {
 }
 
 function renderLinkState() {
-  const connected = Boolean(state.shareToken);
-  byId("linkPill").textContent = connected ? "Household connected" : "No household link";
-  byId("forgetButton").disabled = !state.shareToken;
+  const connected = state.demoMode || Boolean(state.shareToken);
+  byId("linkPill").textContent = state.demoMode ? "Interactive demo" : connected ? "Household connected" : "No household link";
+  byId("forgetButton").disabled = !state.demoMode && !state.shareToken;
+  byId("forgetButton").textContent = state.demoMode ? "Exit Demo" : "Forget";
+  byId("refreshButton").hidden = state.demoMode;
   byId("connectPanel").hidden = connected;
+  byId("demoNotice").hidden = !state.demoMode;
   document.body.classList.toggle("connected", connected);
+  document.body.classList.toggle("demo", state.demoMode);
 }
 
 async function connectHousehold() {
@@ -148,6 +181,11 @@ async function connectHousehold() {
 
 async function loadSnapshots() {
   renderLinkState();
+  if (state.demoMode) {
+    state.snapshots = demoSnapshots();
+    renderDashboard();
+    return;
+  }
   if (!state.shareToken) {
     byId("summary").innerHTML = "";
     byId("receivers").className = "empty";
@@ -172,6 +210,10 @@ async function loadSnapshots() {
 }
 
 async function forgetHousehold() {
+  if (state.demoMode) {
+    window.location.assign(window.location.pathname);
+    return;
+  }
   const token = state.shareToken;
   state.snapshots = [];
   clearShareToken();

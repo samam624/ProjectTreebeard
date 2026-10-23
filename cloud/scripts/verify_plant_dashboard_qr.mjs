@@ -378,6 +378,20 @@ async function main() {
     );
     assert.equal(await evaluate("document.getElementById('scanPhotoInput').value"), "", "Photo input should reset after use.");
 
+    await command("Page.navigate", { url: `${pageUrl}?demo=1` });
+    await waitFor(
+      "document.readyState === 'complete' && document.body.classList.contains('demo') && document.querySelectorAll('.plant').length === 4",
+      "interactive portfolio demo",
+      15000,
+    );
+    assert.equal(await evaluate("document.getElementById('connectPanel').hidden"), true, "Demo must not ask for pairing credentials.");
+    assert.equal(await evaluate("document.getElementById('demoNotice').hidden"), false, "Demo must disclose that its readings are synthetic.");
+    assert.equal(await evaluate("document.getElementById('receivers').textContent.includes('DEMO-RECEIVER')"), true, "Demo receiver should render.");
+    console.log("CHECK read-only portfolio demo rendered synthetic data without pairing");
+
+    await command("Page.navigate", { url: pageUrl });
+    await waitFor("document.readyState === 'complete' && Boolean(document.getElementById('scanPhotoInput'))", "dashboard return from demo", 15000);
+
     await command("Network.enable");
     await command("Network.emulateNetworkConditions", {
       offline: true,
@@ -411,6 +425,7 @@ async function main() {
     console.log("PASS denied camera permission produced actionable Safari guidance");
     console.log("PASS late camera permission resolution could not leak a MediaStream");
     console.log("PASS captured-photo fallback decoded an MSV2 pairing QR locally");
+    console.log("PASS read-only portfolio demo rendered four clearly labeled synthetic plant states");
     console.log("PASS dashboard and photo QR fallback worked fully offline after precaching");
   } finally {
     if (cdp) {
