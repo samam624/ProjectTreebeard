@@ -4,7 +4,22 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-14 10:47 PDT, the display receiver was reflashed on `COM16` with the normal
+As of 2026-10-25 16:22 PDT, the receiver on `COM16` (chip MAC `28:84:85:46:70:D8`) runs
+`Treebeard runtime build 2026-10-15 msv4-raw-sweep-v3`, rebuilt from `main` and reflashed with
+`arduino_display.ps1 -Action upload`. Another agent session had flashed a microphone-array test
+sketch onto it; that sketch carried an 8 MB partition table (app0 0x10000-0x340000, spiffs at
+0x670000). The receiver's 4 MB `huge_app` LittleFS at 0x310000 was read back before the restore
+and was intact (superblock, receiver ID `MSV2088A3104A7AC`, `/wifi.json`, `/cloud.json`,
+`/ui.json`, history outbox), so no setup was needed. After the flash: hash verified, upload
+`HTTP 200` with nothing queued, sensors 4, 7, 10 and 11 received, and `/device` reporting the
+build above with the same receiver ID. Sensor 10's cloud history has one gap, 16:13-16:23 PDT.
+
+**Before flashing any ESP32 here, check which board is on the port.** The mic-array board also
+enumerates as an `ESP32 Family Device` (it was on `COM3`). Its serial output is `mic0..mic7` level
+lines, not `[Treebeard ...]` lines.
+
+Before that, the last flash recorded here was on 2026-10-15 at 20:57 PDT (`msv4-raw-sweep-v3`, see
+`MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md`). As of 2026-10-14 10:47 PDT, the display receiver was reflashed on `COM16` with the normal
 production build:
 
 ```text
