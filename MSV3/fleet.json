@@ -1702,8 +1702,8 @@
       "Anything the maintainer has not stated is written NOT STATED, never filled in from a dated doc.",
       "MSV4/scripts/msv4_ble_ota.py --board N reads the address, bootloader, key fingerprint and installed version from here. Update installed_application_version and installed_build after every proven transfer."
     ],
-    "verified": "2026-10-14",
-    "source": "maintainer stated 2026-10-14 ~11:32 PDT: 'Ok i finnaly have the next probe p11 its ready for the water testing, this is the 3.3k res probe' (p11 read as sensor 11, this board; the 3.3k R15 matches its record). Before that: maintainer stated 2026-10-13 ~22:05 PDT that a new MSV4 board (board 2 here) is on the desk, tested for moisture sensing, working after U3 and U4 were reflowed twice. Before that: maintainer stated 2026-10-08 ~13:20 PDT that after the overnight LED burn the sun fully hit board 1's panel that morning and the battery came straight back up (see board 1 physical_state for what that does and does not cover). Before that, 2026-10-07 ~12:35 PDT: board 1's panel is in direct sunlight through a window and reading 2.11 V. Before that, 2026-10-06 ~14:57 PDT: 'i have the MSV4 at home now after testing osc readings in the lab, all checked out'; starting an outdoor solar panel test to see whether it can charge the battery over time and whether the BQ chip is wired correctly",
+    "verified": "2026-10-26",
+    "source": "maintainer stated 2026-10-26 ~13:24 PDT: 'Ok board 4 is up do a check' (after running the same SWD bring-up flash on the COM4 flasher; the maintainer named it board 4). Before that: maintainer stated 2026-10-26 ~13:10 PDT, after running the SWD bring-up flash (--msv3 1.0.3 --app v262152) on the COM4 flasher: 'Ok i ran it its blinking now, lets do a bringup test' (board 3 here). Before that: maintainer stated 2026-10-14 ~11:32 PDT: 'Ok i finnaly have the next probe p11 its ready for the water testing, this is the 3.3k res probe' (p11 read as sensor 11, this board; the 3.3k R15 matches its record). Before that: maintainer stated 2026-10-13 ~22:05 PDT that a new MSV4 board (board 2 here) is on the desk, tested for moisture sensing, working after U3 and U4 were reflowed twice. Before that: maintainer stated 2026-10-08 ~13:20 PDT that after the overnight LED burn the sun fully hit board 1's panel that morning and the battery came straight back up (see board 1 physical_state for what that does and does not cover). Before that, 2026-10-07 ~12:35 PDT: board 1's panel is in direct sunlight through a window and reading 2.11 V. Before that, 2026-10-06 ~14:57 PDT: 'i have the MSV4 at home now after testing osc readings in the lab, all checked out'; starting an outdoor solar panel test to see whether it can charge the battery over time and whether the BQ chip is wired correctly",
     "inventory": {
       "verified": "2026-10-11",
       "source": "maintainer stated 2026-10-11: 'i have stock for 5 currently i want to make 5 more as i have 5 more PCBs 10 in total'",
@@ -1711,16 +1711,35 @@
       "parts_stock": "enough for 5 MSV4 boards currently (maintainer wording; whether this count includes already-built board 1 was not stated)",
       "planned_additional_builds": 5,
       "batch_in_progress": {
-        "verified": "2026-10-13",
-        "source": "maintainer stated 2026-10-13 during the boards 2-5 batch build",
-        "assembled_unflashed": [],
+        "verified": "2026-10-26",
+        "source": "maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'. Before that: maintainer stated 2026-10-13 during the boards 2-5 batch build",
+        "assembled_unflashed": [
+          {
+            "label": "board 5 (the maintainer's number)",
+            "state": "assembled, NOT flashed, NOT powered for bring-up",
+            "fault": "3V3 shorted to GND, found with the maintainer's multimeter; the maintainer says 'i think', so the short is suspected, not confirmed. Resistance reading NOT STATED. Board 2's record notes 500 and 600 ohm 3V3-GND readings on two unidentified batch boards; whether board 5 is one of them NOT STATED.",
+            "planned_fix": "'reflow 3', read as U3 (FSUSB42UMX electrode swap; its VCC pin 9 is on 3V3). Reading as U3 is Claude's; the maintainer did not spell it out.",
+            "source": "maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'",
+            "do_not": "do not power or SWD-flash it until the 3V3-GND short is cleared on the meter"
+          }
+        ],
         "note": "MSV4-BU-6528 (the first batch board finished) moved to msv4_boards.boards as board 2 on 2026-10-13 ~22:40 PDT, with every fact this entry held. Add further batch boards here until they are flashed and identified.",
         "photo_2026_10_18": {
           "source": "maintainer sent Downloads/IMG_6649.HEIC on 2026-10-18 ~22:50 PDT with the words '4 MSV4 assembled boards'",
           "stated": "four MSV4 boards, assembled",
           "not_stated": "which board numbers they are (whether board 2, now in its own pot as sensor 11, is among them), whether any are flashed, and when the photo was taken",
           "repo_copy": "MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg (metadata stripped)"
-        }
+        },
+        "notes_2026_10_26": [
+          "maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon': board 3 (MSV4-BU-5667) is one of the two; the other is NOT IDENTIFIED. Both lack R17, the tip NTC."
+        ],
+        "open_work_2026_10_26": [
+          "board 3 (MSV4-BU-5667): reflow U3 (A open, B tied to ground); fit R17 NTC; then rerun swap a/b/open + iq 16 and temp",
+          "board 4 (MSV4-BU-D7D2): reflow U3 (A open); confirm whether R17 is fitted (temp failed); rerun swap a/b/open + iq 16",
+          "board 5: clear the 3V3-GND short (planned: reflow U3), meter it, then SWD flash with --msv3 1.0.3 --app v262152 bring-up hex",
+          "which second batch board lacks R17 (maintainer: 'these 2 boards'): board 3 is one; the other NOT STATED (board 4 likely, not confirmed)",
+          "after all pass: spectrum ab, MSV4 Lab hand test, sensor IDs, signed production OTA (msv4_ble_ota.py)"
+        ]
       }
     },
     "boards": [
@@ -1856,6 +1875,96 @@
           "maintainer_reading": "maintainer stated 2026-10-15 ~18:51 PDT: 'ALl the one way stuff is bubbles on the probe im pretty sure' -- the maintainer's attribution of the one-way changes (the ~+5 % mask C during the heated minutes, the 15:16 glass-move step, the salt-step share) to bubbles on the blade. Not measured; bubbles were seen on the blade at the ~17:08 mixing (maintainer).",
           "next": "maintainer 2026-10-15 ~20:00 PDT: probe 11 to send its raw sweeps to Supabase so electrode models can be fitted to a soil record; transport chosen by the maintainer: the probe's scan response (8 points, 12+12 bit, tagged with the wake counter) with the receiver switched to active scanning. Probe 11 sits in its own unweighed pot.",
           "raw_sweep_pipeline": "DEPLOYED 2026-10-15 ~20:30-20:33 PDT at the maintainer's word ('Do it'): migration 042 msv4_raw_sweeps pushed, receiver-snapshot deployed with raw-sweeps.ts, receiver flashed on COM16 with build 'Treebeard runtime build 2026-10-15 msv4-raw-sweep' (ACTIVE scanning). After the flash sensors 1, 4, 7, 10 and 11 all had history rows by 20:36. Record: MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md 'Raw sweeps to the cloud'. REGRESSION AND FIX: on v1/v2 the active scan cost sensor 1 (MSV2 outdoors, -91 dBm) more than half its packets, because NimBLE's BLEScan::stop() (every cloud upload) drops reports held for a scan response. Receiver build 'Treebeard runtime build 2026-10-15 msv4-raw-sweep-v3' (flashed 20:57, BleScanFlush.h) delivers stored reports before clearing. MEASURED 20:59-21:27: sensor 1 at 0.75/min (0.77 before the switch), sensors 4/7/10/11 at 0.82/0.82/0.96/0.96 per minute; sweeps stored at wakes 21, 31, 51, 61."
+        }
+      },
+      {
+        "board": 3,
+        "identity_basis": "OBSERVED 2026-10-26 ~13:11 PDT: a BLE scan from the maintainer's computer (msv4_ble_console.py --list) found exactly one MSV4 bring-up board advertising, MSV4-BU-5667 at E7:5F:AD:54:56:67, right after the maintainer said the board just flashed over SWD was blinking. Board 1 is F6:26:7D:76:AD:95 and board 2 is CB:23:3B:C2:65:28, so this is neither. Numbered 3 as the next board reported working (my numbering; the maintainer has not given it a number). Whether it is one of the four boards in the 2026-10-18 photo NOT STATED.",
+        "sensor_id": null,
+        "sensor_id_source": "NOT ASSIGNED: still on the bring-up image. IDs 1-11 are taken; the receiver accepts 1-16.",
+        "ble_name": "MSV4-BU-5667",
+        "application_address": "E7:5F:AD:54:56:67",
+        "physical_state": {
+          "verified": "2026-10-26",
+          "source": "maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'. Before that: maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon' (read as board 3 and one other batch board, which one NOT STATED). Before that: maintainer stated 2026-10-26 ~13:10 PDT: 'Ok i ran it its blinking now, lets do a bringup test' (after holding pogo pins for the SWD flash)",
+          "location": "NOT STATED (at the maintainer's computer for the SWD flash, by inference from the hand-held pins)",
+          "pot": "NOT STATED",
+          "power": "NOT STATED (powered from something, since it flashed and is blinking; cell, bench supply on SP, or both, not said)",
+          "panel": "NOT STATED",
+          "housing": "NOT STATED",
+          "rework": "NOT STATED",
+          "mods": [
+            {
+              "part": "R15",
+              "value": "1 kohm, the netlist value (no mod; every MSV4 sketch's SPEC_RS = 1000.0 applies as built)",
+              "source": "maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'; tolerance and exact measured value not stated. Agrees with the 2026-10-26 open-electrode response, which matches board 1."
+            }
+          ],
+          "U2": "NOT STATED (batch boards had an AP2112K placed in error on the TPS7A0233 footprint; whether swapped on this board not said)",
+          "maintainer_reported_at_flash": "LED blinking (2026-10-26 ~13:10 PDT)",
+          "ntc": "R17 tip NTC NOT POPULATED (maintainer 2026-10-26 ~13:20 PDT; to be fitted 'soon'). Consistent with the bring-up console: `temp` failed three times on 2026-10-26, the divider ratio outside 0.001-0.999. Until it is fitted, every temperature-corrected reading from this board is invalid."
+        },
+        "recovery_address": "E7:5F:AD:54:56:68",
+        "recovery_address_source": "DERIVED, not observed: the pinned bootloader adds one to the lowest address byte when advertising openly (same rule as board 2's recovery_address_source).",
+        "bootloader": "msv3-1.0.3",
+        "bootloader_source": "flashed over SWD 2026-10-26 ~13:05 PDT on the COM4 ESP32-S3 flasher (reflashed from main that session) with 'python scripts\\swd_flash_hex.py --port COM4 --msv3 1.0.3 --app MSV4\\.arduino-build\\msv4-out\\MSV4_Probe_Bringup_BLE-v262152-live-2026-10-11.hex' (app hex sha256 e876a85d...58f0c9, checked before the flash). The maintainer ran it; the script's output was not reported. Not re-read since.",
+        "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+        "bootloader_key_source": "the msv3-1.0.3 release's key, as boards 1 and 2",
+        "device_type": "0x3356",
+        "installed_application_version": 262152,
+        "installed_build": "MSV4-BUILD:bringup-live-2026-10-11",
+        "installed_verification": "OBSERVED 2026-10-26 ~13:12 PDT: bring-up console `info` over BLE read 'MSV4-BUILD:bringup-live-2026-10-11 app_version=262152', uptime 125 s, reset reason 0x1, boot count 1. SWD-written, so the anti-rollback floor is NOT seeded; a signed OTA install is still needed before service.",
+        "bringup_console_2026-10-26": {
+          "measured": "OBSERVED 2026-10-26 13:12-13:20 PDT over the BLE console. Blade condition NOT STATED. Full record: MSV4/docs/MSV4_BOARD3_BRINGUP_2026-10-26.md",
+          "passed": "LFCLK XTAL running (start wait 356 ms); VDD 3321 mV; VBAT 3999 mV (not checked against a meter); drive 16 = 1 MHz hi-drive under GPIOTE; pins after safe all low/released; spectrum open Cp 7.07 pF +/-11 % through the 1 kohm fit",
+          "failed": [
+            "temp: ERR three times; explained by R17 (NTC) not fitted",
+            "U3 electrode swap: swap a reads the same as swap open to 0.1 % (786 mV); swap b pulls SENSE to 3.5 mV (0.45 %) and loads DRV by 4 %, about 5 ohm to ground through R15"
+          ],
+          "inferred": "MS_A not connected and MS_B tied to ground, at U3 (leadless FSUSB42UMX) or on the blade. Not checked on the board. (R15 = 1 kohm, inferred here first, is now maintainer-stated.)",
+          "next": "reflow U3, rerun swap a/b/open + iq 16; fit R17 and rerun temp"
+        }
+      },
+      {
+        "board": 4,
+        "identity_basis": "OBSERVED 2026-10-26 13:24 PDT: a BLE scan (msv4_ble_console.py --list) found two bring-up boards, MSV4-BU-5667 (board 3) and MSV4-BU-D7D2 at C1:63:B3:84:D7:D2, right after the maintainer said board 4 was up. Board 1 is F6:26:7D:76:AD:95 and board 2 CB:23:3B:C2:65:28, so D7D2 is the new one. Numbered 4 by the maintainer.",
+        "sensor_id": null,
+        "sensor_id_source": "NOT ASSIGNED: still on the bring-up image. IDs 1-11 are taken; the receiver accepts 1-16.",
+        "ble_name": "MSV4-BU-D7D2",
+        "application_address": "C1:63:B3:84:D7:D2",
+        "physical_state": {
+          "verified": "2026-10-26",
+          "source": "maintainer stated 2026-10-26 ~13:24 PDT: 'Ok board 4 is up do a check'. Before that: maintainer stated ~13:21 PDT: 'Ok ima flash another one and see if it has similar issues'",
+          "location": "NOT STATED (at the maintainer's computer for the SWD flash, by inference from the hand-held pins)",
+          "pot": "NOT STATED",
+          "power": "NOT STATED",
+          "panel": "NOT STATED",
+          "housing": "NOT STATED",
+          "rework": "NOT STATED",
+          "mods": "NOT STATED. R15 value NOT STATED (netlist 1 kohm).",
+          "U2": "NOT STATED",
+          "ntc": "NOT STATED whether R17 is fitted. The maintainer said two batch boards lack it (board 3 is one); whether board 4 is the other NOT STATED.",
+          "maintainer_reported_at_flash": "'board 4 is up' (2026-10-26 ~13:24 PDT)"
+        },
+        "recovery_address": "C1:63:B3:84:D7:D3",
+        "recovery_address_source": "DERIVED, not observed: lowest address byte + 1 (same rule as boards 2 and 3).",
+        "bootloader": "msv3-1.0.3",
+        "bootloader_source": "flashed over SWD 2026-10-26 ~13:22 PDT on the COM4 ESP32-S3 flasher with the same command as board 3 (--msv3 1.0.3 --app v262152 bring-up hex, sha256 e876a85d...58f0c9). The maintainer ran it; the script's output was not reported. Not re-read since.",
+        "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+        "bootloader_key_source": "the msv3-1.0.3 release's key, as boards 1-3",
+        "device_type": "0x3356",
+        "installed_application_version": 262152,
+        "installed_build": "MSV4-BUILD:bringup-live-2026-10-11",
+        "installed_verification": "OBSERVED 2026-10-26 ~13:25 PDT: bring-up console `info` over BLE read 'MSV4-BUILD:bringup-live-2026-10-11 app_version=262152', uptime 62 s, reset reason 0x1, boot count 1. SWD-written, so the anti-rollback floor is NOT seeded; a signed OTA install is still needed before service.",
+        "bringup_console_2026-10-26": {
+          "measured": "OBSERVED 2026-10-26 13:25-13:29 PDT over the BLE console. Blade condition NOT STATED. Full record: MSV4/docs/MSV4_BOARD4_BRINGUP_2026-10-26.md",
+          "passed": "LFCLK XTAL running (start wait 400 ms, just above boards 1-2's 250-380 ms); VDD 3293 mV; VBAT 4029 mV (not checked against a meter); drive 16 = 1 MHz hi-drive under GPIOTE; pins after safe all low/released; swap b in air 757.2 mV at -177.9 deg, 2.9 % below open (board 1's A in air: 3.4 %); spectrum open Cp 7.11 pF +/-11.2 % through the 1 kohm fit",
+          "failed": [
+            "temp: ERR (R17 fitted or not NOT STATED for this board)",
+            "U3 electrode swap: swap a reads the same as swap open to 0.1 % (779.2-779.7 vs 780.1 mV); electrode A adds nothing"
+          ],
+          "inferred": "MS_A not connected to SENSE, at U3 (leadless FSUSB42UMX) or on the MS_A trace. Same A symptom as board 3; board 3 also had B tied to ground, board 4's B is normal. Not checked on the board.",
+          "next": "reflow U3, rerun swap a/b/open + iq 16"
         }
       }
     ]
