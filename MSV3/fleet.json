@@ -279,6 +279,8 @@
         "power": "battery",
         "electrode_in_soil": "MSV2 interdigitated",
         "readout": "MSV2 RC",
+        "drive": "ALTERNATING (the 'swapping' probe): reworked to two independently driven plates (PLATE_A = IO0/D0, PLATE_B = IO2/D2), each with its own 10k pulldown; countOscCycles() swaps which plate drives every cycle so the net DC field averages toward zero. In July the sketch called this unit the Scindapsus probe.",
+        "drive_source": "firmware source, not re-verified on hardware since: the SENSOR_ID comment and the PLATE_A/PLATE_B topology comment in MSV2/arduino/MSV2_Moisture_BLE_Sleep/MSV2_Moisture_BLE_Sleep.ino (2026-07-27/28), and the header of MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino (2026-07-31). Recorded here 2026-10-27 after the maintainer asked which MSV2 probe had the swapping electrodes.",
         "location_verified": "2026-09-30",
         "location_source": "maintainer 2026-09-30: sensor 1 is the ONLY sensor staying in soil when the indoor tests are torn down; maintainer adds it 'isn't really even working anyways'"
       },
@@ -290,6 +292,8 @@
         "power": "NOT STATED since removal 2026-09-30 (was: battery)",
         "electrode_in_soil": "NONE -- removed from soil 2026-09-30",
         "readout": "MSV2 RC",
+        "drive": "STATIC: the original single-plate/100k unit; plate A driven and read, the second comb hard-wired to GND, so every cycle pushes the field the same way. Must NOT be flashed with the sensor-1 (dual-plate) sketch.",
+        "drive_source": "firmware source, not re-verified on hardware since: the SENSOR_ID comment and the PLATE_A/PLATE_B topology comment in MSV2/arduino/MSV2_Moisture_BLE_Sleep/MSV2_Moisture_BLE_Sleep.ino (2026-07-27/28), and the header of MSV2/arduino/MSV2_Moisture_BLE_Sleep_Alocasia/MSV2_Moisture_BLE_Sleep_Alocasia.ino (2026-07-31). Recorded here 2026-10-27 after the maintainer asked which MSV2 probe had the swapping electrodes.",
         "notes": "quantization-limited: ~3 LSB of daily swing, cannot support a thermal coefficient",
         "last_soil_installation": {
           "location": "shared Alocasia pot",
