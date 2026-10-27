@@ -1,0 +1,53 @@
+1604 sweeps 10-15 20:36 to 10-27 12:56; 1678 measured wakes in the history, 75 of them with no sweep stored (95.6 % stored; 1683 expected from the wake span)
+longest run of lost sweeps: 12, 10-20 09:36-11:26
+cloud refit lumped R vs the probe's Rsoil: median +0.000 %, worst 0.54 %
+
+median residual (1e-4 of drive) and parameters by phase and by the probe's Rsoil band
+=== before 10-18: 384 sweeps
+   10000-14000    16 lumped= 146 cpe=  63 two-br=  98 tline= 181 lumped= 291  best=cpe        lumpC=33.17 Cd=21.4 cpeC=16.35 n=0.6129 tlR=7652 tlC=30.4
+   14000-16000    82 lumped= 140 cpe=  60 two-br=  95 tline= 175 lumped= 282  best=cpe        lumpC=30.88 Cd=20.8 cpeC=14.56 n=0.5979 tlR=8801 tlC=28.64
+   16000-18000   285 lumped= 137 cpe=  61 two-br=  94 tline= 170 lumped= 269  best=cpe        lumpC=28.66 Cd=20.32 cpeC=13.41 n=0.5954 tlR=9773 tlC=26.67
+=== after 10-18: 1217 sweeps
+       0-1800     93 lumped= 155 cpe= 120 two-br=  97 tline=  88 lumped= 379  best=tline      lumpC=303.2 Cd=52.94 cpeC=151 n=0.6364 tlR=1443 tlC=326.2
+    1800-2500    117 lumped= 167 cpe= 125 two-br= 106 tline=  90 lumped= 403  best=tline      lumpC=285.5 Cd=47.96 cpeC=130.6 n=0.6014 tlR=1705 tlC=311.1
+    2500-3500    109 lumped= 185 cpe= 118 two-br= 121 tline=  94 lumped= 458  best=tline      lumpC=221.1 Cd=37.63 cpeC=81.26 n=0.5174 tlR=2736 tlC=256.4
+    3500-5000    105 lumped= 191 cpe= 104 two-br= 127 tline=  97 lumped= 484  best=tline      lumpC=165.9 Cd=31.21 cpeC=48.35 n=0.4427 tlR=4424 tlC=205.1
+    5000-7000    142 lumped= 193 cpe=  83 two-br= 119 tline=  91 lumped= 472  best=cpe        lumpC=122.1 Cd=26.64 cpeC=33.16 n=0.4386 tlR=6982 tlC=158.6
+    7000-10000   269 lumped= 183 cpe=  79 two-br= 111 tline=  90 lumped= 446  best=cpe        lumpC=100.6 Cd=24.23 cpeC=26.3 n=0.4377 tlR=9035 tlC=127.5
+   10000-14000   183 lumped= 164 cpe=  79 two-br= 101 tline=  87 lumped= 389  best=cpe        lumpC=71.84 Cd=21.43 cpeC=17.93 n=0.4445 tlR=1.37e+04 tlC=90.14
+   14000-16000   110 lumped= 154 cpe=  78 two-br=  97 tline=  80 lumped= 351  best=cpe        lumpC=57.85 Cd=20.31 cpeC=14.76 n=0.4585 tlR=1.701e+04 tlC=73.25
+   16000-18000    41 lumped= 148 cpe=  75 two-br=  94 tline=  73 lumped= 331  best=tline      lumpC=50.69 Cd=19.86 cpeC=13.49 n=0.4712 tlR=1.917e+04 tlC=66.48
+   18000-25000    48 lumped= 142 cpe=  72 two-br=  89 tline=  69 lumped= 302  best=tline      lumpC=43.54 Cd=19.18 cpeC=11.84 n=0.4769 tlR=2.218e+04 tlC=59.5
+=== after 10-27: 3 sweeps
+    1800-2500      3 lumped= 164 cpe= 127 two-br= 108 tline=  88 lumped= 421  best=tline      lumpC=297.1 Cd=45.72 cpeC=119.2 n=0.5499 tlR=1908 tlC=332.3
+
+cycle 10-18 15:01 to 10-27 12:31: 1208 sweeps, tip 18.25-26.75 C, trend knots every 12 h; wet = first 6 h, dry = last 12 h
+  reading                         wet        dry      span           tip /C  scatter span/scatter span per C
+  probe's Rsoil                  1638  1.877e+04     +244    -1.477+/-0.026     0.626          390        165
+  lumped R (firmware's)          1637  1.877e+04     +244    -1.479+/-0.026     0.624          391        165
+  lumped mask C                 307.6      44.32     -194    +1.178+/-0.023     0.415          467        164
+  lumped Cd                     53.19      19.24     -102    +0.461+/-0.016     0.464          219        220
+  CPE mask C                    154.3      12.02     -255    +1.548+/-0.032     0.728          350        165
+  CPE n                        0.6399     0.4751   -0.165    +0.001+/-0.000     0.002           94        177
+  RC-line R                      1412  2.166e+04     +273    -1.560+/-0.027     0.624          437        175
+  RC-line mask C                  330      60.49     -170    +1.150+/-0.054     1.578          108        148
+  two-branch R                  501.5       4341     +216    -0.911+/-0.086     3.045           71        237
+  two-branch mask C             325.1         56     -176    +1.118+/-0.065     1.637          107        157
+
+receiver's stored number (10,000 per decade of Rsoil, corrected to 25 C at 2 %/C):
+  whole cycle            stored  -28.1 +/- 1.0 counts/C; Rsoil -1.49 +/- 0.02 %/C
+  wet half (> 19,000)    stored  -19.7 +/- 2.0 counts/C; Rsoil -1.76 +/- 0.05 %/C
+  dry half (<= 19,000)   stored  -31.8 +/- 1.2 counts/C; Rsoil -1.38 +/- 0.03 %/C
+  tip range per day: 10-18 20.75-24.00, 10-19 18.75-23.50, 10-20 18.25-22.50, 10-21 18.75-21.00, 10-22 19.25-21.50, 10-23 20.00-25.75, 10-24 20.00-25.75, 10-25 20.25-26.00, 10-26 20.00-26.75, 10-27 19.50-23.00
+
+Rsoil at 22 C (-1.49 %/C), change per day 06:00-06:00 and its halves (06-18 day, 18-06 night)
+  10-19  day+night  +45.1 %   day  +13.3 %   night  +28.1 %
+  10-20  day+night  +50.8 %   day  +18.2 %   night  +27.6 %
+  10-21  day+night  +58.0 %   day  +24.4 %   night  +27.0 %
+  10-22  day+night  +27.2 %   day  +13.6 %   night  +12.0 %
+  10-23  day+night  +19.0 %   day   +7.5 %   night  +10.7 %
+  10-24  day+night  +28.5 %   day  +12.9 %   night  +13.9 %
+  10-25  day+night  +23.7 %   day  +11.1 %   night  +11.3 %
+  10-26  day+night  +24.0 %   day  +12.5 %   night  +10.3 %
+
+wrote MSV4\docs\msv4_sensor11_cycle_2026-10-27.png

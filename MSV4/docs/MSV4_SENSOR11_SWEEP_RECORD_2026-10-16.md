@@ -1,5 +1,10 @@
 # MSV4 probe 11: the first day of cloud raw sweeps (2026-10-15 20:36 to 2026-10-16 16:46)
 
+> **Superseded in part, 2026-10-27:** `MSV4_SENSOR11_FIRST_CYCLE_2026-10-27.md` covers a full
+> watering cycle. Its temperature coefficients replace the provisional ones below (for example,
+> Rsoil -1.48 %/C, not -2.24). It also finds that "CPE best on every sweep" holds only for the soil
+> as first inserted: after a watering, the RC line fits best when wet and when driest.
+
 This is the first full record from the raw-sweep feed built on 10-15
 (`MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md`, "Raw sweeps to the cloud"). Probe 11 (MSV4 board 2,
 Rs 3300) ran v262172 in its own unweighed pot of moist soil the whole time. The pot's state comes
