@@ -138,6 +138,13 @@ differ:
 
 ## Temperature, now from a full cycle (measured)
 
+> **Caveat added later on 2026-10-27:** every coefficient below was fitted within the day, as
+> reading = drying trend + k * tip. On probe 10's weighed pot that method gave 1.08 and 0.52 %/C
+> where the scale gave 2.02 and 1.59 %/C, because that pot loses about half its daily water
+> between 11:00 and 15:00, when the tip also warms (`MSV4_SENSOR10_TEMPCO_CHECK_2026-10-27.md`).
+> Probe 11's pot is not weighed, so these figures may be low by the same bias. They are not
+> evidence that the receiver's 2 %/C overshoots.
+
 Drying was removed with a piecewise-linear trend that has a knot every 12 hours. Over the cycle
 the tip ranged 18.25-26.75 C.
 
