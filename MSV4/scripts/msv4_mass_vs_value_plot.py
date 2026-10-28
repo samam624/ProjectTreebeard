@@ -9,10 +9,12 @@ before) over the same minutes. gain = reading change / grams added; the reading 
 on the scale's own axis, anchored at the pre-watering weighing. No line is fitted through the later
 weighings, so any gap to the black curve is the calibration failing to hold, not a fit hiding it.
 
-The calibration watering is the LAST one with a clean pair (a dry-dish weighing within 30 min after
-and one within 30 min before), or --watering N (0 = first). Reading "after" is the median over the
-30 min starting at the after-weighing; the reading keeps settling for hours, so this choice moves
-the gain by a few percent (printed).
+Every watering is calibrated on ITS OWN jump (gains differ between waterings: the first cycle sits
+lower at the same weight, see moisture_cycle2_offset), and each cycle's curve is anchored at that
+watering's own pre-watering weighing and drawn until the next watering. The scale's "after" weight
+is the first weighing with NO water standing in the dish (a weight with standing dish water holds
+water the sensor cannot see), so it can come hours after the watering; that is printed per watering.
+Reading "after" is the median over the 30 min starting at that weighing.
 
 Two figures are written beside the input CSV:
   msv4_mass_vs_moisture_number.png   moisture number in use (as built, 2 %/C corrected)
@@ -38,6 +40,8 @@ import msv4_moisture_competition as comp
 import msv4_moisture_tempcorr as tempcorr
 
 CLEAN_MIN = 30
+NL = chr(10)
+AFTER_MAX_MIN = 360   # first dry-dish weighing may come hours after the water went in
 
 
 def median_in(rows, value, start, end):
@@ -45,11 +49,11 @@ def median_in(rows, value, start, end):
     return (statistics.median(v), len(v)) if v else (None, 0)
 
 
-def calibrate(rows, weighings, watering, value):
+def calibrate(rows, weighings, watering, value, after_max_min=CLEAN_MIN):
     """(gain in reading units per gram, scale_before, reading_before, scale_after, reading_after) or None."""
     dry = [w for w in weighings if w["saucer"] is False]
     before = [w for w in dry if watering - timedelta(minutes=CLEAN_MIN) <= w["time"] < watering]
-    after = [w for w in dry if watering <= w["time"] <= watering + timedelta(minutes=CLEAN_MIN)]
+    after = [w for w in dry if watering <= w["time"] <= watering + timedelta(minutes=after_max_min)]
     if not before or not after:
         return None
     b, a = before[-1], after[0]
@@ -57,7 +61,7 @@ def calibrate(rows, weighings, watering, value):
     va, na = median_in(rows, value, a["time"], a["time"] + timedelta(minutes=30))
     if vb is None or va is None or a["grams"] <= b["grams"]:
         return None
-    return (va - vb) / (a["grams"] - b["grams"]), b["grams"], vb, a["grams"], va
+    return (va - vb) / (a["grams"] - b["grams"]), b["grams"], vb, a["grams"], va, a["time"]
 
 
 def figure(rows, weighings, waterings, series, title, out, note):
@@ -90,7 +94,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("csv", type=Path)
     parser.add_argument("--out-dir", type=Path)
-    parser.add_argument("--watering", type=int, help="index of the calibration watering (0 = first); default the last clean one")
     args = parser.parse_args()
     rows = [r for r in reading.load(args.csv, None) if r["coupled"] is not None]
     if not rows:
@@ -106,40 +109,47 @@ def main() -> None:
     k_cm = tempcorr.fit_k(days[0], cm)[0] if days else None
     cm_corrected = lambda r: (r["cm"] - k_cm * (r["tip"] - tempcorr.REF_C)) if (not r["open"] and r["tip"] is not None) else None
 
-    candidates = [i for i in range(len(waterings)) if calibrate(rows, merged, waterings[i], number)]
-    if not candidates:
-        raise SystemExit("no watering has a dry-dish weighing within 30 min on both sides")
-    idx = args.watering if args.watering is not None else candidates[-1]
-    t_cal = waterings[idx]
+    t0 = rows[0]["time"]
+    hours = {}
 
-    def converted(value, base):
-        cal = calibrate(rows, merged, t_cal, base)
-        gain, sb, vb, sa, va = cal
-        t0 = rows[0]["time"]
-        line = [(t0 + timedelta(hours=h + 0.5), sb + (m - vb) / gain) for h, m, _ in comp.hourly(rows, value)]
-        return line, cal
+    def segments(value, unit):
+        """One (start, end, line) per watering, each with its own gain; also the notes."""
+        if id(value) not in hours:
+            hours[id(value)] = [(t0 + timedelta(hours=h + 0.5), m) for h, m, _ in comp.hourly(rows, value)]
+        series_h = hours[id(value)]
+        lines, notes = [], []
+        for n, w in enumerate(waterings):
+            cal = calibrate(rows, merged, w, value, AFTER_MAX_MIN)
+            if cal is None:
+                continue
+            gain, sb, vb, sa, va, ta = cal
+            end = waterings[n + 1] if n + 1 < len(waterings) else rows[-1]["time"] + timedelta(hours=1)
+            start = rows[0]["time"] if n == 0 else w
+            lines.append([(t, sb + (m - vb) / gain) for t, m in series_h if start <= t < end])
+            notes.append(f"{w:%m-%d %H:%M} watering: scale {sb:.0f} -> {sa:.0f} g (+{sa - sb:.0f}, weighed {ta:%H:%M}), "
+                         f"reading {vb:,.1f} -> {va:,.1f} {unit} = {gain:.3g} {unit}/g")
+        return lines, notes
 
-    def note_for(cal, unit):
-        gain, sb, vb, sa, va = cal
-        return (f"calibrated on the {t_cal:%m-%d %H:%M} watering only: scale {sb:.0f} -> {sa:.0f} g (+{sa - sb:.0f} g), "
-                f"reading {vb:,.1f} -> {va:,.1f} {unit} = {gain:.3g} {unit}/g")
+    def draw(name, specs, title, file, unit):
+        series, all_notes = [], []
+        for label, value, color in specs:
+            lines, notes = segments(value, unit)
+            for j, line in enumerate(lines):
+                series.append((label if j == 0 else None, line, color))
+            all_notes += [f"[{label.split(',')[0]}] {x}" for x in notes] if len(specs) > 1 else notes
+        for x in all_notes:
+            print(name, x)
+        figure(rows, merged, waterings, series, title, out_dir / file,
+                "each watering calibrated on its own jump" + NL + NL.join(all_notes))
 
-    line, cal = converted(number, number)
-    print("moisture number:", note_for(cal, "units"))
-    figure(rows, merged, waterings, [("moisture number in use, as grams", line, "#1f77b4")],
-           f"Sensor {sensor}: pot weight and the moisture number converted to grams by one watering's jump",
-           out_dir / "msv4_mass_vs_moisture_number.png", note_for(cal, "units"))
-
-    series = []
-    line_raw, cal = converted(cm, cm)
-    series.append(("Cm raw, as grams", line_raw, "#1f77b4"))
-    print("Cm raw:", note_for(cal, "pF"))
+    draw("number", [("moisture number in use, as grams", number, "#1f77b4")],
+         f"Sensor {sensor}: pot weight and the moisture number, each watering converted to grams by its own jump",
+         "msv4_mass_vs_moisture_number.png", "units")
+    specs = [("Cm raw, as grams", cm, "#1f77b4")]
     if k_cm is not None:
-        line_cor, cal_cor = converted(cm_corrected, cm_corrected)
-        series.append((f"Cm corrected to {tempcorr.REF_C:g} C ({k_cm:+.3f} pF/C), as grams", line_cor, "#d95f02"))
-        print("Cm corrected:", note_for(cal_cor, "pF"))
-    figure(rows, merged, waterings, series, f"Sensor {sensor}: pot weight and Cm converted to grams by one watering's jump",
-           out_dir / "msv4_mass_vs_cm.png", note_for(cal, "pF") + " (raw)")
+        specs.append((f"Cm corrected to {tempcorr.REF_C:g} C ({k_cm:+.3f} pF/C), as grams", cm_corrected, "#d95f02"))
+    draw("Cm", specs[:1], f"Sensor {sensor}: pot weight and Cm, each watering converted to grams by its own jump",
+         "msv4_mass_vs_cm.png", "pF")
 
 
 if __name__ == "__main__":
