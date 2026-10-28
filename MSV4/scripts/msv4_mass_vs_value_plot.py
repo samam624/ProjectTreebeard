@@ -1,26 +1,20 @@
-"""Pot mass over time against one sensor reading converted to grams by a watering's jump.
+"""Pot mass over time against ONE reading, converted to grams the way msv4_moisture_plot.py does.
 
-One watering calibrates the reading, nothing else does: the scale weighed the pot just before and
-just after, so grams added = after - before, and the reading moved by (reading after - reading
-before) over the same minutes. gain = reading change / grams added; the reading is then drawn as
+Method (same as msv4_moisture_plot.py, which scores every candidate at once):
+  1. Take every weighing with no water standing in the dish (both cycles together), and pair each
+     with the hour of readings around it (the hour after, if it was weighed within 2 h of a watering).
+  2. Fit ONE straight line, reading = intercept + slope * (grams above the driest weighing), through
+     those pairs. The waterings are not used to calibrate.
+  3. Invert it: hourly median reading -> grams, then add the driest weighing back so the curve sits
+     on the scale's own axis. A reading that tracked the scale perfectly lies on the black curve.
 
-    grams(t) = scale_before + (reading(t) - reading_before) / gain
-
-on the scale's own axis, anchored at the pre-watering weighing. No line is fitted through the later
-weighings, so any gap to the black curve is the calibration failing to hold, not a fit hiding it.
-
-Every watering is calibrated on ITS OWN jump (gains differ between waterings: the first cycle sits
-lower at the same weight, see moisture_cycle2_offset), and each cycle's curve is anchored at that
-watering's own pre-watering weighing and drawn until the next watering. The scale's "after" weight
-is the first weighing with NO water standing in the dish (a weight with standing dish water holds
-water the sensor cannot see), so it can come hours after the watering; that is printed per watering.
-Reading "after" is the median over the 30 min starting at that weighing.
+Temperature correction is the repo's normal view: the number is as built (2 %/C), Cm is corrected
+to 25 C by the tip coefficient fitted on the first settled dry day. --raw uses uncorrected Cm.
 
 Two figures are written beside the input CSV:
-  msv4_mass_vs_moisture_number.png   moisture number in use (as built, 2 %/C corrected)
-  msv4_mass_vs_cm.png                Cm raw and corrected to 25 C by the fitted tip coefficient
+  msv4_mass_vs_moisture_number.png    msv4_mass_vs_cm.png
 
-    python MSV4/scripts/msv4_mass_vs_value_plot.py data/sensor_logs/<sensor10 history>.csv [--watering N]
+    python MSV4/scripts/msv4_mass_vs_value_plot.py data/sensor_logs/<sensor10 history>.csv [--raw]
 """
 from __future__ import annotations
 
@@ -39,46 +33,34 @@ import msv4_experimental_moisture as reading
 import msv4_moisture_competition as comp
 import msv4_moisture_tempcorr as tempcorr
 
-CLEAN_MIN = 30
 NL = chr(10)
-AFTER_MAX_MIN = 360   # first dry-dish weighing may come hours after the water went in
 
 
-def median_in(rows, value, start, end):
-    v = [x for x in (value(r) for r in rows if start <= r["time"] < end) if x is not None]
-    return (statistics.median(v), len(v)) if v else (None, 0)
+def fit_line(pairs, value, dry):
+    points = []
+    for p in pairs:
+        data = [v for v in (value(r) for r in p["rows"]) if v is not None]
+        if len(data) >= comp.MIN_PAIR_READINGS:
+            points.append((p["grams"] - dry, statistics.median(data)))
+    slope, intercept = statistics.linear_regression([g for g, _ in points], [v for _, v in points])
+    return slope, intercept, len(points)
 
 
-def calibrate(rows, weighings, watering, value, after_max_min=CLEAN_MIN):
-    """(gain in reading units per gram, scale_before, reading_before, scale_after, reading_after) or None."""
-    dry = [w for w in weighings if w["saucer"] is False]
-    before = [w for w in dry if watering - timedelta(minutes=CLEAN_MIN) <= w["time"] < watering]
-    after = [w for w in dry if watering <= w["time"] <= watering + timedelta(minutes=after_max_min)]
-    if not before or not after:
-        return None
-    b, a = before[-1], after[0]
-    vb, nb = median_in(rows, value, b["time"] - timedelta(minutes=55), b["time"] + timedelta(minutes=5))
-    va, na = median_in(rows, value, a["time"], a["time"] + timedelta(minutes=30))
-    if vb is None or va is None or a["grams"] <= b["grams"]:
-        return None
-    return (va - vb) / (a["grams"] - b["grams"]), b["grams"], vb, a["grams"], va, a["time"]
-
-
-def figure(rows, weighings, waterings, series, title, out, note):
+def figure(rows, merged, waterings, curves, title, out, note):
     fig, ax = plt.subplots(figsize=(14, 7))
     for i, w in enumerate(waterings):
         ax.axvline(w, color="#4a90d9", lw=1.2, ls="--", alpha=0.7, label="watering" if i == 0 else None)
-    for label, line, color in series:
+    for label, line, color in curves:
         ax.plot([t for t, _ in line], [g for _, g in line], color=color, lw=1.3, alpha=0.9, label=label)
-    ax.plot([w["time"] for w in weighings], [w["grams"] for w in weighings], color="black", lw=2.4, zorder=5,
+    ax.plot([w["time"] for w in merged], [w["grams"] for w in merged], color="black", lw=2.4, zorder=5,
             label="pot weight (scale, pot + dish)")
-    for w in weighings:
+    for w in merged:
         if w["saucer"] is False:
             ax.errorbar(w["time"], w["grams"], yerr=max(w["spread"], 1) / 2, fmt="o", color="black", ms=5, zorder=6)
         else:
             ax.plot(w["time"], w["grams"], "o" if w["saucer"] else "x", mfc="white", color="black", ms=8, zorder=6)
     ax.set_ylabel("grams on the scale (hollow = water standing in the dish)")
-    ax.set_title(title + f"\n{rows[0]['time']:%Y-%m-%d %H:%M} to {rows[-1]['time']:%Y-%m-%d %H:%M}")
+    ax.set_title(title + NL + f"{rows[0]['time']:%Y-%m-%d %H:%M} to {rows[-1]['time']:%Y-%m-%d %H:%M}")
     ax.text(0.01, 0.01, note, transform=ax.transAxes, fontsize=8, va="bottom",
             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d", tz=rows[0]["time"].tzinfo))
@@ -94,6 +76,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("csv", type=Path)
     parser.add_argument("--out-dir", type=Path)
+    parser.add_argument("--raw", action="store_true", help="uncorrected Cm instead of temperature-corrected")
     args = parser.parse_args()
     rows = [r for r in reading.load(args.csv, None) if r["coupled"] is not None]
     if not rows:
@@ -101,55 +84,35 @@ def main() -> None:
     sensor = rows[0]["sensor"]
     weighings, waterings = comp.load_pot(sensor)
     merged = comp.merge_repeats(weighings, waterings)
+    days = comp.dry_days(rows, waterings)
+    if not days:
+        raise SystemExit("no settled dry day to fit the temperature coefficients on")
+    corrected = {name: value for name, _, value in tempcorr.corrected_candidates(days[0])[0]}
+    raw = {name: value for name, _, value in comp.CANDIDATES}
+    pairs = [p for p in comp.pair(rows, merged, waterings) if not p["excluded"] and p["saucer"] is False]
+    dry = min(p["grams"] for p in pairs)
+    t0 = rows[0]["time"]
     out_dir = args.out_dir or args.csv.parent
 
-    number = lambda r: r["stored"] if not r["open"] else None
-    cm = lambda r: r["cm"] if not r["open"] else None
-    days = comp.dry_days(rows, waterings)
-    k_cm = tempcorr.fit_k(days[0], cm)[0] if days else None
-    cm_corrected = lambda r: (r["cm"] - k_cm * (r["tip"] - tempcorr.REF_C)) if (not r["open"] and r["tip"] is not None) else None
+    def curve(label, value, color):
+        slope, intercept, n = fit_line(pairs, value, dry)
+        hours = comp.hourly(rows, value)
+        line = [(t0 + timedelta(hours=h + 0.5), dry + (m - intercept) / slope) for h, m, _ in hours]
+        return (label, line, color), slope, n
 
-    t0 = rows[0]["time"]
-    hours = {}
+    number = corrected["moisture number in use (as built, 2%/C)"]
+    c, slope, n = curve("moisture number in use (as built), as grams", number, "#1f77b4")
+    print(f"number: {slope:.4g} units/g from {n} weighings")
+    note = f"one straight line through {n} dry-dish weighings (both cycles): {slope:.4g} units/g; waterings not used"
+    figure(rows, merged, waterings, [c], f"Sensor {sensor}: pot weight and the moisture number, converted to grams",
+           out_dir / "msv4_mass_vs_moisture_number.png", note)
 
-    def segments(value, unit):
-        """One (start, end, line) per watering, each with its own gain; also the notes."""
-        if id(value) not in hours:
-            hours[id(value)] = [(t0 + timedelta(hours=h + 0.5), m) for h, m, _ in comp.hourly(rows, value)]
-        series_h = hours[id(value)]
-        lines, notes = [], []
-        for n, w in enumerate(waterings):
-            cal = calibrate(rows, merged, w, value, AFTER_MAX_MIN)
-            if cal is None:
-                continue
-            gain, sb, vb, sa, va, ta = cal
-            end = waterings[n + 1] if n + 1 < len(waterings) else rows[-1]["time"] + timedelta(hours=1)
-            start = rows[0]["time"] if n == 0 else w
-            lines.append([(t, sb + (m - vb) / gain) for t, m in series_h if start <= t < end])
-            notes.append(f"{w:%m-%d %H:%M} watering: scale {sb:.0f} -> {sa:.0f} g (+{sa - sb:.0f}, weighed {ta:%H:%M}), "
-                         f"reading {vb:,.1f} -> {va:,.1f} {unit} = {gain:.3g} {unit}/g")
-        return lines, notes
-
-    def draw(name, specs, title, file, unit):
-        series, all_notes = [], []
-        for label, value, color in specs:
-            lines, notes = segments(value, unit)
-            for j, line in enumerate(lines):
-                series.append((label if j == 0 else None, line, color))
-            all_notes += [f"[{label.split(',')[0]}] {x}" for x in notes] if len(specs) > 1 else notes
-        for x in all_notes:
-            print(name, x)
-        figure(rows, merged, waterings, series, title, out_dir / file,
-                "each watering calibrated on its own jump" + NL + NL.join(all_notes))
-
-    draw("number", [("moisture number in use, as grams", number, "#1f77b4")],
-         f"Sensor {sensor}: pot weight and the moisture number, each watering converted to grams by its own jump",
-         "msv4_mass_vs_moisture_number.png", "units")
-    specs = [("Cm raw, as grams", cm, "#1f77b4")]
-    if k_cm is not None:
-        specs.append((f"Cm corrected to {tempcorr.REF_C:g} C ({k_cm:+.3f} pF/C), as grams", cm_corrected, "#d95f02"))
-    draw("Cm", specs[:1], f"Sensor {sensor}: pot weight and Cm, each watering converted to grams by its own jump",
-         "msv4_mass_vs_cm.png", "pF")
+    cm_value = raw["contact capacitance Cm"] if args.raw else corrected["contact capacitance Cm + fitted temp"]
+    c, slope, n = curve("Cm " + ("raw" if args.raw else "corrected to 25 C") + ", as grams", cm_value, "#d95f02")
+    print(f"Cm: {slope:.4g} pF/g from {n} weighings")
+    note = f"one straight line through {n} dry-dish weighings (both cycles): {slope:.4g} pF/g; waterings not used"
+    figure(rows, merged, waterings, [c], f"Sensor {sensor}: pot weight and Cm, converted to grams",
+           out_dir / "msv4_mass_vs_cm.png", note)
 
 
 if __name__ == "__main__":
