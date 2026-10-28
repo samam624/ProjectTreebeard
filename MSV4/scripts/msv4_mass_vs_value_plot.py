@@ -1,12 +1,14 @@
 """Pot mass over time against ONE reading, converted to grams the way msv4_moisture_plot.py does.
 
-Method (same as msv4_moisture_plot.py, which scores every candidate at once):
-  1. Take every weighing with no water standing in the dish (both cycles together), and pair each
-     with the hour of readings around it (the hour after, if it was weighed within 2 h of a watering).
-  2. Fit ONE straight line, reading = intercept + slope * (grams above the driest weighing), through
-     those pairs. The waterings are not used to calibrate.
-  3. Invert it: hourly median reading -> grams, then add the driest weighing back so the curve sits
-     on the scale's own axis. A reading that tracked the scale perfectly lies on the black curve.
+Method (same family as msv4_moisture_plot.py, but one line PER WATERING CYCLE):
+  1. Split the dry-dish weighings by watering cycle (from one watering to the next). Pair each with
+     the hour of readings around it (the hour after, if weighed within 2 h of a watering).
+  2. In each cycle fit its own straight line, reading = intercept + slope * grams. A least-squares
+     line passes through the average of its points, so that cycle's reading is synced to the scale at
+     the cycle's average weight (printed), with its own slope.
+  3. Invert each line over its own cycle only: hourly median reading -> grams. The segments are drawn
+     on the scale's axis against the weight curve. The span before the first watering is not drawn
+     (two weighings, no cycle to fit).
 
 Temperature correction is the repo's normal view: the number is as built (2 %/C), Cm is corrected
 to 25 C by the tip coefficient fitted on the first settled dry day. --raw uses uncorrected Cm.
@@ -36,7 +38,7 @@ import msv4_moisture_tempcorr as tempcorr
 NL = chr(10)
 
 
-def fit_line(pairs, value, dry):
+def _unused_fit_line(pairs, value, dry):
     points = []
     for p in pairs:
         data = [v for v in (value(r) for r in p["rows"]) if v is not None]
@@ -90,29 +92,43 @@ def main() -> None:
     corrected = {name: value for name, _, value in tempcorr.corrected_candidates(days[0])[0]}
     raw = {name: value for name, _, value in comp.CANDIDATES}
     pairs = [p for p in comp.pair(rows, merged, waterings) if not p["excluded"] and p["saucer"] is False]
-    dry = min(p["grams"] for p in pairs)
     t0 = rows[0]["time"]
+    bounds = list(waterings) + [rows[-1]["time"] + timedelta(hours=1)]
     out_dir = args.out_dir or args.csv.parent
 
-    def curve(label, value, color):
-        slope, intercept, n = fit_line(pairs, value, dry)
-        hours = comp.hourly(rows, value)
-        line = [(t0 + timedelta(hours=h + 0.5), dry + (m - intercept) / slope) for h, m, _ in hours]
-        return (label, line, color), slope, n
+    def cycle_curves(label, value, color, unit):
+        """One segment per watering cycle, each from its own line; returns curves and the notes."""
+        curves, notes = [], []
+        for k in range(len(waterings)):
+            lo, hi = bounds[k], bounds[k + 1]
+            cyc = [p for p in pairs if lo <= p["time"] < hi]
+            pts = []
+            for p in cyc:
+                data = [v for v in (value(r) for r in p["rows"]) if v is not None]
+                if len(data) >= comp.MIN_PAIR_READINGS:
+                    pts.append((p["grams"], statistics.median(data)))
+            if len(pts) < 3:
+                continue
+            gs, vs = [g for g, _ in pts], [v for _, v in pts]
+            slope, intercept = statistics.linear_regression(gs, vs)
+            line = [(t0 + timedelta(hours=h + 0.5), (m - intercept) / slope)
+                    for h, m, _ in comp.hourly(rows, value) if lo <= t0 + timedelta(hours=h + 0.5) < hi]
+            curves.append((label if not curves else None, line, color))
+            notes.append(f"cycle from {lo:%m-%d %H:%M}: {len(pts)} weighings, synced at {statistics.mean(gs):.0f} g = "
+                         f"{statistics.mean(vs):,.1f} {unit}, slope {slope:.4g} {unit}/g")
+        return curves, notes
 
-    number = corrected["moisture number in use (as built, 2%/C)"]
-    c, slope, n = curve("moisture number in use (as built), as grams", number, "#1f77b4")
-    print(f"number: {slope:.4g} units/g from {n} weighings")
-    note = f"one straight line through {n} dry-dish weighings (both cycles): {slope:.4g} units/g; waterings not used"
-    figure(rows, merged, waterings, [c], f"Sensor {sensor}: pot weight and the moisture number, converted to grams",
-           out_dir / "msv4_mass_vs_moisture_number.png", note)
-
-    cm_value = raw["contact capacitance Cm"] if args.raw else corrected["contact capacitance Cm + fitted temp"]
-    c, slope, n = curve("Cm " + ("raw" if args.raw else "corrected to 25 C") + ", as grams", cm_value, "#d95f02")
-    print(f"Cm: {slope:.4g} pF/g from {n} weighings")
-    note = f"one straight line through {n} dry-dish weighings (both cycles): {slope:.4g} pF/g; waterings not used"
-    figure(rows, merged, waterings, [c], f"Sensor {sensor}: pot weight and Cm, converted to grams",
-           out_dir / "msv4_mass_vs_cm.png", note)
+    for name, value, label, color, unit, title, file in (
+        ("number", corrected["moisture number in use (as built, 2%/C)"], "moisture number in use (as built), as grams",
+         "#1f77b4", "units", "the moisture number", "msv4_mass_vs_moisture_number.png"),
+        ("Cm", raw["contact capacitance Cm"] if args.raw else corrected["contact capacitance Cm + fitted temp"],
+         "Cm " + ("raw" if args.raw else "corrected to 25 C") + ", as grams", "#d95f02", "pF", "Cm", "msv4_mass_vs_cm.png"),
+    ):
+        curves, notes = cycle_curves(label, value, color, unit)
+        for line in notes:
+            print(name, line)
+        figure(rows, merged, waterings, curves, f"Sensor {sensor}: pot weight and {title}, one line per watering cycle",
+               out_dir / file, "each cycle fitted on its own weighings (synced at its own average):" + NL + NL.join(notes))
 
 
 if __name__ == "__main__":
