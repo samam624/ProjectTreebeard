@@ -207,6 +207,15 @@ between 14:00 and 24:00, in grams:
 - **What would tell them apart:** a temperature change with no sun on the plant, such as warming
   the pot at night.
 
+## The fix chosen (10-27, later)
+
+The maintainer chose a display hold over a lower coefficient or a delayed temperature: for MSV4
+probes the receiver's presented moisture no longer rises between waterings. The stored measured
+number keeps the rebound, so this record stays reproducible. Replayed over probe 10's history, the
+rebound is 0 g on every day and the miss against the scale goes 4.9 -> 4.4 g (cycle 1) and
+7.8 -> 6.5 g (cycle 2). Flashed 10-27 ~23:25 PDT; see
+`DisplayCenter/docs/MSV4_DISPLAY_DRYING_HOLD_2026-10-27.md`.
+
 ## Limits
 
 - **Scope:** one pot, one board, two cycles and 30 intervals.

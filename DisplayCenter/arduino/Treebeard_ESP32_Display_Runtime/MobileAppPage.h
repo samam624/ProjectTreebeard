@@ -1865,11 +1865,16 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     // it in both directions. The old drying ratchet accepted low excursions while ignoring
     // equal high excursions, which inevitably pulled a stationary signal below its centroid
     // and later misclassified the accumulated gap as watering.
+    // MSV4 points (point.hold) also get the receiver's drying hold: the shown value does not
+    // rise between waterings unless the tracker stays above it for HOLD_RELEASE_MS. The hold
+    // sits on the tracker's OUTPUT and the watering test uses the tracker, which is what keeps
+    // it from repeating the old ratchet's walk-down-then-false-watering cycle.
+    const HOLD_RELEASE_MS = 36 * 60 * 60 * 1000;
     function smoothMoistureSeries(rawPoints, p) {
       const out = [];
       const centerWindow = [];
       const windowPackets = Math.max(3, Math.round(p.centerWindowPackets) | 1);
-      let displayed = null, filteredQ8 = null, wateringStreak = 0;
+      let displayed = null, filteredQ8 = null, wateringStreak = 0, holdAboveSince = null;
 
       for (const point of rawPoints) {
         const measured = point.raw;
@@ -1881,6 +1886,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         if (displayed === null) {
           displayed = measured;
           filteredQ8 = measured * 256;
+          holdAboveSince = null;
           out.push({ t: point.t, v: displayed, raw: measured });
           continue;
         }
@@ -1895,11 +1901,13 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         const center = medianOfValues(centerWindow);
         const robustNoise = Math.max(1, medianOfValues(centerWindow.map((value) => Math.abs(value - center))));
         const span = moisturePresentationSpan(center, p.learnedSpan);
+        const hold = Boolean(point.hold);
+        const tracked = hold ? Math.floor((filteredQ8 + 128) / 256) : displayed;
         let wateringThreshold = Math.max(4, Math.ceil((span * p.wateringSpanPct) / 100));
-        wateringThreshold = Math.max(wateringThreshold, Math.floor(displayed / 50));
+        wateringThreshold = Math.max(wateringThreshold, Math.floor(tracked / 50));
         wateringThreshold = Math.max(wateringThreshold, robustNoise * p.noiseWateringMult);
 
-        const wateringRise = center > displayed && center - displayed >= wateringThreshold;
+        const wateringRise = center > tracked && center - tracked >= wateringThreshold;
 
         if (wateringRise) {
           wateringStreak++;
@@ -1907,6 +1915,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
             displayed = center;
             filteredQ8 = center * 256;
             wateringStreak = 0;
+            holdAboveSince = null;
           }
         } else {
           wateringStreak = 0;
@@ -1915,7 +1924,21 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
           const maxStepQ8 = Math.max(1, Math.floor((span * p.maxStepSpanPct) / 100)) * 256;
           stepQ8 = Math.max(-maxStepQ8, Math.min(maxStepQ8, stepQ8));
           filteredQ8 += stepQ8;
-          displayed = Math.floor((filteredQ8 + 128) / 256);
+          const next = Math.floor((filteredQ8 + 128) / 256);
+          if (hold && next > displayed) {
+            if (next <= displayed + robustNoise) {
+              holdAboveSince = null;          // within noise of the hold: not a rise
+            } else {
+              if (holdAboveSince === null) holdAboveSince = point.t;
+              if (point.t - holdAboveSince >= HOLD_RELEASE_MS) {
+                holdAboveSince = null;        // a lasting rise: show it, then hold from there
+                displayed = next;
+              }
+            }
+          } else {
+            if (hold) holdAboveSince = null;
+            displayed = next;
+          }
         }
 
         out.push({ t: point.t, v: displayed, raw: measured });
@@ -2347,7 +2370,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       const moistureParams = Object.assign({}, params, { learnedSpan });
 
       const moistureRaw = lastHistoryRows
-        .map((r) => ({ t: new Date(r.received_at).getTime(), raw: r.moisture }))
+        .map((r) => ({ t: new Date(r.received_at).getTime(), raw: r.moisture, hold: isMsv4Row(r) }))
         .filter((point) => point.raw != null);
       const moisturePoints = smoothMoistureSeries(moistureRaw, moistureParams);
 

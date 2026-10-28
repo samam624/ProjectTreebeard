@@ -4,7 +4,12 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-25 16:22 PDT, the receiver on `COM16` (chip MAC `28:84:85:46:70:D8`) runs
+As of 2026-10-27 ~23:25 PDT, the receiver on `COM16` runs
+`Treebeard runtime build 2026-10-28 msv4-display-hold-v1` (the tag's date is the next day's), flashed
+with `arduino_display.ps1 -Action upload`: the MSV4 drying hold in the presentation filter
+(`MSV4_DISPLAY_DRYING_HOLD_2026-10-27.md`). Cloud uploads returned HTTP 200 after the flash.
+
+Before that, as of 2026-10-25 16:22 PDT, the receiver on `COM16` (chip MAC `28:84:85:46:70:D8`) runs
 `Treebeard runtime build 2026-10-15 msv4-raw-sweep-v3`, rebuilt from `main` and reflashed with
 `arduino_display.ps1 -Action upload`. Another agent session had flashed a microphone-array test
 sketch onto it; that sketch carried an 8 MB partition table (app0 0x10000-0x340000, spiffs at

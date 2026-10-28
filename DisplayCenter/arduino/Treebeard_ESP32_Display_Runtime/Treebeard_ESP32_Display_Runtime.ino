@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-15 msv4-raw-sweep-v3"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-28 msv4-display-hold-v1"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -812,6 +812,9 @@ struct SensorReading
   // center already needs three of the last five packets to move, and this second gate
   // prevents a short burst from being presented as watering.
   uint8_t moistureWateringStreak = 0;
+  // MSV4 drying hold (2026-10-28): millis() since the tracked value has sat above the held
+  // display; 0 while it has not. See smoothMoistureForDisplay().
+  uint32_t moistureHoldAboveSinceMs = 0;
   uint8_t batteryPercent = BATTERY_UNKNOWN;
   int rssi = 0;
   uint32_t lastSeenMs = 0;
@@ -9952,6 +9955,10 @@ uint16_t maxMoistureThreshold(uint16_t left, uint16_t right)
 
 const uint8_t MOISTURE_WATERING_CONFIRM_PACKETS = 2;
 const uint8_t MOISTURE_TRACKING_DIVISOR = 8; // symmetric EMA alpha = 1/8
+// MSV4 drying hold: a rise that lasts this long without a watering is shown anyway (a new
+// insertion settling, a pot that has stopped drying). The longest evening rebound measured on
+// sensor 10 stayed above the hold ~20 h, until the next midday drop (2026-10-23/24).
+const uint32_t MOISTURE_HOLD_RELEASE_MS = 36UL * 60UL * 60UL * 1000UL;
 
 uint16_t medianMoistureValue(const uint16_t* values, uint8_t count)
 {
@@ -9982,9 +9989,22 @@ uint16_t medianMoistureValue(const uint16_t* values, uint8_t count)
 // - normal tracking is capped to 5% of span per packet;
 // - a watering-sized robust-center rise must persist twice, then snaps to the center.
 //
+// MSV4 drying hold (holdBetweenWaterings, 2026-10-28): between waterings the soil can only
+// lose water, so the presented value never rises above where it has been held, except on a
+// confirmed watering snap or after MOISTURE_HOLD_RELEASE_MS of the tracked value staying above
+// it. Measured on sensor 10: from 10-23 the 2 %/C tip correction overshoots at midday and
+// rebounds 3.5-19 g of water each evening. Replaying its history through this filter, the
+// rebound is gone and the miss against the pot's scale goes 4.9 -> 4.4 g (cycle 1) and
+// 7.8 -> 6.5 g (cycle 2) (DisplayCenter/docs/MSV4_DISPLAY_DRYING_HOLD_2026-10-27.md). This is NOT the 2026-08-22 drying
+// ratchet: that one accepted raw low packets and ignored high ones, so it walked down through
+// stationary noise and then misread the gap as watering. Here the hold applies only to the
+// output of the symmetric tracker (it can sink no lower than that tracker's own lower edge),
+// and watering detection compares against the tracker, never against the held value.
+//
 // The actual derived reading is always retained in measuredMoisture and sent to the
 // original Supabase `moisture` history column. This function only controls presentation.
-uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, uint16_t span)
+uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, uint16_t span,
+                                  bool holdBetweenWaterings)
 {
   SensorReading& reading = sensors[sensorId];
 
@@ -10000,6 +10020,7 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
     reading.moisture = measuredMoisture;
     reading.moistureFilteredQ8 = (uint32_t)measuredMoisture << 8;
     reading.moistureWateringStreak = 0;
+    reading.moistureHoldAboveSinceMs = 0;
     return reading.moisture;
   }
 
@@ -10019,10 +10040,15 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
   }
   uint16_t robustNoise = maxMoistureThreshold(
       1U, medianMoistureValue(deviations, MOISTURE_CENTER_WINDOW));
+  // Without the hold this equals reading.moisture on every path; with it, the watering test
+  // must use the tracker so a held-down display can never be mistaken for a watering gap.
+  const uint16_t trackedMoisture = holdBetweenWaterings
+      ? (uint16_t)((reading.moistureFilteredQ8 + 128U) >> 8)
+      : reading.moisture;
 
   uint16_t wateringThreshold = maxMoistureThreshold(
       4U, (uint16_t)(((uint32_t)span * 12U + 99U) / 100U));
-  wateringThreshold = maxMoistureThreshold(wateringThreshold, reading.moisture / 50U);
+  wateringThreshold = maxMoistureThreshold(wateringThreshold, trackedMoisture / 50U);
   uint32_t noiseWateringThreshold = (uint32_t)robustNoise * 4U;
   if (noiseWateringThreshold > 0xFFFF)
   {
@@ -10031,8 +10057,8 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
   wateringThreshold = maxMoistureThreshold(
       wateringThreshold, (uint16_t)noiseWateringThreshold);
 
-  bool wateringRise = center > reading.moisture &&
-      (uint32_t)(center - reading.moisture) >= wateringThreshold;
+  bool wateringRise = center > trackedMoisture &&
+      (uint32_t)(center - trackedMoisture) >= wateringThreshold;
   if (wateringRise)
   {
     if (reading.moistureWateringStreak < 0xFF)
@@ -10046,6 +10072,7 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
       reading.moisture = center;
       reading.moistureFilteredQ8 = (uint32_t)center << 8;
       reading.moistureWateringStreak = 0;
+      reading.moistureHoldAboveSinceMs = 0;
     }
     return reading.moisture;
   }
@@ -10065,7 +10092,30 @@ uint16_t smoothMoistureForDisplay(uint8_t sensorId, uint16_t measuredMoisture, u
   }
 
   reading.moistureFilteredQ8 = (uint32_t)(filteredQ8 + stepQ8);
-  reading.moisture = (uint16_t)((reading.moistureFilteredQ8 + 128U) >> 8);
+  const uint16_t tracked = (uint16_t)((reading.moistureFilteredQ8 + 128U) >> 8);
+  if (holdBetweenWaterings && tracked > reading.moisture)
+  {
+    if ((uint32_t)tracked <= (uint32_t)reading.moisture + robustNoise)
+    {
+      reading.moistureHoldAboveSinceMs = 0;  // within noise of the hold: not a rise
+      return reading.moisture;
+    }
+    const uint32_t nowMs = millis();
+    if (reading.moistureHoldAboveSinceMs == 0)
+    {
+      reading.moistureHoldAboveSinceMs = nowMs == 0 ? 1U : nowMs;
+    }
+    if ((uint32_t)(nowMs - reading.moistureHoldAboveSinceMs) < MOISTURE_HOLD_RELEASE_MS)
+    {
+      return reading.moisture;
+    }
+    reading.moistureHoldAboveSinceMs = 0;  // a lasting rise: show it, then hold from there
+  }
+  else if (holdBetweenWaterings)
+  {
+    reading.moistureHoldAboveSinceMs = 0;
+  }
+  reading.moisture = tracked;
   return reading.moisture;
 }
 
@@ -10675,7 +10725,7 @@ class Msv2AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         ? temperatureCompensationResult.equivalentMoisture
         : moisture;
     uint16_t displayMoisture = smoothMoistureForDisplay(
-        sensorId, presentationInput, presentationSpan);
+        sensorId, presentationInput, presentationSpan, msv4);
 
     // wake going DOWN (rather than up) means the probe rebooted and its wake counter
     // reset to a small value, not that ~16 million packets were dropped - computing
