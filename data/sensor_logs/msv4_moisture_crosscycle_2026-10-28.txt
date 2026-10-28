@@ -1,0 +1,36 @@
+error in grams = converted reading minus scale; the scale repeats to ~8 g
+
+moisture number in use (as built, 2%/C)
+  fitted on both, scored on both (in-sample): bias   +0.0  rms  24.7  worst  -78.3
+  fitted on cycle 1, scored on cycle 2:       bias  +25.8  rms  41.6  worst  +77.3
+  fitted on cycle 2, scored on cycle 1:       bias  -31.9  rms  45.1  worst -126.3
+
+soil resistance, no temp. correction + fitted temp
+  fitted on both, scored on both (in-sample): bias   -0.0  rms  24.7  worst  -78.2
+  fitted on cycle 1, scored on cycle 2:       bias  +25.7  rms  41.7  worst  +77.6
+  fitted on cycle 2, scored on cycle 1:       bias  -31.9  rms  45.1  worst -126.3
+
+direct capacitance above air + fitted temp
+  fitted on both, scored on both (in-sample): bias   -0.0  rms  31.0  worst  +84.4
+  fitted on cycle 1, scored on cycle 2:       bias  +43.6  rms  54.0  worst +116.8
+  fitted on cycle 2, scored on cycle 1:       bias  -45.6  rms  52.8  worst -104.2
+
+contact capacitance Cm + fitted temp
+  fitted on both, scored on both (in-sample): bias   -0.0  rms  53.8  worst +153.8
+  fitted on cycle 1, scored on cycle 2:       bias  +76.8  rms 106.6  worst +241.4
+  fitted on cycle 2, scored on cycle 1:       bias  -69.4  rms  86.0  worst -194.0
+
+soil-coupled capacitance (Cm + Cd - air) + fitted temp
+  fitted on both, scored on both (in-sample): bias   -0.0  rms  50.4  worst +143.8
+  fitted on cycle 1, scored on cycle 2:       bias  +71.7  rms  98.4  worst +222.1
+  fitted on cycle 2, scored on cycle 1:       bias  -66.5  rms  81.8  worst -181.4
+
+soil capacitance (derived) + fitted temp
+  fitted on both, scored on both (in-sample): bias   +0.0  rms  28.4  worst  +74.7
+  fitted on cycle 1, scored on cycle 2:       bias  +39.6  rms  48.0  worst +101.4
+  fitted on cycle 2, scored on cycle 1:       bias  -41.8  rms  48.0  worst  -91.0
+
+soil resistance behind the mask (derived) + fitted temp
+  fitted on both, scored on both (in-sample): bias   +0.0  rms  21.5  worst  -66.9
+  fitted on cycle 1, scored on cycle 2:       bias  +21.8  rms  35.3  worst  +65.1
+  fitted on cycle 2, scored on cycle 1:       bias  -27.9  rms  39.5  worst -110.2
