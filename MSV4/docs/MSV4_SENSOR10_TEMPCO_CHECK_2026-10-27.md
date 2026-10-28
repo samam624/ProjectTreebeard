@@ -124,6 +124,89 @@ Misses are in grams, given as cycle 1 / cycle 2.
 - **Measured:** the plot's resistance coefficient (6.2 g/C, about 2.05 %/C) is right.
 - **Measured:** every candidate moves by about 6 g of water per C, whatever it is made of.
 
+## What the wobble is, and why it grows as the pot dries (added later on 10-27)
+
+The maintainer pointed out, with a crop of the moisture-vs-mass plot from 10-22 to 10-27, that the
+lines wobble far more late in a dry-down than right after a watering. Reproduce with:
+
+    python MSV4/scripts/msv4_daily_staircase.py data/sensor_logs/msv4_sensor10_all_2026-10-27.csv \
+        --plot MSV4/docs/msv4_sensor10_daily_staircase_2026-10-27.png
+    python MSV4/scripts/msv4_daily_staircase.py --self-test
+
+The output is in `data/sensor_logs/msv4_daily_staircase_2026-10-27.txt`. The self-test recovers a
+synthetic pot's 53 % noon share (52 % found) and its 20 g of noon loss (19.7 g found).
+
+![daily staircase](msv4_sensor10_daily_staircase_2026-10-27.png)
+
+**The wobble is a staircase: one step a day, in the noon hours (measured).** The probe's drop each
+day was split at 11:00 and 15:00, using the number at 2 %/C. Grams come from a line through the
+cycle's weighings: 14.9 units/g in cycle 2, 13.0 in cycle 1.
+
+| cycle 2 day | 11:00-15:00 | the other 20 h | share in 11:00-15:00 | tip rise 11:00-15:00 |
+|---|---|---|---|---|
+| 10-20 | 32.6 g | 16.9 g | 66 % | +4.0 C |
+| 10-21 (dark) | 9.4 | 21.1 | 31 % | +1.25 C |
+| 10-22 (dark) | 8.4 | 29.6 | 22 % | +0.75 C |
+| 10-23 | 33.9 | 6.9 | 83 % | +5.25 C |
+| 10-24 | 33.7 | 9.6 | 78 % | +5.5 C |
+| 10-25 | 28.5 | 7.8 | 78 % | +4.9 C |
+| 10-26 | 25.5 | 10.7 | 71 % | +5.75 C |
+
+- **Dark days:** the maintainer reported 10-21 and 10-22 as dark and rainy (commit 3eb51f9). On
+  those days the step all but disappears.
+- **The black line on the plot cannot show steps.** It joins one or two weighings a day with
+  straight lines. The probe's steps run between those weighings.
+
+**The step grows as the pot dries because the round-the-clock loss shrinks (measured).** The noon
+loss does not shrink.
+
+From the scale alone, splitting each cycle's weighing intervals into halves:
+
+| scale | 11:00-15:00 | rest of the day | share in 11:00-15:00 |
+|---|---|---|---|
+| cycle 1, 10-12 to 10-14 | 7.10 g/h | 1.43 g/h | 50 % |
+| cycle 1, 10-14 to 10-19 | 6.62 g/h | 1.14 g/h | 54 % |
+| cycle 2, 10-20 to 10-23 (includes the dark days) | 3.45 g/h | 0.97 g/h | 42 % |
+| cycle 2, 10-23 to 10-27 | 6.42 g/h | 0.70 g/h | 65 % |
+
+From the probe:
+- **Cycle 2:** the other-20-hours loss fell from 16.9 g on 10-20 to 7-11 g on 10-23 to 10-26. The
+  noon-hours loss held at 25-34 g.
+- **Cycle 1:** same direction. The other-20-hours loss went from 29-32 g (10-12 to 10-14) to 18-22 g
+  (10-16, 10-17), and the noon share rose from 40-47 % to 54-57 %.
+
+**Inferred, not tested:** a freshly watered pot loses water around the clock, from the wet soil
+surface (day and night) and by drainage. Once the top dries, most of what is left is the plant
+transpiring, and it does that while the sun is on it.
+
+**The one part that is not drying: an evening rebound (measured).** After the noon step the reading
+rises again for a few hours as the tip cools. This is the largest rise in the 30-minute medians
+between 14:00 and 24:00, in grams:
+
+| cycle 2 day | at 2.0 %/C (in use) | at 1.5 %/C | at 1.0 %/C | tip fall over the rise |
+|---|---|---|---|---|
+| 10-23 | 19.0 | 13.1 | 7.9 | 4.2 C |
+| 10-24 | 6.6 | 4.6 | 3.5 | 1.7 C |
+| 10-25 | 3.5 | 1.8 | 1.4 | 1.5 C |
+| 10-26 | 7.7 | 5.6 | 3.4 | 1.4 C |
+
+- **Where it appears:** in cycle 1 (10-12 to 10-17, 100-374 g of water) it was 0-3 g on every day.
+  It shows only in late cycle 2, below about 190 g.
+- **10-23** was the first sunny day after the two dark ones. The probe's noon step (33.9 g) was
+  larger than the scale's average noon loss for those days (6.42 g/h x 4 h = 26 g), and then it
+  came back 19 g.
+- **Inferred, not tested: two explanations fit, and the scale cannot separate them.** Both are
+  mass-neutral, so neither changes the pot's weight.
+  - **A coefficient below 2 %/C in this part of cycle 2.** Cycle 2's scale fit is
+    1.59 +/- 0.38 %/C.
+  - **Water seeping back toward the blade.** At noon the plant draws down the soil around its roots
+    and the blade faster than the pot as a whole. In the evening that soil refills from the rest of
+    the pot.
+- **No coefficient removes it.** Even 1.0 %/C, which tracks the scale worse (see the table above),
+  leaves 3-8 g.
+- **What would tell them apart:** a temperature change with no sun on the plant, such as warming
+  the pot at night.
+
 ## Limits
 
 - **Scope:** one pot, one board, two cycles and 30 intervals.
