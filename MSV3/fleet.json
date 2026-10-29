@@ -1835,18 +1835,9 @@
       "parts_stock": "enough for 5 MSV4 boards currently (maintainer wording; whether this count includes already-built board 1 was not stated)",
       "planned_additional_builds": 5,
       "batch_in_progress": {
-        "verified": "2026-10-26",
-        "source": "maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'. Before that: maintainer stated 2026-10-13 during the boards 2-5 batch build",
-        "assembled_unflashed": [
-          {
-            "label": "board 5 (the maintainer's number)",
-            "state": "assembled, NOT flashed, NOT powered for bring-up",
-            "fault": "3V3 shorted to GND, found with the maintainer's multimeter; the maintainer says 'i think', so the short is suspected, not confirmed. Resistance reading NOT STATED. Board 2's record notes 500 and 600 ohm 3V3-GND readings on two unidentified batch boards; whether board 5 is one of them NOT STATED.",
-            "planned_fix": "'reflow 3', read as U3 (FSUSB42UMX electrode swap; its VCC pin 9 is on 3V3). Reading as U3 is Claude's; the maintainer did not spell it out.",
-            "source": "maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'",
-            "do_not": "do not power or SWD-flash it until the 3V3-GND short is cleared on the meter"
-          }
-        ],
+        "verified": "2026-10-29",
+        "source": "maintainer stated 2026-10-29 about board 5: 'found the issue it was a short on the BQ chip pads'. Before that: maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'. Before that: maintainer stated 2026-10-13 during the boards 2-5 batch build",
+        "assembled_unflashed": [],
         "note": "MSV4-BU-6528 (the first batch board finished) moved to msv4_boards.boards as board 2 on 2026-10-13 ~22:40 PDT, with every fact this entry held. Add further batch boards here until they are flashed and identified.",
         "photo_2026_10_18": {
           "source": "maintainer sent Downloads/IMG_6649.HEIC on 2026-10-18 ~22:50 PDT with the words '4 MSV4 assembled boards'",
@@ -1855,13 +1846,15 @@
           "repo_copy": "MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg (metadata stripped)"
         },
         "notes_2026_10_26": [
-          "maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon': board 3 (MSV4-BU-5667) is one of the two; the other is NOT IDENTIFIED. Both lack R17, the tip NTC."
+          "maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon': board 3 (MSV4-BU-5667) is one of the two; the other is NOT IDENTIFIED. Both lack R17, the tip NTC.",
+          "maintainer stated 2026-10-29 that U3 and U4 had to be resoldered on every single MSV4 board; board 5 additionally had a solder short on the BQ25504 pads. This confirms the systemic fine-pitch assembly/reflow issue across boards 1-5."
         ],
         "open_work_2026_10_26": [
-          "board 3 (MSV4-BU-5667): reflow U3 (A open, B tied to ground); fit R17 NTC; then rerun swap a/b/open + iq 16 and temp",
-          "board 4 (MSV4-BU-D7D2): reflow U3 (A open); confirm whether R17 is fitted (temp failed); rerun swap a/b/open + iq 16",
-          "board 5: clear the 3V3-GND short (planned: reflow U3), meter it, then SWD flash with --msv3 1.0.3 --app v262152 bring-up hex",
+          "boards 3 and 4: U3 resolder and mux retest COMPLETE 2026-10-29; A and B agree within 0.2% on both boards and sit about 3% below open",
+          "boards 3 and 4: temperature electrical paths PASS 2026-10-29 (22.66 C / 10939 ohm and 24.20 C / 10308 ohm); physical R17 placement was not inferred from telemetry",
+          "board 5: BQ25504-pad 3V3 short repair and guarded SWD bring-up COMPLETE 2026-10-29; exact v262152 build observed over BLE",
           "which second batch board lacks R17 (maintainer: 'these 2 boards'): board 3 is one; the other NOT STATED (board 4 likely, not confirmed)",
+          "board 5: analog front-end failure RESOLVED 2026-10-29 after intervening rework; full rerun passes mux, open calibration and spectrum (exact repaired component NOT STATED)",
           "after all pass: spectrum ab, MSV4 Lab hand test, sensor IDs, signed production OTA (msv4_ble_ota.py)"
         ]
       }
@@ -1893,7 +1886,7 @@
           "enclosure": "NOT STATED",
           "neighbours": "an MSV3 probe sits next to it in the window (maintainer stated 2026-10-06 ~22:10 PDT: 'its in air rn sitting in the window to test the window charging with MSV3 next to it'); WHICH MSV3 probe was not stated. Sensors 4 and 7 were both reporting to the receiver that evening.",
           "firmware": "MSV4-BUILD:fast1min-calexp-2026-10-11, application version 262165, sensor ID 10 (OBSERVED over BLE 2026-10-11 13:07 PDT; installed 13:03 at the maintainer's request, 'ok flash the fix'). The same one-minute test cadence as 262161 and 262163. NEW IN THIS IMAGE: (1) the LED blinks TWICE before every measurement while the battery is above 3500 mV, so a blue blink no longer means a reset by itself: one blink is a boot, two are a measurement; (2) a battery saver that below 3500 mV (back at 3550) stops the LED and measures moisture on every 30th wake at most, flags2 bit7 set while it does; (3) the mask check runs once a day and on a boot's first measurement, not after every sweep; (4) the ADC calibration is checked against a window around -5 LSB and taken again when it lands high; (5) a TEST block rotates each wake's first calibration through five ways and counts the high ones, to be removed once it has answered. All five are reported by msv4_adv_scan.py --read-build. This boot also started in soil and runs on the built-in 8.69 pF (DIS 'Cp 8.69 pF default', flags2 bit6 set). A new build needs an application version above 262165. WHAT FOLLOWS DESCRIBES 262163, which ran from 11:52 to 13:02 on 2026-10-11: MSV4-BUILD:fast1min-adczero-2026-10-10, application version 262163 (OBSERVED over BLE 2026-10-11 11:56 PDT; installed 11:52 at the maintainer's request). It is 262161 with two additions and the same one-minute test cadence: a DC leak check of the solder mask after every sweep and an ADC offset calibration checked against a zero, each published as a DIS string (msv4_adv_scan.py --read-build). This boot also started in soil and runs on the built-in 8.69 pF (DIS 'Cp 8.69 pF default', flags2 bit6 set); Cd carried straight on (32.39 pF before, 32.32 pF after). A new build needs an application version above 262163. WHAT FOLLOWS DESCRIBES 262161, which ran from 2026-10-08 22:07 to 2026-10-11 11:52, and still holds for the cadence and the Cp rule: MSV4-BUILD:fast1min-2026-10-08, application version 262161 (OBSERVED over BLE 2026-10-08 22:08 PDT) -- A TEST IMAGE: MOISTURE IS MEASURED ON EVERY ONE-MINUTE WAKE (production is every tenth), and every wake opens the connectable window. Modelled 2.2-2.4 mAh/day against 0.57-0.69; nothing measured. The production cadence has to be put back with a new build when the maintainer says the testing is over; if the probe is still planted then, build it with -CpCentiPf set to the Cp its DIS string reports at that time. THIS BOOT STARTED IN SOIL, so it has not calibrated: it runs on the 8.69 pF the previous boot calibrated at 21:47 (built in with -CpCentiPf 869; DIS reads 'Cp 8.69 pF default', flags2 bit6 set), and Cd carried straight on (21.60 pF before the update, 21.62 pF after). What follows describes 262160, whose rule this image keeps: Cp is no longer calibrated at boot. The moisture reading comes first, and Cp is measured only after a sane reading in air (valid, nothing conducting, fit residual below 0.0255), once per boot. Until then Cp is taken as zero, Cd is the whole node capacitance and flags2 bit6 is set; the DIS hardware revision string reads 'Cp 0.00 pF default' until a calibration is accepted. The 18:59 boot of 262160 calibrated on its first reading ('Cp 8.93 pF', Cd 13.33 pF, bit6 clear) and its 21:47 boot, a reset as the board was pushed into the pot, did too ('Cp 8.69 pF', the first reading still open). The boot before those (262159, from a reset at about 15:59 PDT on 2026-10-08 while the board was being handled, cause not established) had calibrated 15.89 pF with something on the blade and reported Cd 5.59-6.45 pF until 18:59; those Cd values are 7.15 pF low and nothing else in those rows is affected. The burn test image 262158 ran from 2026-10-07 23:18 to 2026-10-08 13:48, 262159 from 13:49 to 18:59, 262160 from 18:59 to 22:07. Connectable on every wake while this test image is on (a production image is connectable only on measurement wakes, every tenth minute, and the first three wakes after a boot). There is no BLE console on this board; a new build needs an application version above 262161. Never install an MSV3 production package on it (the bootloader shares MSV3's DFU device type and will not refuse it).",
-          "mods": "EPOXY added to the bottom thermistor and to the side edge of the PCB on 2026-10-08 (maintainer stated ~16:19 PDT; still curing at that time; maintainer ~21:46 PDT: 'I think the epoxy is set its been like 6 hours'). Which epoxy, how far along the edge it runs, and whether any of it lies over the sensing electrode NOT STATED. Tip-thermistor and capacitance readings from before this are a different physical board from readings after it. Otherwise NOT STATED (whether an SP+ zener or any rework beyond the 2026-10-01 solder fixes is fitted)"
+          "mods": "U3 and U4 resoldered to make the board work (maintainer's batch-wide statement 2026-10-29: both had to be resoldered on every single board; consistent with board 1's recorded 2026-10-01 solder faults). EPOXY added to the bottom thermistor and to the side edge of the PCB on 2026-10-08 (maintainer stated ~16:19 PDT; still curing at that time; maintainer ~21:46 PDT: 'I think the epoxy is set its been like 6 hours'). Which epoxy, how far along the edge it runs, and whether any of it lies over the sensing electrode NOT STATED. Tip-thermistor and capacitance readings from before this are a different physical board from readings after it. Otherwise NOT STATED (whether an SP+ zener is fitted)."
         },
         "led_blink_262165": {
           "verified": "2026-10-11",
@@ -2010,14 +2003,14 @@
         "ble_name": "MSV4-BU-5667",
         "application_address": "E7:5F:AD:54:56:67",
         "physical_state": {
-          "verified": "2026-10-26",
-          "source": "maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'. Before that: maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon' (read as board 3 and one other batch board, which one NOT STATED). Before that: maintainer stated 2026-10-26 ~13:10 PDT: 'Ok i ran it its blinking now, lets do a bringup test' (after holding pogo pins for the SWD flash)",
+          "verified": "2026-10-29",
+          "source": "maintainer stated 2026-10-29: '2 probes are resoldered, do a test to see if the mux is working now'; in the immediate context this means boards 3 and 4 and the requested retest is their failed U3 mux check. Before that: maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'. Before that: maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon' (read as board 3 and one other batch board, which one NOT STATED). Before that: maintainer stated 2026-10-26 ~13:10 PDT: 'Ok i ran it its blinking now, lets do a bringup test' (after holding pogo pins for the SWD flash)",
           "location": "NOT STATED (at the maintainer's computer for the SWD flash, by inference from the hand-held pins)",
           "pot": "NOT STATED",
           "power": "NOT STATED (powered from something, since it flashed and is blinking; cell, bench supply on SP, or both, not said)",
           "panel": "NOT STATED",
           "housing": "NOT STATED",
-          "rework": "NOT STATED",
+          "rework": "U3 and U4 resoldered to make the board work (maintainer confirmed 2026-10-29 that both parts had to be resoldered on every single MSV4 board). The 2026-10-29 mux and full-suite retests passed afterward.",
           "mods": [
             {
               "part": "R15",
@@ -2048,6 +2041,18 @@
           ],
           "inferred": "MS_A not connected and MS_B tied to ground, at U3 (leadless FSUSB42UMX) or on the blade. Not checked on the board. (R15 = 1 kohm, inferred here first, is now maintainer-stated.)",
           "next": "reflow U3, rerun swap a/b/open + iq 16; fit R17 and rerun temp"
+        },
+        "mux_retest_2026-10-29": {
+          "measured": "OBSERVED 2026-10-29 over the BLE console after the maintainer reported the probe resoldered. Commands: drive 16, chop on, then swap open/a/b with iq 16. Full record: MSV4/docs/MSV4_BOARDS3_4_MUX_RETEST_2026-10-29.md",
+          "result": "PASS: U3 mux paths A and B both work. SENSE amplitude open/A/B = 786.90/763.05/764.27 mV; A and B differ by 0.16%, and are 3.03% and 2.88% below open. The former B-to-ground and A-open symptoms are gone.",
+          "safe": "The final `safe` command returned OK all outputs safe.",
+          "next": "Fit R17 NTC and rerun temp; then spectrum ab and the MSV4 Lab hand test."
+        },
+        "full_bringup_2026-10-29": {
+          "measured": "OBSERVED over BLE with the tracked bring-up console. Full record: MSV4/docs/MSV4_BOARDS3_4_FULL_BRINGUP_2026-10-29.md",
+          "passed": "Build identity and LFCLK XTAL; initial and final safe pins; VDD 3317 mV; VBAT 4018 mV; temperature electrical path 22.66 C / 10939 ohm with die 23.00 C; SAADC calibration; 1 MHz drive and chopper; A/B/open mux; 16-phase sweep; spectrum open Cp 8.73 pF; dry-air-like A/B spectrum Cd 14.03 pF; final safe.",
+          "caveat": "Blade condition was not stated. The first spectrum fit reported a nonsensical 2.3 ohm/zero-Cm local solution with enormous uncertainty, while the immediately following moisture fit returned open-circuit resistance. With rms about 0.023 and Cd 14.0 pF this is a dry/open model degeneracy, not evidence of a 2.3 ohm physical path.",
+          "next": "MSV4 Lab hand-on/hand-off test; then assign sensor ID and install signed production firmware."
         }
       },
       {
@@ -2058,14 +2063,14 @@
         "ble_name": "MSV4-BU-D7D2",
         "application_address": "C1:63:B3:84:D7:D2",
         "physical_state": {
-          "verified": "2026-10-26",
-          "source": "maintainer stated 2026-10-26 ~13:24 PDT: 'Ok board 4 is up do a check'. Before that: maintainer stated ~13:21 PDT: 'Ok ima flash another one and see if it has similar issues'",
+          "verified": "2026-10-29",
+          "source": "maintainer stated 2026-10-29: '2 probes are resoldered, do a test to see if the mux is working now'; in the immediate context this means boards 3 and 4 and the requested retest is their failed U3 mux check. Before that: maintainer stated 2026-10-26 ~13:24 PDT: 'Ok board 4 is up do a check'. Before that: maintainer stated ~13:21 PDT: 'Ok ima flash another one and see if it has similar issues'",
           "location": "NOT STATED (at the maintainer's computer for the SWD flash, by inference from the hand-held pins)",
           "pot": "NOT STATED",
           "power": "NOT STATED",
           "panel": "NOT STATED",
           "housing": "NOT STATED",
-          "rework": "NOT STATED",
+          "rework": "U3 and U4 resoldered to make the board work (maintainer confirmed 2026-10-29 that both parts had to be resoldered on every single MSV4 board). The 2026-10-29 mux and full-suite retests passed afterward.",
           "mods": "NOT STATED. R15 value NOT STATED (netlist 1 kohm).",
           "U2": "NOT STATED",
           "ntc": "NOT STATED whether R17 is fitted. The maintainer said two batch boards lack it (board 3 is one); whether board 4 is the other NOT STATED.",
@@ -2090,6 +2095,65 @@
           ],
           "inferred": "MS_A not connected to SENSE, at U3 (leadless FSUSB42UMX) or on the MS_A trace. Same A symptom as board 3; board 3 also had B tied to ground, board 4's B is normal. Not checked on the board.",
           "next": "reflow U3, rerun swap a/b/open + iq 16"
+        },
+        "mux_retest_2026-10-29": {
+          "measured": "OBSERVED 2026-10-29 over the BLE console after the maintainer reported the probe resoldered. Commands: drive 16, chop on, then swap open/a/b with iq 16. Full record: MSV4/docs/MSV4_BOARDS3_4_MUX_RETEST_2026-10-29.md",
+          "result": "PASS: U3 mux paths A and B both work. SENSE amplitude open/A/B = 779.46/756.45/755.55 mV; A and B differ by 0.12%, and are 2.95% and 3.07% below open. The former A-open symptom is gone.",
+          "safe": "The final `safe` command returned OK all outputs safe.",
+          "next": "Confirm whether R17 is fitted and diagnose/rerun temp; then spectrum ab and the MSV4 Lab hand test."
+        },
+        "full_bringup_2026-10-29": {
+          "measured": "OBSERVED over BLE with the tracked bring-up console. The first connection attempt missed the advertiser; a 15-second scan then found both boards and a direct-address retry completed normally. Full record: MSV4/docs/MSV4_BOARDS3_4_FULL_BRINGUP_2026-10-29.md",
+          "passed": "Build identity and LFCLK XTAL; initial and final safe pins; VDD 3287 mV; VBAT 4038 mV; temperature electrical path 24.20 C / 10308 ohm with die 24.25 C; SAADC calibration; 1 MHz drive and chopper; A/B/open mux; 16-phase sweep; spectrum open Cp 8.79 pF; dry/open A/B spectrum Rsoil 4.69e14 ohm and Cd 14.96 pF; final safe.",
+          "caveat": "Blade condition was not stated, so the dry/open interpretation is based on the measured fit and cannot establish its physical surroundings.",
+          "next": "MSV4 Lab hand-on/hand-off test; then assign sensor ID and install signed production firmware."
+        }
+      },
+      {
+        "board": 5,
+        "identity_basis": "OBSERVED 2026-10-29: a 15-second BLE scan found the two known bring-up boards 5667 and D7D2 plus one new board, MSV4-BU-9FA3 at C8:48:67:8B:9F:A3, immediately after the maintainer reported the last board alive from its SWD flash. The console then read its exact build identity.",
+        "sensor_id": null,
+        "sensor_id_source": "NOT ASSIGNED: still on the bring-up image. IDs 1-11 are taken; the receiver accepts 1-16.",
+        "ble_name": "MSV4-BU-9FA3",
+        "application_address": "C8:48:67:8B:9F:A3",
+        "recovery_address": "C8:48:67:8B:9F:A4",
+        "recovery_address_source": "DERIVED, not observed: lowest address byte + 1, following the pinned bootloader's recovery-address rule.",
+        "bootloader": "msv3-1.0.3",
+        "bootloader_source": "Intended and manifest-verified by the guarded 2026-10-29 SWD command on COM4: --msv3 1.0.3 --app v262152. The maintainer reported it worked; application identity was observed over BLE, bootloader identity was not independently read.",
+        "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
+        "device_type": "0x3356",
+        "installed_application_version": 262152,
+        "installed_build": "MSV4-BUILD:bringup-live-2026-10-11",
+        "installed_verification": "OBSERVED 2026-10-29 over BLE: exact firmware/build and app_version 262152; uptime 47 s, reset reason 0x1, boot count 1. SWD-written, so the anti-rollback floor is NOT seeded; finish a production board with signed OTA.",
+        "physical_state": {
+          "verified": "2026-10-29",
+          "source": "maintainer confirmed 2026-10-29 after the passing retest: board 5's failed analog path was repaired by resoldering U4; U3 was also resoldered, as both U3 and U4 had to be on every board. Board 5 additionally had the BQ25504-pad short. Before that, after the intervening board work: 'K 5 is back online lets give it another shot'.",
+          "location": "NOT STATED (within BLE range of the maintainer's computer)",
+          "pot": "NOT STATED",
+          "power": "battery connected; console read 4057 mV, not checked against a meter",
+          "panel": "NOT STATED",
+          "housing": "NOT STATED",
+          "rework": "U3 and U4 resoldered; U4 was the cause of the failed first analog bring-up and the full retest passed after it was resoldered (maintainer, 2026-10-29). The maintainer confirmed both U3 and U4 required resoldering on every MSV4 board. Board 5 additionally had a solder short on the BQ25504 pads, repaired before successful power-up/SWD flash. Exact BQ pads and repair method NOT STATED.",
+          "ntc": "Physical population NOT STATED; electrical path returned 24.09 C / 10352 ohm."
+        },
+        "initial_check_2026-10-29": {
+          "measured": "OBSERVED over the BLE console immediately after SWD bring-up.",
+          "passed": "LFCLK XTAL running, 393 ms start; VDD 3309 mV; VBAT 4057 mV; temperature electrical path 24.09 C / 10352 ohm, die 26.25 C; initial and final pin states safe; final `safe` returned OK.",
+          "next": "Run the full mux/open/spectrum bring-up suite and MSV4 Lab hand test before assigning a sensor ID and installing signed production firmware."
+        },
+        "full_bringup_2026-10-29": {
+          "measured": "OBSERVED over BLE with the tracked v262152 bring-up console. Full record: MSV4/docs/MSV4_BOARD5_FULL_BRINGUP_2026-10-29.md",
+          "passed": "Exact build identity; LFCLK XTAL at 393 ms; initial/final safe pins; VDD 3308 mV; VBAT 4057 mV; temperature electrical path 23.90 C / 10429 ohm, die 24.75 C; SAADC calibration; command/control path; final safe.",
+          "failed": "Analog front end/readout: with 1 MHz drive, chop on and swap open, IQ fundamental was only 26.38 mV SENSE and 15.55 mV DRV, versus about 780 mV on passing boards. DRV_OUT changed strongly with swap state. Spectrum open produced impossible |H| 1.6 to 45, Cp 0.00 pF and rms 15.58; spectrum ab aborted with `ERR DRV_OUT has no fundamental at N=6`. Moisture output is invalid.",
+          "inferred": "U4 (FSUSB42 chopper) or its nearby DRV/SENSE/filter solder paths is the leading fault location because both independently filtered channels lose their fundamental. This is an inference, not a board inspection. U3 mux operation cannot be judged through the failed readout.",
+          "next": "Inspect and reflow U4 first; inspect R18/R19/C18/C19 and DRV/SENSE for bridges/opens. Meter R15 DRV-to-SENSE against its intended value. Then rerun the full suite; do not assign a sensor ID or install production firmware yet."
+        },
+        "full_bringup_retest_2026-10-29": {
+          "measured": "OBSERVED over BLE after the maintainer stated board 5 was back online following intervening rework. Full record: MSV4/docs/MSV4_BOARD5_FULL_BRINGUP_RETEST_2026-10-29.md",
+          "passed": "Exact build identity; LFCLK XTAL at 386 ms; initial/final safe pins; VDD 3288 mV; VBAT 4055 mV; temperature electrical path 23.62 C / 10541 ohm, die 28.25 C; SAADC calibration; 1 MHz drive/chopper; A/B/open mux; 16-phase sweep; spectrum open Cp 8.78 pF; dry/open spectrum Rsoil 9.59e15 ohm, Cd 15.07 pF and rms 0.02290; final safe.",
+          "comparison": "RESOLVED: open SENSE/DRV fundamental rose from 26.38/15.55 mV on the failed run to 783.44/772.26 mV. A/B SENSE = 756.54/754.92 mV, differing 0.21%; DRV remains stable at 771.26/770.79 mV. Spectrum ab now completes instead of aborting.",
+          "caveat": "Maintainer later confirmed the intervening repair was resoldering U4 (and that U3 was also resoldered, as on every board). Blade condition was not stated. The numerical fit is dry/open-like and proves the analog path operates; it does not establish the blade's physical surroundings.",
+          "next": "MSV4 Lab hand-on/hand-off test; then assign a sensor ID and install signed production firmware."
         }
       }
     ]
