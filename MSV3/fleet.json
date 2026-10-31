@@ -1977,8 +1977,8 @@
           "pot": "none (not one of the registered pots): IN MOIST SOIL in its OWN SEPARATE POT, not the Alocasia pot (maintainer ~20:00), from ~17:28 PDT 2026-10-15 (maintainer); container and soil NOT STATED. Before that: none: tap-water glass (one cup, since ~14:12) with ONE PINCH OF SALT, UNSTIRRED (maintainer ~17:04), from ~17:03 PDT 2026-10-15 (maintainer), cooling in room air after the hot-bowl swing. Before that: none: tap-water glass (one cup, since ~14:12) out of the hot bowl ~15:15 PDT 2026-10-15, cooling in room air with the blade in it (maintainer, confirmed ~15:17). Before that: none: tap-water glass (one cup, since ~14:12) standing in a bowl of 125 F hot tap water from ~14:54 PDT 2026-10-15 (maintainer). Before that: none: in one cup of ROOM-TEMPERATURE TAP WATER from ~14:12 PDT 2026-10-15 (maintainer), for the raw-sweep test. Before that: none: OUT OF THE WATER since ~17:06 PDT 2026-10-14, wiped off and drying in air (maintainer). Whether it was rinsed in fresh water before wiping NOT STATED. Last medium: Brita water with three pinches of salt, after a warm bath to ~45.5 C. Pre-test air baseline 12:09-12:40: Rsoil 85.4 kohm, Cm 2.6 pF, Cd 13.6 pF, soil-coupled 2.7 pF.",
           "plant_name": "maintainer 2026-10-27 ~12:47 PDT: 'how is the data coming in off of the raw sweep sending probe (begonia)' -- CONFIRMS the plant in sensor 11's pot is a Begonia (whether it is the registered 'begonia' pot, probe 7's until 2026-09-30, still NOT STATED). Before that: maintainer 2026-10-19 ~10:55 PDT: 'begonia is flashing red water now but its moisure reading i last saw was right at the maximum still', with a chart of the card's history. Read as SENSOR 11 (Claude's identification, not stated: the chart's shape matches sensor 11's hourly record from its 10-15 17:28 soil insertion, flat ~14,000, step to ~24,100 on 10-18 between 13:00 and 14:00 PDT, and sensor 11 is the only sensor near its maximum yet under 0 % of its region). So the plant in sensor 11's own pot is read as a Begonia; whether that is the registered 'begonia' pot (probe 7's until 2026-09-30) NOT STATED. The 10-18 step (hourly medians 13,712 at 13:00 -> 24,134 at 14:00 PDT) is in telemetry only: whether it was a watering, and how much, NOT STATED.",
           "mass": {
-            "verified": "2026-10-30",
-            "source": "maintainer stated 2026-10-30 (session clock ~10:53 PDT): '1250g on the begonia today'. Before that: maintainer stated 2026-10-29 ~22:30 PDT (session clock): '1277g right now ofr begonia'. Earlier: maintainer stated 2026-10-28 ~15:48 PDT: 'first weighing of begonia is right now, plasitc dish no water in it is 45.6g its in a much smaller pot the alocasia pot is huge comparatively', then corrected: 'sorry its 1349g the other one was fl oz' (the scale was in fl oz mode; 45.6 fl oz of water = 1348.5 g, so 45.6 and 1349 g are the same reading)",
+            "verified": "2026-10-31",
+            "source": "maintainer reported 2026-10-31 ~10:30 PDT (session clock): '1193 1194 1193' (nothing else; read as the Begonia). Before that: maintainer stated 2026-10-30 (session clock ~10:53 PDT): '1250g on the begonia today'. Before that: maintainer stated 2026-10-29 ~22:30 PDT (session clock): '1277g right now ofr begonia'. Earlier: maintainer stated 2026-10-28 ~15:48 PDT: 'first weighing of begonia is right now, plasitc dish no water in it is 45.6g its in a much smaller pot the alocasia pot is huge comparatively', then corrected: 'sorry its 1349g the other one was fl oz' (the scale was in fl oz mode; 45.6 fl oz of water = 1348.5 g, so 45.6 and 1349 g are the same reading)",
             "pot_size": "much smaller than the shared Alocasia pot (maintainer); dimensions NOT STATED",
             "weighing_convention": "pot with soil and plant on its plastic dish, no water standing in the dish (maintainer, 2026-10-28). Same kitchen scale as the Alocasia pot, set to grams; check the unit each time.",
             "weighings": [
@@ -2008,6 +2008,15 @@
                 "weighed_note": "read as the same pot-and-plastic-dish convention established for the first Begonia weighing",
                 "saucer_water": "NOT STATED",
                 "note": "single reading reported by the maintainer ('1250g on the begonia today'): 27 g below the 1277 g reading about 12 h 23 min earlier; 99 g below the first 1349 g"
+              },
+              {
+                "when": "2026-10-31 ~10:30 PDT (session clock at the report; the weighing time itself NOT STATED)",
+                "at": "2026-10-31T10:30:00-07:00",
+                "grams": 1193,
+                "weighed": "pot_and_saucer",
+                "weighed_note": "read as the same pot-and-plastic-dish convention; which pot NOT STATED, read as the Begonia from the magnitude (57 g under its 1250 g of 10-30; the Alocasia pot reads about 4670 g)",
+                "saucer_water": "NOT STATED",
+                "note": "median of three readings reported by the maintainer as '1193 1194 1193' with no other words; 57 g below the 1250 g reading about 24 h earlier, 156 g below the first 1349 g"
               }
             ],
             "watering_note": "last watering 2026-10-27 ~12:29 PDT, amount NOT STATED, so no pre-watering weight; a drying slope can still be fitted from weighings"
