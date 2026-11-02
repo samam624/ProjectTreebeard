@@ -75,6 +75,9 @@ RAW_DB_COLUMNS = [
 RAW_CSV_FIELDS = ["timestamp_iso", "elapsed_s", "sensor"] + RAW_DB_COLUMNS + ["board_temp_c"]
 
 
+CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "sensor_logs" / "cache"
+
+
 def run_query(sql: str) -> list[dict]:
     result = subprocess.run(
         [SUPABASE_CLI, "db", "query", "--linked", "--workdir", str(SUPABASE_WORKDIR), sql],
@@ -102,7 +105,14 @@ def main() -> int:
     parser.add_argument("--receiver", required=True, help="Receiver ID, e.g. MSV2088A3104A7AC.")
     parser.add_argument("--sensor", type=int, required=True, help="Sensor ID to fetch.")
     parser.add_argument("--since-hours", type=float, default=24, help="How far back to fetch.")
-    parser.add_argument("--csv", type=Path, required=True, help="CSV output path (overwritten each run).")
+    parser.add_argument("--csv", type=Path, help="CSV output path (overwritten each run).")
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Keep ONE growing file per sensor at data/sensor_logs/cache/sensor<N>[_raw].csv instead of a "
+        "dated snapshot: the first run fetches everything stored, later runs fetch only rows newer than "
+        "the file's last one and append them (--since-hours and --csv are ignored).",
+    )
     parser.add_argument(
         "--raw",
         action="store_true",
@@ -110,6 +120,8 @@ def main() -> int:
         "instead of the log_sensor_readings.py schema.",
     )
     args = parser.parse_args()
+    if args.cache == (args.csv is not None):
+        parser.error("give exactly one of --csv (one-off snapshot) or --cache (the per-sensor cache)")
 
     if not RECEIVER_ID_RE.match(args.receiver):
         parser.error("receiver ID contains unexpected characters")
@@ -117,12 +129,22 @@ def main() -> int:
     columns = RAW_DB_COLUMNS if args.raw else ["wake", "moisture", "battery_percent", "rssi", "age_ms"]
     select_list = "sensor_id, " + ", ".join(columns) + ", received_at"
 
+    old_rows: list[dict] = []
+    since_clause = f"received_at >= now() - interval '{float(args.since_hours)} hours' "
+    if args.cache:
+        args.csv = CACHE_DIR / f"sensor{int(args.sensor)}{'_raw' if args.raw else ''}.csv"
+        if args.csv.exists():
+            with args.csv.open(newline="", encoding="utf-8") as handle:
+                old_rows = list(csv.DictReader(handle))
+        since_clause = (f"received_at > '{old_rows[-1]['timestamp_iso']}' " if old_rows
+                        else "received_at > '2000-01-01' ")
+
     sql = (
         f"select {select_list} "
         "from public.msv2_sensor_history "
         f"where receiver_id = '{args.receiver}' "
         f"and sensor_id = {int(args.sensor)} "
-        f"and received_at >= now() - interval '{float(args.since_hours)} hours' "
+        f"and {since_clause}"
         "order by received_at asc;"
     )
 
@@ -135,6 +157,9 @@ def main() -> int:
         print(f"Could not parse supabase db query output: {exc}")
         return 1
 
+    if not rows and old_rows:
+        print(f"{args.csv} is current ({len(old_rows)} rows, last {old_rows[-1]['timestamp_iso']}).")
+        return 0
     if not rows:
         print("No rows returned. Is cloud sync enabled on the receiver, and has it uploaded yet?")
         return 1
@@ -145,7 +170,9 @@ def main() -> int:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
 
-        first_ts = None
+        first_ts = parse_ts(old_rows[0]["timestamp_iso"]) if old_rows else None
+        for old in old_rows:
+            writer.writerow(old)
         for row in rows:
             received_at = row["received_at"]
             this_ts = parse_ts(received_at)
@@ -168,7 +195,7 @@ def main() -> int:
 
             writer.writerow(record)
 
-    print(f"Wrote {len(rows)} rows to {args.csv}")
+    print(f"Wrote {len(old_rows) + len(rows)} rows to {args.csv} ({len(rows)} new)")
     return 0
 
 

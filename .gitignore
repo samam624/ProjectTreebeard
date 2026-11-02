@@ -10,6 +10,8 @@ github-recovery-codes.txt
 __pycache__/
 *.py[cod]
 data/sensor_logs/*.csv
+data/sensor_logs/cache/
+data/sensor_logs/archive/
 packet_test*.csv
 .netlify/
 cloud/web/*.zip

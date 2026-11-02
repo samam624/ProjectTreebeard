@@ -7,11 +7,10 @@ the pot". A candidate that tracked the scale perfectly would lie on the black li
 hourly medians; the black line joins the weighings (repeats merged to their median, bars show the
 scale's spread). Hollow marker = water standing in the saucer (not scored); x = saucer unknown.
 
-By default this writes ``msv4_moisture_vs_mass.png`` beside the input CSV and replaces the
-previous plot. The temperature-corrected view is the normal view; use ``--raw`` only when the
+By default this reads the sensor 10 cache and overwrites ``data/sensor_logs/latest/sensor10_vs_mass.png``. The temperature-corrected view is the normal view; use ``--raw`` only when the
 uncorrected diagnostic comparison is wanted.
 
-    python MSV4/scripts/msv4_moisture_plot.py data/sensor_logs/<sensor10 history>.csv [-o out.png] [--raw]
+    python MSV4/scripts/msv4_moisture_plot.py [history.csv] [-o out.png] [--raw]
 """
 from __future__ import annotations
 
@@ -28,12 +27,14 @@ import matplotlib.pyplot as plt
 import msv4_experimental_moisture as reading
 import msv4_moisture_competition as comp
 
+ROOT = Path(__file__).resolve().parents[2]
 COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#17becf")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("csv", type=Path)
+    parser.add_argument("csv", type=Path, nargs="?", default=ROOT / "data" / "sensor_logs" / "cache" / "sensor10_raw.csv",
+                        help="history CSV (default: the sensor 10 cache; refresh it with fetch_supabase_history.py --sensor 10 --raw --cache)")
     parser.add_argument("-o", "--out", type=Path)
     parser.add_argument("--with-saucer", action="store_true", help="fit through weighings with standing saucer water too")
     correction = parser.add_mutually_exclusive_group()
@@ -95,7 +96,7 @@ def main() -> None:
     ax.grid(alpha=0.25)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), fontsize=8, ncol=2, frameon=False)
     fig.tight_layout()
-    out = args.out or args.csv.with_name("msv4_moisture_vs_mass.png")
+    out = args.out or ROOT / "data" / "sensor_logs" / "latest" / "sensor10_vs_mass.png"
     fig.savefig(out, dpi=130)
     print(out)
 
