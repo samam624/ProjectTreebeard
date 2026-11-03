@@ -12,6 +12,7 @@ const projectDir = path.dirname(here);
 // reports, optional gasket) goes to output/reference/.
 const outputDir = path.join(projectDir, 'output');
 const referenceDir = path.join(outputDir, 'reference');
+const minimumArmReleaseDir = path.join(referenceDir, 'minimum_profile_arm_v5_5');
 const sourcePcbPath = path.resolve(projectDir, '..', 'MSV4.step');
 const wasmPath = path.resolve(
   projectDir,
@@ -117,6 +118,14 @@ const p = {
   minimalGrooveXYClearance: 0.25,
   minimalGrooveBottomZ: -1.75,
   minimalGrooveTopZ: 0.15,
+  minimalSupportTopZ: -1.60,
+  minimalSupportWidth: 3.00,
+  minimalSupportLength: 4.00,
+  minimalSupportRadius: 0.60,
+  minimalSupportCenters: [
+    [-10.50, 108.00], [10.50, 108.00],
+    [-10.50, 128.00], [10.50, 128.00],
+  ],
   minimalOuterX: 16.20,
   minimalOuterYMin: 96.00,
   minimalOuterYMax: 146.20,
@@ -417,6 +426,64 @@ function addCaseFasteners(baseShape, lidShape) {
   return { base, lid };
 }
 
+// Continuous narrow edge shelves and guides use the component-free outer PCB
+// margins. The support overlap is only 0.15 mm per side.
+function addPcbEdgeSupports(base) {
+  const shelfTop = -p.pcbActualThickness;
+  return base
+    .fuse(box(-13.50, 104.00, shelfTop - 0.75, -12.85, 140.00, shelfTop))
+    .fuse(box(12.85, 104.00, shelfTop - 0.75, 13.50, 140.00, shelfTop))
+    .fuse(box(-13.50, 104.00, -1.80, -13.10, 140.00, -0.25))
+    .fuse(box(13.10, 104.00, -1.80, 13.50, 140.00, -0.25));
+}
+
+// Compression rails give 0.10 mm nominal pinch on the PCB edge. They sit just
+// inside the base's gasket groove and rise to the roof. From the seam up each
+// rail is tied back into the cavity wall; a free 0.20 mm fin is not printable
+// at this height.
+function addPcbCompressionRails(lid) {
+  return lid
+    .fuse(box(-12.95, 105.00, -p.pcbClampInterference, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
+    .fuse(box(12.75, 105.00, -p.pcbClampInterference, 12.95, 139.00, p.lidInnerRoofZ + 0.05))
+    .fuse(box(-13.40, 105.00, p.lidBottomZ, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
+    .fuse(box(12.75, 105.00, p.lidBottomZ, 13.40, 139.00, p.lidInnerRoofZ + 0.05));
+}
+
+// Add the same proven, flat-backed pivot stations to either base outline. The
+// back-filling blocks are local to the bosses; they do not add material inside
+// the PCB cavity.
+function addArmPivots(baseShape, wallX, backZ, backChamfer) {
+  let base = baseShape;
+  const bossYMin = p.armPivotY - p.pivotBossRadius;
+  const bossYMax = p.armPivotY + p.pivotBossRadius;
+  const fillDepth = backChamfer + 0.40;
+  for (const [xMin, xMax, fillXMin, fillXMax] of [
+    [-20.10, -wallX, -wallX, -wallX + fillDepth],
+    [wallX, 20.10, wallX - fillDepth, wallX],
+  ]) {
+    base = base
+      .fuse(cylinderX(xMin, xMax - xMin, p.armPivotY, p.armPivotZ, p.pivotBossRadius))
+      .fuse(box(xMin, bossYMin, backZ, xMax, bossYMax, p.armPivotZ))
+      .fuse(box(fillXMin, bossYMin, backZ, fillXMax, bossYMax, backZ + fillDepth))
+      .cut(box(xMin - 0.10, bossYMin - 0.10, backZ - 1.00, xMax + 0.10, bossYMax + 0.10, backZ));
+  }
+  return base
+    .cut(cylinderX(
+      -20.30,
+      p.armInsertPocketDepth + 0.20,
+      p.armPivotY,
+      p.armPivotZ,
+      p.armInsertPocketDiameter / 2,
+    ))
+    .cut(cylinderX(
+      20.30 - p.armInsertPocketDepth - 0.20,
+      p.armInsertPocketDepth + 0.20,
+      p.armPivotY,
+      p.armPivotZ,
+      p.armInsertPocketDiameter / 2,
+    ));
+}
+
 function buildCommonBase(withArmPivots) {
   let base = outerCase(p.baseBottomZ, p.baseTopZ, p.baseBottomChamfer, 'bottom')
     .cut(cavity(p.baseFloorTopZ, p.baseTopZ + 0.50))
@@ -435,14 +502,7 @@ function buildCommonBase(withArmPivots) {
     p.baseTopZ + 0.20,
   ));
 
-  // Continuous narrow edge shelves and guides use the component-free outer
-  // PCB margins. The support overlap is only 0.15 mm per side.
-  const shelfTop = -p.pcbActualThickness;
-  base = base
-    .fuse(box(-13.50, 104.00, shelfTop - 0.75, -12.85, 140.00, shelfTop))
-    .fuse(box(12.85, 104.00, shelfTop - 0.75, 13.50, 140.00, shelfTop))
-    .fuse(box(-13.50, 104.00, -1.80, -13.10, 140.00, -0.25))
-    .fuse(box(13.10, 104.00, -1.80, 13.50, 140.00, -0.25));
+  base = addPcbEdgeSupports(base);
 
   // A shallow cord/formed-in-place gasket groove follows the cavity. It is
   // deliberately open only at the probe throat, which is epoxy/RTV sealed.
@@ -454,43 +514,15 @@ function buildCommonBase(withArmPivots) {
   ));
 
   if (withArmPivots) {
-    // Each boss drops straight to the base back so the base prints flat. The
-    // inboard block fills the back chamfer behind the boss.
-    const bossYMin = p.armPivotY - p.pivotBossRadius;
-    const bossYMax = p.armPivotY + p.pivotBossRadius;
-    const fillDepth = p.baseBottomChamfer + 0.40;
-    for (const [xMin, xMax, fillXMin, fillXMax] of [
-      [-20.10, -16.60, -16.60, -16.60 + fillDepth],
-      [16.60, 20.10, 16.60 - fillDepth, 16.60],
-    ]) {
-      base = base
-        .fuse(cylinderX(xMin, xMax - xMin, p.armPivotY, p.armPivotZ, p.pivotBossRadius))
-        .fuse(box(xMin, bossYMin, p.baseBottomZ, xMax, bossYMax, p.armPivotZ))
-        .fuse(box(fillXMin, bossYMin, p.baseBottomZ, fillXMax, bossYMax, p.baseBottomZ + fillDepth))
-        .cut(box(xMin - 0.10, bossYMin - 0.10, p.baseBottomZ - 1.00, xMax + 0.10, bossYMax + 0.10, p.baseBottomZ));
-    }
-    base = base
-      .cut(cylinderX(
-        -20.30,
-        p.armInsertPocketDepth + 0.20,
-        p.armPivotY,
-        p.armPivotZ,
-        p.armInsertPocketDiameter / 2,
-      ))
-      .cut(cylinderX(
-        20.30 - p.armInsertPocketDepth - 0.20,
-        p.armInsertPocketDepth + 0.20,
-        p.armPivotY,
-        p.armPivotZ,
-        p.armInsertPocketDiameter / 2,
-      ));
+    base = addArmPivots(base, 16.60, p.baseBottomZ, p.baseBottomChamfer);
   }
   return base;
 }
 
 function buildMinimalSolarBase() {
   // The board-shaped top recess makes the PCB drop into one unambiguous
-  // position. A deeper local cavity clears every corrected bottom component.
+  // position. A deeper local cavity clears every corrected bottom component;
+  // four broad floor-tied pads positively support the bare PCB underside.
   let base = chamferedPrism(
     minimalOuterContour,
     p.minimalBaseBottomZ,
@@ -505,6 +537,18 @@ function buildMinimalSolarBase() {
     ))
     .cut(cavity(p.minimalBaseFloorTopZ, p.minimalGrooveBottomZ + 0.05));
 
+  for (const [x, y] of p.minimalSupportCenters) {
+    base = base.fuse(roundedRect(
+      x - p.minimalSupportWidth / 2,
+      y - p.minimalSupportLength / 2,
+      x + p.minimalSupportWidth / 2,
+      y + p.minimalSupportLength / 2,
+      p.minimalSupportRadius,
+      p.minimalBaseFloorTopZ,
+      p.minimalSupportTopZ,
+    ));
+  }
+
   base = base.cut(teardropPrism(
     p.ledCenterX,
     p.ledCenterY,
@@ -513,6 +557,7 @@ function buildMinimalSolarBase() {
     p.minimalBaseBottomZ - 0.20,
     p.minimalBaseTopZ + 0.20,
   ));
+
   return base;
 }
 
@@ -551,6 +596,40 @@ function buildMinimalSolarLid() {
   return lid;
 }
 
+function buildMinimalArmBase(minimalBase) {
+  // Keep the minimum-profile base's proven PCB-shaped seating groove exactly
+  // as-is. Only the proven arm pivot stations are added outside the case wall.
+  // The screw-case edge shelves would duplicate this groove and create the
+  // unsupported fins seen in the rejected first draft.
+  return addArmPivots(
+    minimalBase.clone(),
+    p.minimalOuterX,
+    p.minimalBaseBottomZ,
+    p.minimalBaseBottomChamfer,
+  );
+}
+
+function buildMinimalArmLid() {
+  // The base groove registers the PCB, so this bonded lid needs neither the
+  // screw-case compression rails nor insert towers. It is a plain arm-height
+  // roof with the same side wire exit as the proven arm enclosure.
+  return chamferedPrism(
+    minimalOuterContour,
+    p.minimalLidBottomZ,
+    p.armLidTopZ,
+    p.armLidTopChamfer,
+    'top',
+  )
+    .cut(cavity(p.minimalLidBottomZ - 0.20, p.lidInnerRoofZ))
+    .cut(cylinderX(
+      -16.80,
+      4.30,
+      p.armPivotY,
+      p.caseWireEntryCenterZ,
+      p.caseWireEntryDiameter / 2,
+    ));
+}
+
 function buildLidShell(kind) {
   const isIntegrated = kind === 'integrated';
   const topZ = isIntegrated ? p.integratedLidTopZ : p.armLidTopZ;
@@ -567,30 +646,7 @@ function buildLidShell(kind) {
   ));
   lid = taperLidAtProbe(lid, topZ);
 
-  // Compression rails provide 0.10 mm nominal pinch on the PCB edge. They sit
-  // just inside the base's gasket groove and rise to the roof. From the seam
-  // up each rail is tied back into the cavity wall; a free 0.20 mm fin is not
-  // printable at this height.
-  lid = lid
-    .fuse(box(
-      -12.95,
-      105.00,
-      -p.pcbClampInterference,
-      -12.75,
-      139.00,
-      p.lidInnerRoofZ + 0.05,
-    ))
-    .fuse(box(
-      12.75,
-      105.00,
-      -p.pcbClampInterference,
-      12.95,
-      139.00,
-      p.lidInnerRoofZ + 0.05,
-    ));
-  lid = lid
-    .fuse(box(-13.40, 105.00, p.lidBottomZ, -12.75, 139.00, p.lidInnerRoofZ + 0.05))
-    .fuse(box(12.75, 105.00, p.lidBottomZ, 13.40, 139.00, p.lidInnerRoofZ + 0.05));
+  lid = addPcbCompressionRails(lid);
 
   if (isIntegrated) {
     const pocketMinX = -p.solarPanelPocketWidth / 2;
@@ -928,6 +984,7 @@ function armOnBed(shape) {
 }
 
 fs.mkdirSync(referenceDir, { recursive: true });
+fs.mkdirSync(minimumArmReleaseDir, { recursive: true });
 
 let integratedBase = buildCommonBase(false);
 let integratedLid = buildLidShell('integrated');
@@ -943,6 +1000,8 @@ const gasket = buildGasket();
 const gasketSeatZ = p.baseTopZ - p.gasketGrooveDepth;
 const minimalBase = buildMinimalSolarBase();
 const minimalLid = buildMinimalSolarLid();
+const minimalArmBase = buildMinimalArmBase(minimalBase);
+const minimalArmLid = buildMinimalArmLid();
 const pcb = await correctedPcbReference();
 const battery = batteryReference();
 const integratedPanel = integratedPanelReference();
@@ -972,9 +1031,28 @@ const individualSteps = [
   ['MSV4_case_gasket.step', gasket],
   ['MSV4_minimum_profile_integrated_solar_base.step', minimalBase],
   ['MSV4_minimum_profile_integrated_solar_lid.step', minimalLid],
+  ['MSV4_minimum_profile_arm_solar_base.step', minimalArmBase],
+  ['MSV4_minimum_profile_arm_solar_lid.step', minimalArmLid],
 ];
 for (const [filename, shape] of individualSteps) {
   await writeBlob(path.join(referenceDir, filename), shape.blobSTEP());
+}
+
+// Direct, print-oriented STL bodies for slicers that do not preserve the 3MF
+// object layout. Keep these beside the revisioned release guide, not in the
+// drag-and-drop output directory.
+const minimumArmPrintBodies = [
+  ['MSV4_minimum_profile_arm_base_v5_5_print.stl', placeOnBed(minimalArmBase)],
+  ['MSV4_minimum_profile_arm_lid_v5_5_print.stl', flipRoofDown(minimalArmLid, p.armLidTopZ)],
+  ['MSV4_solar_arm_left_v5_5_print.stl', armOnBed(leftArm)],
+  ['MSV4_solar_arm_right_v5_5_print.stl', armOnBed(rightArm)],
+  ['MSV4_solar_panel_frame_v5_5_print.stl', placeOnBed(panelFrame)],
+];
+for (const [filename, shape] of minimumArmPrintBodies) {
+  await writeBlob(
+    path.join(minimumArmReleaseDir, filename),
+    shape.blobSTL({ tolerance: 0.04, angularTolerance: 0.18, binary: true }),
+  );
 }
 
 await writeBlob(
@@ -1045,7 +1123,47 @@ await writeBlob(
   ]),
 );
 
+await writeBlob(
+  path.join(referenceDir, 'MSV4_minimum_profile_arm_solar_enclosure_assembly.step'),
+  replicad.exportSTEP([
+    { shape: minimalArmBase, name: 'MSV4 Minimum Profile Arm Base', color: colors.base },
+    { shape: minimalArmLid, name: 'MSV4 Minimum Profile Arm Lid', color: colors.lid },
+    { shape: leftArm, name: 'MSV4 Solar Arm Left', color: colors.arm },
+    { shape: rightArm, name: 'MSV4 Solar Arm Right', color: colors.arm },
+    { shape: panelFrame, name: 'MSV4 36 x 30 Solar Panel Frame', color: colors.frame },
+    { shape: detachedPanel, name: '36 x 30 mm Solar Panel Reference - Do Not Print', color: colors.panel },
+  ]),
+);
+await writeBlob(
+  path.join(referenceDir, 'MSV4_minimum_profile_arm_solar_enclosure_fit_check.step'),
+  replicad.exportSTEP([
+    { shape: minimalArmBase, name: 'MSV4 Minimum Profile Arm Base', color: colors.base },
+    { shape: minimalArmLid, name: 'MSV4 Minimum Profile Arm Lid', color: colors.lid },
+    { shape: leftArm, name: 'MSV4 Solar Arm Left', color: colors.arm },
+    { shape: rightArm, name: 'MSV4 Solar Arm Right', color: colors.arm },
+    { shape: panelFrame, name: 'MSV4 36 x 30 Solar Panel Frame', color: colors.frame },
+    { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
+    { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
+    { shape: detachedPanel, name: '36 x 30 mm Solar Panel Reference', color: colors.panel },
+  ]),
+);
+await writeBlob(
+  path.join(referenceDir, 'MSV4_minimum_profile_arm_solar_enclosure_fit_check_open.step'),
+  replicad.exportSTEP([
+    { shape: minimalArmBase, name: 'MSV4 Minimum Profile Arm Base', color: colors.base },
+    { shape: pcb.compound, name: 'MSV4 PCB - Corrected 1.6 mm Reference', color: colors.pcb },
+    { shape: battery, name: '10 x 20 x 3 mm Top-Side Battery Placement Reference', color: colors.battery },
+  ]),
+);
+
 const printFiles = {
+  'MSV4_minimum_profile_arm_solar_PRINT.3mf': ['MSV4 minimum-profile arm solar enclosure', [
+    ['Base', placeOnBed(minimalArmBase)],
+    ['Lid', flipRoofDown(minimalArmLid, p.armLidTopZ)],
+    ['Solar Arm Left', armOnBed(leftArm)],
+    ['Solar Arm Right', armOnBed(rightArm)],
+    ['Solar Panel Frame', placeOnBed(panelFrame)],
+  ]],
   'MSV4_arm_solar_PRINT.3mf': ['MSV4 arm solar enclosure', [
     ['Base', placeOnBed(armBase)],
     ['Lid', flipRoofDown(armLid, p.armLidTopZ)],
@@ -1081,8 +1199,8 @@ const roofCornerDistance = Math.hypot(
   p.armLidTopZ - p.armPivotZ,
 );
 const report = {
-  version: 'MSV4-enclosures-v5.3-back-screws-flat-backs-chamfers',
-  revisionNote: 'Case screws now enter from the back (base) into recessed countersinks and thread into inserts in the lid, with the gasket groove moved to the base to make room; the arm pivot bosses and panel-frame lugs are flat on their backs so both parts print flat; the outer back and top perimeters are chamfered.',
+  version: 'MSV4-enclosures-v5.5-minimum-profile-arm-supports',
+  revisionNote: 'Adds four broad floor-tied PCB support pads to both minimum-profile bases, giving the production 1.6 mm PCB a positive Z datum while avoiding every corrected bottom-side component. The rejected draft compression fins and duplicate edge shelves remain absent. Existing v5.3 bodies are unchanged.',
   units: 'mm',
   source: path.relative(projectDir, sourcePcbPath),
   parameters: p,
@@ -1121,6 +1239,8 @@ const report = {
       integratedLidTop: p.integratedLidTopChamfer,
       minimumProfileBaseBack: p.minimalBaseBottomChamfer,
       minimumProfileLidTop: p.minimalLidTopChamfer,
+      minimumProfileArmBaseBack: p.minimalBaseBottomChamfer,
+      minimumProfileArmLidTop: p.armLidTopChamfer,
     },
     boardSideClearance: p.pcbSideClearance,
     internalRoofZ: p.lidInnerRoofZ,
@@ -1185,7 +1305,14 @@ const report = {
   },
   minimumProfileSolar: {
     construction: 'two-piece closed adhesive enclosure; thin back/base plus solar lid, with no gasket, screws, inserts, or articulated parts',
-    retention: 'PCB head and shoulder seat into a 0.25 mm XY / 0.15 mm Z-clearance groove in the base; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive',
+    retention: 'PCB head and shoulder register in a 0.25 mm XY-clearance groove and rest on four broad floor-tied pads at the -1.60 mm substrate datum; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive',
+    pcbSupports: {
+      centers: p.minimalSupportCenters,
+      size: [p.minimalSupportWidth, p.minimalSupportLength],
+      radius: p.minimalSupportRadius,
+      topZ: p.minimalSupportTopZ,
+      height: p.minimalSupportTopZ - p.minimalBaseFloorTopZ,
+    },
     panelNominal: [p.solarPanelNominalLength, p.solarPanelNominalWidth],
     panelPocket: [p.solarPanelPocketLength, p.solarPanelPocketWidth, p.solarPanelRecessDepth],
     panelWireHoleCenters: [
@@ -1204,6 +1331,27 @@ const report = {
       lid: measure(minimalLid),
     },
     printOrientation: 'base floor-down; lid rear edge down with a 6-8 mm brim',
+  },
+  minimumProfileArmSolar: {
+    construction: 'two-piece bonded minimum-profile enclosure with the proven external arm pivots, shared arms, and shared panel frame; no body screws, gasket, inserts, or panel pocket',
+    retention: 'same PCB-shaped 0.25 mm XY registration groove and four broad floor-tied support pads as the minimum-profile integrated enclosure; no duplicate edge shelves or lid compression fins',
+    panelFrame: [p.panelFrameLength, p.panelFrameWidth, p.panelFrameThickness],
+    caseWireEntry: {
+      count: 1,
+      diameter: p.caseWireEntryDiameter,
+      center: [-p.minimalOuterX + 0.20, p.armPivotY, p.caseWireEntryCenterZ],
+      side: 'negative-X lid wall, same side as the wire-channel arm',
+    },
+    pivotCenterDistance: armCenterDistance,
+    closedCaseThickness: p.armLidTopZ - p.minimalBaseBottomZ,
+    overallBounds: {
+      base: measure(minimalArmBase),
+      lid: measure(minimalArmLid),
+      leftArm: measure(leftArm),
+      rightArm: measure(rightArm),
+      panelFrame: measure(panelFrame),
+    },
+    printOrientation: 'base back-down; lid roof-down; arms flat; panel frame back-down',
   },
   printGuidance: {
     material: ['ASA preferred outdoors', 'PETG for first fit print'],
@@ -1227,6 +1375,8 @@ console.log(JSON.stringify({
   armLid: measure(armLid),
   minimalBase: measure(minimalBase),
   minimalLid: measure(minimalLid),
+  minimalArmBase: measure(minimalArmBase),
+  minimalArmLid: measure(minimalArmLid),
   armCenterDistance,
   minimumRoofSweepClearance: armCenterDistance - p.armEndRadius - roofCornerDistance,
 }, null, 2));

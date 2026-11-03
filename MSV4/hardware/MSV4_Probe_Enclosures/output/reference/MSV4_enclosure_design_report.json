@@ -1,6 +1,6 @@
 {
-  "version": "MSV4-enclosures-v5.3-back-screws-flat-backs-chamfers",
-  "revisionNote": "Case screws now enter from the back (base) into recessed countersinks and thread into inserts in the lid, with the gasket groove moved to the base to make room; the arm pivot bosses and panel-frame lugs are flat on their backs so both parts print flat; the outer back and top perimeters are chamfered.",
+  "version": "MSV4-enclosures-v5.5-minimum-profile-arm-supports",
+  "revisionNote": "Adds four broad floor-tied PCB support pads to both minimum-profile bases, giving the production 1.6 mm PCB a positive Z datum while avoiding every corrected bottom-side component. The rejected draft compression fins and duplicate edge shelves remain absent. Existing v5.3 bodies are unchanged.",
   "units": "mm",
   "source": "..\\MSV4.step",
   "parameters": {
@@ -85,6 +85,28 @@
     "minimalGrooveXYClearance": 0.25,
     "minimalGrooveBottomZ": -1.75,
     "minimalGrooveTopZ": 0.15,
+    "minimalSupportTopZ": -1.6,
+    "minimalSupportWidth": 3,
+    "minimalSupportLength": 4,
+    "minimalSupportRadius": 0.6,
+    "minimalSupportCenters": [
+      [
+        -10.5,
+        108
+      ],
+      [
+        10.5,
+        108
+      ],
+      [
+        -10.5,
+        128
+      ],
+      [
+        10.5,
+        128
+      ]
+    ],
     "minimalOuterX": 16.2,
     "minimalOuterYMin": 96,
     "minimalOuterYMax": 146.2,
@@ -179,7 +201,9 @@
       "armLidTop": 1.2,
       "integratedLidTop": 0.8,
       "minimumProfileBaseBack": 0.8,
-      "minimumProfileLidTop": 0.4
+      "minimumProfileLidTop": 0.4,
+      "minimumProfileArmBaseBack": 0.8,
+      "minimumProfileArmLidTop": 1.2
     },
     "boardSideClearance": 0.35,
     "internalRoofZ": 7,
@@ -392,7 +416,34 @@
   },
   "minimumProfileSolar": {
     "construction": "two-piece closed adhesive enclosure; thin back/base plus solar lid, with no gasket, screws, inserts, or articulated parts",
-    "retention": "PCB head and shoulder seat into a 0.25 mm XY / 0.15 mm Z-clearance groove in the base; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive",
+    "retention": "PCB head and shoulder register in a 0.25 mm XY-clearance groove and rest on four broad floor-tied pads at the -1.60 mm substrate datum; bond the plain base/lid seam with epoxy or outdoor polyurethane adhesive",
+    "pcbSupports": {
+      "centers": [
+        [
+          -10.5,
+          108
+        ],
+        [
+          10.5,
+          108
+        ],
+        [
+          -10.5,
+          128
+        ],
+        [
+          10.5,
+          128
+        ]
+      ],
+      "size": [
+        3,
+        4
+      ],
+      "radius": 0.6,
+      "topZ": -1.6,
+      "height": 1.65
+    },
     "panelNominal": [
       36,
       30
@@ -437,7 +488,7 @@
           146.20000499999998,
           0.2500050000000002
         ],
-        "volume": 2677.950717551429,
+        "volume": 2755.1111418311357,
         "solidCount": 1
       },
       "lid": {
@@ -456,6 +507,100 @@
       }
     },
     "printOrientation": "base floor-down; lid rear edge down with a 6-8 mm brim"
+  },
+  "minimumProfileArmSolar": {
+    "construction": "two-piece bonded minimum-profile enclosure with the proven external arm pivots, shared arms, and shared panel frame; no body screws, gasket, inserts, or panel pocket",
+    "retention": "same PCB-shaped 0.25 mm XY registration groove and four broad floor-tied support pads as the minimum-profile integrated enclosure; no duplicate edge shelves or lid compression fins",
+    "panelFrame": [
+      38.8,
+      32.8,
+      2.6
+    ],
+    "caseWireEntry": {
+      "count": 1,
+      "diameter": 3,
+      "center": [
+        -16,
+        121.5,
+        4
+      ],
+      "side": "negative-X lid wall, same side as the wire-channel arm"
+    },
+    "pivotCenterDistance": 34.4607022563383,
+    "closedCaseThickness": 12.25,
+    "overallBounds": {
+      "base": {
+        "min": [
+          -20.100005000000003,
+          95.999995,
+          -4.250005000000005
+        ],
+        "max": [
+          20.100005000000003,
+          146.20000499999998,
+          0.9000049999999999
+        ],
+        "volume": 2927.567766240568,
+        "solidCount": 1
+      },
+      "lid": {
+        "min": [
+          -16.20000015000001,
+          95.99999985,
+          0.29999985
+        ],
+        "max": [
+          16.20000015000001,
+          146.20000015,
+          8.00000015000001
+        ],
+        "volume": 4143.946984572381,
+        "solidCount": 1
+      },
+      "leftArm": {
+        "min": [
+          -22.00000015,
+          118.69999985,
+          -4.90000015
+        ],
+        "max": [
+          -20.399999849999997,
+          152.00000015,
+          21.20000015
+        ],
+        "volume": 288.9967672891157,
+        "solidCount": 1
+      },
+      "rightArm": {
+        "min": [
+          20.39999989999999,
+          118.6999999,
+          -4.900000100000008
+        ],
+        "max": [
+          22.00000010000001,
+          152.0000001,
+          21.200000100000008
+        ],
+        "volume": 333.6995715156795,
+        "solidCount": 1
+      },
+      "panelFrame": {
+        "min": [
+          -20.40000015,
+          129.79999984999998,
+          15.69999985
+        ],
+        "max": [
+          20.40000015,
+          168.60000015,
+          21.10000015
+        ],
+        "volume": 1695.947888598075,
+        "solidCount": 1
+      }
+    },
+    "printOrientation": "base back-down; lid roof-down; arms flat; panel frame back-down"
   },
   "printGuidance": {
     "material": [

@@ -1,6 +1,6 @@
 # MSV4 low-profile probe enclosures
 
-This directory contains three printable, electronics-only enclosures derived
+This directory contains four printable, electronics-only enclosures derived
 from the actual `../MSV4.step` assembly:
 
 - **Integrated solar** - an MSV2-style lid with a bonded 36 x 30 mm panel
@@ -11,8 +11,12 @@ from the actual `../MSV4.step` assembly:
   a thin closed back/base and a bonded solar lid. It has no gasket, screws,
   inserts, or moving parts. A PCB-shaped groove in the base registers the board
   during assembly.
+- **Minimum-profile arm solar** - the same bonded, PCB-groove body fit with the
+  proven external pivot bosses, arms, and panel frame. Its plain lid has no
+  panel pocket. The body has no case screws or gasket; the articulated mount
+  still uses its four pivot screws and inserts.
 
-All three enclosure bases have a teardrop window centered over the upper D1 LED
+All four enclosure bases have a teardrop window centered over the upper D1 LED
 package on the back of the PCB. The point faces upward toward the antenna/top
 edge. Fill this window flush with optically clear epoxy after assembly to make
 the status LED visible without leaving an open water path.
@@ -54,6 +58,10 @@ with lid-side screws, round pivot mounts, and unchamfered edges.
 
 ![Minimum-profile integrated solar enclosure](renders/minimum_profile_v5_isometric.png)
 
+![Minimum-profile arm solar enclosure v5.5](renders/minimum_profile_arm_v5_5_isometric.png)
+
+![Minimum-profile arm open PCB fit check](renders/minimum_profile_arm_v5_5_fit_open_isometric.png)
+
 ## Deliverables
 
 `output/` holds one drag-and-drop print file per enclosure and nothing else:
@@ -61,6 +69,14 @@ with lid-side screws, round pivot mounts, and unchamfered edges.
 - `MSV4_arm_solar_PRINT.3mf`
 - `MSV4_integrated_solar_PRINT.3mf`
 - `MSV4_minimum_profile_solar_PRINT.3mf`
+- `MSV4_minimum_profile_arm_solar_PRINT.3mf` - the minimum-profile body with the
+  same proven PCB-shaped registration groove, four broad PCB support pads,
+  pivot geometry, arms, and panel frame
+  as the earlier variants (added 2026-10-30, not yet printed). The lid is plain
+  at the arm-lid height with one 3 mm wire exit on the left. There are no case
+  screws or gasket; tape the body closed for a fit test, then bond the seam.
+  The normal release validator checks this variant and rejects the duplicate
+  thin shelves/fins that were present in its first draft.
 
 Each imports into Bambu Studio or OrcaSlicer as separate, named, pre-oriented
 objects. See `PRINTING.md` before printing.
@@ -86,10 +102,8 @@ still being developed:
    enclosure only after those systems are stable enough that routine access to
    the PCB is no longer needed.
 
-A future arm-mounted enclosure with a glued base-to-lid seam and no body screws
-may be worthwhile if testing shows that adjustable solar angle is valuable but
-the case fasteners are not. That version is intentionally deferred; it is not
-part of the current release.
+The minimum-profile arm variant is the glued-seam/no-body-screw experiment. Do
+not treat it as the default until one physical fit and leak test confirms it.
 
 The normal assemblies contain the enclosure parts plus a clearly named
 do-not-print solar-panel reference. The fit-check assemblies additionally
@@ -134,10 +148,18 @@ to give.
 
 The minimum-profile enclosure is 13.65 mm thick overall and 32.4 x 50.2 mm in
 plan. Its base provides a 1.0 mm closed back below the component cavity. The
-groove follows the real PCB head and shoulder with 0.25 mm XY and 0.15 mm Z
-clearance, while the lowest corrected back-side component has 0.304 mm floor
-clearance. The panel ends at Y = 140.00 mm; the E73 antenna keepout begins at
+groove follows the real PCB head and shoulder with 0.25 mm XY clearance. Four
+3 x 4 mm rounded pads rise directly from the floor and support the bare PCB
+underside at Z = -1.60 mm; they avoid the six bottom-side components clustered
+near the LED end. The lowest corrected back-side component retains 0.304 mm
+floor clearance. The panel ends at Y = 140.00 mm; the E73 antenna keepout begins at
 Y = 140.75 mm, giving a checked 0.75 mm plan-view separation.
+
+The minimum-profile arm body uses that same 32.4 x 50.2 mm plan, registration
+groove, and four floor-tied support pads, with the proven pivot bosses bringing only the local maximum width to
+40.2 mm. Its closed body is 12.25 mm thick. Validation finds 0 mm3 PCB,
+component, base/lid, wire-path, or arm-sweep collision, and explicitly finds
+0 mm3 of the rejected draft's duplicate interior shelves and compression fins.
 
 The solar-panel pocket is 36.4 x 30.4 x 1.6 mm. The physical panel thickness
 was not supplied. Measure it before committing to a final print and change
@@ -178,7 +200,8 @@ described in the print guide.
 This is a waterproof-oriented FDM design, not an IP-rated housing. Leak-test an
 empty enclosure before installing electronics.
 
-The minimum-profile enclosure has a closed back but no gasket or fasteners.
+Both minimum-profile enclosures have a closed back but no body gasket or case
+fasteners.
 After confirming the board is fully seated in its base groove, bond and seal
 the complete base-to-lid seam with electronics-compatible epoxy or outdoor
 polyurethane adhesive. Seal the panel perimeter, wire passages, probe exit,
@@ -198,8 +221,10 @@ pilots are in the lid seam face: blind, 2.90 mm diameter x 3.20 mm deep, with
 tip relief to 4.2 mm above the seam. The arm variant
 adds four M2 x 5-6 mm pivot screws and four more inserts of the same size.
 Insert brands vary; verify one sacrificial pocket before installing all of them.
-The minimum-profile enclosure uses no screws, inserts, gasket, or other
-hardware; its lid is permanently bonded to the base.
+The minimum-profile integrated enclosure uses no screws, inserts, gasket, or
+other hardware; its lid is permanently bonded to the base. The minimum-profile
+arm enclosure also bonds its lid, but still needs the four pivot screws and
+inserts listed above for the articulated mount.
 
 ## Regeneration and verification
 

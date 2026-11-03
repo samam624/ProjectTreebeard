@@ -1,4 +1,4 @@
-# Printing and assembly - MSV4 enclosures (v5.3)
+# Printing and assembly - MSV4 enclosures (v5.5)
 
 ## What to print
 
@@ -11,6 +11,7 @@ oriented and spaced on the plate.
 | `output/MSV4_arm_solar_PRINT.3mf` | Base, Lid, Solar Arm Left, Solar Arm Right, Solar Panel Frame |
 | `output/MSV4_integrated_solar_PRINT.3mf` | Base, Lid |
 | `output/MSV4_minimum_profile_solar_PRINT.3mf` | Base, Lid |
+| `output/MSV4_minimum_profile_arm_solar_PRINT.3mf` | Base, Lid, Solar Arm Left, Solar Arm Right, Solar Panel Frame |
 
 Bambu Studio reports that the file is not from Bambu Lab and loads the geometry
 only; accept that. The files carry no printer, filament, or process settings,
@@ -25,14 +26,14 @@ kept out of the rigid-material files; skip it when using silicone cord or RTV.
 
 The supplied orientations are the intended ones:
 
-- bases back-down; the arm base's pivot bosses are flat on the bed
-- arm lid roof-down (it prints as an open tray, no supports in the cavity)
+- bases back-down; both arm bases' pivot bosses are flat on the bed
+- arm lids roof-down (they print as open trays, with no supports in the cavity)
 - arms flat
 - panel frame back-down; its pivot lugs are flat on the bed
 - integrated and minimum-profile lids rear-edge-down; add a 6-8 mm brim and do
   not let auto-orient put them on the solar recess face
 
-Auto-orient is safe on the arm file. Do not add supports inside the close-fit
+Auto-orient is safe on both arm files. Do not add supports inside the close-fit
 blade throat. No part needs supports: the perimeter chamfers and the
 screw-head pockets on the bed faces are 45-degree overhangs.
 
@@ -62,7 +63,7 @@ reaches. Each head sits in a recessed countersink and finishes flush with or
 slightly below the back face. The pockets are cut for countersunk heads; pan
 or socket-cap heads will not sit flush in them.
 
-Arm version only:
+Arm versions only:
 
 - 4 x M2 x 5-6 mm pivot screws
 - 4 x matching M2 heat-set inserts
@@ -70,8 +71,15 @@ Arm version only:
 Install case inserts from the seam side of the lid into the blind
 2.90 x 3.20 mm pockets. Use a temperature-controlled insert tip and stop when
 each insert is flush.
-The minimum-profile enclosure requires no hardware; the base and lid are
-permanently bonded after the electronics pass their functional test.
+The minimum-profile integrated enclosure requires no hardware; the base and
+lid are permanently bonded after the electronics pass their functional test.
+The minimum-profile arm enclosure has no case hardware or gasket, but it still
+uses the four pivot screws and inserts listed above.
+
+Both minimum-profile bases locate the PCB with the shaped perimeter groove and
+carry it on four broad 3 x 4 mm pads tied directly to the back floor. Confirm
+that all four pads touch the bare FR4 underside before bonding the lid; no
+bottom-side component should bear on the floor or a pad.
 
 ## Battery space
 
@@ -86,11 +94,11 @@ components.
 
 ## Solar wiring
 
-All three panel mounts have two 1.6 mm lead passages centered behind the panel,
+All panel mounts have two 1.6 mm lead passages centered behind the panel,
 4.0 mm apart (2 mm left and right of center), matching the 2.5 V panel
 terminals.
 
-On the arm version both leads then enter the case through one 3.0 mm hole in
+On both arm versions the leads then enter the case through one 3.0 mm hole in
 the side wall of the lid, at the pivot, on the same side as the arm with the
 wire channel. Run the leads down that arm's channel, leave a drip loop between
 frame and case, and seal the hole with neutral-cure RTV after routing.
@@ -112,15 +120,23 @@ frame and case, and seal the hole with neutral-cure RTV after routing.
    gradually in a diagonal pattern, only enough to compress the seal.
 8. Leak-test the empty housing with tissue inside and a gentle spray.
 
-For all three bases, fill the teardrop LED window from the outside with
+For all four bases, fill the teardrop LED window from the outside with
 optically clear epoxy and allow it to cure before leak testing. Keep epoxy off
 the LED package until the board is correctly seated.
 
-## Minimum-profile version
+## Minimum-profile versions
 
 Dry-fit the PCB into the shaped groove in the base. The groove has 0.25 mm XY
-and 0.15 mm Z clearance, so compensate globally in the slicer only if the test
-print shows that your machine closes this fit. After installing and testing the
+clearance, while four broad pads positively set the PCB's Z position. Confirm
+all four pads touch bare FR4; compensate globally in the slicer only if the test
+print shows that your machine closes the perimeter fit. After installing and testing the
 PCB, permanently bond the complete base-to-lid seam with electronics-compatible
 epoxy or outdoor polyurethane adhesive. The solar panel stops before the E73
 antenna keepout; do not enlarge or move the pocket toward the far board end.
+
+The arm version uses exactly the same shaped PCB seating groove. It must not
+contain the screw-case edge shelves or lid compression fins. Route the panel
+leads through the left-side 3 mm exit, verify free arm sweep, then seal the wire
+exit and bond the complete body seam. The panel is on the articulated frame, so
+the antenna-pocket restriction in the preceding paragraph applies only to the
+integrated version.

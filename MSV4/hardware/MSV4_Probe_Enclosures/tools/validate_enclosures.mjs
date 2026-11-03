@@ -4,12 +4,13 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import opencascade from '../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad-opencascadejs/dist/replicad_single.js';
 import * as replicad from '../../../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/tools/node/node_modules/replicad/dist/replicad.js';
-import { meshStats, readThreeMf } from './threemf.mjs';
+import { meshStats, readThreeMf, weldMesh } from './threemf.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.dirname(here);
 const outputDir = path.join(projectDir, 'output');
 const referenceDir = path.join(outputDir, 'reference');
+const minimumArmReleaseDir = path.join(referenceDir, 'minimum_profile_arm_v5_5');
 const sourcePcbPath = path.resolve(projectDir, '..', 'MSV4.step');
 const wasmPath = path.resolve(
   projectDir,
@@ -44,6 +45,11 @@ const files = {
   minimalLid: 'MSV4_minimum_profile_integrated_solar_lid.step',
   minimalAssembly: 'MSV4_minimum_profile_integrated_solar_assembly.step',
   minimalFit: 'MSV4_minimum_profile_integrated_solar_fit_check.step',
+  minimalArmBase: 'MSV4_minimum_profile_arm_solar_base.step',
+  minimalArmLid: 'MSV4_minimum_profile_arm_solar_lid.step',
+  minimalArmAssembly: 'MSV4_minimum_profile_arm_solar_enclosure_assembly.step',
+  minimalArmFit: 'MSV4_minimum_profile_arm_solar_enclosure_fit_check.step',
+  minimalArmFitOpen: 'MSV4_minimum_profile_arm_solar_enclosure_fit_check_open.step',
 };
 
 // Each print file must hold exactly these objects, in this order.
@@ -53,7 +59,18 @@ const printFiles = {
   ],
   [path.join(outputDir, 'MSV4_integrated_solar_PRINT.3mf')]: ['Base', 'Lid'],
   [path.join(outputDir, 'MSV4_minimum_profile_solar_PRINT.3mf')]: ['Base', 'Lid'],
+  [path.join(outputDir, 'MSV4_minimum_profile_arm_solar_PRINT.3mf')]: [
+    'Base', 'Lid', 'Solar Arm Left', 'Solar Arm Right', 'Solar Panel Frame',
+  ],
   [path.join(referenceDir, 'MSV4_case_gasket_TPU_optional.3mf')]: ['Case Gasket TPU'],
+};
+
+const stlFiles = {
+  minimalArmBase: 'MSV4_minimum_profile_arm_base_v5_5_print.stl',
+  minimalArmLid: 'MSV4_minimum_profile_arm_lid_v5_5_print.stl',
+  armLeft: 'MSV4_solar_arm_left_v5_5_print.stl',
+  armRight: 'MSV4_solar_arm_right_v5_5_print.stl',
+  panelFrame: 'MSV4_solar_panel_frame_v5_5_print.stl',
 };
 
 // Independent restatement of the v5.3 design heights; the generator must agree.
@@ -62,6 +79,7 @@ const armLidTopZ = 8.00;
 const solarLidTopZ = 9.40;
 const panelPocketFloorZ = solarLidTopZ - 1.60;
 const baseBackZ = -4.50;
+const minimalBaseBackZ = -4.25;
 const frameBackZ = 15.70;
 const armPanelPivotZ = frameBackZ + 2.70;
 const framePocketFloorZ = frameBackZ + 2.60 - 1.60;
@@ -177,9 +195,31 @@ async function importStep(filename) {
   return replicad.importSTEP(new Blob([bytes], { type: 'application/STEP' }));
 }
 
+function inspectBinaryStl(filename) {
+  const data = fs.readFileSync(filename);
+  if (data.length < 84) throw new Error(`${filename} is too short to be binary STL.`);
+  const triangleCount = data.readUInt32LE(80);
+  if (84 + triangleCount * 50 !== data.length) {
+    throw new Error(`${filename}: byte count does not match the binary STL triangle count.`);
+  }
+  const vertices = [];
+  const triangles = [];
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const base = 84 + triangle * 50 + 12;
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+      for (let axis = 0; axis < 3; axis += 1) {
+        vertices.push(data.readFloatLE(base + vertex * 12 + axis * 4));
+      }
+      triangles.push(triangles.length);
+    }
+  }
+  return meshStats(weldMesh({ vertices, triangles }));
+}
+
 for (const absolute of [
   ...Object.values(files).map((filename) => path.join(referenceDir, filename)),
   ...Object.keys(printFiles),
+  ...Object.values(stlFiles).map((filename) => path.join(minimumArmReleaseDir, filename)),
 ]) {
   if (!fs.existsSync(absolute)) errors.push(`Missing output: ${absolute}`);
 }
@@ -216,6 +256,11 @@ const expectedCounts = {
   minimalLid: 1,
   minimalAssembly: 3,
   minimalFit: 238,
+  minimalArmBase: 1,
+  minimalArmLid: 1,
+  minimalArmAssembly: 6,
+  minimalArmFit: 240,
+  minimalArmFitOpen: 235,
 };
 for (const [name, expected] of Object.entries(expectedCounts)) {
   if (checks.solidCounts[name] !== expected) {
@@ -235,6 +280,8 @@ const expectedBounds = {
   armLid: [[-18.3, 94.8, -0.10], [18.3, 148.5, armLidTopZ]],
   minimalBase: [[-16.2, 96.0, -4.25], [16.2, 146.2, 0.25]],
   minimalLid: [[-16.2, 96.0, 0.30], [16.2, 146.2, solarLidTopZ]],
+  minimalArmBase: [[-20.1, 96.0, minimalBaseBackZ], [20.1, 146.2, 0.90]],
+  minimalArmLid: [[-16.2, 96.0, 0.30], [16.2, 146.2, armLidTopZ]],
 };
 for (const [name, [expectedMin, expectedMax]] of Object.entries(expectedBounds)) {
   const [actualMin, actualMax] = checks.bounds[name];
@@ -247,6 +294,7 @@ checks.baseLidOverlap = {
   integrated: intersectionVolume(imported.integratedBase, imported.integratedLid),
   arm: intersectionVolume(imported.armBase, imported.armLid),
   minimal: intersectionVolume(imported.minimalBase, imported.minimalLid),
+  minimalArm: intersectionVolume(imported.minimalArmBase, imported.minimalArmLid),
 };
 for (const [name, volume] of Object.entries(checks.baseLidOverlap)) {
   if (volume > 0.002) errors.push(`${name}: base and lid overlap by ${volume} mm^3.`);
@@ -266,10 +314,11 @@ checks.ledWindows = {
   integratedObstructionVolume: intersectionVolume(imported.integratedBase, ledWindowTool),
   armObstructionVolume: intersectionVolume(imported.armBase, ledWindowTool),
   minimalObstructionVolume: intersectionVolume(imported.minimalBase, ledWindowTool),
+  minimalArmObstructionVolume: intersectionVolume(imported.minimalArmBase, ledWindowTool),
   shape: 'teardrop, point upward toward antenna/top edge',
   clearEpoxyFill: true,
 };
-for (const name of ['integratedObstructionVolume', 'armObstructionVolume', 'minimalObstructionVolume']) {
+for (const name of ['integratedObstructionVolume', 'armObstructionVolume', 'minimalObstructionVolume', 'minimalArmObstructionVolume']) {
   if (checks.ledWindows[name] > 0.002) errors.push(`${name}: clear-epoxy LED window is obstructed.`);
 }
 
@@ -319,20 +368,28 @@ for (const variant of ['integrated', 'arm']) {
 checks.flatBacks = {
   armBaseLeftBoss: intersectionVolume(imported.armBase, box(-20.05, 118.55, baseBackZ, -16.65, 124.45, baseBackZ + 0.10)),
   armBaseRightBoss: intersectionVolume(imported.armBase, box(16.65, 118.55, baseBackZ, 20.05, 124.45, baseBackZ + 0.10)),
+  minimalArmBaseLeftBoss: intersectionVolume(imported.minimalArmBase, box(-20.05, 118.55, minimalBaseBackZ, -16.25, 124.45, minimalBaseBackZ + 0.10)),
+  minimalArmBaseRightBoss: intersectionVolume(imported.minimalArmBase, box(16.25, 118.55, minimalBaseBackZ, 20.05, 124.45, minimalBaseBackZ + 0.10)),
   panelFrameLeftLug: intersectionVolume(imported.panelFrame, box(-20.35, 146.55, frameBackZ, -16.45, 151.85, frameBackZ + 0.10)),
   panelFrameRightLug: intersectionVolume(imported.panelFrame, box(16.45, 146.55, frameBackZ, 20.35, 151.85, frameBackZ + 0.10)),
   armBaseBelowBack: intersectionVolume(imported.armBase, box(-25, 90, baseBackZ - 5, 25, 155, baseBackZ - 0.002)),
+  minimalArmBaseBelowBack: intersectionVolume(imported.minimalArmBase, box(-25, 90, minimalBaseBackZ - 5, 25, 155, minimalBaseBackZ - 0.002)),
   panelFrameBelowBack: intersectionVolume(imported.panelFrame, box(-25, 125, frameBackZ - 5, 25, 175, frameBackZ - 0.002)),
 };
 if (!near(checks.flatBacks.armBaseLeftBoss, 3.40 * 5.90 * 0.10, 0.01)
   || !near(checks.flatBacks.armBaseRightBoss, 3.40 * 5.90 * 0.10, 0.01)) {
   errors.push('Arm base pivot bosses are not flat on the base back.');
 }
+if (!near(checks.flatBacks.minimalArmBaseLeftBoss, 3.80 * 5.90 * 0.10, 0.01)
+  || !near(checks.flatBacks.minimalArmBaseRightBoss, 3.80 * 5.90 * 0.10, 0.01)) {
+  errors.push('Minimum-profile arm base pivot bosses are not flat on the base back.');
+}
 if (!near(checks.flatBacks.panelFrameLeftLug, 3.90 * 5.30 * 0.10, 0.01)
   || !near(checks.flatBacks.panelFrameRightLug, 3.90 * 5.30 * 0.10, 0.01)) {
   errors.push('Panel frame lugs are not flat on the frame back.');
 }
 if (checks.flatBacks.armBaseBelowBack > 0.002) errors.push('Arm base protrudes below its back plane.');
+if (checks.flatBacks.minimalArmBaseBelowBack > 0.002) errors.push('Minimum-profile arm base protrudes below its back plane.');
 if (checks.flatBacks.panelFrameBelowBack > 0.002) errors.push('Panel frame protrudes below its back plane.');
 
 // Sample the 45-degree corner of each chamfered perimeter on the straight
@@ -357,6 +414,8 @@ checks.chamfers = {
   armLidTop: chamferSample(imported.armLid, 16.60, armLidTopZ, 1.20, -1),
   minimalBaseBack: chamferSample(imported.minimalBase, 16.20, -4.25, 0.80, 1),
   minimalLidTop: chamferSample(imported.minimalLid, 16.20, solarLidTopZ, 0.40, -1),
+  minimalArmBaseBack: chamferSample(imported.minimalArmBase, 16.20, minimalBaseBackZ, 0.80, 1),
+  minimalArmLidTop: chamferSample(imported.minimalArmLid, 16.20, armLidTopZ, 1.20, -1),
 };
 for (const [name, sample] of Object.entries(checks.chamfers)) {
   if (sample.removed > 0.002) errors.push(`${name}: perimeter chamfer is missing.`);
@@ -452,6 +511,8 @@ checks.referencePartCollisionVolume = {
   ),
   minimalBatteryToBase: intersectionVolume(batteryReference, imported.minimalBase),
   minimalBatteryToLid: intersectionVolume(batteryReference, imported.minimalLid),
+  minimalArmBatteryToBase: intersectionVolume(batteryReference, imported.minimalArmBase),
+  minimalArmBatteryToLid: intersectionVolume(batteryReference, imported.minimalArmLid),
   minimalPanelToLid: intersectionVolume(
     box(-15.00, 104.00, panelPocketFloorZ + 0.10, 15.00, 140.00, panelPocketFloorZ + 1.50),
     imported.minimalLid,
@@ -467,6 +528,8 @@ checks.probeThroatCollisionVolume = {
   integratedLid: intersectionVolume(imported.integratedLid, throatReference),
   armBase: intersectionVolume(imported.armBase, throatReference),
   armLid: intersectionVolume(imported.armLid, throatReference),
+  minimalArmBase: intersectionVolume(imported.minimalArmBase, throatReference),
+  minimalArmLid: intersectionVolume(imported.minimalArmLid, throatReference),
 };
 for (const [name, volume] of Object.entries(checks.probeThroatCollisionVolume)) {
   if (volume > 0.002) errors.push(`${name}: corrected PCB blade throat is obstructed by ${volume} mm^3.`);
@@ -522,6 +585,8 @@ checks.componentCollisionVolume = {
   armLid: intersectionVolume(imported.armLid, componentCompound),
   minimalBase: intersectionVolume(imported.minimalBase, componentCompound),
   minimalLid: intersectionVolume(imported.minimalLid, componentCompound),
+  minimalArmBase: intersectionVolume(imported.minimalArmBase, componentCompound),
+  minimalArmLid: intersectionVolume(imported.minimalArmLid, componentCompound),
 };
 for (const [name, volume] of Object.entries(checks.componentCollisionVolume)) {
   if (volume > 0.01) errors.push(`${name}: PCB component collision volume is ${volume} mm^3.`);
@@ -563,13 +628,56 @@ checks.minimumProfile = {
   antennaToSolarPanelCollisionVolume: intersectionVolume(antennaKeepout, integratedPanelReference),
   antennaToSolarPanelSeparation: 140.75 - 140.00,
   grooveXYClearance: 0.25,
-  grooveTopClearance: 0.15,
+  grooveReliefBelowSupportedSubstrate: 0.15,
   floorBelowCorrectedLowestComponent: checks.pcb.componentEnvelope.min[2] - (-3.25),
   closedCaseThickness: solarLidTopZ - (-4.25),
   hardwareCount: 0,
   lowerShellPresent: true,
   closedCase: true,
 };
+const minimumSupportCenters = [
+  [-10.50, 108.00], [10.50, 108.00],
+  [-10.50, 128.00], [10.50, 128.00],
+];
+const supportCoreRegions = minimumSupportCenters.map(([x, y]) => (
+  box(x - 0.50, y - 1.00, -3.24, x + 0.50, y + 1.00, -1.61)
+));
+const supportTopSampleRegions = minimumSupportCenters.map(([x, y]) => (
+  box(x - 1.50, y - 2.00, -1.61, x + 1.50, y + 2.00, -1.60)
+));
+const expectedSupportTopSampleVolume = minimumSupportCenters.length
+  * (3.00 * 4.00 - (4 - Math.PI) * 0.60 ** 2) * 0.01;
+checks.minimumProfile.supportPads = {
+  count: minimumSupportCenters.length,
+  centers: minimumSupportCenters,
+  nominalSize: [3.00, 4.00],
+  floorZ: -3.25,
+  topZ: -1.60,
+  missingCoreMaterial: supportCoreRegions.reduce(
+    (sum, region) => sum + replicad.measureVolume(region.clone().cut(imported.minimalBase.clone())),
+    0,
+  ),
+  armBaseMissingCoreMaterial: supportCoreRegions.reduce(
+    (sum, region) => sum + replicad.measureVolume(region.clone().cut(imported.minimalArmBase.clone())),
+    0,
+  ),
+  expectedTopSampleVolume: expectedSupportTopSampleVolume,
+  topSampleVolume: supportTopSampleRegions.reduce(
+    (sum, region) => sum + intersectionVolume(imported.minimalBase, region),
+    0,
+  ),
+};
+if (checks.minimumProfile.supportPads.missingCoreMaterial > 0.002
+  || checks.minimumProfile.supportPads.armBaseMissingCoreMaterial > 0.002) {
+  errors.push('One or more minimum-profile PCB support pads are absent or not tied continuously to the base floor.');
+}
+if (!near(
+  checks.minimumProfile.supportPads.topSampleVolume,
+  checks.minimumProfile.supportPads.expectedTopSampleVolume,
+  0.002,
+)) {
+  errors.push('Minimum-profile PCB support pads do not provide the intended four broad top contact patches.');
+}
 if (checks.minimumProfile.pcbGrooveCollisionVolume > 0.002) {
   errors.push(`Minimum-profile PCB groove collides with the production board by ${checks.minimumProfile.pcbGrooveCollisionVolume} mm^3.`);
 }
@@ -584,6 +692,74 @@ if (checks.minimumProfile.antennaToSolarPanelCollisionVolume > 0.002) {
 }
 if (checks.minimumProfile.antennaToSolarPanelSeparation < 0.20) {
   errors.push('Minimum-profile solar panel has less than 0.20 mm plan-view separation from the antenna keepout.');
+}
+
+// The arm-equipped minimum-profile body must retain the proven shaped groove,
+// not duplicate the screw-case shelves and 0.2 mm compression fins. These
+// interior sampling volumes are empty in the intended bonded shell and were
+// filled by the rejected first draft.
+const forbiddenBaseFinRegions = [
+  box(-13.20, 105.00, -2.35, -12.85, 139.00, -0.25),
+  box(12.85, 105.00, -2.35, 13.20, 139.00, -0.25),
+];
+const forbiddenLidFinRegions = [
+  box(-12.95, 105.00, 0.35, -12.75, 139.00, roofZ - 0.05),
+  box(12.75, 105.00, 0.35, 12.95, 139.00, roofZ - 0.05),
+];
+const minimalArmSweep = { base: 0, lid: 0 };
+for (let degrees = -90; degrees <= 90; degrees += 5) {
+  for (const arm of [imported.armLeft, imported.armRight]) {
+    const rotated = arm.clone().rotate(degrees, [0, 121.50, -2.10], [1, 0, 0]);
+    minimalArmSweep.base = Math.max(
+      minimalArmSweep.base,
+      intersectionVolume(rotated, imported.minimalArmBase),
+    );
+    minimalArmSweep.lid = Math.max(
+      minimalArmSweep.lid,
+      intersectionVolume(rotated, imported.minimalArmLid),
+    );
+  }
+}
+checks.minimumProfileArm = {
+  pcbGrooveCollisionVolume: intersectionVolume(imported.minimalArmBase, physicalBoard),
+  lidPcbCollisionVolume: intersectionVolume(imported.minimalArmLid, physicalBoard),
+  missingProvenBaseMaterial: replicad.measureVolume(
+    imported.minimalBase.clone().cut(imported.minimalArmBase.clone()),
+  ),
+  forbiddenBaseFinMaterial: forbiddenBaseFinRegions.reduce(
+    (sum, region) => sum + intersectionVolume(imported.minimalArmBase, region),
+    0,
+  ),
+  forbiddenLidFinMaterial: forbiddenLidFinRegions.reduce(
+    (sum, region) => sum + intersectionVolume(imported.minimalArmLid, region),
+    0,
+  ),
+  armSweepWorstOverlap: minimalArmSweep,
+  asModelledArmOverlap: intersectionVolume(imported.armLeft, imported.minimalArmBase)
+    + intersectionVolume(imported.armRight, imported.minimalArmBase)
+    + intersectionVolume(imported.armLeft, imported.minimalArmLid)
+    + intersectionVolume(imported.armRight, imported.minimalArmLid),
+  frameToCaseOverlap: intersectionVolume(imported.panelFrame, imported.minimalArmBase)
+    + intersectionVolume(imported.panelFrame, imported.minimalArmLid),
+  closedCaseThickness: armLidTopZ - minimalBaseBackZ,
+  retention: 'proven minimum-profile PCB-shaped seating groove; no screw-case shelves or compression fins',
+};
+for (const name of [
+  'pcbGrooveCollisionVolume',
+  'lidPcbCollisionVolume',
+  'missingProvenBaseMaterial',
+  'forbiddenBaseFinMaterial',
+  'forbiddenLidFinMaterial',
+  'asModelledArmOverlap',
+  'frameToCaseOverlap',
+]) {
+  if (checks.minimumProfileArm[name] > 0.002) {
+    errors.push(`Minimum-profile arm ${name} is ${checks.minimumProfileArm[name]} mm^3.`);
+  }
+}
+if (checks.minimumProfileArm.armSweepWorstOverlap.base > 0.002
+  || checks.minimumProfileArm.armSweepWorstOverlap.lid > 0.002) {
+  errors.push('Minimum-profile arm sweep intersects the repaired base or lid.');
 }
 
 checks.openings = {
@@ -629,12 +805,24 @@ checks.openings = {
     imported.armLid,
     cylinderX(-16.70, 4.10, 121.50, 4.00, 1.40),
   ),
+  minimalArmCaseWireExit: intersectionVolume(
+    imported.minimalArmLid,
+    cylinderX(-16.70, 4.10, 121.50, 4.00, 1.40),
+  ),
   leftPivotInsert: intersectionVolume(
     imported.armBase,
     cylinderX(-20.20, 3.05, 121.50, -2.10, 1.40),
   ),
   rightPivotInsert: intersectionVolume(
     imported.armBase,
+    cylinderX(17.15, 3.05, 121.50, -2.10, 1.40),
+  ),
+  minimalArmLeftPivotInsert: intersectionVolume(
+    imported.minimalArmBase,
+    cylinderX(-20.20, 3.05, 121.50, -2.10, 1.40),
+  ),
+  minimalArmRightPivotInsert: intersectionVolume(
+    imported.minimalArmBase,
     cylinderX(17.15, 3.05, 121.50, -2.10, 1.40),
   ),
   leftFrameLugInsert: intersectionVolume(
@@ -658,6 +846,16 @@ checks.armLidWireExitWallMaterial = {
 };
 if (checks.armLidWireExitWallMaterial.positiveX < 10) {
   errors.push('Arm lid has an unexpected opening in its positive-X wall.');
+}
+checks.minimumArmLidWireExitWallMaterial = {
+  negativeX: intersectionVolume(imported.minimalArmLid, cylinderX(-16.20, 2.70, 121.50, 4.00, 1.40)),
+  positiveX: intersectionVolume(imported.minimalArmLid, cylinderX(13.50, 2.70, 121.50, 4.00, 1.40)),
+};
+if (checks.minimumArmLidWireExitWallMaterial.negativeX > 0.002) {
+  errors.push('Minimum-profile arm lid wire exit is obstructed.');
+}
+if (checks.minimumArmLidWireExitWallMaterial.positiveX < 10) {
+  errors.push('Minimum-profile arm lid has an unexpected opening in its positive-X wall.');
 }
 
 checks.printFiles = {};
@@ -699,11 +897,31 @@ const printedArmLid = checks.printFiles['MSV4_arm_solar_PRINT.3mf']?.Lid;
 if (printedArmLid && !near(printedArmLid.signedVolume, replicad.measureVolume(imported.armLid), 5.0)) {
   errors.push('Printed arm lid volume does not match the CAD arm lid.');
 }
+const printedMinimalArm = checks.printFiles['MSV4_minimum_profile_arm_solar_PRINT.3mf'];
+if (printedMinimalArm
+  && !near(printedMinimalArm.Base.signedVolume, replicad.measureVolume(imported.minimalArmBase), 5.0)) {
+  errors.push('Printed minimum-profile arm base volume does not match its CAD body.');
+}
+if (printedMinimalArm
+  && !near(printedMinimalArm.Lid.signedVolume, replicad.measureVolume(imported.minimalArmLid), 5.0)) {
+  errors.push('Printed minimum-profile arm lid volume does not match its CAD body.');
+}
+
+checks.stlFiles = {};
+for (const [name, filename] of Object.entries(stlFiles)) {
+  const stats = inspectBinaryStl(path.join(minimumArmReleaseDir, filename));
+  checks.stlFiles[name] = stats;
+  if (!near(stats.min[2], 0, 0.002)) errors.push(`${filename}: STL is not on the print bed.`);
+  if (stats.triangleCount < 12) errors.push(`${filename}: STL has no useful mesh.`);
+  if (!stats.watertight) {
+    errors.push(`${filename}: STL is not watertight (${stats.degenerateTriangles} degenerate, ${stats.nonManifoldEdges} non-manifold edges).`);
+  }
+}
 
 const report = { passed: errors.length === 0, errors, checks };
 fs.writeFileSync(
   path.join(referenceDir, 'MSV4_enclosure_validation_report.json'),
   `${JSON.stringify(report, null, 2)}\n`,
 );
-console.log(JSON.stringify({ passed: report.passed, errors, fasteners: checks.fasteners, flatBacks: checks.flatBacks, chamfers: checks.chamfers, clearances: checks.clearances, openings: checks.openings, wireExitWall: checks.armLidWireExitWallMaterial, baseLidOverlap: checks.baseLidOverlap }, null, 2));
+console.log(JSON.stringify({ passed: report.passed, errors, fasteners: checks.fasteners, flatBacks: checks.flatBacks, chamfers: checks.chamfers, clearances: checks.clearances, minimumProfileArm: checks.minimumProfileArm, openings: checks.openings, wireExitWall: checks.armLidWireExitWallMaterial, minimumArmWireExitWall: checks.minimumArmLidWireExitWallMaterial, baseLidOverlap: checks.baseLidOverlap, stlFiles: checks.stlFiles }, null, 2));
 if (errors.length) process.exit(1);

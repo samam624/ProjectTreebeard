@@ -18,7 +18,12 @@
       "minimalBase": 1,
       "minimalLid": 1,
       "minimalAssembly": 3,
-      "minimalFit": 238
+      "minimalFit": 238,
+      "minimalArmBase": 1,
+      "minimalArmLid": 1,
+      "minimalArmAssembly": 6,
+      "minimalArmFit": 240,
+      "minimalArmFitOpen": 235
     },
     "bounds": {
       "integratedBase": [
@@ -212,12 +217,73 @@
           146.20092802714228,
           9.40092802714472
         ]
+      ],
+      "minimalArmBase": [
+        [
+          -20.100000100000003,
+          95.99999989999804,
+          -4.250000100000922
+        ],
+        [
+          20.100000100000003,
+          146.20000009999998,
+          0.9000000999999999
+        ]
+      ],
+      "minimalArmLid": [
+        [
+          -16.200000100002367,
+          95.9999999,
+          0.2999999
+        ],
+        [
+          16.200000100000143,
+          146.20000009999998,
+          8.000000100001074
+        ]
+      ],
+      "minimalArmAssembly": [
+        [
+          -22.0000001,
+          95.99999989999804,
+          -4.900000100000001
+        ],
+        [
+          22.0000001,
+          168.6000001,
+          21.2000001
+        ]
+      ],
+      "minimalArmFit": [
+        [
+          -22.000928027142297,
+          -0.0009280271422979939,
+          -4.900928027142299
+        ],
+        [
+          22.000928027142297,
+          168.6009280271423,
+          21.200928027142297
+        ]
+      ],
+      "minimalArmFitOpen": [
+        [
+          -20.1009280271423,
+          -0.0009280271422979939,
+          -4.25092802714322
+        ],
+        [
+          20.1009280271423,
+          146.20092802714228,
+          4.900928027142299
+        ]
       ]
     },
     "baseLidOverlap": {
       "integrated": 0,
       "arm": 0,
-      "minimal": 0
+      "minimal": 0,
+      "minimalArm": 0
     },
     "ledWindows": {
       "sourceBodyExpectedBounds": [
@@ -235,6 +301,7 @@
       "integratedObstructionVolume": 0,
       "armObstructionVolume": 0,
       "minimalObstructionVolume": 0,
+      "minimalArmObstructionVolume": 0,
       "shape": "teardrop, point upward toward antenna/top edge",
       "clearEpoxyFill": true,
       "sourceBodyActualBounds": [
@@ -355,9 +422,12 @@
     "flatBacks": {
       "armBaseLeftBoss": 2.005999999999996,
       "armBaseRightBoss": 2.0059999999999962,
+      "minimalArmBaseLeftBoss": 2.2419999999999947,
+      "minimalArmBaseRightBoss": 2.2419999999999947,
       "panelFrameLeftLug": 2.0669999999999873,
       "panelFrameRightLug": 2.0669999999999873,
       "armBaseBelowBack": 0,
+      "minimalArmBaseBelowBack": 0,
       "panelFrameBelowBack": 0
     },
     "chamfers": {
@@ -390,6 +460,16 @@
         "removed": 0,
         "kept": 0.31999999999999995,
         "expectedKept": 0.32000000000000006
+      },
+      "minimalArmBaseBack": {
+        "removed": 0,
+        "kept": 1.280000000000001,
+        "expectedKept": 1.2800000000000002
+      },
+      "minimalArmLidTop": {
+        "removed": 0,
+        "kept": 2.8799999999999986,
+        "expectedKept": 2.88
       }
     },
     "pcb": {
@@ -420,13 +500,17 @@
       "armPanelToFrame": 0,
       "minimalBatteryToBase": 0,
       "minimalBatteryToLid": 0,
+      "minimalArmBatteryToBase": 0,
+      "minimalArmBatteryToLid": 0,
       "minimalPanelToLid": 0
     },
     "probeThroatCollisionVolume": {
       "integratedBase": 0,
       "integratedLid": 0,
       "armBase": 0,
-      "armLid": 0
+      "armLid": 0,
+      "minimalArmBase": 0,
+      "minimalArmLid": 0
     },
     "probeProfileTaper": {
       "integratedLidRemovedAboveNose": 0.0007668247126724442,
@@ -442,7 +526,9 @@
       "armBase": 0,
       "armLid": 0,
       "minimalBase": 0,
-      "minimalLid": 0
+      "minimalLid": 0,
+      "minimalArmBase": 0,
+      "minimalArmLid": 0
     },
     "clearances": {
       "sidePerBoardEdge": 0.34999999999999964,
@@ -460,12 +546,58 @@
       "antennaToSolarPanelCollisionVolume": 0,
       "antennaToSolarPanelSeparation": 0.75,
       "grooveXYClearance": 0.25,
-      "grooveTopClearance": 0.15,
+      "grooveReliefBelowSupportedSubstrate": 0.15,
       "floorBelowCorrectedLowestComponent": 0.30376180432687505,
       "closedCaseThickness": 13.65,
       "hardwareCount": 0,
       "lowerShellPresent": true,
-      "closedCase": true
+      "closedCase": true,
+      "supportPads": {
+        "count": 4,
+        "centers": [
+          [
+            -10.5,
+            108
+          ],
+          [
+            10.5,
+            108
+          ],
+          [
+            -10.5,
+            128
+          ],
+          [
+            10.5,
+            128
+          ]
+        ],
+        "nominalSize": [
+          3,
+          4
+        ],
+        "floorZ": -3.25,
+        "topZ": -1.6,
+        "missingCoreMaterial": 0,
+        "armBaseMissingCoreMaterial": 0,
+        "expectedTopSampleVolume": 0.467638934211693,
+        "topSampleVolume": 0.4676389342117043
+      }
+    },
+    "minimumProfileArm": {
+      "pcbGrooveCollisionVolume": 0,
+      "lidPcbCollisionVolume": 0,
+      "missingProvenBaseMaterial": 0,
+      "forbiddenBaseFinMaterial": 0,
+      "forbiddenLidFinMaterial": 0,
+      "armSweepWorstOverlap": {
+        "base": 0,
+        "lid": 0
+      },
+      "asModelledArmOverlap": 0,
+      "frameToCaseOverlap": 0,
+      "closedCaseThickness": 12.25,
+      "retention": "proven minimum-profile PCB-shaped seating groove; no screw-case shelves or compression fins"
     },
     "openings": {
       "integratedPanelPocket": 0,
@@ -478,14 +610,21 @@
       "panelFrameWireLeft": 0,
       "panelFrameWireRight": 0,
       "armCaseWireExit": 0,
+      "minimalArmCaseWireExit": 0,
       "leftPivotInsert": 0,
       "rightPivotInsert": 0,
+      "minimalArmLeftPivotInsert": 0,
+      "minimalArmRightPivotInsert": 0,
       "leftFrameLugInsert": 0,
       "rightFrameLugInsert": 0
     },
     "armLidWireExitWallMaterial": {
       "negativeX": 0,
       "positiveX": 18.472564803107982
+    },
+    "minimumArmLidWireExitWallMaterial": {
+      "negativeX": 0,
+      "positiveX": 16.62530832279718
     },
     "printFiles": {
       "MSV4_arm_solar_PRINT.3mf": {
@@ -620,8 +759,8 @@
       },
       "MSV4_minimum_profile_solar_PRINT.3mf": {
         "Base": {
-          "vertexCount": 258,
-          "triangleCount": 516,
+          "vertexCount": 866,
+          "triangleCount": 1732,
           "min": [
             92.599998,
             102.9000015,
@@ -632,7 +771,7 @@
             153.0999985,
             4.5
           ],
-          "signedVolume": 2677.9799058963135,
+          "signedVolume": 2755.1308651349027,
           "degenerateTriangles": 0,
           "nonManifoldEdges": 0,
           "watertight": true
@@ -651,6 +790,98 @@
             50.200001
           ],
           "signedVolume": 4659.907132834465,
+          "degenerateTriangles": 0,
+          "nonManifoldEdges": 0,
+          "watertight": true
+        }
+      },
+      "MSV4_minimum_profile_arm_solar_PRINT.3mf": {
+        "Base": {
+          "vertexCount": 1306,
+          "triangleCount": 2612,
+          "min": [
+            33.200215,
+            102.9000015,
+            0
+          ],
+          "max": [
+            73.400215,
+            153.0999985,
+            5.147001
+          ],
+          "signedVolume": 2927.517790626868,
+          "degenerateTriangles": 0,
+          "nonManifoldEdges": 0,
+          "watertight": true
+        },
+        "Lid": {
+          "vertexCount": 182,
+          "triangleCount": 364,
+          "min": [
+            79.400215,
+            102.9000015,
+            0
+          ],
+          "max": [
+            111.800217,
+            153.0999985,
+            7.7
+          ],
+          "signedVolume": 4143.972976471702,
+          "degenerateTriangles": 0,
+          "nonManifoldEdges": 0,
+          "watertight": true
+        },
+        "Solar Arm Left": {
+          "vertexCount": 432,
+          "triangleCount": 868,
+          "min": [
+            117.800217,
+            111.35181799999998,
+            0
+          ],
+          "max": [
+            143.900001,
+            144.648182,
+            1.6
+          ],
+          "signedVolume": 288.9632855320813,
+          "degenerateTriangles": 0,
+          "nonManifoldEdges": 0,
+          "watertight": true
+        },
+        "Solar Arm Right": {
+          "vertexCount": 424,
+          "triangleCount": 852,
+          "min": [
+            149.900001,
+            111.35181799999998,
+            0
+          ],
+          "max": [
+            175.999785,
+            144.648182,
+            1.6
+          ],
+          "signedVolume": 333.66611141461635,
+          "degenerateTriangles": 0,
+          "nonManifoldEdges": 0,
+          "watertight": true
+        },
+        "Solar Panel Frame": {
+          "vertexCount": 876,
+          "triangleCount": 1756,
+          "min": [
+            181.999785,
+            108.5999985,
+            0
+          ],
+          "max": [
+            222.799785,
+            147.4000015,
+            5.397282
+          ],
+          "signedVolume": 1695.867188100408,
           "degenerateTriangles": 0,
           "nonManifoldEdges": 0,
           "watertight": true
@@ -675,6 +906,98 @@
           "nonManifoldEdges": 0,
           "watertight": true
         }
+      }
+    },
+    "stlFiles": {
+      "minimalArmBase": {
+        "vertexCount": 1306,
+        "triangleCount": 2612,
+        "min": [
+          -20.1,
+          96,
+          0.000005
+        ],
+        "max": [
+          20.1,
+          146.199997,
+          5.147006
+        ],
+        "signedVolume": 2927.51779062685,
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "minimalArmLid": {
+        "vertexCount": 182,
+        "triangleCount": 364,
+        "min": [
+          -16.200001,
+          96,
+          0
+        ],
+        "max": [
+          16.200001,
+          146.199997,
+          7.7
+        ],
+        "signedVolume": 4143.972976471694,
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "armLeft": {
+        "vertexCount": 432,
+        "triangleCount": 868,
+        "min": [
+          -4.899892,
+          118.70182,
+          0
+        ],
+        "max": [
+          21.199892,
+          151.998184,
+          1.6
+        ],
+        "signedVolume": 288.9632855320797,
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "armRight": {
+        "vertexCount": 424,
+        "triangleCount": 852,
+        "min": [
+          -4.899892,
+          118.70182,
+          0
+        ],
+        "max": [
+          21.199892,
+          151.998184,
+          1.6
+        ],
+        "signedVolume": 333.66611141461567,
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
+      },
+      "panelFrame": {
+        "vertexCount": 876,
+        "triangleCount": 1756,
+        "min": [
+          -20.4,
+          129.800003,
+          0
+        ],
+        "max": [
+          20.4,
+          168.600006,
+          5.397282
+        ],
+        "signedVolume": 1695.8671881004072,
+        "degenerateTriangles": 0,
+        "nonManifoldEdges": 0,
+        "watertight": true
       }
     }
   }
