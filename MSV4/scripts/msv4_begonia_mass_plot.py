@@ -85,10 +85,12 @@ def main() -> None:
     ax.set_ylabel("grams on the scale (pot + plastic dish)")
     ax.set_title("Sensor 11: pot weight and the moisture number, provisional conversion\n"
                  f"{rows[0]['time']:%Y-%m-%d %H:%M} to {rows[-1]['time']:%Y-%m-%d %H:%M}")
+    # The pot only dries, so the data runs top-left to bottom-right; the
+    # upper-right corner stays empty, one pair per line.
     note = (f"provisional conversion fitted to the {len(paired)} Begonia weighings:\n"
-            + "; ".join(f"{g:.0f} g = {u:,.0f} units" for g, u in paired)
-            + f"; slope {slope:.2f} units/g")
-    ax.text(0.01, 0.01, note, transform=ax.transAxes, fontsize=8, va="bottom",
+            + "\n".join(f"{g:.0f} g = {u:,.0f} units" for g, u in paired)
+            + f"\nslope {slope:.2f} units/g")
+    ax.text(0.99, 0.98, note, transform=ax.transAxes, fontsize=8, va="top", ha="right",
             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d", tz=rows[0]["time"].tzinfo))
     ax.grid(alpha=0.25)
