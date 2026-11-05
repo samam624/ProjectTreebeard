@@ -36,9 +36,10 @@ def main() -> None:
     fleet = json.loads(FLEET.read_text(encoding="utf-8"))
     board = next(b for b in fleet["msv4_boards"]["boards"] if b.get("sensor_id") == 11)
     state = board["physical_state"]
-    event = state["watering_events"]["events"][-1]
-    # This event predates the structured `at` convention; its measured time is explicit in fleet.
+    # The first event predates the structured `at` convention; its measured time is explicit in fleet.
     watered = datetime.fromisoformat("2026-10-27T12:29:00-07:00")
+    waterings = [watered] + [datetime.fromisoformat(e["at"])
+                             for e in state["watering_events"]["events"] if "at" in e]
     rows = [r for r in reading.load(args.csv, None) if r["time"] >= watered and r["stored"] is not None]
     if not rows:
         raise SystemExit("no sensor 11 readings at or after the recorded watering")
@@ -58,10 +59,20 @@ def main() -> None:
     hours = (weight_times[-1] - weight_times[0]).total_seconds() / 3600
     change = weights[-1] - weights[0]
 
+    def cycle(t: datetime) -> int:
+        """Index of the drying cycle t falls in (0 = after the first watering)."""
+        return sum(1 for w in waterings if w <= t) - 1
+
+    # Fit on the first drying cycle only: a fresh watering is not settled, and later
+    # cycles are drawn through this conversion to show whether they read the same.
+    # A reading pairs with a weighing only when no watering falls between them.
     paired = []
-    for when, grams in zip(weight_times, weights):
+    for weighing, when, grams in zip(weighings, weight_times, weights):
+        if cycle(when) != 0 or weighing.get("post_watering"):
+            continue
         nearby = [r["stored"] for r in rows
-                  if abs((r["time"] - when).total_seconds()) <= 30 * 60]
+                  if abs((r["time"] - when).total_seconds()) <= 30 * 60
+                  and cycle(r["time"]) == cycle(when)]
         if nearby:
             paired.append((grams, statistics.median(nearby)))
     if len(paired) < 2:
@@ -76,7 +87,8 @@ def main() -> None:
 
     # Match msv4_mass_vs_value_plot.py, the existing Alocasia figure.
     fig, ax = plt.subplots(figsize=(14, 7))
-    ax.axvline(watered, color="#4a90d9", lw=1.2, ls="--", alpha=0.7, label="watering")
+    for i, w in enumerate(waterings):
+        ax.axvline(w, color="#4a90d9", lw=1.2, ls="--", alpha=0.7, label="watering" if i == 0 else None)
     ax.plot([t for t, _ in moisture_as_grams], [g for _, g in moisture_as_grams],
             color="#1f77b4", lw=1.3, alpha=0.9,
             label="moisture number in use (as built), as grams")
@@ -85,18 +97,17 @@ def main() -> None:
     ax.set_ylabel("grams on the scale (pot + plastic dish)")
     ax.set_title("Sensor 11: pot weight and the moisture number, provisional conversion\n"
                  f"{rows[0]['time']:%Y-%m-%d %H:%M} to {rows[-1]['time']:%Y-%m-%d %H:%M}")
-    # The pot only dries, so the data runs top-left to bottom-right; the
-    # upper-right corner stays empty, one pair per line.
-    note = (f"provisional conversion fitted to the {len(paired)} Begonia weighings:\n"
+    # Outside the axes: after a watering the newest data climbs back to the top right.
+    note = (f"provisional conversion fitted to the {len(paired)}\nweighings of the first drying cycle:\n"
             + "\n".join(f"{g:.0f} g = {u:,.0f} units" for g, u in paired)
             + f"\nslope {slope:.2f} units/g")
-    ax.text(0.99, 0.98, note, transform=ax.transAxes, fontsize=8, va="top", ha="right",
+    ax.text(1.01, 1.0, note, transform=ax.transAxes, fontsize=8, va="top", ha="left",
             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d", tz=rows[0]["time"].tzinfo))
     ax.grid(alpha=0.25)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=3, fontsize=8, frameon=False)
     fig.tight_layout()
-    fig.savefig(args.out, dpi=130)
+    fig.savefig(args.out, dpi=130, bbox_inches="tight")
     print(args.out)
 
 
