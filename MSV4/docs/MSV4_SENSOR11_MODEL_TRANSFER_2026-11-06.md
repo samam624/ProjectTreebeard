@@ -72,3 +72,41 @@ Predicted minus scale, grams. Lower |mean| is better. `change` is the predicted 
 What decides it: weighings from 11-06 evening onward, so cycle 2 overlaps cycle 1's time since
 watering. Then the next watering, weighed right before it, gives a third cycle and a second
 transfer test.
+
+## Update 2026-11-07: the first weighing past 27 h (MEASURED)
+
+1251 g at 11-07 ~11:03, 44 h after the watering: inside cycle 1's grams range and inside its
+time-since-watering range (its first two weighings were 27 h and 58 h after the 10-27 watering).
+Same script, sweeps refitted (2,264), 14 weighings.
+
+Fitted on cycle 1, predicted minus scale, grams. `change` is the predicted move from 11-05 21:59
+to 11-07 11:03, when the scale moved -82 g.
+
+| candidate | 21:59 | 11-06 10:23 | 11-07 11:03 | change |
+|---|---|---|---|---|
+| lumped mask C | +23 | +15 | +12 | -93 |
+| two-branch mask C | +33 | +20 | +15 | -99 |
+| RC-line mask C | +30 | +26 | +24 | -87 |
+| two-branch R | +47 | +32 | +10 | -119 |
+| RC-line R | +64 | +35 | +9 | -136 |
+| lumped R (firmware's) | +60 | +36 | +13 | -129 |
+| number in use | +57 | +41 | +20 | -119 |
+| CPE mask C | +80 | +40 | +8 | -155 |
+| Cm / soil-coupled | +99 / +102 | +49 / +49 | +4 / +3 | -177 / -181 |
+| direct C / derived soil C | +129 / +132 | +53 / +53 | -4 / -5 | -215 / -219 |
+
+- The resistances, the number in use and the capacitances kept closing after 27 h: the resistances
+  and capacitances are now a quarter or less of their 21:59 gap, the number in use about a third,
+  the lumped and two-branch mask C about half. That is the settling test this record set, and it
+  passed.
+- The capacitances have reached zero and are still falling faster than the scale (-177 to -219 g
+  predicted against -82 g). Whether they stop at zero or go on to read drier than the scale is not
+  known until the next weighing.
+- RC-line mask C did not close: +30, +26, +24 g. Its predicted change (-87 g) is the closest of
+  any candidate to the scale's -82 g. So it tracks the drying at cycle 1's slope with a fixed
+  offset of about +25 g, the same offset-not-gain shape sensor 10 showed in its second cycle.
+- With one line through all 13 settled weighings of both cycles, RC-line mask C has the smallest
+  leave-one-out miss (14.9 g), then two-branch R 16.0, two-branch mask C 18.6, lumped mask C 19.0,
+  lumped R 19.6 and the number in use 19.8. Capacitances 30-44 g, CPE n 106.
+- The stored number reads +20 g on the cycle-1 line; the mass plot's separate pairing shows the
+  same (~1273 against 1251 g).
