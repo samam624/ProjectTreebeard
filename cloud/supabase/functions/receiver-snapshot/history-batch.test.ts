@@ -8,6 +8,7 @@ import {
   MAX_HISTORY_ROWS_PER_UPLOAD,
   MAX_OBSERVED_FUTURE_SKEW_MS,
   MAX_QUEUED_AGE_MS,
+  attachAutoCal,
   mergeLatestPlants,
   normalizeObservationId,
   observedAtIso,
@@ -73,6 +74,19 @@ test("a compact latest-plant entry keeps the fields only a full snapshot sends",
     [{ sensor: 10, moisture: 13807, raw: { batteryMv: 3820 } }],
   );
   assert.deepEqual(merged, [{ sensor: 10, moisture: 13807, received: 500, autoCal, raw: { batteryMv: 3820 } }]);
+});
+
+test("the range served to the display is written onto the stored snapshot's plants", () => {
+  const row = { sensorId: 10, ready: true, dryBound: 15127, wetBound: 20457, daysSinceLastWatering: 10.4, lastWateredAtMs: 1793401200000, region: true };
+  const plants = [{ sensor: 10, moisture: 13807 }, { sensor: 1, moisture: 289 }];
+  const out = attachAutoCal<Record<string, unknown>>(plants, [row]);
+  assert.deepEqual(out, [
+    { sensor: 10, moisture: 13807, autoCal: { ready: true, dryBound: 15127, wetBound: 20457, daysSinceLastWatering: 10.4, lastWateredAtMs: 1793401200000, dryBoundTrendingLower: false, region: true } },
+    { sensor: 1, moisture: 289 },
+  ]);
+  // Nothing to write when the stored range already matches, or there is no snapshot.
+  assert.equal(attachAutoCal(out, [row]), null);
+  assert.equal(attachAutoCal([], [row]), null);
 });
 
 test("observation ids are required and bounded for idempotent batches", () => {

@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deriveRegion, regionAutoCalRow, type RegionRawSensor } from "./region.ts";
 import {
+  attachAutoCal,
+  type AutoCalRow,
   isValidInt32,
   isValidRawFdcCount,
   mergeLatestPlants,
@@ -283,6 +285,29 @@ Deno.serve(async (request) => {
             }
           }
           sensors.push(regionAutoCalRow(region, verbose));
+        }
+        // The dashboard reads the stored latest snapshot; give it the range just served to the
+        // display (attachAutoCal). Best effort: the display's answer never waits on it failing.
+        try {
+          const { data: latestRows, error: latestError } = await supabase.rpc("msv2_read_latest_snapshots", {
+            p_receiver_id: cleanReceiverId,
+            p_limit: 1,
+          });
+          const latest = !latestError && Array.isArray(latestRows) ? latestRows[0] : null;
+          const stored = latest?.snapshot && typeof latest.snapshot === "object" ? latest.snapshot as Record<string, unknown> : null;
+          const plants = stored
+            ? attachAutoCal(stored.plants as PlantReading[] | undefined, sensors as AutoCalRow[])
+            : null;
+          if (stored && plants) {
+            const { error: patchError } = await supabase.from("msv2_latest_snapshots")
+              .update({ snapshot: { ...stored, plants } })
+              .eq("receiver_id", cleanReceiverId);
+            if (patchError) console.error(`autoCal not written to the latest snapshot: ${patchError.message}`);
+          } else if (latestError) {
+            console.error(`latest snapshot not read for autoCal: ${latestError.message}`);
+          }
+        } catch (patchFailure) {
+          console.error(`autoCal not written to the latest snapshot: ${String(patchFailure)}`);
         }
         return jsonResponse({ ok: true, regionApi: 1, sensors });
       }

@@ -56,6 +56,46 @@ export function mergeLatestPlants<T extends { sensor?: unknown }>(
   return [...merged.entries()].sort(([left], [right]) => left - right).map(([, plant]) => plant);
 }
 
+// The range a receiver's autocal pull was just served, written onto the plants of its stored
+// latest snapshot in the shape the receiver itself uploads (sensorDataJson's "autoCal"), so the
+// dashboard shows the range the display uses without waiting for a full snapshot. Those are
+// 18 KB and fail when the receiver's TLS heap is fragmented (2026-11-10: 104 mbedTLS
+// allocation failures in 11.6 h). Returns null when nothing would change.
+export type AutoCalRow = {
+  sensorId: number;
+  ready: boolean;
+  dryBound: number | null;
+  wetBound: number | null;
+  daysSinceLastWatering: number | null;
+  lastWateredAtMs: number | null;
+  region: boolean;
+};
+export function attachAutoCal<T extends { sensor?: unknown; autoCal?: unknown }>(
+  plants: T[] | null | undefined,
+  rows: AutoCalRow[],
+): T[] | null {
+  if (!Array.isArray(plants) || plants.length === 0) return null;
+  const bySensor = new Map(rows.map((row) => [row.sensorId, row]));
+  let changed = false;
+  const out = plants.map((plant) => {
+    const row = bySensor.get(Number(plant?.sensor));
+    if (!row || !plant || typeof plant !== "object") return plant;
+    const autoCal = {
+      ready: row.ready,
+      dryBound: row.dryBound ?? 0,
+      wetBound: row.wetBound ?? 0,
+      daysSinceLastWatering: row.daysSinceLastWatering,
+      lastWateredAtMs: row.lastWateredAtMs,
+      dryBoundTrendingLower: false,
+      region: row.region,
+    };
+    if (JSON.stringify(plant.autoCal) === JSON.stringify(autoCal)) return plant;
+    changed = true;
+    return { ...plant, autoCal };
+  });
+  return changed ? out : null;
+}
+
 export function selectHistoryRows<T>(snapshot: HistoryBatchEnvelope<T>): {
   usesBatch: boolean;
   rows: T[];
