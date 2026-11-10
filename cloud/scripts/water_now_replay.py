@@ -10,8 +10,9 @@ The rule (a reference for a build; nothing here is in the receiver or the cloud)
      `--bottom`. The first 24 h after a watering are "just watered".
   4. The first FIX_AFTER waterings recalibrate: a settled level at or above the one in force is
      the new scale (until 2026-10-18 a higher one was first held as a shift; probe 7 stayed stuck
-     on it). From then on a lower settled level is still taken, a higher one never is (2026-10-21,
-     region.ts rule 7): following it let probe 7's line climb with every early watering.
+     on it). From then on no settled level moves it (region.ts rule 7): a higher one let probe 7's
+     line climb with every early watering (2026-10-21), a lower one let sensor 10's small 10-30
+     watering drop the line below where its pot had been watered twice (2026-11-10).
   5. A fall of the whole scale within an hour, 36 h or more after a watering, is a disturbed
      probe; the reading is not judged again until the next watering. Deliberately almost never
      true (maintainer, 2026-10-18: the user can see a knocked or pulled probe).
@@ -41,7 +42,7 @@ STEP_UP = 0.15        # of the scale: a watering
 STEP_DOWN = 1.0       # of the scale within an hour, with no watering: a disturbed probe (0.20 until 2026-10-18)
 DRYDOWN = 36 * H      # no fall is a disturbance this soon after a watering: the water is still spreading
 HYSTERESIS = 0.02     # "water now" does not switch off for a wobble this size
-FIX_AFTER = 2         # settled waterings after which a higher settled level no longer raises the region
+FIX_AFTER = 2         # settled waterings after which no settled level moves the region
 
 
 def median_of(vis: pd.Series, t0, t1, least: int = 6) -> float:
@@ -88,8 +89,8 @@ def replay(b: pd.Series, base: float, top: float, bottom: float) -> tuple[pd.Dat
                     settled, events[-1]["verdict"] = new, "first scale"
                 else:
                     change = (new - settled) / (settled - base)
-                    if cycles >= FIX_AFTER and new > settled:
-                        events[-1]["verdict"] = f"{100 * change:+.0f} % of scale: region fixed, not raised"
+                    if cycles >= FIX_AFTER:
+                        events[-1]["verdict"] = f"{100 * change:+.0f} % of scale: region fixed, not moved"
                     else:
                         settled = new
                         events[-1]["verdict"] = "same scale" if abs(change) <= TOL else f"{100 * change:+.0f} % of scale: taken as the new scale"

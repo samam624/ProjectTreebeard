@@ -119,3 +119,34 @@ logic fix for all probe calibrations but do not reset the other ones yet".
 
 Tests: `node --test supabase/functions/receiver-snapshot/region.test.ts`, 15 pass, including the
 probe 7 record from 10-11 as a fixture (`fixtures/region-probe7-pot2-hourly.json`).
+
+## 2026-11-10: the fixed line no longer moves down either
+
+Maintainer, 2026-11-10: "changing the water now level based on the watering step is not a good
+idea, if the probe is working properly then it should come back to the same level every time
+watering is needed".
+
+What prompted it (sensor 10, Alocasia pot, measured): the 10-30 watering was a small one, +192 g
+on the scale against 461 and 463 g for the 2-cup waterings of 10-10 and 10-19. It settled at
+17,518 against the 20,137 of 10-19, and rule 7 still lowered a fixed line by half of a fall, so the
+line went from 15,127 to 13,657 (stored with line hour 10-30 23:00 UTC). On 11-10 ~00:00 PST the pot
+weighed 4,424 g, 96 g under the driest earlier watering (4,520 g before 10-30), while the card read
+3 %.
+
+Change: `region.ts` rule 7 now keeps a fixed region whatever a watering settles at, up or down;
+`lineToStore` is offered only when nothing is stored yet; `water_now_replay.py` follows it.
+Tests 15/15. The sensor 3 fixture's waterings after its 08-28 knock now read overdue under a line
+that does not move, so the on-time checks stop at the knock; a calibration reset is the fix for a
+knocked probe.
+
+Stored lines lowered after they were fixed, with what the new rule gives (computed 11-10 from the
+live hourly medians, stored drop kept):
+
+| sensor | stored (top / bottom / full) | as fixed (top / bottom / full) | fixed at |
+|---|---|---|---|
+| 10 | 13,657 / 12,534 / 18,988 | 15,127 / 14,003 / 20,457 | 10-19 08:00 UTC watering |
+| 11 | 13,169 / 11,162 / 22,687 | 13,789 / 11,782 / 23,307 | 10-27 20:00 UTC watering |
+
+Sensors 3 and 4 also hold lines set after they were fixed; both have been out of soil since 09-30
+and were left as they are. Sensor 10 restored to the fixed line reads about -23 % (overdue) at
+13,875; it crossed 15,127 around 11-04/05, at roughly 4,560 g on the scale.

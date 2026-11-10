@@ -26,12 +26,16 @@
 //      watering, is a disturbed probe: no region until the next watering, and that cycle teaches
 //      nothing. Deliberately almost never true: the maintainer (2026-10-18) wants calibration
 //      kept between waterings above all, and the user can see a knocked or pulled probe.
-//   7. Once TEACH_CYCLES waterings have settled, the region is FIXED IN RAW READINGS and NEVER
-//      RAISED: a higher settled level moves nothing. A lower one still lowers it by LEAK of the
-//      fall (a small watering, ions leaving, the 08-28 knock on sensor 3, whose on-time waterings
-//      a region fixed both ways would call overdue). Stored when fixed and when lowered
-//      (msv2_set_sensor_region_line_if_lower); only a calibration reset clears it, and a reset is
-//      how a probe moved to another pot starts again. Measured 2026-10-21 on probe 7: with the line
+//   7. Once TEACH_CYCLES waterings have settled, the region is FIXED IN RAW READINGS and NO
+//      WATERING MOVES IT, up or down. Stored once, when fixed (msv2_set_sensor_region_line_if_lower);
+//      only a calibration reset clears it, and a reset is how a probe moved to another pot, or
+//      knocked out of its old reading (sensor 3, 08-28), starts again. Until 2026-11-10 a lower
+//      settled level still lowered the line by LEAK of the fall. The maintainer (2026-11-10): "if
+//      the probe is working properly then it should come back to the same level every time
+//      watering is needed". Measured on sensor 10: the 10-30 watering was a small one (+192 g on
+//      the scale against ~462 g for the two before it), settled lower, and lowered the line
+//      14,800 -> 13,657, so on 11-10 the card read 3 % with the pot at 4,424 g, 96 g drier than
+//      at any earlier watering. Measured 2026-10-21 on probe 7: with the line
 //      riding on each settled level, the user waters at the line, the pot has not dried, it
 //      settles wetter (43,769 -> 43,788 -> 44,822 -> 46,902), the line follows it up (42,700 ->
 //      44,808 in eight days) and the next watering comes sooner (3.3, 2.6, 2.1 days). The 10-11
@@ -252,22 +256,15 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
           // Already in the stored region: applying it again would lower it on every pull.
           watering.verdict += "; in the stored region";
           settled = fixedLine!.full;
-        } else if (fixedLine !== null && cyclesSettled >= REGION.TEACH_CYCLES && drop !== null) {
-          // Rule 7: the region is fixed. A lower settled level still lowers it by half of the
-          // fall, as before (a small watering, ions leaving, a knocked probe reading low); a
-          // higher one never raises it.
+        } else if (fixedLine !== null) {
+          // Rule 7: the region is fixed and no watering moves it, up or down. The verdict only
+          // records how this watering settled against it.
           const full = fixedLine.full;
-          const change = (neu - full) / (mode === "share" ? full - base! : drop);
-          // As before the region was fixed: within TOLERANCE the new level is taken whole, past it half the fall.
-          const lowered = windowFor(change < -REGION.TOLERANCE ? full - REGION.LEAK * (full - neu) : neu, drop);
-          if (change < 0 && fits(lowered) && lowered.top < fixedLine.top) {
-            fixedLine = lowered;
-            watering.verdict = (change < -REGION.TOLERANCE ? `lower by ${Math.round(-100 * change)} % of scale: region lowered by half of the fall`
-              : "same scale, a little lower: region lowered to it") + watering.verdict;
-          } else {
-            watering.verdict = (change > REGION.TOLERANCE ? `higher by ${Math.round(100 * change)} % of scale: region fixed, not raised`
-              : change < -REGION.TOLERANCE ? `lower by ${Math.round(-100 * change)} % of scale: region kept` : "same scale") + watering.verdict;
-          }
+          const unit = mode === "share" ? full - base! : (drop ?? full - fixedLine.top);
+          const change = (neu - full) / unit;
+          watering.verdict = (change > REGION.TOLERANCE ? `higher by ${Math.round(100 * change)} % of scale: region fixed, not raised`
+            : change < -REGION.TOLERANCE ? `lower by ${Math.round(-100 * change)} % of scale: region fixed, not lowered` : "same scale") +
+            watering.verdict;
           settled = fixedLine.full;
         } else if (settled === null || scaleVoid) {
           settled = neu;
@@ -328,10 +325,9 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
     anchorToStore: storedDrop === null && taughtDrops.length >= REGION.TEACH_CYCLES ? drop : null,
     fixed: fixedLine !== null,
     lineStored: storedLine !== null,
-    // Stored when first fixed and whenever lowered, so neither is lost when its watering leaves
-    // the 60-day window (msv2_set_sensor_region_line_if_lower).
-    lineToStore: fixedLine !== null && Number.isFinite(fixedLine.hour) &&
-        (storedLine === null || Math.round(fixedLine.top) < Math.round(storedLine.top))
+    // Stored once, when first fixed, so it is not lost when its watering leaves the 60-day
+    // window (msv2_set_sensor_region_line_if_lower; a stored line is never offered again).
+    lineToStore: fixedLine !== null && Number.isFinite(fixedLine.hour) && storedLine === null
       ? { top: Math.round(fixedLine.top), bottom: Math.max(0, Math.round(fixedLine.bottom)), full: Math.round(fixedLine.full), hour: fixedLine.hour } : null,
     scaleSettled: latestSettled === null ? null : Math.round(latestSettled),
     disturbed,
