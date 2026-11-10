@@ -150,3 +150,10 @@ live hourly medians, stored drop kept):
 Sensors 3 and 4 also hold lines set after they were fixed; both have been out of soil since 09-30
 and were left as they are. Sensor 10 restored to the fixed line reads about -23 % (overdue) at
 13,875; it crossed 15,127 around 11-04/05, at roughly 4,560 g on the scale.
+
+**Done 2026-11-10 ~00:13 PST:** receiver-snapshot deployed (with the latest-plant merge fix,
+2bcb8c8). Sensor 10's stored line written back to 15,127 / 14,003 / 20,457, line hour 497888
+(10-19 08:00 UTC watering) by a direct UPDATE of its `msv2_sensor_calibration_reset` row
+(`reset_at` untouched). Undo: 13,657 / 12,534 / 18,988, line hour 498167. Live check after: sensor
+10 reads -23 % (overdue). Sensor 11 NOT changed (still 13,169 / 11,162 / 22,687): awaiting the
+maintainer's word.
