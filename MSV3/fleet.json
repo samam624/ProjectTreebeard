@@ -1605,6 +1605,16 @@
             "at_note": "no clock time given; session clock when the message arrived",
             "saucer_water": "NOT STATED",
             "note": "reported by the maintainer as 'the weight right now is 4423 4424 4425' while asking about sensor 10's water-now line; median 4424 logged; shared-alocasia pot (sensor 10). 96 g under the 4520 g weighed just before the 10-30 watering, the lowest weight on record; sensor 10 read about 13,900 against its water-now line of 13,657."
+          },
+          {
+            "when": "2026-11-10 ~00:35 PST",
+            "grams": 4643.5,
+            "at": "2026-11-10T00:35:00-08:00",
+            "weighed": "pot_and_saucer",
+            "weighed_note": "NOT STATED; read as pot WITH its dish, same setup as the 4424 g before it",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "NOT STATED; this is straight after the water went in, so water may be standing in or absorbed by the dish",
+            "note": "maintainer reported 'i waterd the alocaisa and its 4643 4644 now'; median 4643.5 logged; +219.5 g over the 4424 g of ~00:00. See watering_events."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
@@ -1700,6 +1710,17 @@
               "pot_mass_before_g": 4520,
               "pot_mass_after_g": 4712,
               "intent": "maintainer 2026-10-30 (session clock): 'Im tryna not water it as much as before because i was killing it with overwatering' -- the smaller amount is deliberate, and earlier waterings are read by the maintainer as overwatering of the Alocasia.", "note": "reading taken right after the water went in, dish state NOT STATED; the sensor 10 step has not been checked against the record yet"
+            },
+            {
+              "when": "2026-11-10 ~00:35 PST (session clock when the message arrived; the minute the water went in is to be taken from sensor 10's record)",
+              "at": "2026-11-10T00:35:00-08:00",
+              "source": "maintainer stated 2026-11-10 (session clock ~00:35 PST): 'i waterd the alocaisa and its 4643 4644 now'",
+              "amount": "NOT STATED. The scale gained about 219 g (4424 at ~00:00 -> 4643.5 median), between the 192 g of 10-30 and the 461-463 g of the 2-cup waterings of 10-10 and 10-19.",
+              "fertilized": "NOT STATED",
+              "pot_mass_before_g": 4424,
+              "pot_mass_after_g": 4643.5,
+              "timing": "Watered at the driest weight on record (96 g under the 4520 g before 10-30). Sensor 10's card read 3 % before its water-now line was restored at ~00:13 PST (region rule changed the same night: a fixed line no longer moves down), then -23 % (overdue) once the receiver pulled it at 00:24 PST.",
+              "note": "dish state NOT STATED; before weight is the 00:00 reading, ~35 min earlier"
             }]
       },
       "fertilizing_events": {
