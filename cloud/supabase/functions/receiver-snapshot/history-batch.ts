@@ -41,9 +41,17 @@ export function mergeLatestPlants<T extends { sensor?: unknown }>(
   // Bound the receiver-supplied latest cache independently of historyBatch. The current
   // firmware has at most 16 sensors; 128 leaves rollout room without accepting an
   // unbounded object merge from the network.
+  // A compact entry carries only the fast-changing fields. Fields it leaves out (autoCal, the
+  // missed/received counters) keep the value from the last full snapshot, at most 10 minutes
+  // old. Replacing the entry whole dropped autoCal from the stored snapshot between full ones,
+  // and the dashboard then fell back to each card's preset 120/175 range (found 2026-11-10).
   for (const plant of (Array.isArray(latestPlants) ? latestPlants : []).slice(0, 128)) {
     const sensorId = Number(plant?.sensor);
-    if (isValidInt32(sensorId) && sensorId > 0) merged.set(sensorId, plant);
+    if (!isValidInt32(sensorId) || sensorId <= 0) continue;
+    const existing = merged.get(sensorId);
+    merged.set(sensorId, existing && typeof existing === "object" && plant && typeof plant === "object"
+      ? { ...existing, ...plant }
+      : plant);
   }
   return [...merged.entries()].sort(([left], [right]) => left - right).map(([, plant]) => plant);
 }

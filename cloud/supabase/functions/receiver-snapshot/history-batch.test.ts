@@ -64,6 +64,17 @@ test("compact outbox uploads replace only current sensors and preserve the rest 
   );
 });
 
+test("a compact latest-plant entry keeps the fields only a full snapshot sends", () => {
+  // 2026-11-10: compact uploads replaced the whole entry, dropping autoCal, so the dashboard
+  // used the card's preset range instead of the one the display uses.
+  const autoCal = { ready: true, region: true, dryBound: 13657, wetBound: 18988 };
+  const merged = mergeLatestPlants<Record<string, unknown>>(
+    [{ sensor: 10, moisture: 13900, received: 500, autoCal, raw: { batteryMv: 3800 } }],
+    [{ sensor: 10, moisture: 13807, raw: { batteryMv: 3820 } }],
+  );
+  assert.deepEqual(merged, [{ sensor: 10, moisture: 13807, received: 500, autoCal, raw: { batteryMv: 3820 } }]);
+});
+
 test("observation ids are required and bounded for idempotent batches", () => {
   assert.equal(normalizeObservationId("  ABC-123  "), "ABC-123");
   assert.equal(normalizeObservationId(""), null);
