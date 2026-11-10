@@ -1,5 +1,8 @@
 # Receiver cloud uploads stalled for 6.7 h (2026-10-14)
 
+> **2026-11-10:** the root cause (mbedTLS confined to internal RAM) is addressed in
+> [RECEIVER_TLS_PSRAM_2026-11-10.md](RECEIVER_TLS_PSRAM_2026-11-10.md): TLS buffers now come from PSRAM.
+
 **Status:** cleared by a USB reset at 10:00:09 PDT; backlog uploaded with nothing dropped. The
 cause was internal to the receiver. That it was a TLS buffer-allocation failure is **inferred, not
 measured**: the production build throws the error code away (see "What would measure it").

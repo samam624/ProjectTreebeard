@@ -1,5 +1,8 @@
 # Receiver cloud-upload intermittent "connection refused" (2026-08-31)
 
+> **2026-11-10:** the root cause (mbedTLS confined to internal RAM) is addressed in
+> [RECEIVER_TLS_PSRAM_2026-11-10.md](RECEIVER_TLS_PSRAM_2026-11-10.md): TLS buffers now come from PSRAM.
+
 > **RESOLVED 2026-08-31 (late).** Root cause found by direct measurement: the failures are
 > **`mbedtls_ssl_setup()` returning `MBEDTLS_ERR_SSL_ALLOC_FAILED` (-0x7F00 = -32512)** - an
 > out-of-contiguous-internal-RAM condition, not a network fault at all. See
