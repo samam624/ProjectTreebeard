@@ -1595,6 +1595,16 @@
             "at_note": "no clock time given; session clock when the message arrived",
             "saucer_water": "NOT STATED",
             "note": "reported by the maintainer as '4582 4583 4582 for alocaisa'; median 4582 logged; shared-alocasia pot (sensor 10)."
+          },
+          {
+            "when": "2026-11-10 ~00:00 PST",
+            "grams": 4424,
+            "at": "2026-11-10T00:00:00-08:00",
+            "weighed": "pot_and_saucer",
+            "weighed_note": "NOT STATED; read as pot WITH its dish from the magnitude (158 g under the 4582 g of 11-03 ~14:35 PST, about 25 g/day)",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "NOT STATED",
+            "note": "reported by the maintainer as 'the weight right now is 4423 4424 4425' while asking about sensor 10's water-now line; median 4424 logged; shared-alocasia pot (sensor 10). 96 g under the 4520 g weighed just before the 10-30 watering, the lowest weight on record; sensor 10 read about 13,900 against its water-now line of 13,657."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
