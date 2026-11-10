@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-10-28 msv4-display-hold-v1"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-10 tls-psram-v1"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -166,6 +166,7 @@ void loop()
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <mbedtls/platform.h>
 #if __has_include("WiFiCredentials.h")
 #include "WiFiCredentials.h"
 #endif
@@ -8456,10 +8457,45 @@ void endCloudRadioSlot()
 // largestFreeBlockInternalBytes/psramFreeBytes health fields before raising it again.
 const uint32_t CLOUD_SNAPSHOT_MIN_LARGEST_INTERNAL_BLOCK_BYTES = 24576;
 
+// 2026-11-10: mbedTLS allocates from PSRAM first (installTlsPsramAllocator()). The core's
+// sdkconfig pins it to internal RAM (CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC), where this receiver's
+// largest free block sits at 31,732 bytes on nearly every reading; on 11-10 that gave 104
+// MBEDTLS_ERR_SSL_ALLOC_FAILED (-32512) connects in 11.6 h, a low-water of 7,680 bytes free and
+// a boot that followed two panics, with 8 MB of PSRAM unused. ESP-IDF supports mbedTLS in
+// external RAM (CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC); this is its runtime equivalent, with an
+// internal fall-back when PSRAM is full. The core's own esp_mbedtls_mem_free is heap_caps_free,
+// so blocks allocated before the swap are freed correctly by the new pair.
+bool tlsAllocatorInPsram = false;
+
+static void* treebeardTlsCalloc(size_t count, size_t size)
+{
+  return heap_caps_calloc_prefer(count, size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                 MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
+static void treebeardTlsFree(void* pointer)
+{
+  heap_caps_free(pointer);
+}
+
+void installTlsPsramAllocator()
+{
+  if (ESP.getPsramSize() == 0)
+  {
+    Serial.println("[Treebeard boot] no PSRAM: mbedTLS stays in internal RAM");
+    return;
+  }
+  tlsAllocatorInPsram = mbedtls_platform_set_calloc_free(treebeardTlsCalloc, treebeardTlsFree) == 0;
+  Serial.println(tlsAllocatorInPsram ? "[Treebeard boot] mbedTLS allocates from PSRAM"
+                                     : "[Treebeard boot] mbedTLS allocator swap FAILED");
+}
+
 bool cloudHeapHasContiguousRoomForTls()
 {
-  return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >=
-         CLOUD_SNAPSHOT_MIN_LARGEST_INTERNAL_BLOCK_BYTES;
+  // With the TLS buffers in PSRAM the internal ceiling no longer limits a connect.
+  const uint32_t caps = tlsAllocatorInPsram ? (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+                                            : (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  return heap_caps_get_largest_free_block(caps) >= CLOUD_SNAPSHOT_MIN_LARGEST_INTERNAL_BLOCK_BYTES;
 }
 
 void runCloudBootstrap(uint32_t now)
@@ -9701,6 +9737,7 @@ String deviceInfoJson()
       heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   health["psramSizeBytes"] = ESP.getPsramSize();
   health["psramFreeBytes"] = ESP.getFreePsram();
+  health["tlsAllocator"] = tlsAllocatorInPsram ? "psram" : "internal";
   // 2026-08-30 isolation test - see TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL's comment. Must read 0 for
   // the whole test run; a nonzero value here means the isolation isn't clean.
   health["touchSpiDiagnosticDisableAll"] = TOUCH_SPI_DIAGNOSTIC_DISABLE_ALL;
@@ -11603,6 +11640,8 @@ void setup()
   Serial.println();
   esp_reset_reason_t resetReason = esp_reset_reason();
   Serial.println(TREEBEARD_BUILD_TAG);
+  // Before WiFi or any TLS session exists.
+  installTlsPsramAllocator();
   Serial.print("[Treebeard boot] previous checkpoint before reset: ");
   Serial.println(lastCheckpoint);
   Serial.print("[Treebeard boot] reset reason: ");

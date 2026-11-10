@@ -4,7 +4,15 @@ Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
 ## Current Known-Good Status
 
-As of 2026-10-27 ~23:25 PDT, the receiver on `COM16` runs
+As of 2026-11-10 ~00:45 PST, the receiver on `COM16` runs
+`Treebeard runtime build 2026-11-10 tls-psram-v1`, flashed with `arduino_display.ps1 -Action
+upload`: mbedTLS allocates from PSRAM (`installTlsPsramAllocator()`; `/device`
+`health.tlsAllocator` reads `psram`). Before it, on `msv4-display-hold-v1` after 11.6 h: 104
+TLS connects failed with -32512 (MBEDTLS_ERR_SSL_ALLOC_FAILED), largest internal block 31,732
+on nearly every reading, free-heap low-water 7,680 bytes, reset reason `panic/exception` twice
+running. First reading after the flash: largest internal block 51,188, free 93,244.
+
+Before that, as of 2026-10-27 ~23:25 PDT, the receiver on `COM16` runs
 `Treebeard runtime build 2026-10-28 msv4-display-hold-v1` (the tag's date is the next day's), flashed
 with `arduino_display.ps1 -Action upload`: the MSV4 drying hold in the presentation filter
 (`MSV4_DISPLAY_DRYING_HOLD_2026-10-27.md`). Cloud uploads returned HTTP 200 after the flash.
