@@ -42,6 +42,23 @@
     "guard2_validated is a DURABLE FACT and deliberately separate: this hardware has actually demonstrated the watchdog-loop -> BLE DFU escape. Having passed the test once does not make a coated probe recoverable today, so nothing gates on this field; it records what has been proven so a future session does not have to guess.",
     "mbr_params_page_verified is the date UICR.NRFFW[1] was READ ON THIS BOARD and found to hold the MBR params page address (0x000FE000 on nRF52840). Empty/absent means never read. It is the precondition for sending a BOOTLOADER over the air: the bootloader region is rewritten by the MBR via SD_MBR_COMMAND_COPY_BL, which journals into that page so an interrupted copy resumes on the next boot. With the word erased there is no journal and an interrupted copy leaves an unrecoverable board unless SWD can reach it. bootloader_settings.c writes it when blank so it is nearly always set -- 'nearly always' is not a basis for bricking a coated probe, so ble_ota_update.py --bootloader refuses any probe without a date here. Read it per board with the `uicr` command in MSV3_Probe_Bringup_Test; NEVER infer it from a sibling."
   ],
+  "component_reuse": {
+    "verified": "2026-11-11",
+    "source": "maintainer stated during BLE watering-pump parts search: 'I have 5 E73 modules from the MSV3s i can harvest them from.'",
+    "msv4_mcu_reference": {
+      "verified": "2026-11-11",
+      "source": "maintainer supplied an E73 MCU schematic image and stated it is working on their MSV4 now, while asking whether the same supporting circuitry can be reused for the pump PCB.",
+      "board_identity": "Not stated; no individual MSV4 board's physical_state has been reverified by this statement."
+    },
+    "e73_modules": {
+      "part": "E73-2G4M08S1C",
+      "quantity_reported_harvestable": 5,
+      "state": "Available to harvest from MSV3 boards; removal and post-removal functionality have not been reported.",
+      "donor_sensor_ids": null,
+      "identity_caveat": "Donor boards were not identified. This statement does not establish any individual probe's deployment, power, SWD accessibility, or removal state.",
+      "intended_use": "Candidate MCU/BLE modules for a new battery-powered watering-pump PCB."
+    }
+  },
   "probes": [
     {
       "sensor_id": 4,
@@ -1626,6 +1643,17 @@
             "saucer_water": "NOT STATED",
             "pot_note": "NOT STATED which pot; read as the shared-alocasia pot (sensor 10) because it is the only weighed pot near 4600 g (sensor 11's pot is ~1150 g)",
             "note": "maintainer reported '4603 4599 4598'; median 4599 logged; 44.5 g under the 4643.5 g right after the ~00:35 watering, ~17.4 h later."
+          },
+          {
+            "when": "2026-11-11 ~14:41 PST",
+            "grams": 4568,
+            "at": "2026-11-11T14:41:00-08:00",
+            "weighed": "pot_and_saucer",
+            "weighed_note": "NOT STATED; read as pot WITH its dish, same setup as the readings before it",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "NOT STATED",
+            "pot_note": "maintainer named the alocasia ('alocaisa w ...'); the shared-alocasia pot (sensor 10)",
+            "note": "maintainer reported '4569 4568 4567'; median 4568 logged; 31 g under the 4599 of 11-10 ~17:59 (~20.7 h), 75.5 g under the 4643.5 g right after the ~00:35 11-10 watering (~38.1 h)."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
