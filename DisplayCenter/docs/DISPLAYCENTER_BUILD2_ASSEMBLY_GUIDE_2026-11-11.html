@@ -1,0 +1,640 @@
+<!-- Repo copy of the DisplayCenter build-two assembly guide published at https://claude.ai/artifact/NMP6NTJdHjwFDErdMrQVbi. Ticks and readings save to the published page; opened from disk they save in this browser only. Content as of 2026-11-11. -->
+<title>DisplayCenter Build Two</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: one bench-side column; stages run top to bottom in build order, each a checklist card.
+     Same visual language as the MSV3 and MSV4 build guides. */
+  :root {
+    --bg: #f2f4f0;
+    --bg-dot: #e4e8e0;
+    --surface: #fdfdfb;
+    --surface-2: #eaece6;
+    --ink: #1c211b;
+    --ink-muted: #59635a;
+    --ink-faint: #7a8578;
+    --line: #d7dbd1;
+    --line-strong: #b9c0b3;
+    --accent: #a8531f;
+    --accent-ink: #7a3c14;
+    --accent-soft: #f0ddc9;
+    --verdigris: #4f7c6c;
+    --verdigris-soft: #dde9e3;
+    --ok: #2f7a4a;
+    --ok-soft: #dcefe2;
+    --warn: #9a6a00;
+    --warn-soft: #f6ebc8;
+    --bad: #b3261e;
+    --bad-soft: #f8dcd9;
+    --shadow: 0 1px 2px rgba(28, 33, 27, 0.06), 0 6px 20px -10px rgba(28, 33, 27, 0.18);
+    --display: "Big Shoulders Display", "Arial Narrow", ui-sans-serif, sans-serif;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14180f; --bg-dot: #1b201a; --surface: #1b201a; --surface-2: #232a20;
+      --ink: #e9ece3; --ink-muted: #a3ac9c; --ink-faint: #7f8a78; --line: #313a2c; --line-strong: #414d38;
+      --accent: #e08a3e; --accent-ink: #f3b57c; --accent-soft: #3a2c1a;
+      --verdigris: #7fb3a0; --verdigris-soft: #1e2e28;
+      --ok: #7cc79a; --ok-soft: #1c3326; --warn: #e3b64f; --warn-soft: #3a3016; --bad: #f08a80; --bad-soft: #3d1f1c;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -12px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14180f; --bg-dot: #1b201a; --surface: #1b201a; --surface-2: #232a20;
+    --ink: #e9ece3; --ink-muted: #a3ac9c; --ink-faint: #7f8a78; --line: #313a2c; --line-strong: #414d38;
+    --accent: #e08a3e; --accent-ink: #f3b57c; --accent-soft: #3a2c1a;
+    --verdigris: #7fb3a0; --verdigris-soft: #1e2e28;
+    --ok: #7cc79a; --ok-soft: #1c3326; --warn: #e3b64f; --warn-soft: #3a3016; --bad: #f08a80; --bad-soft: #3d1f1c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -12px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(var(--bg-dot) 1px, transparent 1px) 0 0 / 22px 22px, var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 44px 72px; }
+  code, .mono { font-family: var(--mono); }
+  code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; overflow-wrap: anywhere; }
+
+  /* Header */
+  header { display: flex; flex-direction: column; gap: 10px; padding-bottom: 26px; margin-bottom: 26px; border-bottom: 1px solid var(--line-strong); }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--verdigris); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .eyebrow::before { content: ""; width: 7px; height: 7px; background: var(--accent); border-radius: 1px; transform: rotate(45deg); }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(40px, 6vw, 60px); line-height: 0.94; margin: 0; text-wrap: balance; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .dek { max-width: 64ch; color: var(--ink-muted); margin: 0; }
+
+  /* Board picker + save status */
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .boards { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .boards .lbl { font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); margin-right: 4px; }
+  .boards button {
+    font: 600 14px var(--mono); padding: 7px 13px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  }
+  .boards button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .boards button:focus-visible, .copy:focus-visible, input:focus-visible, textarea:focus-visible, .check input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+  .status[data-s="saved"] .dot { background: var(--ok); }
+  .status[data-s="saving"] .dot { background: var(--warn); }
+  .status[data-s="error"] .dot { background: var(--bad); }
+
+  /* Progress strip */
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 18px; box-shadow: var(--shadow); }
+  .stat { background: var(--surface); padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .stat .n { font-family: var(--display); font-weight: 700; font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat .n span { color: var(--accent); }
+  .stat .l { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  @media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+
+  .jump { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 30px; }
+  .jump a { font-family: var(--mono); font-size: 12px; text-decoration: none; color: var(--ink-muted); border: 1px solid var(--line); background: var(--surface); padding: 5px 9px; border-radius: 6px; }
+  .jump a.complete { color: var(--ok); border-color: var(--ok); }
+
+  /* Watch-for box */
+  .watch { background: var(--accent-soft); border-radius: 10px; padding: 18px 22px; margin-bottom: 36px; }
+  .watch h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 0 0 10px; color: var(--accent-ink); }
+  .watch ul { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; }
+  .watch li { font-size: 14.5px; }
+  .watch b { color: var(--accent-ink); }
+
+  /* Stage */
+  section.stage { margin-bottom: 38px; scroll-margin-top: 16px; }
+  .stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .stage-head h2 { font-family: var(--display); font-weight: 700; font-size: 27px; margin: 0; display: flex; gap: 12px; align-items: baseline; text-wrap: balance; }
+  .stage-head h2 .num { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--accent); }
+  .stage-head .count { font-family: var(--mono); font-size: 12.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .stage-head .count.complete { color: var(--ok); }
+  .intro { color: var(--ink-muted); margin: 0 0 14px; max-width: 70ch; font-size: 14.5px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .group-title { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); background: var(--surface-2); padding: 9px 16px; border-bottom: 1px solid var(--line); }
+
+  /* Checklist row */
+  .row { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 4px 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: none; }
+  .row.done { background: color-mix(in srgb, var(--ok-soft) 45%, transparent); }
+  .row.done .txt { color: var(--ink-muted); }
+  .check { position: relative; display: block; width: 22px; height: 22px; margin-top: 2px; cursor: pointer; }
+  .check input { position: absolute; opacity: 0; width: 22px; height: 22px; margin: 0; cursor: pointer; }
+  .check .box { display: block; width: 22px; height: 22px; border: 1.5px solid var(--line-strong); border-radius: 5px; background: var(--surface); }
+  .check input:checked + .box { background: var(--ok); border-color: var(--ok); }
+  .check input:checked + .box::after { content: ""; position: absolute; left: 7.5px; top: 3.5px; width: 6px; height: 11px; border: solid var(--surface); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+  .body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .txt { font-size: 15px; }
+  .detail { color: var(--ink-muted); font-size: 13.5px; }
+
+  /* Pull-list rows */
+  .pull { display: grid; grid-template-columns: minmax(84px, 0.9fr) minmax(0, 2.2fr) minmax(0, 1.4fr); gap: 2px 14px; align-items: baseline; }
+  .pull .ref { font-family: var(--mono); color: var(--verdigris); font-size: 13.5px; overflow-wrap: anywhere; }
+  .pull .part { font-weight: 600; }
+  .pull .part small { display: block; font-weight: 400; color: var(--ink-muted); font-size: 13px; }
+  .pull .src { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+  .pull .qty { font-family: var(--display); font-size: 30px; line-height: 1; color: var(--accent-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+  .pull .qty .pl { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; margin-right: 8px; color: var(--ink-faint); }
+  .pull .note { grid-column: 1 / -1; color: var(--ink-muted); font-size: 13px; }
+  .flag { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent-ink); font-family: var(--mono); font-size: 11px; margin-left: 6px; white-space: nowrap; }
+  .row.dnp { background: var(--surface-2); }
+
+  /* Placement rows: step, value, count, designators */
+  .place { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+  .place .step { font-family: var(--mono); font-size: 12.5px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .place .val { font-weight: 600; }
+  .place .qty { font-family: var(--mono); font-size: 12.5px; color: var(--accent-ink); font-weight: 600; text-align: right; white-space: nowrap; }
+  .place .refs { grid-column: 2 / -1; font-family: var(--mono); font-size: 13.5px; color: var(--verdigris); overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    .pull { grid-template-columns: minmax(0, 1fr); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* Measurements */
+  .measures { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 2px; }
+  .measure { display: flex; align-items: center; gap: 6px; }
+  .measure label { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+  .measure input {
+    width: 92px; font: 500 14px var(--mono); padding: 5px 8px; border-radius: 6px;
+    border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .measure .unit { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .chip { font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .chip[data-v="ok"] { background: var(--ok-soft); color: var(--ok); }
+  .chip[data-v="warn"] { background: var(--warn-soft); color: var(--warn); }
+  .chip[data-v="bad"] { background: var(--bad-soft); color: var(--bad); }
+  .chip:empty { display: none; }
+
+  /* Command blocks */
+  .cmd { display: flex; gap: 8px; align-items: stretch; }
+  .cmd pre { flex: 1; min-width: 0; margin: 0; overflow-x: auto; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--ink); }
+  .copy { font: 600 11.5px var(--mono); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-muted); border-radius: 6px; padding: 0 10px; cursor: pointer; }
+
+  /* Notes */
+  .notes textarea { width: 100%; min-height: 120px; resize: vertical; font: 14px/1.5 var(--sans); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+
+  footer { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .pull .qty .per { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--ink-muted); }
+  .boards button { white-space: nowrap; }
+</style>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">DisplayCenter controller PCB · BOM of 2026-07-14 · second build</div>
+    <h1>DisplayCenter, <em>build two</em></h1>
+    <p class="dek">One receiver board: count what's left, kit it in placement order, paste and reflow the SMD parts,
+      hand-solder the four through-hole parts, then power, flash and check it against the receiver already running.
+      Ticks, bench readings and notes save to this page.</p>
+  </header>
+
+  <div class="controls">
+    <div class="boards"><span class="lbl">One board · ESP32-S3-WROOM-1U</span></div>
+    <div class="status" id="status" data-s="idle"><span class="dot"></span><span id="status-text">Connecting to this page's store…</span></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n"><span id="st-done">0</span>/<span id="st-total" style="color:inherit">0</span></div><div class="l">Steps done</div><div class="bar"><i id="st-bar"></i></div></div>
+    <div class="stat"><div class="n">36</div><div class="l">SMD parts · paste + reflow</div></div>
+    <div class="stat"><div class="n">4</div><div class="l">Through-hole · by iron</div></div>
+    <div class="stat"><div class="n">1</div><div class="l">DNP pad, C10</div></div>
+  </div>
+  <nav class="jump" id="jump" aria-label="Stages"></nav>
+
+  <aside class="watch">
+    <h2>Watch for</h2>
+    <ul>
+      <li><b>Start the enclosure print before you solder.</b> The two plates take about 6 h 54 min on the P1S. Stage 10 has the details.</li>
+      <li><b>22&nbsp;Ω and 220&nbsp;Ω both come four to a board, both 0805.</b> R1 R2 R12 R15 are 22&nbsp;Ω; R4 R5 R7 R11 are 220&nbsp;Ω (the LED resistors). Keep the two strips apart and labelled.</li>
+      <li><b>Q1 is the P-channel DMP3098L</b>, in the same SOT-23 as the two 2N7002s at Q2/Q3. Place it from its own bag first.</li>
+      <li><b>Four parts are the last one in stock</b> after build one: the USB-C receptacle, USBLC6-2P6, DMP3098L and AP2112K (the LCSC order added 2 spare AP2112Ks). Drop one of the others and the build waits for an order.</li>
+      <li><b>R3 and R6 are 0603</b> (5.1&nbsp;kΩ, USB-C CC). Everything else passive is 0805.</li>
+      <li><b>C10 stays empty</b> (marked NC on the silkscreen, beside BOOT). TP1–TP8 are bare test pads.</li>
+      <li><b>The receiver on COM16 is the live one.</b> Find the new board's port before uploading, and never point the upload at COM16.</li>
+      <li><b>Antenna on the U.FL before the firmware runs.</b> The 1U module has no antenna of its own, and the firmware starts BLE and Wi-Fi at boot.</li>
+    </ul>
+  </aside>
+
+  <main id="stages"></main>
+
+  <section class="stage notes" id="notes-section">
+    <div class="stage-head"><h2 id="notes-title">Bench notes</h2><span class="count" id="notes-saved"></span></div>
+    <p class="intro">Anything odd: rework, a swapped part, the new receiver ID, a reading you want to come back to.</p>
+    <label for="notes" class="intro" style="display:none">Bench notes</label>
+    <textarea id="notes" placeholder="e.g. Reworked a bridge on the USB-C signal row after reflow."></textarea>
+  </section>
+
+  <footer>
+    <span>DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/DisplayCenter_controller_fabrication_2026-07-14.zip (BOM .csv)</span>
+    <span>pcb/images/DisplayCenter_pcb_layout.png · DisplayCenter_schematic_overview.png</span>
+    <span>MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards_2026-09-19.md (DigiKey leftovers) · MSV4_LCSC_order_5boards_2026-09-19.csv</span>
+    <span>DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md · DisplayCenter/README.md</span>
+    <span>V2/output/p1s_0p4_pla_v1/PRINT_IN_BAMBU_STUDIO.md</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var N = 1;
+  var STORE = "dc2/build"; // db path prefix: dc2/build/checks/<id>, dc2/build/notes/main
+
+  // ---------- Checks on bench readings ----------
+  function num(s) {
+    if (s == null) return NaN;
+    var t = String(s).trim().toLowerCase().replace(/\s+/g, "").replace(/ω|ohms?$/g, "");
+    if (!t) return NaN;
+    if (/^(ol|open|inf|∞|>)/.test(t)) return Infinity;
+    var m = t.match(/^(-?\d*\.?\d+)([kmgµu]?)/);
+    if (!m) return NaN;
+    var v = parseFloat(m[1]);
+    var mult = { k: 1e3, m: 1e6, g: 1e9, "µ": 1e-6, u: 1e-6, "": 1 }[m[2]];
+    return v * mult;
+  }
+  function range(lo, hi, okMsg, lowMsg, highMsg) {
+    return function (v) {
+      var x = num(v.a);
+      if (isNaN(x)) return null;
+      if (x < lo) return ["bad", lowMsg || "low"];
+      if (x > hi) return ["bad", highMsg || "high"];
+      return ["ok", okMsg || "in range"];
+    };
+  }
+  function atLeast(need) {
+    return function (v) {
+      var x = num(v.a);
+      if (isNaN(x)) return null;
+      return x >= need ? ["ok", "enough"] : ["bad", "short by " + (need - x)];
+    };
+  }
+  var notShort = function (v) {
+    var x = num(v.a);
+    if (isNaN(x)) return null;
+    return x >= 1000 ? ["ok", "no short"] : ["bad", "under 1 kΩ: find the bridge"];
+  };
+
+  // ---------- Content ----------
+  // One list in placement order, shared by Kit and Place.
+  // Rows: [id, refs, part, sub, role, source, qty, note, flag, placement note]
+  var ORDER = [
+    { title: "SMD · big parts first: module, USB-C, then the small ICs and transistors", rows: [
+      ["mcu", "ESP32 MCU", "ESP32-S3-WROOM-1U-N16R8", "Espressif · U.FL antenna version", "MCU, BLE + Wi-Fi", "LCSC 09-19 (C3013946)", 1, "", "ground pad", "The pin-free end (U.FL end) faces the USB-C edge. The centre ground pad needs paste and the plate or hot air; an iron can't reach it."],
+      ["usbc", "USBC", "USB-C receptacle 10155435-00011LF", "Amphenol", "Power and USB to the ESP32", "DigiKey leftover (last one)", 1, "", "last one", "Signal row on paste; seat the four shell legs in their slots and solder them by iron after reflow."],
+      ["esd", "ESD", "USBLC6-2P6", "ST · SOT-666", "ESD clamp on D+/D−", "DigiKey leftover (last one)", 1, "LCSC C15999 from the MSV3 order also fits.", "fine pitch", "Pin 1 to the mark. Thin paste."],
+      ["ldo", "LDO 3V3", "AP2112K-3.3TRG1", "Diodes · SOT-23-5", "3.3 V regulator from VBUS", "DigiKey leftover + 2 LCSC spares", 1, "", "", "Three-lead side on the three pads."],
+      ["q1", "Q1", "DMP3098L-7", "Diodes · SOT-23, P-channel", "Display brightness control", "DigiKey leftover (last one)", 1, "Same package as Q2/Q3.", "P-ch", "From its own bag, before the 2N7002s come out."],
+      ["q23", "Q2 Q3", "2N7002", "SOT-23, N-channel", "Q2 brightness · Q3 buzzer driver", "LCSC 09-19 (C8545, JSCJ)", 2, "Build one used Infineon's; same SOT-23 pinout.", "", ""]
+    ]},
+    { title: "SMD · passives, most-used value first · all 0805 except R3 R6", rows: [
+      ["c100n", "C2 C4 C6 C7 C9", "100 nF", "X7R 0805", "Bypass · C9 is the EN (reset) delay cap", "DigiKey leftover (6 left)", 5, "", "count first", ""],
+      ["r22", "R1 R2 R12 R15", "22 Ω", "0805 1%", "R1/R2 beside the module · R12 beside Q2 · R15 beside Q3", "DigiKey leftover (6 left)", 4, "", "22 vs 220", "Not the 220 Ω strip."],
+      ["r220", "R4 R5 R7 R11", "220 Ω", "0805 5%", "LED series: R4→D1, R5→D2, R7→D3, R11→D4", "DigiKey leftover (6 left)", 4, "", "22 vs 220", ""],
+      ["r10k", "R9 R10 R13 R14", "10 kΩ", "0805 1%", "R9/R10 RESET and BOOT pull-ups · R13/R14 beside the module", "DigiKey leftover (6 left)", 4, "", "", ""],
+      ["c10u", "C1 C3 C5 C8", "10 µF", "6.3 V X5R 0805", "Bulk on VBUS, 3V3 and the display supply", "DigiKey leftover (6 left)", 4, "", "", ""],
+      ["r100k", "R8 R16", "100 kΩ", "0805 1%", "R8 beside Q1 · R16 beside Q3", "DigiKey leftover (8 left)", 2, "", "", ""],
+      ["r51k", "R3 R6", "5.1 kΩ", "0603 5%", "USB-C CC pull-downs", "DigiKey leftover (8 left)", 2, "", "0603", "Either side of the ESD clamp, below USB-C."],
+      ["led", "D1 D2 D3 D4", "Red LED", "Lumex SML-LXT0805IW · 0805", "D1–D3 status · D4 on R11, the 3V3 indicator in the schematic", "DigiKey leftover (6 left)", 4, "", "polarity", "Cathode mark against the footprint on the first one, then the same way on the other three."]
+    ]},
+    { title: "Through-hole, by iron after reflow", rows: [
+      ["sw", "BOOT RESET", "Tactile switch B3F-1000", "Omron · 6×6 mm THT", "ESP32 BOOT (IO0) and RESET (EN)", "On hand", 2, "", "", "Flat against the board."],
+      ["j1", "J1", "1×14 female socket, 2.54 mm", "Samtec SSW-114, or the same header build one used", "Display + touch connector", "On hand", 1, "", "", "Square pad is pin 1, at the top. Seat it square so the display sits flat."],
+      ["ls1", "LS1", "Piezo buzzer", "TDK PS1440P02BT", "Alerts and boot chime", "On hand", 1, "", "", "Last: it covers nothing, but it is the tallest part."]
+    ]},
+    { title: "Do not place", rows: [
+      ["dnp", "C10", "100 nF pad beside BOOT", "", "Leave empty", "—", 0, "Marked NC on the silkscreen and in the BOM. TP1–TP8 are bare test pads with no part.", "DNP", ""]
+    ]}
+  ];
+
+  // Parts with no margin: counted before anything is pasted.
+  var SCARCE = [
+    ["cnt-pcb", "Bare DisplayCenter PCB", 1, "From the 2026-07-14 fab batch."],
+    ["cnt-esp", "ESP32-S3-WROOM-1U-N16R8", 1, "LCSC 09-19 order. The N16R8 (16 MB flash, 8 MB PSRAM): the firmware's TLS buffers live in PSRAM since 11-10."],
+    ["cnt-ant", "2.4 GHz U.FL antenna, TX2400-PCB-5010", 1, "LCSC 09-19 order (C454914)."],
+    ["cnt-disp", "3.5 in 480×320 SPI display, ST7796S + XPT2046 touch, 14-pin", 1, "The firmware drives an ST7796S. Another controller will not draw."],
+    ["cnt-usbc", "USB-C receptacle 10155435-00011LF", 1, "Last one from the DigiKey order."],
+    ["cnt-esd", "USBLC6-2P6", 1, "Last one from DigiKey; LCSC C15999 from the MSV3 order also fits."],
+    ["cnt-q1", "DMP3098L-7 (Q1)", 1, "Last one from DigiKey."],
+    ["cnt-100n", "100 nF 0805 (C2 C4 C6 C7 C9)", 5, "6 left after build one: one spare."],
+    ["cnt-tht", "B3F switches ×2, buzzer ×1, 1×14 socket ×1", 4, "On hand per the 09-19 note."]
+  ];
+
+  // Stages, in build order.
+  var STAGES = [
+    { id: "count", n: "01", title: "Count what's left", intro: "Most of this board comes from what was left of the July DigiKey order, and several lines were down to exactly one. Count each into the box and type the number. Anything short stops the build here, not halfway through.", counts: SCARCE },
+    { id: "kit", n: "02", title: "Kit the parts", intro: "Laid out in the order you'll place them. Sources: the 2026-07-14 DigiKey order's leftovers, the 2026-09-19 LCSC order (which carried the DisplayCenter #2 parts), or stock on hand.", pull: ORDER },
+    { id: "prep", n: "03", title: "Paste", intro: "The module's ground pad, the USB-C signal row and the SOT-666 clamp need paste and the reflow plate or hot air. Everything through-hole waits for the iron after reflow.", items: [
+      { id: "prep-board", t: "Inspect the bare board under magnification: clean pads at the module footprint, the USB-C row and ESD; mask intact between the USB-C pads." },
+      { id: "prep-strips", t: "Label the passive strips with value and designators, keeping 22 Ω and 220 Ω apart." },
+      { id: "prep-paste", t: "Paste the SMD pads: thin on the USB-C signal row and ESD, a few dots (not a full sheet) on the module's centre ground pad.", d: "A flooded ground pad floats the module and bridges its edge pads." }
+    ]},
+    { id: "place", n: "04", title: "Place, reflow, then through-hole", intro: "Top to bottom. Find each designator on the layout as you go.", placeList: ORDER, after: [
+      { id: "pl-reflow", t: "Reflow the SMD parts (before the through-hole rows above)." },
+      { id: "pl-shell", t: "Solder the four USB-C shell legs by iron. They carry the plug's mechanical load." }
+    ]},
+    { id: "inspect", n: "05", title: "Inspect and clean", items: [
+      { id: "in-usbc", t: "USB-C signal row under magnification: no bridges. The most likely fault on this board." },
+      { id: "in-mcu", t: "Every module edge pad wetted, none bridged, the module flat." },
+      { id: "in-small", t: "ESD, LDO and Q1–Q3 seated with pin 1 right; Q1 is the DMP3098L (check the marking against its bag)." },
+      { id: "in-led", t: "All four LEDs the same way round, C10 empty." },
+      { id: "in-clean", t: "Wash the flux off with IPA and let it dry." }
+    ]},
+    { id: "ohms", n: "06", title: "Unpowered checks", intro: "Meter in resistance mode, no USB. The VBUS, 3V3, GND, RST, BOOT and D+/D− test pads are labelled on the silkscreen. A reading that climbs is the caps charging, which is fine. Type OL for open.", items: [
+      { id: "r-vbus", t: "VBUS pad to GND.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-3v3", t: "3V3 pad to GND.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-vbus3", t: "VBUS pad to 3V3 pad: not a short (the LDO is between them).", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-dd", t: "D+ pad to D− pad: not a short.", d: "A bridge here, at the USB-C row or ESD, shows up as a board Windows won't enumerate.", m: [["a", "R", "Ω"]], check: notShort },
+      { id: "r-rst", t: "RST pad to GND: not a short.", m: [["a", "R", "Ω"]], check: notShort }
+    ]},
+    { id: "power", n: "07", title: "First power", intro: "Display and antenna still off. A blank module doesn't transmit, so this short power-up is safe without the antenna.", items: [
+      { id: "pw-usb", t: "USB-C in, through a USB power meter if you have one. D4 lights.", m: [["a", "Current", "mA"]] },
+      { id: "pw-3v3", t: "3V3 pad to GND.", m: [["a", "3V3", "V"]], check: range(3.25, 3.35, "nominal", "low: check the LDO and loads", "high: check the LDO") },
+      { id: "pw-port", t: "A new COM port appears, listed as an ESP32 Family Device. Write it down; it is not COM16.", c: ".\\DisplayCenter\\scripts\\arduino_display.ps1 -Action board-list", m: [["a", "Port", ""]], check: function (v) { var s = String(v.a || "").trim().toUpperCase(); if (!s) return null; return s === "COM16" ? ["bad", "that's the live receiver"] : ["ok", "new port"]; } },
+      { id: "pw-off", t: "Unplug USB." }
+    ]},
+    { id: "flash", n: "08", title: "Display, antenna, firmware", intro: "Same production build as the receiver on COM16. WiFiCredentials.h is in the sketch folder on this PC, so the new board will try the home network first.", items: [
+      { id: "fl-ant", t: "Antenna onto the U.FL: press straight down until it clicks." },
+      { id: "fl-disp", t: "Seat the display in J1, pin 1 to pin 1, with USB unplugged." },
+      { id: "fl-up", t: "Upload to the new port.", d: "If esptool can't connect: hold BOOT, tap RESET, release BOOT, upload again, then press RESET to run it. If the port is busy, close any Serial Monitor on it.", c: ".\\DisplayCenter\\scripts\\arduino_display.ps1 -Action upload -Port COMx" },
+      { id: "fl-mon", t: "Watch the boot log for [Treebeard …] lines, then stop the monitor.", c: ".\\DisplayCenter\\scripts\\arduino_display.ps1 -Action monitor -Port COMx" }
+    ]},
+    { id: "bringup", n: "09", title: "Bring-up checks", intro: "Each check below exercises one block of the board.", items: [
+      { id: "bu-screen", t: "The screen draws: the joining-Wi-Fi message, then the plant dashboard (or setup instructions if it can't join).", d: "Blank but backlit: the ST7796S isn't answering; check J1 seating and the module pads on the SPI pins." },
+      { id: "bu-chime", t: "The boot chime plays (Q3 and LS1)." },
+      { id: "bu-touch", t: "Touch lands where you tap: open a card and close it." },
+      { id: "bu-bright", t: "The brightness slider dims and brightens the backlight (Q1 and Q2)." },
+      { id: "bu-ble", t: "Probes in range appear: the Diagnostics tab of the phone app, or /data.", d: "Compare one probe's RSSI here with the same probe on the COM16 receiver, side by side. A weak or missing antenna reads much lower.", m: [["a", "New", "dBm"], ["b", "COM16", "dBm"]], check: function (v) { var a = num(v.a), b = num(v.b); if (isNaN(a) || isNaN(b)) return null; var d = a - b; return d >= -10 ? ["ok", (d >= 0 ? "+" : "") + d.toFixed(0) + " dB vs COM16"] : ["bad", d.toFixed(0) + " dB: check the antenna"]; } },
+      { id: "bu-device", t: "Open /device on the new board's IP: note the build tag and the receiver ID. Each board makes its own ID on first boot.", m: [["a", "Receiver ID", ""]] }
+    ]},
+    { id: "case", n: "10", title: "Enclosure and placement", intro: "V2 tabletop enclosure, P1S, 0.4 mm nozzle, PLA. Two projects: front cover with kickstand (about 1 h 41 min) and rear shell (about 5 h 14 min).", items: [
+      { id: "cs-print", t: "Print both 3MF projects as prepared, without re-orienting.", d: "DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/output/p1s_0p4_pla_v1/" },
+      { id: "cs-insert", t: "Six M2 heat-set inserts: four case pockets and two kickstand pockets (2.9 mm × 3.2 mm deep). Don't let the iron bottom against the bezel face." },
+      { id: "cs-pads", t: "About 0.25 mm of foam or TPU on the controller support posts." },
+      { id: "cs-dry", t: "Dry-fit the PCB, the USB-C plug, the antenna, the screws and the kickstand. Put the antenna away from the LCD's metal frame." },
+      { id: "cs-close", t: "Close with four M2 screws from the rear; two M2 screws set the kickstand friction. Pick lengths from the insert engagement." },
+      { id: "cs-where", t: "Tell Claude where this receiver will live and whether it should upload to the cloud, with its receiver ID." }
+    ]}
+  ];
+
+  // ---------- Build the DOM once ----------
+  var stagesEl = document.getElementById("stages");
+  var ITEMS = {};
+  var STAGE_IDS = {};
+  var STAGE_EL = {};
+
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function checkbox(id, label) {
+    var lab = el("label", "check");
+    var inp = document.createElement("input");
+    inp.type = "checkbox"; inp.id = "chk-" + id; inp.setAttribute("aria-label", label);
+    inp.addEventListener("change", function () { setDone(id, inp.checked); });
+    lab.appendChild(inp); lab.appendChild(el("span", "box"));
+    return lab;
+  }
+
+  function copyBlock(text) {
+    var wrap = el("div", "cmd");
+    var pre = el("pre"); pre.textContent = text;
+    var btn = el("button", "copy", "Copy"); btn.type = "button";
+    btn.addEventListener("click", function () {
+      var done = function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); };
+      var fallback = function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+    });
+    wrap.appendChild(pre); wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function measures(it, body) {
+    var ms = el("div", "measures");
+    it.m.forEach(function (m) {
+      var w = el("div", "measure");
+      var inId = "in-" + it.id + "-" + m[0];
+      var lab = el("label", "", esc(m[1])); lab.htmlFor = inId;
+      var inp = document.createElement("input"); inp.id = inId; inp.type = "text"; inp.autocomplete = "off";
+      if (m[2]) inp.inputMode = "decimal"; else inp.style.width = "170px";
+      inp.addEventListener("input", function () { localVal(it.id, m[0], inp.value); });
+      inp.addEventListener("change", function () { saveVal(it.id); });
+      w.appendChild(lab); w.appendChild(inp); if (m[2]) w.appendChild(el("span", "unit", esc(m[2])));
+      ms.appendChild(w);
+    });
+    var chip = el("span", "chip"); chip.id = "chip-" + it.id; ms.appendChild(chip);
+    body.appendChild(ms);
+  }
+
+  STAGES.forEach(function (st) {
+    var sec = el("section", "stage"); sec.id = st.id;
+    var head = el("div", "stage-head");
+    head.appendChild(el("h2", "", '<span class="num">' + st.n + '</span>' + esc(st.title)));
+    var cnt = el("span", "count"); cnt.id = "cnt-" + st.id; head.appendChild(cnt);
+    sec.appendChild(head);
+    if (st.intro) sec.appendChild(el("p", "intro", esc(st.intro)));
+    STAGE_IDS[st.id] = [];
+    var card = el("div", "card");
+
+    function reg(id, row, def) { ITEMS[id] = { el: row, def: def || {}, stage: st.id }; STAGE_IDS[st.id].push(id); }
+
+    if (st.counts) {
+      card.appendChild(el("div", "group-title", "Counted into the box"));
+      st.counts.forEach(function (c) {
+        var it = { id: c[0], m: [["a", "Counted", "pcs"]], check: atLeast(c[2]) };
+        var row = el("div", "row");
+        row.appendChild(checkbox(c[0], "Counted " + c[1]));
+        var body = el("div", "body");
+        body.appendChild(el("div", "txt", esc(c[1]) + '<span class="flag">need ' + c[2] + "</span>"));
+        body.appendChild(el("div", "detail", esc(c[3])));
+        measures(it, body);
+        row.appendChild(body); card.appendChild(row); reg(c[0], row, it);
+      });
+    } else if (st.pull) {
+      st.pull.forEach(function (g) {
+        card.appendChild(el("div", "group-title", esc(g.title)));
+        g.rows.forEach(function (r) {
+          var id = "kit-" + r[0];
+          var row = el("div", "row" + (r[8] === "DNP" ? " dnp" : ""));
+          row.appendChild(checkbox(id, "Pulled " + r[1]));
+          var body = el("div", "body");
+          var p = el("div", "pull");
+          p.appendChild(el("div", "ref", esc(r[1])));
+          p.appendChild(el("div", "part", esc(r[2]) + (r[8] ? '<span class="flag">' + esc(r[8]) + "</span>" : "") + (r[3] ? "<small>" + esc(r[3]) + "</small>" : "")));
+          p.appendChild(el("div", "", '<div class="qty">' + (r[6] ? '<span class="pl">pull</span>' + r[6] : "none") + '</div><div class="src">' + esc(r[5]) + "</div>"));
+          p.appendChild(el("div", "note", esc(r[4]) + (r[7] ? ". " + esc(r[7]) : "")));
+          body.appendChild(p); row.appendChild(body); card.appendChild(row);
+          reg(id, row);
+        });
+      });
+      card.appendChild(el("div", "group-title", "Total to pull: 40 parts · 36 SMD + 4 through-hole · 17 lines"));
+    } else if (st.placeList) {
+      var step = 0;
+      st.placeList.forEach(function (g) {
+        card.appendChild(el("div", "group-title", esc(g.title)));
+        g.rows.forEach(function (r) {
+          var dnp = r[8] === "DNP";
+          var id = "pl-" + r[0];
+          var row = el("div", "row" + (dnp ? " dnp" : ""));
+          row.appendChild(checkbox(id, (dnp ? "Left empty " : "Placed ") + r[1]));
+          var body = el("div", "body");
+          var p = el("div", "place");
+          p.appendChild(el("span", "step", dnp ? "—" : String(++step)));
+          p.appendChild(el("span", "val", esc(r[2]) + (r[8] ? '<span class="flag">' + esc(r[8]) + "</span>" : "")));
+          p.appendChild(el("span", "qty", dnp ? "leave empty" : "× " + r[6]));
+          p.appendChild(el("span", "refs", esc(r[1])));
+          body.appendChild(p);
+          var note = dnp ? r[7] : r[9];
+          if (note) body.appendChild(el("div", "detail", esc(note)));
+          row.appendChild(body); card.appendChild(row);
+          reg(id, row);
+        });
+      });
+      (st.after || []).forEach(function (it) {
+        var row = el("div", "row");
+        row.appendChild(checkbox(it.id, it.t));
+        var body = el("div", "body"); body.appendChild(el("div", "txt", esc(it.t)));
+        row.appendChild(body); card.appendChild(row); reg(it.id, row, it);
+      });
+    } else {
+      st.items.forEach(function (it) {
+        var row = el("div", "row");
+        row.appendChild(checkbox(it.id, it.t.replace(/<[^>]+>/g, "")));
+        var body = el("div", "body");
+        body.appendChild(el("div", "txt", esc(it.t)));
+        if (it.d) body.appendChild(el("div", "detail", esc(it.d)));
+        if (it.c) body.appendChild(copyBlock(it.c));
+        if (it.m) measures(it, body);
+        row.appendChild(body); card.appendChild(row); reg(it.id, row, it);
+      });
+    }
+    sec.appendChild(card);
+    stagesEl.appendChild(sec);
+    STAGE_EL[st.id] = sec;
+  });
+
+  var jump = document.getElementById("jump");
+  STAGES.forEach(function (st) { var a = el("a", "", esc(st.n + " " + st.title)); a.href = "#" + st.id; a.id = "jmp-" + st.id; jump.appendChild(a); });
+
+  // ---------- State ----------
+  var state = {};
+  var notesText = "";
+  var db = null, mode = "pending";
+  var queues = {};
+
+  function setStatus(s, text) { var st = document.getElementById("status"); st.dataset.s = s; document.getElementById("status-text").textContent = text; }
+
+  function verdict(id) {
+    var def = ITEMS[id] && ITEMS[id].def;
+    if (!def || !def.check) return null;
+    var s = state[id]; var v = (s && s.v) || {};
+    try { return def.check(v); } catch (e) { return null; }
+  }
+
+  function render() {
+    var total = 0, done = 0;
+    STAGES.forEach(function (st) {
+      var ids = STAGE_IDS[st.id], d = 0;
+      ids.forEach(function (id) {
+        var s = state[id] || {}; var item = ITEMS[id];
+        var box = document.getElementById("chk-" + id);
+        if (box) box.checked = !!s.done;
+        item.el.classList.toggle("done", !!s.done);
+        if (item.def.m) {
+          item.def.m.forEach(function (m) {
+            var inp = document.getElementById("in-" + id + "-" + m[0]);
+            if (inp && document.activeElement !== inp) inp.value = (s.v && s.v[m[0]]) || "";
+          });
+          var chip = document.getElementById("chip-" + id); var vd = verdict(id);
+          chip.textContent = vd ? vd[1] : ""; if (vd) chip.dataset.v = vd[0]; else delete chip.dataset.v;
+        }
+        if (s.done) d++;
+      });
+      var c = document.getElementById("cnt-" + st.id); c.textContent = d + " / " + ids.length; c.classList.toggle("complete", d === ids.length);
+      document.getElementById("jmp-" + st.id).classList.toggle("complete", d === ids.length);
+      total += ids.length; done += d;
+    });
+    document.getElementById("st-done").textContent = done;
+    document.getElementById("st-total").textContent = total;
+    document.getElementById("st-bar").style.width = (total ? (done / total * 100) : 0) + "%";
+    var ta = document.getElementById("notes"); if (document.activeElement !== ta) ta.value = notesText;
+  }
+
+  // Local fallback when the page's store isn't available in this view.
+  var LS = "dc2-build";
+  function lsLoad() { try { var o = JSON.parse(localStorage.getItem(LS) || "{}"); state = o.state || {}; notesText = o.notes || ""; } catch (e) { state = {}; notesText = ""; } }
+  function lsSave() { try { localStorage.setItem(LS, JSON.stringify({ state: state, notes: notesText })); } catch (e) {} }
+
+  function persist(id) {
+    var body = { done: !!(state[id] && state[id].done), v: (state[id] && state[id].v) || {}, at: new Date().toISOString() };
+    if (mode !== "db") { lsSave(); return; }
+    var path = STORE + "/checks/" + id;
+    setStatus("saving", "Saving…");
+    queues[path] = (queues[path] || Promise.resolve()).then(function () {
+      return db.doc(path).set(body);
+    }).then(function () { setStatus("saved", "Saved to this page"); }, function (e) {
+      setStatus("error", e && e.code === "invalid_argument" ? "You can view this page but not save to it" : "Couldn't save: " + ((e && e.message) || "store unavailable") + ". Try again in a moment.");
+    });
+  }
+
+  function setDone(id, on) { state[id] = state[id] || { v: {} }; state[id].done = on; render(); persist(id); }
+  function localVal(id, k, val) {
+    state[id] = state[id] || { done: false, v: {} }; state[id].v = Object.assign({}, state[id].v || {}); state[id].v[k] = val;
+    var chip = document.getElementById("chip-" + id); var vd = verdict(id);
+    chip.textContent = vd ? vd[1] : ""; if (vd) chip.dataset.v = vd[0]; else delete chip.dataset.v;
+  }
+  function saveVal(id) { persist(id); }
+
+  var notesTimer = null;
+  document.getElementById("notes").addEventListener("input", function (e) {
+    notesText = e.target.value;
+    clearTimeout(notesTimer); notesTimer = setTimeout(saveNotes, 900);
+  });
+  document.getElementById("notes").addEventListener("blur", function () { clearTimeout(notesTimer); saveNotes(); });
+  var lastNotesSaved = null;
+  function saveNotes() {
+    if (notesText === lastNotesSaved) return;
+    lastNotesSaved = notesText;
+    if (mode !== "db") { lsSave(); return; }
+    var path = STORE + "/notes/main";
+    setStatus("saving", "Saving…");
+    queues[path] = (queues[path] || Promise.resolve()).then(function () { return db.doc(path).set({ text: notesText, at: new Date().toISOString() }); })
+      .then(function () { setStatus("saved", "Saved to this page"); }, function (e) { setStatus("error", "Couldn't save notes: " + ((e && e.message) || "store unavailable")); });
+  }
+
+  function subscribe() {
+    if (mode !== "db") { lsLoad(); render(); return; }
+    state = {}; notesText = ""; lastNotesSaved = null; render();
+    db.collection(STORE + "/checks").onSnapshot(function (snap) {
+      var next = {};
+      snap.docs.forEach(function (d) { var o = d.data() || {}; next[d.id] = { done: !!o.done, v: Object.assign({}, o.v || {}) }; });
+      var a = document.activeElement;
+      if (a && a.id && a.id.indexOf("in-") === 0) {
+        Object.keys(state).forEach(function (id) { if (a.id.indexOf("in-" + id + "-") === 0) { next[id] = next[id] || { done: false, v: {} }; next[id].v = Object.assign({}, next[id].v, state[id].v); } });
+      }
+      state = next; render();
+    }, function () { setStatus("error", "Lost the connection to this page's store. Reload to reconnect."); });
+    db.doc(STORE + "/notes/main").onSnapshot(function (d) {
+      var o = d.exists ? (d.data() || {}) : {};
+      if (document.activeElement !== document.getElementById("notes")) { notesText = o.text || ""; lastNotesSaved = notesText; }
+      render();
+    }, function () {});
+  }
+
+  // Render at rest first, then connect the store when the viewer provides it.
+  lsLoad(); render();
+  var ready = (window.claude && typeof window.claude.use === "function") ? window.claude.use("db") : Promise.resolve(null);
+  ready.then(function (ns) {
+    if (ns) { db = ns; mode = "db"; setStatus("saved", "Saved to this page"); }
+    else { mode = "local"; setStatus("idle", "Saving in this browser only"); }
+    subscribe();
+  }, function () { mode = "local"; setStatus("idle", "Saving in this browser only"); subscribe(); });
+})();
+</script>
