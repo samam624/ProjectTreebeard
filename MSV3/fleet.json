@@ -1665,6 +1665,17 @@
             "saucer_water": "NOT STATED",
             "pot_note": "maintainer named the alocasia ('for alcosaisa'); the shared-alocasia pot (sensor 10)",
             "note": "maintainer reported '4540 4538 4537'; median 4538 logged; 30 g under the 4568 of 11-11 ~14:41 (~26.8 h), 105.5 g under the 4643.5 g right after the ~00:35 11-10 watering (~64.9 h)."
+          },
+          {
+            "when": "2026-11-13 ~10:49 PST",
+            "grams": 4530,
+            "at": "2026-11-13T10:49:00-08:00",
+            "weighed": "pot_and_saucer",
+            "weighed_note": "NOT STATED; read as pot WITH its dish, same setup as the readings before it",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "NOT STATED",
+            "pot_note": "NOT NAMED in the message (bare numbers only); read as the Alocasia (sensor 10), continuing the daily series",
+            "note": "maintainer reported '4532 4529 4530'; median 4530 logged; 8 g under the 4538 of 11-12 ~17:31 (~17.3 h), 113.5 g under the 4643.5 g right after the ~00:35 11-10 watering (~82.2 h)."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
