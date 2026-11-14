@@ -228,8 +228,13 @@ occtimportjs.then((occt) => {
     frontRecessDepth: 1.60,
     closedRearWallThickness: 1.40,
     panelWireHoles: { count: 2, diameter: 2.20, centersY: [127.18, 172.18], insideRecess: true },
-    caseWireEntries: { count: 2, diameter: 1.60, centersZ: [2.20, 4.60], location: 'left side wall' },
-    leftArmWireChannel: { width: 2.60, depth: 0.55 },
+    caseWireEntries: {
+      count: 2,
+      diameter: 1.60,
+      centersZ: [2.20, 4.60],
+      location: 'positive-X / back-view-left wall opposite USB',
+    },
+    positiveXBackViewLeftArmWireChannel: { width: 2.60, depth: 0.55 },
     usbOpeningRemoved: true,
     enclosurePivotY: 118.50,
     panelPivotY: 149.68,
@@ -263,6 +268,15 @@ occtimportjs.then((occt) => {
     intendedSealant: 'epoxy or outdoor polyurethane adhesive',
   };
 
+  const waterLedTeardrop = {
+    part: 'base',
+    center: [0.00, 139.50],
+    bulbDiameter: 2.00,
+    tip: [0.00, 142.00],
+    throughFloor: true,
+    alignedToPcbLedD2: true,
+  };
+
   const report = {
     passed: errors.length === 0,
     errors,
@@ -278,6 +292,7 @@ occtimportjs.then((occt) => {
     },
     snapGeometry,
     bottomSeal,
+    waterLedTeardrop,
     solar,
   };
   const reportPath = path.join(outputDir, 'validation_report.json');

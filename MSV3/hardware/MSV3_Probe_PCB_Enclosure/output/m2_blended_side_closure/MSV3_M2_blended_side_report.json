@@ -1,5 +1,5 @@
 {
-  "version": "user-revision-m2-blended-side-closure-3",
+  "version": "user-revision-m2-blended-side-closure-6",
   "units": "mm",
   "source": "MSV3_brain_enclosure_assembly.step",
   "sourceMechanicalBodiesPreserved": [
@@ -18,6 +18,7 @@
     "countersinkTopDiameter": 4.2,
     "countersinkBottomDiameter": 2.4,
     "countersinkDepth": 0.9,
+    "exteriorEdgeChamfer": 1.75,
     "blendedBossNominalDiameter": 6,
     "blendedBossTransitionLength": 5.5,
     "baseBottomZ": -6.35,
@@ -72,7 +73,10 @@
     "tallInternalPillars": false,
     "pcbRemovalPathFullyOpen": true,
     "exteriorDiagonalChamfersReplacedByRoundedCorners": true,
-    "exteriorRoofAndFloorEdgeChamfersRemoved": true,
+    "lidTopAndBaseBottomPerimeterChamfer": 1.75,
+    "solarWireEntriesOnPositiveXBackViewLeftOppositeUsb": true,
+    "solarLeadChannelOnPositiveXArm": true,
+    "waterLedTeardropWindowRestored": true,
     "pcbAndInternalPressureGeometryOtherwiseUnchanged": true,
     "heatSetInsertInstallationDirection": "downward into the four base bosses from the open seam",
     "screwInstallationDirection": "downward through the four flush lid-side countersinks",
@@ -84,34 +88,34 @@
     "base": {
       "type": "Compound",
       "min": [
-        -12.000000100000001,
-        81.99999989999793,
-        -6.350000100000002
+        -12.00000015,
+        81.99999984999792,
+        -6.350000150000003
       ],
       "max": [
-        30.0000001,
-        149.0000001,
-        0.6500001000000007
+        30.00000015,
+        149.00000015,
+        0.6500001499999999
       ],
-      "volume": 6969.532840496836
+      "volume": 6739.822097329648
     },
     "lid": {
       "type": "Compound",
       "min": [
         -12.00000015,
         81.99999984999792,
-        -0.7500001500000009
+        -0.75000015
       ],
       "max": [
         30.00000015,
         149.00000015000015,
-        7.550000150000001
+        7.550000150000002
       ],
-      "volume": 6998.197614887148
+      "volume": 6711.869823650299
     },
     "baseLidOverlapVolume": 0,
     "leftArmToBossClearance": 0.2499999000000006,
-    "rightArmToBossClearance": 0.24999989999999883,
+    "rightArmToBossClearance": 0.24999984999999825,
     "pcbBoardXBounds": [
       -4.000000100000001,
       22.0000001

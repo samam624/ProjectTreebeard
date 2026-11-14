@@ -37,9 +37,12 @@ final soldering, bond the probe slot, wire entries, and full snap seam.
 - Closed rear wall: 1.4 mm thick except for the two wire passages
 - Two panel wire holes: 2.2 mm diameter, both inside the recess near its top
   and bottom ends
-- Case wire entry: two 1.6 mm holes through the left side wall, positioned away
-  from the antenna/top region and sized to be filled with adhesive
-- Left arm wire route: 2.6 mm wide x 0.55 mm deep open channel
+- Case wire entry: two 1.6 mm holes through the positive-X wall—the left side
+  when viewed from the enclosure back with the probe pointing downward. PCB
+  inspection confirms this wall is opposite the USB receptacle.
+- Matching back-view-left arm route: 2.6 mm wide x 0.55 mm deep open channel
+- Water-status LED window: restored V1 teardrop through the base back at
+  X=0.0, Y=139.5 mm, directly over underside LED D2
 - Enclosure pivots: centered at the former USB-C side-opening position
 - Panel pivots: centered vertically on the solar-panel carrier
 - Folded position: panel tray is parallel above the enclosure
@@ -126,8 +129,11 @@ Install the inserts downward into the four base bosses from the open seam before
 fitting the lid, then install the screws through the flush lid-side
 countersinks. The nearest edge of every blended boss remains 2.00 mm outside
 the PCB envelope. The boss extrema retain 0.25 mm clearance to the folding
-arms, and the existing solar-wire passages and base-owned solar-pivot insert
-entries remain open.
+arms. The solar-wire passages and matching arm channel are on the back-view
+left/positive-X side opposite USB, and the base-owned solar-pivot insert
+entries remain open. The lid's top perimeter and base's bottom perimeter have
+a 1.75 mm chamfer for a cleaner
+exterior edge without changing the flat mating seam.
 
 The base STL is floor-down and the lid STL is exterior-roof-down. No supports
 are expected. Enable elephant-foot compensation or lightly deburr the four

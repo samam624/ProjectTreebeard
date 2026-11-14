@@ -60,6 +60,10 @@ SOLAR_PANEL_BACK_Z = 13.65
 SOLAR_PANEL_THICKNESS = 3.00
 SOLAR_PANEL_RECESS_DEPTH = 1.60
 SOLAR_PANEL_WIRE_HOLE_DIAMETER = 2.20
+WATER_LED_WINDOW_X = 0.00
+WATER_LED_WINDOW_Y = 139.50
+WATER_LED_WINDOW_RADIUS = 1.00
+WATER_LED_WINDOW_TIP_Y = 142.00
 PROBE_SLOT_XY_CLEARANCE = 0.20
 PROBE_SLOT_Z_CLEARANCE = 0.15
 
@@ -323,6 +327,31 @@ def _build_base(root_component):
     )
     base = _cut(component, base, probe_slot, 'Sealable Probe Exit')
 
+    water_led_round = _cylinder_z(
+        component,
+        'Water LED Window Round Tool',
+        BASE_BOTTOM_Z - 0.20,
+        BASE_CAVITY_FLOOR_Z - BASE_BOTTOM_Z + 0.40,
+        WATER_LED_WINDOW_X,
+        WATER_LED_WINDOW_Y,
+        WATER_LED_WINDOW_RADIUS,
+        planes,
+    )
+    base = _cut(component, base, water_led_round, 'Water LED Window Round')
+    water_led_tip = _prism(
+        component,
+        'Water LED Window Tip Tool',
+        (
+            (WATER_LED_WINDOW_X - 0.9165, WATER_LED_WINDOW_Y + 0.40),
+            (WATER_LED_WINDOW_X, WATER_LED_WINDOW_TIP_Y),
+            (WATER_LED_WINDOW_X + 0.9165, WATER_LED_WINDOW_Y + 0.40),
+        ),
+        BASE_BOTTOM_Z - 0.20,
+        BASE_CAVITY_FLOOR_Z + 0.20,
+        planes,
+    )
+    base = _cut(component, base, water_led_tip, 'Water LED Window Tip')
+
     # Continuous shelves overlap 0.15 mm of the PCB edge and run only through
     # component-free solder-mask margins.
     shelf_top = -PCB_THICKNESS
@@ -516,7 +545,7 @@ def _build_lid(root_component):
         wire_entry = _cylinder_x(
             component,
             'Side Wire Entry Tool {}'.format(index),
-            -7.20,
+            22.50,
             3.00,
             SOLAR_PIVOT_Y,
             center_z,
@@ -599,7 +628,7 @@ def _build_solar_arm(root_component, side):
         )
         arm = _cut(component, arm, tool, 'Arm Pivot Hole {}'.format(index))
 
-    if side == 'left':
+    if side == 'right':
         channel_half_width = 1.30
         channel_start_y = SOLAR_PIVOT_Y + unit_y * 1.60
         channel_start_z = SOLAR_PIVOT_Z + unit_z * 1.60
@@ -619,8 +648,8 @@ def _build_solar_arm(root_component, side):
             component,
             'Solar Lead Channel Tool',
             channel_points,
-            x_max - 0.55,
-            x_max + 0.10,
+            x_min - 0.10,
+            x_min + 0.55,
             yz_planes,
         )
         arm = _cut(component, arm, channel, 'Solar Lead Channel')

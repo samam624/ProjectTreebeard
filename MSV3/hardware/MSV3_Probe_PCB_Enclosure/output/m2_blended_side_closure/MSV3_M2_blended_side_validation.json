@@ -14,7 +14,7 @@
         [
           -12.0000001,
           81.99999989999792,
-          -6.350000100000001
+          -6.350000100000119
         ],
         [
           30.0000001,
@@ -26,12 +26,12 @@
         [
           -12.0000001,
           81.99999989999792,
-          -0.7500001000000008
+          -0.7500001
         ],
         [
           30.0000001,
-          149.0000001,
-          7.550000100000001
+          149.0000001000008,
+          7.550000100000784
         ]
       ]
     },
@@ -122,25 +122,44 @@
       "reliefBottomZ": -5.55
     },
     "preservedOpenings": {
-      "leftWireEntryLow": 0,
-      "leftWireEntryHigh": 0,
+      "backViewLeftWireEntryLow": 0,
+      "backViewLeftWireEntryHigh": 0,
       "leftSolarInsert": 0,
       "rightSolarInsert": 0
     },
+    "closedUsbSideWireEntries": {
+      "low": 3.386636880569796,
+      "high": 3.386636880569796
+    },
+    "solarArmWireChannel": {
+      "backViewLeftChannelObstructionVolume": 0,
+      "solidUsbSideArmMaterialVolume": 46.904
+    },
+    "waterLedTeardrop": {
+      "roundBulbObstructionVolume": 0,
+      "pointedTipObstructionVolume": 0,
+      "surroundingBackMaterialVolume": 0.3730641276137906
+    },
     "chamferReplacement": {
-      "frontLeftRoundedCornerMaterial": 0.5772676500971244,
-      "rearRightRoundedCornerMaterial": 0.5772676500971197,
-      "flatRoofEdgeMaterial": 0.03769911184307746,
-      "flatFloorEdgeMaterial": 0.03769911184307746
+      "frontLeftRoundedCornerMaterial": 0.38455304776948973,
+      "rearRightRoundedCornerMaterial": 0.38479486438748856,
+      "flatRoofEdgeMaterial": 0,
+      "flatFloorEdgeMaterial": 0
+    },
+    "exteriorEdgeChamfers": {
+      "lidOuterTopVoid": 0,
+      "lidInsetTopMaterial": 0.00011780972450962053,
+      "baseOuterBottomVoid": 0,
+      "baseInsetBottomMaterial": 0.00011780972450962053
     },
     "stl": {
       "base": {
-        "triangleCount": 5332,
-        "byteLength": 266684,
+        "triangleCount": 5808,
+        "byteLength": 290484,
         "min": [
           -12,
           82,
-          1.0000000116860974e-7
+          1.500000053056283e-7
         ],
         "max": [
           30,
@@ -152,12 +171,12 @@
         "watertight": true
       },
       "lid": {
-        "triangleCount": 5340,
-        "byteLength": 267084,
+        "triangleCount": 6092,
+        "byteLength": 304684,
         "min": [
           -12,
           82,
-          -1.7763568394002505e-15
+          8.881784197001252e-16
         ],
         "max": [
           30,
@@ -169,8 +188,8 @@
         "watertight": true
       },
       "leftArm": {
-        "triangleCount": 788,
-        "byteLength": 39484,
+        "triangleCount": 772,
+        "byteLength": 38684,
         "min": [
           -5.848397731781006,
           115.50160217285156,
@@ -186,12 +205,12 @@
         "watertight": true
       },
       "rightArm": {
-        "triangleCount": 772,
-        "byteLength": 38684,
+        "triangleCount": 788,
+        "byteLength": 39484,
         "min": [
           -5.848397731781006,
           115.50160217285156,
-          1.0000000116860974e-7
+          1.500000053056283e-7
         ],
         "max": [
           18.14839744567871,

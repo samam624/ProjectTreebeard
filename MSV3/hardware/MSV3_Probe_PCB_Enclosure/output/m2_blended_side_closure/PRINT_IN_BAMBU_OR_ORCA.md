@@ -14,6 +14,12 @@ orientation. The base prints floor-down, the lid prints exterior-roof-down,
 the arms print flat, and the panel frame prints rear-wall-down with its recess
 facing upward.
 
+This revision routes both solar leads through the positive-X wall—the left side
+when viewing the enclosure back with the probe pointing downward. PCB geometry
+confirms this is opposite the USB receptacle. The matching positive-X arm is
+channeled, the USB-side wall is closed, and the V1 water-LED teardrop is restored
+in the base back. The lid and base exterior perimeters use a 1.75 mm chamfer.
+
 Suggested first-print settings:
 
 - PETG, ASA, or ABS

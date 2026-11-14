@@ -4,7 +4,7 @@
   "stepReports": {
     "base": {
       "meshCount": 1,
-      "triangles": 1040,
+      "triangles": 1180,
       "min": [
         -12,
         82,
@@ -32,7 +32,7 @@
     },
     "solarArmLeft": {
       "meshCount": 1,
-      "triangles": 644,
+      "triangles": 628,
       "min": [
         -13.85,
         115.50242783199252,
@@ -46,7 +46,7 @@
     },
     "solarArmRight": {
       "meshCount": 1,
-      "triangles": 628,
+      "triangles": 644,
       "min": [
         30.25,
         115.50242783199252,
@@ -74,7 +74,7 @@
     },
     "assembly": {
       "meshCount": 5,
-      "triangles": 4308,
+      "triangles": 4448,
       "min": [
         -13.85,
         82,
@@ -89,8 +89,8 @@
   },
   "stlReports": {
     "base": {
-      "triangleCount": 1232,
-      "byteLength": 61684,
+      "triangleCount": 1404,
+      "byteLength": 70284,
       "min": [
         -12,
         82,
@@ -117,12 +117,12 @@
       ]
     },
     "solarArmLeft": {
-      "triangleCount": 788,
-      "byteLength": 39484,
+      "triangleCount": 772,
+      "byteLength": 38684,
       "min": [
         -5.848397731781006,
         115.50160217285156,
-        1.500000053056283e-7
+        1.0000000116860974e-7
       ],
       "max": [
         18.14839744567871,
@@ -131,12 +131,12 @@
       ]
     },
     "solarArmRight": {
-      "triangleCount": 772,
-      "byteLength": 38684,
+      "triangleCount": 788,
+      "byteLength": 39484,
       "min": [
         -5.848397731781006,
         115.50160217285156,
-        1.0000000116860974e-7
+        1.500000053056283e-7
       ],
       "max": [
         18.14839744567871,
@@ -213,6 +213,20 @@
     "probeSlotZClearance": 0.15,
     "intendedSealant": "epoxy or outdoor polyurethane adhesive"
   },
+  "waterLedTeardrop": {
+    "part": "base",
+    "center": [
+      0,
+      139.5
+    ],
+    "bulbDiameter": 2,
+    "tip": [
+      0,
+      142
+    ],
+    "throughFloor": true,
+    "alignedToPcbLedD2": true
+  },
   "solar": {
     "nominalPanelSize": [
       30,
@@ -245,9 +259,9 @@
         2.2,
         4.6
       ],
-      "location": "left side wall"
+      "location": "positive-X / back-view-left wall opposite USB"
     },
-    "leftArmWireChannel": {
+    "positiveXBackViewLeftArmWireChannel": {
       "width": 2.6,
       "depth": 0.55
     },

@@ -27,6 +27,7 @@ const dimensions = {
   countersinkTopDiameter: 4.20,
   countersinkBottomDiameter: 2.40,
   countersinkDepth: 0.90,
+  exteriorEdgeChamfer: 1.75,
   blendedBossNominalDiameter: 6.00,
   blendedBossTransitionLength: 5.50,
   baseBottomZ: -6.35,
@@ -168,12 +169,12 @@ if (sourceSolids.length !== 574) {
   throw new Error(`Expected 574 source solids (5 mechanical + 569 PCB); got ${sourceSolids.length}.`);
 }
 
-const [sourceBase, sourceLid, solarArmLeft, solarArmRight, solarPanelFrame] = sourceSolids;
+const [sourceBase, sourceLid, sourceSolarArmLeft, sourceSolarArmRight, solarPanelFrame] = sourceSolids;
 const expectedBounds = [
   { name: 'base', shape: sourceBase, min: [-12, 82, -6.35], max: [30, 149, 0.65] },
   { name: 'lid', shape: sourceLid, min: [-8.45, 82, -2.80], max: [26.45, 149, 7.55] },
-  { name: 'left arm', shape: solarArmLeft, min: [-13.85, 115.50, -5.85], max: [-12.25, 152.68, 18.15] },
-  { name: 'right arm', shape: solarArmRight, min: [30.25, 115.50, -5.85], max: [31.85, 152.68, 18.15] },
+  { name: 'left arm', shape: sourceSolarArmLeft, min: [-13.85, 115.50, -5.85], max: [-12.25, 152.68, 18.15] },
+  { name: 'right arm', shape: sourceSolarArmRight, min: [30.25, 115.50, -5.85], max: [31.85, 152.68, 18.15] },
   { name: 'panel frame', shape: solarPanelFrame, min: [-12, 119.68, 13.15], max: [30, 179.68, 17.75] },
 ];
 
@@ -186,6 +187,22 @@ for (const expected of expectedBounds) {
 
 let base = sourceBase.clone();
 let lid = sourceLid.clone();
+
+// The PCB USB receptacle is on negative-X. Put the solar route on positive-X,
+// which is the user's left when the enclosure is viewed from its back with the
+// probe pointing downward. Restore a solid negative-X arm and cut the lead
+// groove into the inward face of the positive-X arm.
+let solarArmLeft = sourceSolarArmRight.clone().mirror('YZ', [dimensions.caseCenterX, 0, 0]);
+let solarArmRight = sourceSolarArmRight.clone();
+const solarArmBridgeAngle = Math.atan2(15.15 - (-2.85), 149.68 - 118.50) * 180 / Math.PI;
+solarArmRight = solarArmRight.cut(box(
+  30.15,
+  120.10,
+  -4.15,
+  30.80,
+  118.50 + 36.00 - 1.60,
+  -1.55,
+).rotate(solarArmBridgeAngle, [0, 118.50, -2.85], [1, 0, 0]));
 
 const originalOuterContour = [
   [-2.80, 82.00],
@@ -209,34 +226,54 @@ for (const centerY of [102.00, 130.00]) {
 }
 
 // Replace the source's diagonal/chamfered exterior corners with a single
-// rounded-rectangle envelope. The full roof and floor skins also remove the
-// old Z-direction edge chamfers. Material is added only in already-solid roof
-// and floor zones or outside the original outer contour; the cavity and the
-// user's revised internal PCB pressure geometry remain unchanged.
+// rounded-rectangle envelope. Material is added only in already-solid roof and
+// floor zones or outside the original outer contour; the cavity and the user's
+// revised internal PCB pressure geometry remain unchanged.
 const originalOuterPrism = prism(
   originalOuterContour,
   dimensions.baseBottomZ - 0.20,
   dimensions.lidTopZ + 0.20,
 );
+const roundedFloorSkin = roundedCase(dimensions.baseBottomZ, dimensions.baseFloorTopZ)
+  .chamfer(dimensions.exteriorEdgeChamfer,
+    (edges) => edges.inPlane('XY', dimensions.baseBottomZ));
+const roundedLidEnvelope = roundedCase(dimensions.lidBottomZ, dimensions.lidTopZ)
+  .chamfer(dimensions.exteriorEdgeChamfer,
+    (edges) => edges.inPlane('XY', dimensions.lidTopZ));
+const roundedRoofSkin = roundedCase(dimensions.lidInnerRoofZ, dimensions.lidTopZ)
+  .chamfer(dimensions.exteriorEdgeChamfer,
+    (edges) => edges.inPlane('XY', dimensions.lidTopZ));
 base = base
-  .fuse(roundedCase(dimensions.baseBottomZ, dimensions.baseFloorTopZ))
+  .fuse(roundedFloorSkin)
   .fuse(
     roundedCase(dimensions.baseFloorTopZ, dimensions.baseTopZ)
       .cut(originalOuterPrism),
   );
 lid = lid
   .fuse(
-    roundedCase(dimensions.lidBottomZ, dimensions.lidTopZ)
+    roundedLidEnvelope
       .cut(originalOuterPrism),
   )
-  .fuse(roundedCase(dimensions.lidInnerRoofZ, dimensions.lidTopZ));
+  .fuse(roundedRoofSkin);
 
-// Restore the existing solar-pivot insert entries and solar-wire passages
-// after rounding the perimeter.
+// The rounded floor skin would otherwise close the proven V1 water-status LED
+// window. Recut its original 2 mm round bulb and pointed rear/top end directly
+// over underside LED D2 (centered at X=0, Y=139.5 mm).
+base = base.cut(cylinderZ(dimensions.baseBottomZ - 0.20, 2.50, 0.00, 139.50, 1.00));
+base = base.cut(prism([
+  [-0.9165, 139.90],
+  [0.00, 142.00],
+  [0.9165, 139.90],
+], dimensions.baseBottomZ - 0.20, dimensions.baseFloorTopZ + 0.20));
+
+// Restore the solar-pivot insert entries after rounding the perimeter. Close
+// the source's negative-X/USB-side bores and cut the pair through positive-X,
+// the user's back-view-left wall opposite the USB receptacle.
 base = base.cut(cylinderX(-12.20, 3.40, 118.50, -2.85, 1.45));
 base = base.cut(cylinderX(26.80, 3.40, 118.50, -2.85, 1.45));
 for (const centerZ of [2.20, 4.60]) {
-  lid = lid.cut(cylinderX(-12.00, 7.90, 118.50, centerZ, 0.80));
+  lid = lid.fuse(cylinderX(-7.00, 2.40, 118.50, centerZ, 0.81));
+  lid = lid.cut(cylinderX(22.50, 3.00, 118.50, centerZ, 0.80));
 }
 
 const insertRadius = dimensions.insertPocketDiameter / 2;
@@ -372,7 +409,7 @@ const leftArmGap = bossOuterLeftX - solarArmLeft.boundingBox.bounds[1][0];
 const rightArmGap = solarArmRight.boundingBox.bounds[0][0] - bossOuterRightX;
 
 const report = {
-  version: 'user-revision-m2-blended-side-closure-3',
+  version: 'user-revision-m2-blended-side-closure-6',
   units: 'mm',
   source: path.relative(projectDir, inputPath),
   sourceMechanicalBodiesPreserved: [
@@ -393,7 +430,10 @@ const report = {
     tallInternalPillars: false,
     pcbRemovalPathFullyOpen: true,
     exteriorDiagonalChamfersReplacedByRoundedCorners: true,
-    exteriorRoofAndFloorEdgeChamfersRemoved: true,
+    lidTopAndBaseBottomPerimeterChamfer: dimensions.exteriorEdgeChamfer,
+    solarWireEntriesOnPositiveXBackViewLeftOppositeUsb: true,
+    solarLeadChannelOnPositiveXArm: true,
+    waterLedTeardropWindowRestored: true,
     pcbAndInternalPressureGeometryOtherwiseUnchanged: true,
     heatSetInsertInstallationDirection: 'downward into the four base bosses from the open seam',
     screwInstallationDirection: 'downward through the four flush lid-side countersinks',

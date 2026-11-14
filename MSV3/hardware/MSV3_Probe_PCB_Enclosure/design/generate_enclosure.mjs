@@ -53,6 +53,9 @@ const parameters = {
   solarPanelThickness: 3.00,
   solarPanelRecessDepth: 1.60,
   solarPanelWireHoleDiameter: 2.20,
+  waterLedWindowCenter: [0.00, 139.50],
+  waterLedWindowRadius: 1.00,
+  waterLedWindowTipY: 142.00,
   probeSlotXYClearance: 0.20,
   probeSlotZClearance: 0.15,
 };
@@ -128,6 +131,22 @@ function buildBase() {
     -parameters.pcbThickness - parameters.probeSlotZClearance,
     parameters.probeSlotZClearance,
   ));
+
+  // Restore the original water-droplet window over the underside status LED.
+  // The round bulb is centered on D2 and the pointed end faces the enclosure
+  // rear/top, matching the proven V1 print geometry.
+  const [waterLedX, waterLedY] = parameters.waterLedWindowCenter;
+  base = base.cut(replicad.makeCylinder(
+    parameters.waterLedWindowRadius,
+    parameters.baseCavityFloorZ - parameters.baseBottomZ + 0.40,
+    [waterLedX, waterLedY, parameters.baseBottomZ - 0.20],
+    [0, 0, 1],
+  ));
+  base = base.cut(prism([
+    [waterLedX - 0.9165, waterLedY + 0.40],
+    [waterLedX, parameters.waterLedWindowTipY],
+    [waterLedX + 0.9165, waterLedY + 0.40],
+  ], parameters.baseBottomZ - 0.20, parameters.baseCavityFloorZ + 0.20));
 
   // Continuous edge shelves support the PCB along clear solder-mask margins.
   // Their 0.15 mm board overlap is narrow enough to avoid all components.
@@ -213,11 +232,13 @@ function buildLid() {
   lid = joinAll(lid, arms);
   lid = cutAll(lid, slotTools);
 
-  // Two tiny, glue-sealable solar-lead entries pass through the left side wall
+  // Two tiny, glue-sealable solar-lead entries pass through the positive-X
+  // wall: the left wall when viewed from the enclosure back with the probe
+  // pointing downward, and physically opposite the USB receptacle.
   // beside the arm channel, safely away from the top antenna region.
   const wireRadius = parameters.caseWireEntryDiameter / 2;
   for (const centerZ of parameters.caseWireEntryCentersZ) {
-    lid = lid.cut(cylinderX(-7.20, 3.00, parameters.solarPivotY, centerZ, wireRadius));
+    lid = lid.cut(cylinderX(22.50, 3.00, parameters.solarPivotY, centerZ, wireRadius));
   }
   return lid;
 }
@@ -253,14 +274,15 @@ function buildSolarArm(side) {
   arm = arm.cut(cylinderX(xMin - 0.20, parameters.solarArmThickness + 0.40,
     farY, parameters.solarPanelPivotZ, holeRadius));
 
-  // A shallow open groove on the left arm carries both solar leads down the
+  // A shallow open groove on the matching positive-X/back-view-left arm carries
+  // both solar leads down the enclosure side.
   // enclosure side. It stops clear of both M2 pivot holes.
-  if (isLeft) {
+  if (!isLeft) {
     const channel = box(
-      xMax - 0.55,
+      xMin - 0.10,
       nearY + 1.60,
       nearZ - 1.30,
-      xMax + 0.10,
+      xMin + 0.55,
       nearY + centerDistance - 1.60,
       nearZ + 1.30,
     ).rotate(bridgeAngle, [0, nearY, nearZ], [1, 0, 0]);
@@ -433,7 +455,7 @@ const report = {
       count: 2,
       diameter: parameters.caseWireEntryDiameter,
       centersZ: parameters.caseWireEntryCentersZ,
-      location: 'left side wall beside channeled arm; glue-sealable',
+      location: 'positive-X / back-view-left wall opposite USB; glue-sealable',
     },
   },
   solarAssembly: {
@@ -462,7 +484,13 @@ const report = {
     wireHoles: { count: 2, diameter: parameters.solarPanelWireHoleDiameter,
       centersY: [parameters.solarPanelPivotY - 22.50, parameters.solarPanelPivotY + 22.50],
       position: 'inside panel recess; glue-sealable' },
-    wireRouting: 'open 2.60 x 0.55 mm channel on left arm to twin side entries',
+    wireRouting: 'open 2.60 x 0.55 mm channel on positive-X / back-view-left arm to twin side entries',
+    waterLedWindow: {
+      shape: 'teardrop',
+      center: parameters.waterLedWindowCenter,
+      tipY: parameters.waterLedWindowTipY,
+      location: 'base exterior/back over underside status LED D2',
+    },
   },
   printGuidance: {
     preferredMaterials: ['PETG', 'ASA', 'ABS'],

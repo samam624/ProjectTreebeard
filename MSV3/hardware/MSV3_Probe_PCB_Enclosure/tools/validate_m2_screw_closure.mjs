@@ -48,6 +48,10 @@ function cylinderX(xMin, length, centerY, centerZ, radius) {
   return replicad.makeCylinder(radius, length, [xMin, centerY, centerZ], [1, 0, 0]);
 }
 
+function box(xMin, yMin, zMin, xMax, yMax, zMax) {
+  return replicad.makeBox([xMin, yMin, zMin], [xMax, yMax, zMax]);
+}
+
 function solidCount(shape) {
   return Array.from(replicad.iterTopo(shape.wrapped, 'solid')).length;
 }
@@ -240,8 +244,8 @@ if (checks.screwLength.m2x6TipZ < checks.screwLength.reliefBottomZ) {
 }
 
 checks.preservedOpenings = {
-  leftWireEntryLow: intersectionVolume(lid, cylinderX(-11.70, 6.75, 118.50, 2.20, 0.75)),
-  leftWireEntryHigh: intersectionVolume(lid, cylinderX(-11.70, 6.75, 118.50, 4.60, 0.75)),
+  backViewLeftWireEntryLow: intersectionVolume(lid, cylinderX(22.55, 2.40, 118.50, 2.20, 0.75)),
+  backViewLeftWireEntryHigh: intersectionVolume(lid, cylinderX(22.55, 2.40, 118.50, 4.60, 0.75)),
   leftSolarInsert: intersectionVolume(base, cylinderX(-11.90, 3.00, 118.50, -2.85, 1.40)),
   rightSolarInsert: intersectionVolume(base, cylinderX(26.90, 3.00, 118.50, -2.85, 1.40)),
 };
@@ -249,9 +253,60 @@ for (const [name, value] of Object.entries(checks.preservedOpenings)) {
   if (value > 0.001) errors.push(`${name} was obstructed by the rounded perimeter.`);
 }
 
-// These probes sit in the material that was missing at the old diagonal plan
-// chamfers and at the old beveled roof/floor edges. Occupancy confirms those
-// exterior chamfers were replaced by the rounded, flat-skinned envelope.
+checks.closedUsbSideWireEntries = {
+  low: intersectionVolume(lid, cylinderX(-6.90, 2.20, 118.50, 2.20, 0.70)),
+  high: intersectionVolume(lid, cylinderX(-6.90, 2.20, 118.50, 4.60, 0.70)),
+};
+for (const [name, value] of Object.entries(checks.closedUsbSideWireEntries)) {
+  if (value < 3.30) errors.push(`USB-side wall ${name} wire-entry area is not fully closed.`);
+}
+
+const mechanicalSolids = Array.from(
+  replicad.iterTopo(assembly.wrapped, 'solid'),
+  (shape) => replicad.cast(shape),
+);
+const leftArm = mechanicalSolids[2];
+const rightArm = mechanicalSolids[3];
+const solarArmBridgeAngle = Math.atan2(15.15 - (-2.85), 149.68 - 118.50) * 180 / Math.PI;
+const rightChannelTool = box(30.15, 120.10, -4.15, 30.80, 152.90, -1.55)
+  .rotate(solarArmBridgeAngle, [0, 118.50, -2.85], [1, 0, 0]);
+const leftChannelTool = rightChannelTool.clone().mirror('YZ', [9.00, 0, 0]);
+checks.solarArmWireChannel = {
+  backViewLeftChannelObstructionVolume: intersectionVolume(rightArm, rightChannelTool),
+  solidUsbSideArmMaterialVolume: intersectionVolume(leftArm, leftChannelTool),
+};
+if (checks.solarArmWireChannel.backViewLeftChannelObstructionVolume > 0.001) {
+  errors.push('Back-view-left solar-arm wire channel is obstructed.');
+}
+if (checks.solarArmWireChannel.solidUsbSideArmMaterialVolume < 1.00) {
+  errors.push('USB-side solar arm is not solid.');
+}
+
+checks.waterLedTeardrop = {
+  roundBulbObstructionVolume: intersectionVolume(
+    base,
+    cylinderZ(-6.30, 1.90, 0.00, 139.50, 0.90),
+  ),
+  pointedTipObstructionVolume: intersectionVolume(
+    base,
+    cylinderZ(-6.30, 1.90, 0.00, 141.20, 0.18),
+  ),
+  surroundingBackMaterialVolume: intersectionVolume(
+    base,
+    cylinderZ(-6.30, 1.90, 2.00, 139.50, 0.25),
+  ),
+};
+if (checks.waterLedTeardrop.roundBulbObstructionVolume > 0.001
+  || checks.waterLedTeardrop.pointedTipObstructionVolume > 0.001) {
+  errors.push('Water-status LED teardrop window is obstructed.');
+}
+if (checks.waterLedTeardrop.surroundingBackMaterialVolume < 0.30) {
+  errors.push('Water-status LED teardrop removes too much surrounding base material.');
+}
+
+// These probes confirm the old diagonal plan corners were replaced by the
+// rounded envelope while retaining material just inboard of the new 1.75 mm
+// lid-top and base-bottom perimeter chamfers.
 checks.chamferReplacement = {
   frontLeftRoundedCornerMaterial: intersectionVolume(
     closed,
@@ -270,8 +325,43 @@ checks.chamferReplacement = {
     cylinderZ(-6.30, 0.30, -6.70, 115.50, 0.20),
   ),
 };
-for (const [name, value] of Object.entries(checks.chamferReplacement)) {
+for (const [name, value] of Object.entries({
+  frontLeftRoundedCornerMaterial: checks.chamferReplacement.frontLeftRoundedCornerMaterial,
+  rearRightRoundedCornerMaterial: checks.chamferReplacement.rearRightRoundedCornerMaterial,
+})) {
   if (value < 0.01) errors.push(`${name} is missing; an exterior chamfer may remain.`);
+}
+
+
+checks.exteriorEdgeChamfers = {
+  lidOuterTopVoid: intersectionVolume(
+    lid,
+    cylinderZ(7.48, 0.06, -6.92, 115.50, 0.025),
+  ),
+  lidInsetTopMaterial: intersectionVolume(
+    lid,
+    cylinderZ(7.48, 0.06, -5.00, 115.50, 0.025),
+  ),
+  baseOuterBottomVoid: intersectionVolume(
+    base,
+    cylinderZ(-6.34, 0.06, -6.92, 115.50, 0.025),
+  ),
+  baseInsetBottomMaterial: intersectionVolume(
+    base,
+    cylinderZ(-6.34, 0.06, -5.00, 115.50, 0.025),
+  ),
+};
+if (checks.exteriorEdgeChamfers.lidOuterTopVoid > 0.00001) {
+  errors.push('Lid top outer edge is not chamfered.');
+}
+if (checks.exteriorEdgeChamfers.lidInsetTopMaterial < 0.00001) {
+  errors.push('Lid top chamfer removes too much perimeter material.');
+}
+if (checks.exteriorEdgeChamfers.baseOuterBottomVoid > 0.00001) {
+  errors.push('Base bottom outer edge is not chamfered.');
+}
+if (checks.exteriorEdgeChamfers.baseInsetBottomMaterial < 0.00001) {
+  errors.push('Base bottom chamfer removes too much perimeter material.');
 }
 
 checks.stl = {
