@@ -18,6 +18,7 @@ cloud/web/*.zip
 node_modules/
 .arduino-build/
 MSV4/.lab-sessions/
+.secrets/
 cloud/supabase/.temp/
 cloud/supabase/.branches/
 cloud/supabase/.env
