@@ -144,3 +144,40 @@ On the Alocasia, a perfect temperature correction would remove only about 10 % o
 is not temperature. The 11-15 table above lists 43 units for this wobble; that used the whole record
 and included hours without a tip reading. Either way it is under 4 g, against the +101 g shift of the
 11-10 cycle.
+
+### Is the moisture number calculated the same way on both probes? (2026-11-16, verified)
+
+**Which source is running.** Each installed image was rebuilt from its source commit with its
+recorded build flags. Both came out byte-identical to the hex that was flashed:
+
+| | sensor 10, board 1 | sensor 11, board 2 |
+|---|---|---|
+| installed (DIS-read) | 262166 `fast1min-ledafter-2026-10-11` | 262172 `prod-rawsweep-rs3300-2026-10-15` |
+| source commit | 19a0b4d | 8521275 |
+| flags | `-SensorId 10 -MoistureEveryNWakes 1 -CpCentiPf 869` | `-SensorId 11 -RsOhms 3300 -CpCentiPf 874` |
+| rebuilt hex sha256 = deployed | c0fda79fd7c7e79e... | c93c92749136ff3e... |
+
+**What differs between the two sources** (`git diff 19a0b4d 8521275`, sketch only):
+- `SPEC_RS`: 1000 ohm on board 1 and 3300 ohm on board 2. Each matches that board's real R15.
+- `Cp`: 8.69 pF on board 1 and 8.74 pF on board 2, each calibrated on its own board.
+- The SAADC zero-acceptance window: -10..0 LSB on 262166 and -15..-1 LSB on 262172. A
+  recalibration is oversampled on 262172.
+- Measurement cadence: every minute on board 1 (test), every 10th minute on board 2.
+- 262172 also sends the raw sweep in the scan response. That code only reads the sweep and does not
+  change the fit.
+
+The sweep, the electrode model, the fit and the way Rsoil is produced are the same code on both.
+Every difference is a constant per board. A constant error in Rs or Cp scales Rsoil by a fixed
+factor, so it shifts the log number by a fixed amount and cannot grow over time.
+
+**Receiver.** `calibrateMsv4Moisture()` takes no sensor ID: 10000 x log10(400 kohm / Rsoil
+corrected to 25 C at 2 %/C on the tip NTC). Recomputing it from each stored row's Rsoil and tip
+temperature reproduces the stored number in **every row**: sensor 10, 57,405 rows (57,375 exact,
+30 off by 1); sensor 11, 46,613 rows (46,590 exact, 23 off by 1). The 1-unit misses are float
+rounding in the Python recomputation.
+
+**Grams.** Neither probe nor receiver converts to grams. That conversion exists only in the plotting
+scripts, and they apply it the same way to both pots.
+
+So the Alocasia's upward trend is in the Rsoil its probe measures, or in the weight it is compared
+against. It is not in the processing.
