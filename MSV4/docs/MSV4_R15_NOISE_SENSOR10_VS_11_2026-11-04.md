@@ -67,3 +67,43 @@ covered here.
   noise down below the Begonia's (0.29 g against 0.49 g).
 - **The Alocasia figure draws seven candidate lines** and three post-watering overshoots. The
   Begonia figure draws one line, and its only watering sits before the first weighing.
+
+## Update 2026-11-15: same processing for both, over every cycle
+
+**Question (maintainer, 2026-11-15):** is the Begonia's number processed differently from the
+Alocasia's? The Begonia looks clean and the Alocasia much worse.
+
+**Processing is identical.** Both numbers are made by the receiver's `calibrateMsv4Moisture()`
+(log10 of Rsoil, 2 %/C on the tip thermistor), the same code for both probes. The Begonia figure
+plots that number as hourly medians through one straight line. The Alocasia figure
+(`msv4_moisture_plot.py`) plots seven re-fitted candidates instead, so it was the more processed of
+the two. The firmware does differ: board 1 runs 262166 (1-minute test cadence), board 2 runs 262172
+(10-minute cadence, raw sweeps, R15 3.3k). Neither changes how the number is calculated.
+
+Figure: `data/sensor_logs/latest/stored_vs_mass_s10_s11.png` from
+`MSV4/scripts/msv4_stored_vs_mass_both.py`. Both panels use the same processing and the same gram
+span. Each pot is fitted on its own weighings, and weighings within 24 h after a watering are left
+out.
+
+| | sensor 10, Alocasia | sensor 11, Begonia |
+|---|---|---|
+| weighings fitted | 46 (10-08..11-15) | 14 (10-27..11-15) |
+| sensitivity | 12.0 units/g | 31.2 units/g |
+| weighings off the line | 59 g rms, worst 246 g | 13.5 g rms, worst 22 g |
+| per-reading noise | 24 units = 2.0 g | 30 units = 1.0 g |
+| within-day wobble of hourly medians | 3.6 g rms (~43 units) | 0.44 g rms (~14 units) |
+
+**Measured:**
+- Per reading, the Alocasia is not noisier in units (24 against 30).
+- Its wobble within a day is about 3x larger in units.
+- Its 59 g miss comes mostly from **cycle-to-cycle offsets and overshoot**, not noise. After the
+  11-10 watering it read ~+320 g at the peak and still ~+100 g days later, at the same scale
+  weight where earlier cycles sat on the line. The Begonia's three cycles line up within 22 g, and
+  its overshoot after watering is ~+50 g.
+- The single 12.0 units/g line is a compromise across those offsets. The 11-04 figure of 16.9
+  units/g came from one window.
+
+**Inferred, not measured:** the size and decay of the overshoot fit water that stays near the blade
+in a large pot (the 192-337 g waterings wet a much smaller fraction of the Alocasia's soil than of
+the Begonia's) and spreads out over days. The per-cycle offset is the same kind seen on 10-21, when cycle 2 read
+wetter than cycle 1 at the same weight. Neither has been tested.
