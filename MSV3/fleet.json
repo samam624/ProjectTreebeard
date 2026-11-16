@@ -1687,6 +1687,16 @@
             "saucer_water": "NOT STATED",
             "pot_note": "maintainer named the alocasia ('for alocaisa'); the shared-alocasia pot (sensor 10)",
             "note": "PRE-WATERING weight: maintainer reported '4486 4485 4484 for alocaisa about to water'; median 4485 logged; 45 g under the 4530 of 11-13 ~10:49 (~59.3 h), 158.5 g under the 4643.5 g right after the ~00:35 11-10 watering (~141.5 h); 61 g above the 4424 g before that watering."
+          },
+          {
+            "when": "2026-11-15 ~22:09 PST",
+            "grams": 4822,
+            "at": "2026-11-15T22:09:00-08:00",
+            "weighed": "pot_and_saucer",
+            "weighed_note": "NOT STATED; read as pot WITH its dish, same setup as the 4485 g before it",
+            "at_note": "no clock time given; session clock when the message arrived",
+            "saucer_water": "NOT STATED; this is straight after the water went in, so water may be standing in or absorbed by the dish",
+            "note": "maintainer reported 'ok watering went up to 4822' (single reading); +337 g over the 4485 g of ~22:06. See watering_events."
           }
         ],
         "note": "Asked for as the reference for a gravimetric calibration of sensor 10 (water measured in and out, pot weighed before the watering and then daily): MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.md. The 2026-09-24 'the pot is small' under watering_events is the maintainer's own wording and stands as said.",
@@ -1793,6 +1803,18 @@
               "pot_mass_after_g": 4643.5,
               "timing": "Watered at the driest weight on record (96 g under the 4520 g before 10-30). Sensor 10's card read 3 % before its water-now line was restored at ~00:13 PST (region rule changed the same night: a fixed line no longer moves down), then -23 % (overdue) once the receiver pulled it at 00:24 PST.",
               "note": "dish state NOT STATED; before weight is the 00:00 reading, ~35 min earlier"
+            },
+            {
+              "when": "2026-11-15 between ~22:06 and ~22:09 PST (session clock when the messages arrived; the minute the water went in is to be taken from sensor 10's record)",
+              "at": "2026-11-15T22:09:00-08:00",
+              "source": "maintainer stated 2026-11-15 (session clock ~22:06 PST): '4486 4485 4484 for alocaisa about to water', then (~22:09) 'ok watering went up to 4822'",
+              "amount": "NOT STATED. The scale gained 337 g (4485 -> 4822), more than the 192 g of 10-30 and 219.5 g of 11-10, less than the 461-463 g of the 2-cup waterings of 10-10 and 10-19.",
+              "fertilized": "NOT STATED",
+              "pot_mass_before_g": 4485,
+              "pot_mass_after_g": 4822,
+              "timing": "Watered 61 g above the 4424 g before the 11-10 watering.",
+              "detected_by": "MEASURED: the probe's next soil sweep, wake 50549 at 22:08:32 PST, stepped the stored number 15,106 -> 24,941 (raw_fdc_counts 127,918 -> 13,355).",
+              "note": "dish state NOT STATED"
             }]
       },
       "fertilizing_events": {
