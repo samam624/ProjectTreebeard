@@ -125,3 +125,22 @@ as the Begonia's, and so is the fit inside each cycle. What goes wrong is that e
 the line toward "wetter". The shift was the same size as the Begonia's for two cycles and then
 jumped in the 11-10 cycle. Inside that cycle the number also fell at 24 units/g, against 12.8 in
 cycle 1. The single 12.0 units/g line in the table above is a compromise across these shifts.
+
+### Is the Alocasia's daily wobble thermal? (2026-11-15, measured)
+
+Hourly medians and tip temperatures were each taken about a 24 h running median. The 24 h after
+every watering was left out.
+
+| | Alocasia | Begonia |
+|---|---|---|
+| hours | 738 | 370 |
+| daily tip swing | 1.69 C rms | 1.66 C rms |
+| wobble of the number | 35 units rms | 18 units rms |
+| left over against tip temperature after the receiver's 2 %/C | -8.9 units/C, r -0.43 | +0.4 units/C, r +0.04 |
+| wobble with that leftover removed | 32 units (2.7 g) | 18 units (0.6 g) |
+
+Both pots see the same temperature swing, and on the Begonia the 2 %/C correction leaves nothing.
+On the Alocasia, a perfect temperature correction would remove only about 10 % of the wobble. Most of it
+is not temperature. The 11-15 table above lists 43 units for this wobble; that used the whole record
+and included hours without a tip reading. Either way it is under 4 g, against the +101 g shift of the
+11-10 cycle.
