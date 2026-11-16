@@ -49,5 +49,20 @@ The reading is the oscillator rate in kHz; lower is wetter. It moves in coarse s
 - The plateau was 247 kHz before 09-30 and 222 after, once the probe went outdoors. That is a
   change of place, not a drift.
 
-**Conclusion (measured):** no build-up shows over the month. **Open:** what happened 10-06 to 10-10
-and 10-16 to 10-22, and when the five wet steps were (rain or watering).
+**Maintainer, 2026-11-16:** the two slow creeps ARE the drift, and they come during long stretches
+with no watering. A big watering, or rain (the probe is outdoors), resets them.
+
+**Conclusion, revised.** The stable plateau shows only that nothing carries over a watering, not
+that nothing builds up. The record fits drift that builds while the soil stays dry and is cleared by
+water: the plateau holds for about 3 days (10-13 to 10-16), then creeps wetter for 6 days with no
+water, and the next big wetting resets it. Water moving through the soil around the plates would
+clear charge or ions piled up at their surface. The Cave Pearl Project reports the same limit
+on its 555 soil probes: without polarity reversal, polarization limits the readings, and it gets
+worse with slower pulses in dry soil
+(https://thecavepearlproject.org/2020/10/27/hacking-a-capacitive-soil-moisture-sensor-for-frequency-output/).
+Sensor 1 does reverse, but per cycle COUNT, not per volt-second (item 1).
+
+**Firmware fix for item 1 (not built):** balance time instead of count. Time each half-cycle (the
+loop already reads `micros()`), keep a running total of tA - tB, and give the next drive to the
+plate that is behind. Send A and B separately at the same time, so the imbalance can finally be
+measured. Whether that clears the drift is untested.
