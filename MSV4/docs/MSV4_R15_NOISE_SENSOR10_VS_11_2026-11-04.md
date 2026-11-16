@@ -184,8 +184,9 @@ against. It is not in the processing.
 
 ### Firmware sources of non-symmetric drive (2026-11-16, read from the verified sources)
 
-The maintainer reports that board 1 (sensor 10) still shows large soil polarization even with the
-A/B swap. Everything below is read from 19a0b4d and 8521275, the sources proven above, and from
+Asked as a check of MSV4 board 1 (sensor 10). That was a misreading: the maintainer's report of
+large polarization despite plate swapping was about **sensor 1**, the MSV2 swapping probe, which
+is checked separately. The findings below still describe board 1's drive. Everything below is read from 19a0b4d and 8521275, the sources proven above, and from
 `MSV4/hardware/reference/PIN_NET_REFERENCE.md`.
 
 **How the drive works.** DRV is a unipolar 0/3.3 V, 50 % square wave through R15, with no blocking
