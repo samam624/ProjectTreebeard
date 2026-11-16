@@ -181,3 +181,42 @@ scripts, and they apply it the same way to both pots.
 
 So the Alocasia's upward trend is in the Rsoil its probe measures, or in the weight it is compared
 against. It is not in the processing.
+
+### Firmware sources of non-symmetric drive (2026-11-16, read from the verified sources)
+
+The maintainer reports that board 1 (sensor 10) still shows large soil polarization even with the
+A/B swap. Everything below is read from 19a0b4d and 8521275, the sources proven above, and from
+`MSV4/hardware/reference/PIN_NET_REFERENCE.md`.
+
+**How the drive works.** DRV is a unipolar 0/3.3 V, 50 % square wave through R15, with no blocking
+capacitor. U3 makes one plate hot (on SENSE) and grounds the other, then swaps. The guard ring is
+GND on both layers and is never switched. `runSpectrumFit()` sweeps A-hot, then B-hot: 8 frequencies,
+102 phase steps per orientation. Each step is `FE_SETTLE_MS` 2 plus two 64x ADC reads, so an
+orientation takes roughly 0.3 s. That figure is estimated from the code, not timed.
+
+Asymmetries found:
+1. **Plates against the guard are not cancelled by the swap.** While hot, a plate sits at a mean
+   +1.65 V; while cold it is at 0 V. The swap cancels A against B. The guard, though, is at 0 V the
+   whole time, so averaged over a measurement both plates sit about +0.83 V above it. Both boards
+   run the same code here.
+2. **Board 1 measures 10x as often.** 262166 is built with `-MoistureEveryNWakes 1`, so it sweeps
+   every minute: 1440 measurements a day, against 144 on board 2 (production default, 10). Its daily
+   drive time, and so its DC dose against the guard, is 10x board 2's. This is the only firmware
+   difference between the two boards that bears on polarization.
+3. **The order is fixed: A, then B, every time.** And if the B sweep fails after A succeeded
+   (`if (!specSweep(s)) return false;`), A was driven with no B to balance it.
+4. **Each orientation is a DC block of about 0.3 s.** The hot plate holds its +1.65 V mean for the
+   whole orientation. A and B balance only across the full measurement, never within one cycle.
+5. **The mask check** holds DRV at DC 3.3 V for 5 ms plus a read on A, then on B, once a day. That
+   is small next to 1 to 3.
+
+**Measured 2026-11-16 (DIS over BLE, board 1):** build 262166 `fast1min-ledafter-2026-10-11`. Mask
+check 36 of this boot: A -0.9 mV, B -1.8 mV, both within the switch's own 2 mV. No DC path to
+ground shows on either plate. One check cannot see a path above about 500 kohm.
+
+**Inferred:** with the mask whole, item 1 cannot drive Faradaic current through a measurable path
+to copper, so any polarization from it would build up as charge at the mask and soil interface.
+Item 2 is the clean test: production cadence on board 1 gives it the same dose as board 2. Items 1
+and 4 can only be removed in hardware: a series blocking capacitor, or a mid-rail cold plate and
+guard. Item 3 can be fixed in firmware by alternating the starting orientation and by not counting
+an unbalanced sweep. None of this has been acted on.
