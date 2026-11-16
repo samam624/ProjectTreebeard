@@ -107,3 +107,21 @@ out.
 in a large pot (the 192-337 g waterings wet a much smaller fraction of the Alocasia's soil than of
 the Begonia's) and spreads out over days. The per-cycle offset is the same kind seen on 10-21, when cycle 2 read
 wetter than cycle 1 at the same weight. Neither has been tested.
+
+### Was the Alocasia's first calibration worse? (2026-11-15, measured)
+
+No. Each pot was fitted on its first full drying cycle (weighings more than 24 h after a watering),
+and that line was carried forward unchanged to the later cycles:
+
+| first-cycle line | Alocasia, 12.8 units/g (19 weighings) | Begonia, 29.6 units/g (10 weighings) |
+|---|---|---|
+| cycle 1 itself | -18..+9 g | -23..+12 g |
+| next cycle | +14 g mean (-11..+44) | +15 g mean (-3..+27) |
+| cycle after | +30 g mean (+18..+46) | +37 g (one weighing, 29 h after watering) |
+| fourth (from 11-10) | +101 g mean (+65..+138) | n/a |
+
+Each Alocasia cycle fitted on its own sits within 4-11 g rms. So the first calibration was as good
+as the Begonia's, and so is the fit inside each cycle. What goes wrong is that each watering shifts
+the line toward "wetter". The shift was the same size as the Begonia's for two cycles and then
+jumped in the 11-10 cycle. Inside that cycle the number also fell at 24 units/g, against 12.8 in
+cycle 1. The single 12.0 units/g line in the table above is a compromise across these shifts.
