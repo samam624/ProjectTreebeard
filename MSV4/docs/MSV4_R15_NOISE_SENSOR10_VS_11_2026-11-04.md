@@ -220,3 +220,45 @@ Item 2 is the clean test: production cadence on board 1 gives it the same dose a
 and 4 can only be removed in hardware: a series blocking capacitor, or a mid-rail cold plate and
 guard. Item 3 can be fixed in firmware by alternating the starting orientation and by not counting
 an unbalanced sweep. None of this has been acted on.
+
+### Testing the polarization theory against the record (2026-11-16, measured)
+
+**Prediction.** If the drive dose polarizes the soil around board 1, the moisture number should
+climb against the scale continuously, about in proportion to sweeps (1440 a day on board 1, 144 on
+board 2), and keep climbing between waterings.
+
+**Method.** I froze each pot's line (option A: Alocasia 10-19 cycle, 14.75 units/g; Begonia
+10-27 cycle, 29.61 units/g). At every weighing taken 48 h or more after a watering, I took the
+moisture number minus that line, in units. Units are 10000 x log10 of Rsoil, so they compare
+directly between pots.
+
+| | Alocasia (board 1) | Begonia (board 2) |
+|---|---|---|
+| offset drift over the whole record | +59 +/- 6 units/day (Rsoil -1.35 %/day at fixed weight) | +8 +/- 27 units/day |
+
+Over the whole record, that looks like the dose theory. Split the Alocasia by cycle and it does not
+hold:
+
+| Alocasia cycle (watering) | weighings, span | slope inside the cycle | mean offset |
+|---|---|---|---|
+| 10-10 (461 g, first after insertion) | 16, 6.2 d | +86 +/- 8 units/day | -279 |
+| 10-19 (2 cups, ~463 g) | 13, 9.1 d | **+2 +/- 10 units/day** | -7 (the fit cycle) |
+| 10-30 (192 g) | 5, 8.2 d | +45 +/- 29 units/day | **+506** |
+| 11-10 (219.5 g) | 3, 3.2 d | -137 +/- 51 units/day | **+1339** |
+
+- In the 10-19 cycle, about 13,000 one-minute sweeps over 9 days moved the offset by +2 +/- 10
+  units/day. Continuous dose would have given +59. That is rejected by about 5.7 sigma.
+- The rise arrives as **steps at the waterings**: +513 units across 10-30 (~35 g on this line) and
+  +833 across 11-10 (~56 g). Inside a cycle the offset holds, or falls as the cycle goes on.
+- The 10-10 cycle's +86 units/day is the first week after insertion, when the soil was still
+  closing on the blade.
+
+**Inferred, not tested:** the steps come after the two SMALL waterings (192 and 219.5 g, after the
+maintainer cut back on 10-30 to avoid overwatering). They do not come after the 2-cup ones. In a pot
+this size, a small watering re-wets the soil around the blade but not the lower soil, which keeps
+drying. The blade then reads wetter than the pot's average, by more after every small watering.
+Water moving downward through a cycle would explain the gap shrinking inside the 11-10 cycle. The
+Begonia's pot is small enough that 279-337 g wets most of it.
+
+**Check:** the 11-15 watering was 337 g. A full soak (about 2 cups, as on 10-19) should bring the
+offset back toward the 10-19 line once it settles; another small watering should step it up again.
