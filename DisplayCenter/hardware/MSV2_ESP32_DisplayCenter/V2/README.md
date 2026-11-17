@@ -1,108 +1,125 @@
 # MSV3 unified desktop display enclosure
 
-This revision retains the proven screen-window dimensions from
-`display_enclosure.step`, but builds a new rectangular enclosure around both
-PCBs soldered together through their headers. The separate controller pod and
-all snap-fit enclosure clips have been removed.
+A rectangular two-part enclosure (front cover + rear shell) with a folding
+kickstand, built around the display module and the DisplayCenter controller
+PCB soldered together through the display's 14-pin header.
 
-## PCB registration and enclosure
+**Current design: prototype 9 (2026-11-17).** Print pack:
+[`output/p1s_0p4_pla_v2/`](output/p1s_0p4_pla_v2/). Print the fit-check plate
+first; see that folder's `PRINT_IN_BAMBU_STUDIO.md`. The v1 pack (prototype 8,
+2026-09-24) is kept for history and should not be printed.
 
-- The supplied two-PCB assembly remains at its native STEP origin
-  **(0, 0, 0)**. Every enclosure export uses that same coordinate frame, so
-  importing the PCB and enclosure without moving either component aligns them.
-- Finished rectangular body envelope: **122 x 82 mm** before the USB feet.
-- The 83.52 x 55.68 mm active LCD area remains centered in the original window.
-- Display glass recess below the bezel face: approximately **0.147 mm**.
-- Rear component clearance: approximately **0.869 mm**.
-- Controller-to-front-cap clearance: approximately **2.0 mm**.
-- Two foam-tipped rear posts stabilize the unsupported upper end of the
-  controller PCB.
+## Why prototype 9 exists
 
-The front cover is a new solid rather than a patched copy of the old bezel. It
-has one flat 1.02 mm face, one LCD opening, and continuous walls on all four
-sides. There are no legacy fastener circles, repair bands, controller side slot,
-or other seams on the visible face. The enclosure is clamped by exactly four M2
-screws installed from the rear through real, unobstructed PCB mounting holes
-into blind heat-set-insert pockets in the front cover:
+Prototype 8 was printed and assembled on 2026-11-17 and had six problems:
 
-1. Display PCB lower-left mounting hole.
-2. Display PCB lower-right mounting hole.
-3. Display PCB upper-right mounting hole.
-4. Controller PCB upper-left mounting hole.
+1. Display edges showed through the window.
+2. Two of its four screws could not be fitted, so one side of the stack hung
+   loose, and one rear post was too long to close the case.
+3. The maintainer asked to mount on the display's right-hand pair plus the
+   controller's top pair instead.
+4. The USB-C connector was off-centre in its cutout.
+5. The top border was 18 mm and the bottom 6 mm.
+6. The prop pivot holes did not go through.
 
-The display PCB upper-left hole is not used because the controller PCB directly
-blocks it; the fourth screw instead uses the controller PCB hole immediately
-above that corner. Rear screw passages are **2.4 mm**, recessed screw-head
-pockets are **4.6 mm**, and front-cover insert pockets are **2.9 mm diameter x
-3.2 mm deep** with at least **1.99 mm** of material remaining to the visible face.
-The controller-corner insert column reaches to within approximately **0.049 mm**
-of that PCB and is reinforced to the left extension wall; the matching rear post
-is approximately **0.08 mm** from the opposite PCB face.
+Issues 2 and 4 share one root cause. **`MSV3_desktop_display.step` puts the
+controller PCB in the wrong place.** It draws the display's 14-pin header 4.0 mm
+above the display board's centre line. On the real module the header is
+centred on the mounting-hole pattern (measured in a photo), and the controller
+hangs on that header. Prototype 8 matched the model and still did not fit the
+hardware.
 
-## USB-C cable path
+Prototype 9 is built around an **as-built** position: the controller and the
+header are moved by **(-3.40, -3.80, -0.30) mm** from the model. The evidence:
 
-The USB-C connector faces downward. A 16 mm wide bottom/rear cable bay opens
-around the connector tunnel, and two 8 mm feet lift the enclosure above the
-desk. A straight USB-C plug can therefore enter from below and its cable can
-turn toward the rear without supporting the enclosure on the cable.
+| Source | What it gives | Kind |
+| --- | --- | --- |
+| Front photo, header pads vs display holes (same plane) | X -3.7, Y -4.0 | measured |
+| USB-C photo, receptacle vs the printed 16 mm bay | X -3.3 | measured, perspective-corrected |
+| Calipers, controller upper-left to display upper-left hole | ~10.5 mm c-c | measured (approximate) |
+| Calipers, display lower-left hole to USB-C centre | ~23.5 mm | measured (approximate) |
+| Fab drill file (`pcb/DisplayCenter_controller_fabrication_2026-07-14.zip`) | controller holes 2.2 mm, top pair 45.00 mm apart | design data |
+| Z | -0.30 is a midpoint guess; the controller bosses leave about 0.6 mm on each face | **inferred** |
 
-## Antenna placement
+The X/Y estimate is good to about +/-0.4 mm. An M2 screw has only +/-0.6 mm of
+slack in the display's 3.2 mm holes, so check the fit-check plate before the
+full print.
 
-The new antenna sits inside the enclosure. The former 10 mm rear bulkhead
-opening is closed with the full 2.6 mm rear-wall thickness. Check the ordered
-antenna's exact placement and cable routing against the physical PCB before
-assembly; the antenna is not modeled in the enclosure STEP files.
+## What changed
 
-## Adjustable desk prop
+- **Window** = the 83.52 x 55.68 mm LCD active area, centred on it. The old
+  88 x 58 mm window was 2.24 mm oversize per side, and its right edge sat
+  0.26 mm inside the glass's white frame.
+- **Mounting**: four M2 screws from the rear. Two go through the display PCB's
+  right-hand holes (seen from the screen), which bear on the display PCB as
+  before. Two go through the controller PCB's top holes, which have bosses
+  stopping 0.6 mm short of each face. The display's lower-left boss and post,
+  and the foam-tipped controller post, are gone.
+- **Symmetric front**: 15.95 mm top and bottom, 19.24 mm left and right. The
+  top is set by the as-built controller edge plus 1.0 mm. The body is now
+  122 x 87.58 mm (was 122 x 82), not counting the feet.
+- **USB-C**: the cable bay is re-centred on the as-built receptacle and widened
+  to 16.5 mm. A notch in the rear edge of the front cover's bottom wall clears
+  plug overmolds up to about 10 mm tall.
+- **Kickstand**: the pivot hole runs through both shell lugs (v1 had a blind
+  insert pocket that opened away from the arm). Each arm has a hex trap on its
+  inner face for a captive M2 nut, so each side takes one M2x10 screw and one
+  nut. The pivot moved down 8.78 mm with the bottom edge, so the lean geometry
+  relative to the desk is unchanged.
+- **Fit-check plate**: a 1 mm copy of the front face with four guide tubes.
 
-The enlarged U-shaped kickstand has approximately **48.5 mm** pivot-to-foot arm
-length and **4.0 mm** thick arms. It folds inside the body-and-feet footprint and
-pivots on two M2 screws through 2.4 mm clearance holes into **2.9 mm diameter x
-3.2 mm deep** heat-set-insert pockets. Tighten both screws to set the friction.
-The deployed STEP shows a 30-degree example position.
+Screws: M2x16 for the controller holes. For the display holes, M2x20 with a
+thin washer, or M2x18 with about 1.2 mm of engagement. M2x10 + nut for each
+pivot. All four heat-set inserts go in the front cover.
+
+## Coordinate frame
+
+The supplied PCB STEP stays at its native origin **(0, 0, 0)**, and every
+export uses that frame. Fit is checked against
+`MSV3_display_asbuilt_pcb_reference.step`: the STEP with solids 0-301
+(controller) and 312-326 (display header) moved by the as-built offset, plus a
+1.6 mm controller slab. The STEP's own controller slab is 0.411 mm, and the
+board edge in the USB photo is about 1.6 mm. Against that reference:
+
+- front cover: 0.05 mm^3, which is the display PCB's copper pads touching the
+  two display clamp bosses
+- rear shell and fit-check plate: zero overlap
+- rear component clearance: 0.57 mm, at the same cavity depth that closed over
+  the real stack in prototype 8
 
 ## Output files
 
-- `MSV3_display_enclosure_assembly.step` - closed enclosure and folded stand
-- `MSV3_display_enclosure_deployed.step` - stand shown at 30 degrees
-- `MSV3_display_fit_check_assembly.step` - enclosure plus the complete PCB
-  reference
-- `MSV3_display_pcb_alignment_check.step` - front cover plus the complete native-
-  origin two-PCB assembly, with the rear left open for direct alignment checks
-- `MSV3_display_enclosure_exploded.step` - separated inspection arrangement
-- `MSV3_display_front_cover.step` - unified front cover with insert seats
-- `MSV3_display_front_bezel_reference.step` - untouched source bezel reference
-- `MSV3_display_rear_shell.step` - unified rear shell, USB bay, feet, and screw
-  bosses
-- `MSV3_display_kickstand.step` - separate adjustable prop
-- matching `*_print.stl` files for the three printed parts
-- `design_report.json` and `validation_report.json`
+- `MSV3_display_front_cover.step`, `MSV3_display_rear_shell.step`,
+  `MSV3_display_kickstand.step`, `MSV3_display_fit_check_plate.step`
+- matching `*_print.stl` files, oriented for printing
+- `MSV3_display_enclosure_assembly.step`: closed enclosure, folded stand
+- `MSV3_display_enclosure_deployed.step`: stand at 30 degrees
+- `MSV3_display_enclosure_exploded.step`
+- `MSV3_display_fit_check_assembly.step`: enclosure + as-built PCB stack
+- `MSV3_display_pcb_alignment_check.step`: front cover + as-built PCB stack
+- `MSV3_display_asbuilt_pcb_reference.step`
+- `MSV3_display_front_bezel_reference.step`: untouched legacy bezel
+- `design_report.json` (includes the per-hole screw plan) and
+  `validation_report.json`
 
-The printer-ready P1S/PLA release is under `output/p1s_0p4_pla_v1`. It is split
-into two Bambu Studio projects so the rear shell can use its own tree-support
-settings without adding support to the bezel or kickstand:
-
-- `MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v1.3mf`
-- `MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v1.3mf`
-- `PRINT_IN_BAMBU_STUDIO.md`
-
-Both 3MF projects are pre-sliced for a Bambu Lab P1S, 0.4 mm nozzle, generic
-PLA, Textured PEI Plate, 0.20 mm layers, three walls, 20% gyroid infill, and a
-5 mm outer brim. The bezel prints visible-face-down; the kickstand prints on
-its wide foot; the rear shell stands on its continuous right side wall with
-build-plate-only tree supports. Bambu Studio 02.07.01.62 sliced both projects
-without warnings.
-
-The STEP files import directly into Fusion 360 as solid bodies. Use
-approximately 0.25 mm foam or TPU pads on the two controller support posts and
-verify the internal antenna, screw lengths, USB plug overmold, and heat-set-
-insert length before final production.
+The v1 CAD and slicer zip packs in `output/` belong to prototype 8.
 
 ## Regeneration
 
 From the repository root:
 
 ```powershell
+cd MSV3\hardware\MSV3_Probe_PCB_Enclosure\tools\node; npm install; cd ..\..\..\..\..
 node DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\design\generate_desktop_enclosure.mjs
 node DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\tools\validate_desktop_enclosure.js
 ```
+
+The validator states the as-built offset independently and fails if the
+generator disagrees. If the fit-check plate shows a different offset, change
+`controllerAsBuiltOffset` in the generator and `AS_BUILT_OFFSET` in the
+validator together.
+
+Slicing (Bambu Studio 02.09.01.70 command line) uses the profiles in
+`profiles/` on top of the built-in `Bambu Lab P1S 0.4 nozzle` machine preset.
+The rear-shell process inherits a user preset that the command line cannot
+resolve, so slice with a copy whose `inherits` is `0.20mm Standard @BBL X1C`.

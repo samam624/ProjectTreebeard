@@ -14,46 +14,147 @@ const wasmPath = path.resolve(
 const sourceEnclosurePath = path.join(projectDir, 'display_enclosure.step');
 const sourcePcbPath = path.join(projectDir, 'MSV3_desktop_display.step');
 
+// All coordinates below are in the enclosure DESIGN frame. The PCB STEP's
+// native frame is this frame plus enclosureToPcbTranslation.
 const parameters = {
   // Keep the supplied PCB STEP at its native origin. The legacy bezel and all
   // generated enclosure parts are moved into that coordinate frame at export.
   pcbTranslation: [0.00, 0.00, 0.00],
   enclosureToPcbTranslation: [-6.39, -13.903, 3.00],
-  bezelOpening: { xMin: -47.00, xMax: 41.00, yMin: 2.013, yMax: 60.013 },
+
+  // --- As-built PCB stack (prototype 9, 2026-11-17) ------------------------
+  // MSV3_desktop_display.step places the controller PCB WRONG. It draws the
+  // display module's 14-pin header 4.0 mm above the display board's centre
+  // line, and the controller hangs on that header. On the real module the
+  // header is centred on the mounting-hole pattern and sits ~0.9 mm outboard
+  // of the left-hand holes, so the real controller sits lower and further left
+  // than the model. Prototype 8 was built on the model and two of its four
+  // screws could not be fitted. Evidence, 2026-11-17:
+  //   MEASURED  header pads vs display holes, front photo (same plane):  X -3.7, Y -4.0
+  //   MEASURED  USB-C receptacle vs the printed 16 mm bay (photo):       X -3.3
+  //   CALIPERS  controller upper-left hole to display upper-left hole:  ~10.5 mm c-c
+  //   CALIPERS  display lower-left hole to USB-C centre:                ~23.5 mm
+  //   FAB DATA  controller top-hole spacing 45.00 mm, holes 2.2 mm (drill file,
+  //             pcb/DisplayCenter_controller_fabrication_2026-07-14.zip)
+  // The offset is therefore an estimate good to about +/-0.4 mm. Print the
+  // fit-check plate before the full enclosure. Z is NOT measured: -0.30 is the
+  // midpoint between the model's -8.00 back face and a photo estimate near
+  // -8.6, and the controller clamp bosses leave clearance on both faces.
+  controllerAsBuiltOffset: [-3.40, -3.80, -0.30],
+  controllerModelOutline: { xMin: -57.11, xMax: -6.11, yMin: 5.403, yMax: 75.403 },
+  controllerModelBackZ: -8.00,
+  controllerThickness: 1.60, // the STEP slab is 0.411 mm; the board edge in the USB photo is ~1.6 mm
+  // Controller top-edge mounting holes (drill file (3, 3) and (48, 3)), model frame.
+  controllerModelTopHoles: [[-54.11, 72.403], [-9.11, 72.403]],
+  // STEP solids that physically move with the controller: the whole
+  // controller PCB (0-301) and the display header it hangs on (312-326).
+  controllerSolidIndexRanges: [[0, 301], [312, 326]],
+  controllerTopClearance: 1.00,
+
+  // Window = the LCD active area exactly (solid 311 of the PCB STEP). The old
+  // 88 x 58 mm window was 2.24 mm oversize per side and its right edge sat only
+  // 0.26 mm inside the glass's white frame (measured in the front photo), so
+  // any sag of the half-mounted stack exposed that frame.
+  bezelOpening: { xMin: -44.76, xMax: 38.76, yMin: 3.173, yMax: 58.853 },
   displayActiveArea: { width: 83.52, height: 55.68 },
-  mainOuter: { xMin: -64.00, xMax: 58.00, yMin: -4.00, yMax: 78.00 },
+  // yMin and yMax are derived below: equal top and bottom borders, with the top
+  // set by the as-built controller edge.
+  mainOuter: { xMin: -64.00, xMax: 58.00, yMin: null, yMax: null },
+  previousMainOuterYMin: -4.00, // prototype 8, used to carry the stand geometry down
   shellFrontZ: -6.15,
   shellBackZ: -21.00,
   shellInnerBackZ: -18.40,
   wallThickness: 2.20,
   frontFaceBackZ: 2.08,
   visibleFrontZ: 3.10,
-  // Three unobstructed display-PCB mounting holes plus the controller PCB's
-  // upper-left mounting hole. The display's upper-left hole is blocked by the
-  // controller PCB behind it and is deliberately not used for a through screw.
-  closureHoleCenters: [
-    [-56.88, 3.5645],
-    [45.16, 3.5645], [45.16, 58.4630],
-    [-54.11, 72.40],
-  ],
-  closurePostEndZ: [-4.00, -4.00, -4.00, -8.08],
-  closureInsertFaceZ: [-2.15, -2.15, -2.15, -7.54],
+
+  // Display PCB right-hand holes (unchanged; both fitted on prototype 8).
+  displayRightHoles: [[45.16, 3.5645], [45.16, 58.4630]],
+  // closureHoleCenters = display right-hand pair + controller top pair (derived).
+  closureHoleCenters: null,
+  closurePostEndZ: [-4.00, -4.00, -8.90, -8.90],
+  closureInsertFaceZ: [-2.15, -2.15, -6.10, -6.10],
+  closurePostRadius: [3.20, 3.20, 3.00, 3.00],
   enclosureScrewClearanceDiameter: 2.40,
   enclosureScrewHeadDiameter: 4.60,
   enclosureScrewHeadDepth: 2.00,
   enclosureInsertDiameter: 2.90,
   enclosureInsertDepth: 3.20,
   enclosureInsertBossRadius: 3.20,
-  usbOpening: { xMin: -36.30, xMax: -25.90, zMin: -11.80, zMax: -6.55 },
-  usbCableBay: { xMin: -39.00, xMax: -23.00, yMin: -12.20, yMax: 5.60 },
-  bottomFeet: { yMin: -12.00, yMax: -4.00, leftXMin: -62.00, leftXMax: -43.00, rightXMin: 37.00, rightXMax: 56.00 },
-  kickstandPivot: { y: 41.00, z: -23.80 },
-  kickstandFar: { y: -7.50, z: -24.80 },
+  controllerScrewReliefDepth: 1.50,
+
+  // USB-C receptacle (STEP solid 1), model frame; the bay is re-centred on its
+  // as-built position.
+  usbModelReceptacle: { xMin: -35.583, xMax: -26.637, yMin: 4.80, zMin: -11.263, zMax: -7.097 },
+  usbCableBayWidth: 16.50,
+  usbBayAboveMouth: 0.80,
+  usbOvermoldNotchTopZ: -4.40,
+  usbOpening: null,
+  usbCableBay: null,
+  bottomFeet: null,
+  // Prototype-8 stand geometry; moved down with the bottom edge (derived) so the
+  // lean geometry relative to the desk is unchanged.
+  kickstandPivotPrevious: { y: 41.00, z: -23.80 },
+  kickstandFarPrevious: { y: -7.50, z: -24.80 },
+  kickstandPocketYPrevious: [-11.60, 44.70],
+  kickstandPivot: null,
+  kickstandFar: null,
   kickstandArmThickness: 4.00,
   kickstandPivotHoleDiameter: 2.40,
-  kickstandInsertDiameter: 2.90,
-  kickstandInsertDepth: 3.20,
+  // One M2 screw per side, head on the shell lug, through the arm, into a
+  // captive M2 nut (4.0 mm A/F, 1.6 mm) on the arm's inner face.
+  kickstandNutAcrossFlats: 4.30,
+  kickstandNutDepth: 1.80,
+
+  fitCheckTubeOuterRadius: 2.50,
+  fitCheckTubeHoleDiameter: 2.30,
+  fitCheckTubeEndZ: [-2.00, -2.00, -5.50, -5.50],
 };
+
+{
+  const p = parameters;
+  const [dx, dy, dz] = p.controllerAsBuiltOffset;
+  p.controllerAsBuilt = {
+    xMin: p.controllerModelOutline.xMin + dx,
+    xMax: p.controllerModelOutline.xMax + dx,
+    yMin: p.controllerModelOutline.yMin + dy,
+    yMax: p.controllerModelOutline.yMax + dy,
+    backZ: p.controllerModelBackZ + dz,
+    frontZ: p.controllerModelBackZ + dz + p.controllerThickness,
+  };
+  p.controllerTopHoles = p.controllerModelTopHoles.map(([x, y]) => [x + dx, y + dy]);
+  p.closureHoleCenters = [...p.displayRightHoles, ...p.controllerTopHoles];
+
+  p.mainOuter.yMax = p.controllerAsBuilt.yMax + p.controllerTopClearance + p.wallThickness;
+  p.mainOuter.yMin = p.bezelOpening.yMin - (p.mainOuter.yMax - p.bezelOpening.yMax);
+  const drop = p.mainOuter.yMin - p.previousMainOuterYMin;
+  p.bottomEdgeDrop = drop;
+
+  const usb = p.usbModelReceptacle;
+  const usbCenterX = (usb.xMin + usb.xMax) / 2 + dx;
+  const usbCenterZ = (usb.zMin + usb.zMax) / 2 + dz;
+  const usbMouthY = usb.yMin + dy;
+  p.usbAsBuilt = { centerX: usbCenterX, centerZ: usbCenterZ, mouthY: usbMouthY };
+  p.usbOpening = {
+    xMin: usbCenterX - 5.20, xMax: usbCenterX + 5.20,
+    zMin: usbCenterZ - 2.625, zMax: usbCenterZ + 2.625,
+    yMax: usbMouthY + 0.45,
+  };
+  p.usbCableBay = {
+    xMin: usbCenterX - p.usbCableBayWidth / 2,
+    xMax: usbCenterX + p.usbCableBayWidth / 2,
+    yMin: p.mainOuter.yMin - 8.20,
+    yMax: usbMouthY + p.usbBayAboveMouth,
+  };
+  p.bottomFeet = {
+    yMin: p.mainOuter.yMin - 8.00, yMax: p.mainOuter.yMin,
+    leftXMin: -62.00, leftXMax: p.usbCableBay.xMin,
+    rightXMin: 37.00, rightXMax: 56.00,
+  };
+  p.kickstandPivot = { y: p.kickstandPivotPrevious.y + drop, z: p.kickstandPivotPrevious.z };
+  p.kickstandFar = { y: p.kickstandFarPrevious.y + drop, z: p.kickstandFarPrevious.z };
+  p.kickstandPocketY = p.kickstandPocketYPrevious.map((y) => y + drop);
+}
 
 const oc = await opencascade({ locateFile: () => wasmPath });
 replicad.setOC(oc);
@@ -120,29 +221,75 @@ function buildFrontCover() {
       innerXMax, p.mainOuter.yMax, p.frontFaceBackZ),
   ]).simplify();
 
-  // Four back-facing heat-set-insert seats align with three display-PCB holes
-  // and the controller-PCB hole above the blocked display-board corner. The
-  // boss faces stop just ahead of the PCB front surface.
+  // Four back-facing heat-set-insert seats: the display PCB's two right-hand
+  // holes and the controller PCB's two top holes. The display bosses stop just
+  // ahead of the display PCB; the controller bosses stop short of the
+  // controller's front face (its Z is not measured) and get a screw-tip relief
+  // below the insert so an M2x16 reaches full engagement.
   p.closureHoleCenters.forEach(([centerX, centerY], index) => {
     const insertFaceZ = p.closureInsertFaceZ[index];
+    const controllerHole = index >= 2;
     cover = cover.fuse(cylinderZ(
       insertFaceZ, p.frontFaceBackZ - insertFaceZ + 0.20,
       centerX, centerY, p.enclosureInsertBossRadius,
     ));
-    if (index === 3) {
-      // Tie the long controller-board insert column into the left extension
-      // wall. The web begins just in front of the PCB plane, so it strengthens
-      // the insert without touching the board edge.
+    if (controllerHole) {
+      // Tie each controller column into the top wall, and the left one into
+      // the left wall as well. Both webs sit above the display PCB's top edge.
       cover = cover.fuse(box(
-        innerXMin, centerY - 2.00, insertFaceZ,
-        centerX, centerY + 2.00, -2.00,
+        centerX - 2.00, centerY, insertFaceZ,
+        centerX + 2.00, innerYMax + 0.10, p.frontFaceBackZ + 0.10,
       ));
+      if (index === 2) {
+        cover = cover.fuse(box(
+          innerXMin - 0.10, centerY - 2.00, insertFaceZ,
+          centerX, centerY + 2.00, p.frontFaceBackZ + 0.10,
+        ));
+      }
     }
     cover = cover.cut(cylinderZ(insertFaceZ - 0.10, p.enclosureInsertDepth,
       centerX, centerY, p.enclosureInsertDiameter / 2));
+    if (controllerHole) {
+      cover = cover.cut(cylinderZ(insertFaceZ - 0.10 + p.enclosureInsertDepth - 0.05,
+        p.controllerScrewReliefDepth + 0.05, centerX, centerY,
+        p.enclosureScrewClearanceDiameter / 2));
+    }
   });
 
+  // Relieve the rear edge of the bottom wall above the USB bay so a plug
+  // overmold up to ~10 mm tall clears the cover. Not visible from the front.
+  cover = cover.cut(box(
+    p.usbCableBay.xMin, p.mainOuter.yMin - 0.20, p.shellFrontZ - 0.20,
+    p.usbCableBay.xMax, innerYMin + 0.20, p.usbOvermoldNotchTopZ,
+  ));
+
   return cover.simplify();
+}
+
+// A 1 mm copy of the front face with guide tubes at the four screw positions.
+// Lay it on the screen of the assembled PCB stack and drop M2 screws (or 2 mm
+// drill bits) down the tubes: all four should enter their PCB holes while the
+// window frames the lit area. Prints in about 20 minutes, face down.
+function buildFitCheckPlate() {
+  const p = parameters;
+  let plate = box(
+    p.mainOuter.xMin, p.mainOuter.yMin, p.frontFaceBackZ,
+    p.mainOuter.xMax, p.mainOuter.yMax, p.visibleFrontZ,
+  ).cut(box(
+    p.bezelOpening.xMin, p.bezelOpening.yMin, p.frontFaceBackZ - 0.20,
+    p.bezelOpening.xMax, p.bezelOpening.yMax, p.visibleFrontZ + 0.20,
+  ));
+  p.closureHoleCenters.forEach(([centerX, centerY], index) => {
+    const endZ = p.fitCheckTubeEndZ[index];
+    plate = plate.fuse(cylinderZ(endZ, p.frontFaceBackZ - endZ + 0.10,
+      centerX, centerY, p.fitCheckTubeOuterRadius));
+  });
+  p.closureHoleCenters.forEach(([centerX, centerY], index) => {
+    const endZ = p.fitCheckTubeEndZ[index];
+    plate = plate.cut(cylinderZ(endZ - 0.20, p.visibleFrontZ - endZ + 0.40,
+      centerX, centerY, p.fitCheckTubeHoleDiameter / 2));
+  });
+  return plate.simplify();
 }
 
 function buildRearShell() {
@@ -168,27 +315,22 @@ function buildRearShell() {
       p.mainOuter.yMax - p.wallThickness, p.shellFrontZ + 0.50),
     // USB-C tunnel to the controller connector on the lower edge.
     box(p.usbOpening.xMin, p.mainOuter.yMin - 0.50, p.usbOpening.zMin,
-      p.usbOpening.xMax, 5.25, p.usbOpening.zMax),
+      p.usbOpening.xMax, p.usbOpening.yMax, p.usbOpening.zMax),
     // Open bottom/rear cable bay. It provides room for the plug body and lets
     // the cable turn toward the back between the two feet.
     box(p.usbCableBay.xMin, p.usbCableBay.yMin, p.shellBackZ - 0.40,
       p.usbCableBay.xMax, p.usbCableBay.yMax, p.shellFrontZ + 0.60),
   ]);
 
-  // Rear screw bosses contact the back of the display PCB around its four
-  // mounting holes. M2 screws enter from recessed pockets on the rear face,
-  // pass through the 3.2 mm PCB holes, and thread into the front-cover inserts.
+  // Rear screw posts behind the four screw positions. M2 screws enter from
+  // recessed pockets on the rear face, pass through the PCB holes (3.2 mm on
+  // the display PCB, 2.2 mm on the controller), and thread into the
+  // front-cover inserts. The display posts bear on the display PCB; the
+  // controller posts stop short of the controller's back face.
   p.closureHoleCenters.forEach(([centerX, centerY], index) => {
     const postEndZ = p.closurePostEndZ[index];
-    let post = cylinderZ(p.shellInnerBackZ, postEndZ - p.shellInnerBackZ,
-      centerX, centerY, 3.20);
-    if (index === 0) {
-      // The controller PCB begins 1.84 mm above this screw center. Relieve the
-      // post above Y=5.20 while retaining the 2.4 mm screw passage.
-      post = post.cut(box(centerX - 3.40, 5.20, p.shellInnerBackZ - 0.20,
-        centerX + 3.40, centerY + 3.40, postEndZ + 0.20));
-    }
-    shell = shell.fuse(post);
+    shell = shell.fuse(cylinderZ(p.shellInnerBackZ, postEndZ - p.shellInnerBackZ,
+      centerX, centerY, p.closurePostRadius[index]));
     shell = shell.cut(cylinderZ(p.shellBackZ - 0.30, 19.40,
       centerX, centerY, p.enclosureScrewClearanceDiameter / 2));
     shell = shell.cut(cylinderZ(p.shellBackZ - 0.30,
@@ -196,33 +338,37 @@ function buildRearShell() {
       centerX, centerY, p.enclosureScrewHeadDiameter / 2));
   });
 
-  // Two upper foam-tipped posts stabilize the far end of the controller PCB.
-  // The soldered header and the four PCB-mounted enclosure screws constrain
-  // the rest of the stack.
-  const controllerPostCenters = [
-    [-9.11, 72.40],
-  ];
-  for (const [centerX, centerY] of controllerPostCenters) {
-    shell = shell.fuse(cylinderZ(p.shellInnerBackZ, 10.15,
-      centerX, centerY, 2.60));
-  }
-
   // Shallow exterior pockets let the folded prop sit flush without thinning
   // the 2.6 mm rear wall below 1.6 mm.
-  shell = shell.cut(box(-15.10, -11.60, -21.30, -10.40, 44.70, -20.00));
-  shell = shell.cut(box(4.40, -11.60, -21.30, 9.10, 44.70, -20.00));
+  const [pocketYMin, pocketYMax] = p.kickstandPocketY;
+  shell = shell.cut(box(-15.10, pocketYMin, -21.30, -10.40, pocketYMax, -20.00));
+  shell = shell.cut(box(4.40, pocketYMin, -21.30, 9.10, pocketYMax, -20.00));
 
-  // External friction-pivot bosses for the folding desk prop.
+  // External pivot lugs for the folding desk prop. The pivot hole goes all
+  // the way through each lug (prototype 8 had a blind insert pocket that
+  // opened away from the arm, so no screw could reach the arm).
   const pivotY = p.kickstandPivot.y;
   const pivotZ = p.kickstandPivot.z;
   shell = shell.fuse(cylinderX(-19.00, 4.00, pivotY, pivotZ, 4.00));
   shell = shell.fuse(cylinderX(9.00, 4.00, pivotY, pivotZ, 4.00));
-  shell = shell.cut(cylinderX(-19.20, p.kickstandInsertDepth + 0.20,
-    pivotY, pivotZ, p.kickstandInsertDiameter / 2));
-  shell = shell.cut(cylinderX(13.00 - p.kickstandInsertDepth,
-    p.kickstandInsertDepth + 0.20, pivotY, pivotZ, p.kickstandInsertDiameter / 2));
+  shell = shell.cut(cylinderX(-19.40, 4.80, pivotY, pivotZ,
+    p.kickstandPivotHoleDiameter / 2));
+  shell = shell.cut(cylinderX(8.60, 4.80, pivotY, pivotZ,
+    p.kickstandPivotHoleDiameter / 2));
 
   return shell;
+}
+
+// Hexagonal prism along X. Vertices point along +/-Y, which is vertical when
+// the kickstand prints on its foot, so the pocket roof is self-supporting.
+function hexPrismX(xMin, length, centerY, centerZ, acrossFlats) {
+  const half = acrossFlats / 2;
+  const slab = () => box(xMin, centerY - acrossFlats, centerZ - half,
+    xMin + length, centerY + acrossFlats, centerZ + half);
+  const axisOrigin = [0, centerY, centerZ];
+  return slab()
+    .intersect(slab().rotate(60, axisOrigin, [1, 0, 0]))
+    .intersect(slab().rotate(-60, axisOrigin, [1, 0, 0]));
 }
 
 function buildKickstand() {
@@ -247,6 +393,11 @@ function buildKickstand() {
     arm = arm.cut(cylinderX(xMin - 0.20, xMax - xMin + 0.40,
       p.kickstandPivot.y, p.kickstandPivot.z,
       p.kickstandPivotHoleDiameter / 2));
+    // Captive M2 nut on the arm's inner face (the face toward the other arm).
+    const innerFaceX = xMin < 0 ? xMax : xMin;
+    const trapXMin = xMin < 0 ? innerFaceX - p.kickstandNutDepth : innerFaceX - 0.20;
+    arm = arm.cut(hexPrismX(trapXMin, p.kickstandNutDepth + 0.20,
+      p.kickstandPivot.y, p.kickstandPivot.z, p.kickstandNutAcrossFlats));
     stand = stand ? stand.fuse(arm) : arm;
   }
 
@@ -271,8 +422,33 @@ const frontBezelReferenceDesign = enclosureSolids
 const frontCoverDesign = buildFrontCover();
 let pcbAssembly = await importStep(sourcePcbPath);
 pcbAssembly = pcbAssembly.translate(parameters.pcbTranslation);
+
+// As-built PCB reference: the supplied STEP with the controller PCB and the
+// display header it hangs on moved by controllerAsBuiltOffset, plus a
+// full-thickness controller slab (the STEP's own slab is 0.411 mm).
+const pcbSolids = solidChildren(pcbAssembly);
+const expectedSolidSizes = { 0: [51.00, 70.00], 1: [8.946, 7.604], 302: [108.04, 61.74], 311: [83.52, 55.68] };
+for (const [index, [sizeX, sizeY]] of Object.entries(expectedSolidSizes)) {
+  const [min, max] = pcbSolids[index].boundingBox.bounds;
+  if (Math.abs(max[0] - min[0] - sizeX) > 0.01 || Math.abs(max[1] - min[1] - sizeY) > 0.01) {
+    throw new Error(`PCB STEP solid ${index} is not the expected part; the solid order changed.`);
+  }
+}
+const movesWithController = (index) => parameters.controllerSolidIndexRanges
+  .some(([first, last]) => index >= first && index <= last);
+const asBuiltPcbParts = pcbSolids.map((solid, index) => (
+  movesWithController(index) ? solid.clone().translate(...parameters.controllerAsBuiltOffset) : solid));
+const ctl = parameters.controllerAsBuilt;
+const asBuiltControllerSlab = box(ctl.xMin, ctl.yMin, ctl.backZ, ctl.xMax, ctl.yMax, ctl.frontZ)
+  .translate(...parameters.enclosureToPcbTranslation);
+// makeCompound deletes the shapes it is given, so hand it clones.
+const asBuiltPcb = replicad.makeCompound(
+  [...asBuiltPcbParts, asBuiltControllerSlab].map((shape) => shape.clone()),
+);
+
 const rearShellDesign = buildRearShell();
 const kickstandDesign = buildKickstand();
+const fitCheckPlateDesign = buildFitCheckPlate();
 const deployedKickstandDesign = kickstandDesign.clone().rotate(
   30.00,
   [0, parameters.kickstandPivot.y, parameters.kickstandPivot.z],
@@ -287,6 +463,7 @@ const frontCover = frontCoverDesign.clone().translate(...outputTranslation);
 const rearShell = rearShellDesign.clone().translate(...outputTranslation);
 const kickstand = kickstandDesign.clone().translate(...outputTranslation);
 const deployedKickstand = deployedKickstandDesign.clone().translate(...outputTranslation);
+const fitCheckPlate = fitCheckPlateDesign.clone().translate(...outputTranslation);
 
 const foldedStandOverlap = replicad.measureVolume(
   rearShell.clone().intersect(kickstand.clone()),
@@ -294,17 +471,31 @@ const foldedStandOverlap = replicad.measureVolume(
 const bezelShellOverlap = replicad.measureVolume(
   frontCover.clone().intersect(rearShell.clone()),
 );
-const pcbFrontCoverIntersection = frontCover.clone().intersect(pcbAssembly.clone());
-const pcbRearShellIntersection = rearShell.clone().intersect(pcbAssembly.clone());
+// Fit is judged against the AS-BUILT stack. The raw STEP is kept for the
+// record: prototype 8 passed against it and still did not fit.
+const pcbFrontCoverIntersection = frontCover.clone().intersect(asBuiltPcb.clone());
+const pcbRearShellIntersection = rearShell.clone().intersect(asBuiltPcb.clone());
+const pcbFitPlateIntersection = fitCheckPlate.clone().intersect(asBuiltPcb.clone());
 const pcbOriginalBezelIntersection = frontBezelReference.clone().intersect(pcbAssembly.clone());
 const pcbFrontCoverOverlap = replicad.measureVolume(pcbFrontCoverIntersection);
 const pcbRearShellOverlap = replicad.measureVolume(pcbRearShellIntersection);
+const pcbFitPlateOverlap = replicad.measureVolume(pcbFitPlateIntersection);
 const pcbOriginalBezelOverlap = replicad.measureVolume(pcbOriginalBezelIntersection);
+const rawStepFrontCoverOverlap = replicad.measureVolume(frontCover.clone().intersect(pcbAssembly.clone()));
+const rawStepRearShellOverlap = replicad.measureVolume(rearShell.clone().intersect(pcbAssembly.clone()));
 
 await writeBlob(path.join(outputDir, 'MSV3_display_front_bezel_reference.step'), frontBezelReference.blobSTEP());
 await writeBlob(path.join(outputDir, 'MSV3_display_front_cover.step'), frontCover.blobSTEP());
 await writeBlob(path.join(outputDir, 'MSV3_display_rear_shell.step'), rearShell.blobSTEP());
 await writeBlob(path.join(outputDir, 'MSV3_display_kickstand.step'), kickstand.blobSTEP());
+await writeBlob(path.join(outputDir, 'MSV3_display_fit_check_plate.step'), fitCheckPlate.blobSTEP());
+await writeBlob(
+  path.join(outputDir, 'MSV3_display_asbuilt_pcb_reference.step'),
+  replicad.exportSTEP([
+    ...asBuiltPcbParts.map((shape, index) => ({ shape, name: `As-built PCB solid ${index}`, color: '#26733a' })),
+    { shape: asBuiltControllerSlab, name: 'As-built controller PCB 1.6 mm slab', color: '#1f5f30' },
+  ]),
+);
 await writeBlob(
   path.join(outputDir, 'MSV3_display_enclosure_assembly.step'),
   replicad.exportSTEP([
@@ -319,14 +510,14 @@ await writeBlob(
     { shape: frontCover, name: 'Extended Front Cover with M2 Inserts', color: '#737a80' },
     { shape: rearShell, name: 'Single Rectangle Rear Shell', color: '#345f78' },
     { shape: kickstand, name: 'Adjustable Folding Kickstand', color: '#d3a64d' },
-    { shape: pcbAssembly, name: 'Two-PCB Soldered Assembly Reference', color: '#26733a' },
+    { shape: asBuiltPcb, name: 'As-Built Two-PCB Stack Reference', color: '#26733a' },
   ]),
 );
 await writeBlob(
   path.join(outputDir, 'MSV3_display_pcb_alignment_check.step'),
   replicad.exportSTEP([
     { shape: frontCover, name: 'Origin-Aligned Front Cover', color: '#737a80' },
-    { shape: pcbAssembly, name: 'Complete Native-Origin Two-PCB Assembly', color: '#26733a' },
+    { shape: asBuiltPcb, name: 'As-Built Two-PCB Stack Reference', color: '#26733a' },
   ]),
 );
 await writeBlob(
@@ -378,6 +569,14 @@ kickstandForPrint = kickstandForPrint.translate(
 );
 await writeBlob(path.join(outputDir, 'MSV3_display_kickstand_print.stl'),
   kickstandForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
+// Fit-check plate prints face down like the front cover; the tubes point up.
+let fitCheckPlateForPrint = fitCheckPlate.clone().rotate(180, [0, 0, 0], [1, 0, 0]);
+const fitPlatePrintMin = fitCheckPlateForPrint.boundingBox.bounds[0];
+fitCheckPlateForPrint = fitCheckPlateForPrint.translate(
+  -fitPlatePrintMin[0], -fitPlatePrintMin[1], -fitPlatePrintMin[2],
+);
+await writeBlob(path.join(outputDir, 'MSV3_display_fit_check_plate_print.stl'),
+  fitCheckPlateForPrint.blobSTL({ tolerance: 0.06, angularTolerance: 0.25, binary: true }));
 
 const activeCenter = [
   (parameters.bezelOpening.xMin + parameters.bezelOpening.xMax) / 2 + outputTranslation[0],
@@ -409,15 +608,60 @@ const outputCoordinates = {
     parameters.kickstandPivot.z + outputTranslation[2],
   ],
 };
+const p = parameters;
+const borders = {
+  left: p.bezelOpening.xMin - p.mainOuter.xMin,
+  right: p.mainOuter.xMax - p.bezelOpening.xMax,
+  top: p.mainOuter.yMax - p.bezelOpening.yMax,
+  bottom: p.bezelOpening.yMin - p.mainOuter.yMin,
+};
+// Screw lengths: the head seats at the bottom of the rear pocket; the tip must
+// stop 0.10 mm short of the blind end (insert pocket, plus the relief on the
+// controller bosses).
+const headSeatZ = p.shellBackZ + p.enclosureScrewHeadDepth;
+const screwPlan = p.closureHoleCenters.map((center, index) => {
+  const insertFaceZ = p.closureInsertFaceZ[index];
+  const pocketEndZ = insertFaceZ - 0.10 + p.enclosureInsertDepth;
+  const blindEndZ = index >= 2 ? pocketEndZ + p.controllerScrewReliefDepth : pocketEndZ;
+  const options = [];
+  for (const length of [12, 14, 16, 18, 20, 22]) {
+    for (const washer of [0, 0.30]) {
+      // A washer lifts the head off the pocket floor, i.e. toward the rear (-Z).
+      const tipZ = headSeatZ - washer + length;
+      if (tipZ > blindEndZ - 0.10) continue;
+      const engagement = Math.min(tipZ, insertFaceZ + p.enclosureInsertDepth) - insertFaceZ;
+      options.push({ length, washerMm: washer, tipZ, engagement });
+    }
+  }
+  options.sort((a, b) => b.engagement - a.engagement || a.washerMm - b.washerMm);
+  return {
+    hole: ['display PCB lower-right', 'display PCB upper-right',
+      'controller PCB upper-left', 'controller PCB upper-right'][index],
+    center,
+    blindEndZ,
+    best: options[0],
+    noWasher: options.find((option) => option.washerMm === 0),
+  };
+});
 const designReport = {
-  version: 'prototype-8-p1s-0p4-pla',
+  version: 'prototype-9-asbuilt-fit',
   units: 'mm',
   parameters,
   outputCoordinates,
+  changesFromPrototype8: {
+    window: 'cut to the 83.52 x 55.68 mm LCD active area (was 88 x 58 mm)',
+    mounting: 'display PCB right-hand pair + controller PCB top pair (was three display holes + one controller hole)',
+    controllerPosition: 'enclosure built around the as-built controller position, not the STEP model',
+    symmetry: 'top and bottom borders equal',
+    usb: 'cable bay re-centred on the as-built receptacle and widened to 16.5 mm; front-cover overmold notch',
+    kickstand: 'pivot holes go through both lugs; captive M2 nut trap in each arm; pivot moved down with the bottom edge',
+    removed: 'display lower-left post and boss; foam-tipped controller support post',
+  },
+  borders,
   frontCoverConstruction: {
-    part: 'new single-piece planar frame using the proven screen-window dimensions from display_enclosure.step',
+    part: 'single-piece planar frame with one LCD opening',
     modifiedLegacyBody: false,
-    construction: 'one face slab, one LCD opening, four continuous perimeter walls, and four blind internal insert bosses',
+    construction: 'one face slab, one LCD opening, four continuous perimeter walls, four blind internal insert bosses, and a USB overmold notch in the rear edge of the bottom wall',
     originalBounds: frontBezelReference.boundingBox.bounds,
     finishedBounds: frontCover.boundingBox.bounds,
     openingCenter: activeCenter,
@@ -428,59 +672,71 @@ const designReport = {
   },
   pcbFit: {
     sourceAssembly: 'MSV3_desktop_display.step',
-    solidCount: solidChildren(pcbAssembly).length,
+    reference: 'AS-BUILT: STEP solids 0-301 and 312-326 moved by controllerAsBuiltOffset, plus a 1.6 mm controller slab (MSV3_display_asbuilt_pcb_reference.step)',
+    solidCount: pcbSolids.length,
     nativeBounds: pcbAssembly.boundingBox.bounds,
+    asBuiltBounds: asBuiltPcb.boundingBox.bounds,
     nativeOriginPreserved: true,
-    displayGlassRecessBelowBezelFront: 0.15,
-    unifiedRectangle: true,
-    backComponentClearance: 0.87,
-    displayBoardRetention: 'clamped at three unobstructed 3.2 mm display-board mounting holes',
-    controllerBoardRetention: 'fourth enclosure screw passes through the controller board upper-left mounting hole',
-    controllerSupport: 'soldered header plus two foam-tipped rear posts at the upper mounting holes',
+    controllerAsBuiltOffset: p.controllerAsBuiltOffset,
+    controllerAsBuiltOffsetConfidence: 'about +/-0.4 mm in X and Y from photo and caliper evidence; Z not measured',
+    controllerAsBuilt: p.controllerAsBuilt,
+    usbAsBuilt: p.usbAsBuilt,
+    displayGlassRecessBelowBezelFront: p.visibleFrontZ - 1.933,
+    displayBoardRetention: 'clamped at the two right-hand 3.2 mm display-board holes',
+    controllerBoardRetention: 'two M2 screws through the controller top-edge 2.2 mm holes; bosses stop short of both faces',
+    controllerFrontGap: p.closureInsertFaceZ[2] - p.controllerAsBuilt.frontZ,
+    controllerRearGap: p.controllerAsBuilt.backZ - p.closurePostEndZ[2],
     frontCoverIntersectionVolume: pcbFrontCoverOverlap,
-    originalReferenceIntersectionVolume: pcbOriginalBezelOverlap,
     rearShellIntersectionVolume: pcbRearShellOverlap,
+    fitCheckPlateIntersectionVolume: pcbFitPlateOverlap,
+    originalReferenceIntersectionVolume: pcbOriginalBezelOverlap,
+    rawStepFrontCoverIntersectionVolume: rawStepFrontCoverOverlap,
+    rawStepRearShellIntersectionVolume: rawStepRearShellOverlap,
   },
   antenna: {
-    placement: 'internal antenna; exact location and cable routing to be checked with the ordered part',
+    placement: 'internal; mount after the enclosure is confirmed (maintainer 2026-11-17)',
     externalOpening: false,
   },
   usb: {
     connectorDirection: 'downward',
+    receptacleCenterX: p.usbAsBuilt.centerX,
+    bayCenterX: (p.usbCableBay.xMin + p.usbCableBay.xMax) / 2,
+    bayWidth: p.usbCableBay.xMax - p.usbCableBay.xMin,
+    mouthToBodyBottom: p.usbAsBuilt.mouthY - p.mainOuter.yMin,
+    mouthToDesk: p.usbAsBuilt.mouthY - p.bottomFeet.yMin,
+    overmoldClearanceAboveCenter: p.usbOvermoldNotchTopZ - p.usbAsBuilt.centerZ,
     access: 'open bottom/rear cable bay between two 8 mm feet',
-    purpose: 'allows a straight USB-C plug to enter and its cable to turn toward the rear above the desk',
   },
   stand: {
     type: 'fold-flat friction kickstand',
-    fasteners: 'two M2 screws into 2.9 mm x 3.2 mm heat-set-insert pockets',
+    fasteners: "two M2x10 screws, heads on the shell lugs, through 2.4 mm holes into captive M2 nuts on the arms' inner faces",
+    nutTrap: { acrossFlats: p.kickstandNutAcrossFlats, depth: p.kickstandNutDepth },
     armCenterDistance: Math.hypot(
-      parameters.kickstandFar.y - parameters.kickstandPivot.y,
-      parameters.kickstandFar.z - parameters.kickstandPivot.z,
+      p.kickstandFar.y - p.kickstandPivot.y,
+      p.kickstandFar.z - p.kickstandPivot.z,
     ),
-    armThickness: parameters.kickstandArmThickness,
+    armThickness: p.kickstandArmThickness,
+    pivotMovedDownBy: -p.bottomEdgeDrop,
     foldedWithinMainXYFootprint: true,
-    adjustment: 'set display lean angle by rotating the prop and tightening both M2 pivots',
+    adjustment: 'set the lean angle, then tighten both screws against the captive nuts',
     foldedIntersectionVolume: foldedStandOverlap,
   },
   closure: {
-    type: 'four M2 screws through three display-PCB holes and one controller-PCB hole into front-cover heat-set inserts',
-    screwCount: parameters.closureHoleCenters.length,
-    clearanceHoleDiameter: parameters.enclosureScrewClearanceDiameter,
-    insertPocket: {
-      diameter: parameters.enclosureInsertDiameter,
-      depth: parameters.enclosureInsertDepth,
-    },
-    minimumInsertBlindWall: parameters.visibleFrontZ
-      - (parameters.closureInsertFaceZ[0] + parameters.enclosureInsertDepth),
-    frontFaceThickness: parameters.visibleFrontZ - parameters.frontFaceBackZ,
-    controllerInsertFaceClearance: (
-      parameters.closureInsertFaceZ[3] + outputTranslation[2]
-    ) - (-4.58852),
-    controllerRearPostClearance: -5.00 - (
-      parameters.closurePostEndZ[3] + outputTranslation[2]
-    ),
-    pcbMountingHoleDiameter: 3.20,
+    type: 'four M2 screws from the rear: two through the display PCB right-hand holes, two through the controller PCB top holes, into front-cover heat-set inserts',
+    screwCount: p.closureHoleCenters.length,
+    clearanceHoleDiameter: p.enclosureScrewClearanceDiameter,
+    insertPocket: { diameter: p.enclosureInsertDiameter, depth: p.enclosureInsertDepth },
+    minimumInsertBlindWall: p.visibleFrontZ
+      - (p.closureInsertFaceZ[0] + p.enclosureInsertDepth),
+    frontFaceThickness: p.visibleFrontZ - p.frontFaceBackZ,
+    pcbMountingHoleDiameter: { display: 3.20, controller: 2.20 },
+    screwPlan,
     closedBezelIntersectionVolume: bezelShellOverlap,
+  },
+  fitCheckPlate: {
+    file: 'MSV3_display_fit_check_plate_print.stl',
+    tubeHoleDiameter: p.fitCheckTubeHoleDiameter,
+    use: 'lay on the screen; drop M2 screws down the four tubes; all four must enter their PCB holes while the window frames the lit area',
   },
   printProfile: {
     printer: 'Bambu Lab P1S',
@@ -489,14 +745,15 @@ const designReport = {
     layerHeight: 0.20,
     nominalLineWidth: 0.42,
     wallLoops: 3,
-    supportPlan: 'front cover and kickstand: none; rear shell: build-plate-only tree supports',
+    supportPlan: 'front cover, kickstand and fit-check plate: none; rear shell: build-plate-only tree supports',
     frontCoverOrientation: 'visible bezel face on bed',
     rearShellOrientation: 'continuous right side wall on bed, shell vertical',
     kickstandOrientation: 'wide foot on bed, arms vertical',
-    minimumWallThickness: parameters.wallThickness,
-    frontFaceThickness: parameters.visibleFrontZ - parameters.frontFaceBackZ,
+    fitCheckPlateOrientation: 'face on bed, tubes up',
+    minimumWallThickness: p.wallThickness,
+    frontFaceThickness: p.visibleFrontZ - p.frontFaceBackZ,
     minimumInsertBossRadialWall:
-      parameters.enclosureInsertBossRadius - parameters.enclosureInsertDiameter / 2,
+      p.enclosureInsertBossRadius - p.enclosureInsertDiameter / 2,
   },
 };
 fs.writeFileSync(path.join(outputDir, 'design_report.json'), `${JSON.stringify(designReport, null, 2)}\n`);
@@ -506,14 +763,18 @@ console.log(JSON.stringify({
   frontCoverBounds: frontCover.boundingBox.bounds,
   rearShellBounds: rearShell.boundingBox.bounds,
   kickstandBounds: kickstand.boundingBox.bounds,
-  pcbBounds: pcbAssembly.boundingBox.bounds,
+  fitCheckPlateBounds: fitCheckPlate.boundingBox.bounds,
+  borders,
   foldedStandOverlap,
   bezelShellOverlap,
   pcbFrontCoverOverlap,
-  pcbOriginalBezelOverlap,
   pcbRearShellOverlap,
+  pcbFitPlateOverlap,
+  rawStepFrontCoverOverlap,
+  rawStepRearShellOverlap,
   pcbFrontCoverIntersectionBounds: pcbFrontCoverOverlap > 0.001
     ? pcbFrontCoverIntersection.boundingBox.bounds : null,
   pcbRearShellIntersectionBounds: pcbRearShellOverlap > 0.001
     ? pcbRearShellIntersection.boundingBox.bounds : null,
+  screwPlan: screwPlan.map(({ hole, best, noWasher }) => ({ hole, best, noWasher })),
 }, null, 2));

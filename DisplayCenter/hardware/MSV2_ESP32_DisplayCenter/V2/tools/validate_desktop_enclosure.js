@@ -11,6 +11,24 @@ const occtimportjs = require(path.resolve(
 
 const PCB_TRANSLATION = [0.00, 0.00, 0.00];
 
+// Prototype 9 (2026-11-17): the controller PCB does not sit where the STEP
+// draws it. This validator states the as-built offset independently of the
+// generator and checks fit against it (see the generator's parameter comment
+// for the evidence). STEP meshes 0-301 are the controller PCB; 312-326 are the
+// display header it hangs on; both move together.
+const AS_BUILT_OFFSET = [-3.40, -3.80, -0.30];
+const AS_BUILT_MOVED_MESHES = [[0, 301], [312, 326]];
+const meshMovesWithController = (index) => AS_BUILT_MOVED_MESHES
+  .some(([first, last]) => index >= first && index <= last);
+// Output frame (PCB STEP native frame). Controller slab is 1.6 mm, back face
+// at model -8.00 design (-5.00 output) moved by the Z offset.
+const CONTROLLER_BACK_Z = -5.00 + AS_BUILT_OFFSET[2];
+const CONTROLLER_FRONT_Z = CONTROLLER_BACK_Z + 1.60;
+const OUT = { xMin: -70.39, xMax: 51.61, yMin: -26.680, yMax: 60.900 };
+const FEET_BOTTOM_Y = OUT.yMin - 8.00;
+const WALL = 2.20;
+const PIVOT = { y: 18.320, z: -20.80 };
+
 function boundsForMeshes(meshes) {
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
@@ -169,6 +187,8 @@ occtimportjs.then((occt) => {
     deployedAssembly: 'MSV3_display_enclosure_deployed.step',
     fitCheckAssembly: 'MSV3_display_fit_check_assembly.step',
     pcbAlignmentCheck: 'MSV3_display_pcb_alignment_check.step',
+    fitCheckPlate: 'MSV3_display_fit_check_plate.step',
+    asBuiltPcbReference: 'MSV3_display_asbuilt_pcb_reference.step',
   };
   const stepReports = {};
   const stepResults = {};
@@ -189,15 +209,17 @@ occtimportjs.then((occt) => {
     kickstand: 1,
     foldedAssembly: 3,
     deployedAssembly: 3,
-    pcbAlignmentCheck: 339,
+    fitCheckPlate: 1,
+    asBuiltPcbReference: 339,
+    pcbAlignmentCheck: 340,
   };
   for (const [name, expected] of Object.entries(expectedMeshCounts)) {
     if (stepReports[name].meshCount !== expected) {
       errors.push(`${name} has ${stepReports[name].meshCount} meshes; expected ${expected}`);
     }
   }
-  if (stepReports.fitCheckAssembly.meshCount < 340) {
-    errors.push('Fit-check assembly does not contain the complete two-PCB reference.');
+  if (stepReports.fitCheckAssembly.meshCount < 342) {
+    errors.push('Fit-check assembly does not contain the complete as-built two-PCB reference.');
   }
 
   const stlReports = {};
@@ -205,6 +227,7 @@ occtimportjs.then((occt) => {
     frontCover: 'MSV3_display_front_cover_print.stl',
     rearShell: 'MSV3_display_rear_shell_print.stl',
     kickstand: 'MSV3_display_kickstand_print.stl',
+    fitCheckPlate: 'MSV3_display_fit_check_plate_print.stl',
   })) {
     const report = inspectBinaryStl(path.join(outputDir, basename));
     stlReports[name] = report;
@@ -228,6 +251,19 @@ occtimportjs.then((occt) => {
     max: allPcbBounds.max.map((value, axis) => value + PCB_TRANSLATION[axis]),
   };
 
+  const expectedMeshNames = {
+    302: 'PCB_61p74x108p04x1p6_with_3p2_mount_holes',
+    311: 'LCD_active_area_55p68x83p52',
+    312: 'J2_14pin_header_plastic_approx',
+  };
+  for (const [index, name] of Object.entries(expectedMeshNames)) {
+    if (pcb.meshes[index]?.name !== name) {
+      errors.push(`PCB STEP mesh ${index} is not ${name}; the as-built mesh ranges no longer apply.`);
+    }
+  }
+  const meshOffset = (index) => (meshMovesWithController(index)
+    ? AS_BUILT_OFFSET.map((value, axis) => value + PCB_TRANSLATION[axis]) : PCB_TRANSLATION);
+
   const activeMesh = pcb.meshes.find((mesh) => mesh.name === 'LCD_active_area_55p68x83p52');
   if (!activeMesh) errors.push('Could not identify the LCD active-area reference mesh.');
   const activeBounds = activeMesh ? translatedBounds(activeMesh, PCB_TRANSLATION) : null;
@@ -245,44 +281,76 @@ occtimportjs.then((occt) => {
     errors.push('Display glass recess is outside the 0.10-0.25 mm target.');
   }
 
+  // Screw positions (output frame): display PCB right-hand pair, then the
+  // controller's top pair at their as-built positions (45.00 mm apart, drill file).
+  const expectedClosureCenters = [
+    [38.77, -10.3385], [38.77, 44.5600], [-63.90, 54.700], [-18.90, 54.700],
+  ];
+  const insertFaceZ = [0.85, 0.85, -3.10, -3.10];
+  const postEndZ = [-1.00, -1.00, -5.90, -5.90];
+
+  // Every as-built vertex behind the display front must lie inside the cavity;
+  // near the controller screws, nothing may reach the boss faces or post ends.
   let outsideCavityVertexCount = 0;
-  let controllerFrontMostZ = -Infinity;
-  for (const mesh of pcb.meshes) {
+  let asBuiltMinZ = Infinity;
+  let controllerFrontMostNearScrews = CONTROLLER_FRONT_Z;
+  let controllerRearMostNearScrews = CONTROLLER_BACK_Z;
+  pcb.meshes.forEach((mesh, meshIndex) => {
+    const offset = meshOffset(meshIndex);
+    const moved = meshMovesWithController(meshIndex);
     const values = mesh.attributes.position.array;
     for (let index = 0; index < values.length; index += 3) {
-      const x = values[index] + PCB_TRANSLATION[0];
-      const y = values[index + 1] + PCB_TRANSLATION[1];
-      const z = values[index + 2] + PCB_TRANSLATION[2];
-      if (y >= 51.597) controllerFrontMostZ = Math.max(controllerFrontMostZ, z);
+      const x = values[index] + offset[0];
+      const y = values[index + 1] + offset[1];
+      const z = values[index + 2] + offset[2];
+      asBuiltMinZ = Math.min(asBuiltMinZ, z);
+      if (moved) {
+        const nearScrew = expectedClosureCenters.slice(2)
+          .some(([cx, cy]) => Math.hypot(x - cx, y - cy) <= 3.30);
+        if (nearScrew && z > CONTROLLER_FRONT_Z - 0.01) {
+          controllerFrontMostNearScrews = Math.max(controllerFrontMostNearScrews, z);
+        }
+        if (nearScrew && z < CONTROLLER_BACK_Z + 0.01) {
+          controllerRearMostNearScrews = Math.min(controllerRearMostNearScrews, z);
+        }
+      }
       if (z >= -2.70) continue;
-      const inMain = x >= -68.19 && x <= 49.41 && y >= -15.703 && y <= 61.897
-        && z >= -15.40;
+      const inMain = x >= OUT.xMin + WALL && x <= OUT.xMax - WALL
+        && y >= OUT.yMin + WALL && y <= OUT.yMax - WALL && z >= -15.40;
       if (!inMain) outsideCavityVertexCount += 1;
     }
-  }
+  });
   if (outsideCavityVertexCount) {
-    errors.push(`${outsideCavityVertexCount} PCB vertices fall outside the rear-shell cavities.`);
+    errors.push(`${outsideCavityVertexCount} as-built PCB vertices fall outside the rear-shell cavity.`);
   }
-  const backComponentClearance = fittedPcbBounds.min[2] - (-15.40);
-  if (backComponentClearance < 0.75) errors.push('Rear component clearance is below 0.75 mm.');
-  const controllerFrontCapClearance = 1.00 - controllerFrontMostZ;
-  if (controllerFrontCapClearance < 1.50) {
-    errors.push('Unified front-cover controller clearance is below 1.50 mm.');
+  // Same cavity depth as prototype 8, which closed over the real stack; the
+  // as-built Z offset is an unmeasured estimate, hence the lower 0.50 floor.
+  const backComponentClearance = asBuiltMinZ - (-15.40);
+  if (backComponentClearance < 0.50) errors.push('As-built rear component clearance is below 0.50 mm.');
+  const controllerFrontGap = insertFaceZ[2] - controllerFrontMostNearScrews;
+  const controllerRearGap = controllerRearMostNearScrews - postEndZ[2];
+  if (controllerFrontGap < 0.30 || controllerFrontGap > 1.00
+      || controllerRearGap < 0.30 || controllerRearGap > 1.00) {
+    errors.push('Controller boss/post gaps are outside 0.30-1.00 mm at the as-built position.');
   }
 
   const usbMesh = pcb.meshes[1];
-  const usbBounds = translatedBounds(usbMesh, PCB_TRANSLATION);
-  const usbOpening = { xMin: -42.69, xMax: -32.29, zMin: -8.80, zMax: -3.55, innerY: -8.653 };
+  const usbBounds = translatedBounds(usbMesh, meshOffset(1));
+  const usbOpening = { xMin: -46.10, xMax: -35.70, zMin: -9.105, zMax: -3.855, innerY: -12.453 };
   const usbFits = usbBounds.min[0] >= usbOpening.xMin
     && usbBounds.max[0] <= usbOpening.xMax
     && usbBounds.min[2] >= usbOpening.zMin
     && usbBounds.max[2] <= usbOpening.zMax
     && usbBounds.min[1] <= usbOpening.innerY;
-  if (!usbFits) errors.push('USB-C connector does not fit through the lower-wall tunnel.');
-  const usbCableBay = { xMin: -45.39, xMax: -29.39, yMin: -26.103, yMax: -8.303 };
+  if (!usbFits) errors.push('As-built USB-C connector does not fit through the lower-wall tunnel.');
+  const usbCenterX = (usbBounds.min[0] + usbBounds.max[0]) / 2;
+  const usbCableBay = { xMin: -49.15, xMax: -32.65, yMin: OUT.yMin - 8.20, yMax: -12.103 };
+  if (!approx((usbCableBay.xMin + usbCableBay.xMax) / 2, usbCenterX, 0.05)) {
+    errors.push('USB cable bay is not centred on the as-built USB-C receptacle.');
+  }
   const usbBaySurroundsTunnel = usbCableBay.xMin <= usbOpening.xMin
     && usbCableBay.xMax >= usbOpening.xMax
-    && usbCableBay.yMin <= -26.00
+    && usbCableBay.yMin <= FEET_BOTTOM_Y
     && usbCableBay.yMax >= usbOpening.innerY;
   if (!usbBaySurroundsTunnel) {
     errors.push('Bottom/rear USB cable bay does not surround the connector tunnel.');
@@ -291,7 +359,9 @@ occtimportjs.then((occt) => {
   const formerAntennaBoreCenter = [44.11, 56.097];
   const rearShellMesh = stepResults.rearShell.meshes[0];
   const formerAntennaBoreChecks = [
-    [0, 0], [-4.80, 0], [4.80, 0], [0, -4.80], [0, 4.80],
+    // Prototype 9's top wall starts 2.6 mm above the former bore centre, so
+    // the +Y sample stays inside the cavity footprint.
+    [0, 0], [-4.80, 0], [4.80, 0], [0, -4.80], [0, 2.00],
   ].map(([dx, dy]) => ({
     x: formerAntennaBoreCenter[0] + dx,
     y: formerAntennaBoreCenter[1] + dy,
@@ -341,21 +411,38 @@ occtimportjs.then((occt) => {
   if (addedFrontContact > 25.00) {
     errors.push('Front-cover changes add more than 25 mm^3 of PCB contact beyond the accepted reference bezel.');
   }
-  const standWithinFootprint = stepReports.kickstand.min[0] >= -70.39
-    && stepReports.kickstand.max[0] <= 51.61
-    && stepReports.kickstand.min[1] >= -25.903
-    && stepReports.kickstand.max[1] <= 64.097;
+  if (reportData.pcbFit.fitCheckPlateIntersectionVolume > 0.001) {
+    errors.push('Fit-check plate intersects the as-built PCB stack.');
+  }
+  const reportOffset = reportData.parameters?.controllerAsBuiltOffset || [];
+  if (!AS_BUILT_OFFSET.every((value, axis) => approx(reportOffset[axis], value, 0.001))) {
+    errors.push('Generator and validator disagree on the as-built controller offset.');
+  }
+  const standWithinFootprint = stepReports.kickstand.min[0] >= OUT.xMin
+    && stepReports.kickstand.max[0] <= OUT.xMax
+    && stepReports.kickstand.min[1] >= FEET_BOTTOM_Y
+    && stepReports.kickstand.max[1] <= OUT.yMax;
   if (!standWithinFootprint) errors.push('Folded kickstand exceeds the main XY footprint.');
 
-  const unifiedRectangle = approx(stepReports.frontCover.min[0], -70.39)
-    && approx(stepReports.frontCover.max[0], 51.61)
-    && approx(stepReports.frontCover.max[1], 64.097)
-    && approx(stepReports.rearShell.max[1], 64.097);
+  const unifiedRectangle = approx(stepReports.frontCover.min[0], OUT.xMin)
+    && approx(stepReports.frontCover.max[0], OUT.xMax)
+    && approx(stepReports.frontCover.min[1], OUT.yMin)
+    && approx(stepReports.frontCover.max[1], OUT.yMax)
+    && approx(stepReports.rearShell.max[1], OUT.yMax);
   if (!unifiedRectangle) errors.push('Front and rear bodies do not share the unified rectangular envelope.');
 
-  const expectedClosureCenters = [
-    [-63.27, -10.3385], [38.77, -10.3385], [38.77, 44.5600], [-60.50, 58.497],
-  ];
+  // Issue 5: equal top and bottom borders around the window.
+  const activeOut = activeBounds || { min: [NaN, NaN], max: [NaN, NaN] };
+  const borders = {
+    left: activeOut.min[0] - OUT.xMin,
+    right: OUT.xMax - activeOut.max[0],
+    top: OUT.yMax - activeOut.max[1],
+    bottom: activeOut.min[1] - OUT.yMin,
+  };
+  if (!approx(borders.top, borders.bottom, 0.02) || !approx(borders.left, borders.right, 0.02)) {
+    errors.push('Front borders are not symmetric (top = bottom and left = right).');
+  }
+
   const closureCentersMatch = reportData.outputCoordinates.closureHoleCenters.length === 4
     && reportData.outputCoordinates.closureHoleCenters.every((center, index) => (
       approx(center[0], expectedClosureCenters[index][0], 0.01)
@@ -366,11 +453,9 @@ occtimportjs.then((occt) => {
   if (reportData.closure.minimumInsertBlindWall < 1.80) {
     errors.push('A front-cover insert pocket is too close to the visible face.');
   }
-  if (reportData.closure.controllerInsertFaceClearance < 0.02
-      || reportData.closure.controllerInsertFaceClearance > 0.15
-      || reportData.closure.controllerRearPostClearance < 0.02
-      || reportData.closure.controllerRearPostClearance > 0.15) {
-    errors.push('Controller-PCB upper-left clamp supports do not closely bracket the PCB faces.');
+  if (!approx(reportData.pcbFit.controllerFrontGap, controllerFrontGap, 0.01)
+      || !approx(reportData.pcbFit.controllerRearGap, controllerRearGap, 0.01)) {
+    errors.push('Design report controller gaps disagree with the validator measurement.');
   }
   if (!approx(stepReports.frontCover.max[2], 6.10, 0.01)) {
     errors.push('A repaired face hole or insert boss protrudes through the visible front plane.');
@@ -420,11 +505,40 @@ occtimportjs.then((occt) => {
     center: [x, y],
     z: zIntersectionsAt(frontCoverMesh, x, y),
   }));
-  const expectedBlindEnds = [3.95, 3.95, 3.95, -1.44];
+  // Display inserts end at the pocket floor; controller inserts continue into
+  // a 1.5 mm screw-tip relief.
+  const expectedBlindEnds = [3.95, 3.95, 1.50, 1.50];
   if (blindInsertChecks.some((check, index) => check.z.length < 2
       || !approx(check.z[0], expectedBlindEnds[index], 0.03))) {
     errors.push('A heat-set-insert pocket is not blind at the intended depth.');
   }
+  // Issue 2: the prototype-8 lower-left display boss must be gone.
+  const removedBossCheck = zIntersectionsAt(frontCoverMesh, -63.27, -10.3385);
+  if (removedBossCheck.length !== 2) {
+    errors.push('Front cover still has material behind the face at the removed lower-left screw.');
+  }
+
+  // Issue 6: the prop pivot passes straight through both shell lugs, and each
+  // arm has a nut trap on its inner face.
+  const pivotAxisHits = xIntersectionsAt(rearShellMesh, PIVOT.y, PIVOT.z);
+  const lugBodyHits = xIntersectionsAt(rearShellMesh, PIVOT.y, PIVOT.z - 2.00);
+  const pivotHolesThrough = pivotAxisHits.length === 0
+    && lugBodyHits.length === 4
+    && [-25.39, -21.39, 2.61, 6.61].every((x, index) => approx(lugBodyHits[index], x, 0.05));
+  if (!pivotHolesThrough) errors.push('Kickstand pivot holes do not pass through both shell lugs.');
+  const kickstandMesh = stepResults.kickstand.meshes[0];
+  const nutTrapHits = xIntersectionsAt(kickstandMesh, PIVOT.y + 1.90, PIVOT.z);
+  const nutTrapsPresent = nutTrapHits.length === 4
+    && [-21.14, -18.94, 0.16, 2.36].every((x, index) => approx(nutTrapHits[index], x, 0.05));
+  if (!nutTrapsPresent) errors.push('Kickstand arms are missing their inner-face M2 nut traps.');
+
+  // Fit-check plate: tubes open at all four screw positions.
+  const plateMesh = stepResults.fitCheckPlate.meshes[0];
+  const fitPlateTubesOpen = expectedClosureCenters
+    .every(([x, y]) => zIntersectionsAt(plateMesh, x, y).length === 0)
+    && expectedClosureCenters
+      .every(([x, y]) => zIntersectionsAt(plateMesh, x + 1.80, y).length >= 2);
+  if (!fitPlateTubesOpen) errors.push('Fit-check plate tubes are not open at the four screw positions.');
 
   const report = {
     passed: errors.length === 0,
@@ -432,37 +546,40 @@ occtimportjs.then((occt) => {
     stepReports,
     stlReports,
     pcbFit: {
+      reference: 'as-built (controller meshes 0-301 and display header 312-326 moved by AS_BUILT_OFFSET)',
+      asBuiltOffset: AS_BUILT_OFFSET,
       sourceMeshCount: pcb.meshes.length,
       translation: PCB_TRANSLATION,
-      fittedBounds: fittedPcbBounds,
+      rawStepBounds: fittedPcbBounds,
       bezelOpeningCenter,
       activeCenter,
       glassRecess,
+      borders,
       outsideCavityVertexCount,
       backComponentClearance,
-      controllerFrontMostZ,
-      controllerFrontCapClearance,
+      controllerFrontGap,
+      controllerRearGap,
       usbBounds,
+      usbCenterX,
       usbFits,
       usbCableBay,
       usbBaySurroundsTunnel,
-      controllerSupportPostClearance: 0.25,
       rearShellIntersectionVolume: reportData.pcbFit.rearShellIntersectionVolume,
       originalReferenceIntersectionVolume: reportData.pcbFit.originalReferenceIntersectionVolume,
       frontCoverIntersectionVolume: reportData.pcbFit.frontCoverIntersectionVolume,
       addedFrontContact,
     },
     closure: {
-      type: 'four rear M2 screws through real PCB mounting holes into front-cover heat-set inserts',
+      type: 'four rear M2 screws: display PCB right-hand pair + controller PCB top pair, into front-cover heat-set inserts',
       closureCenters: reportData.outputCoordinates.closureHoleCenters,
       closureCentersMatch,
       screwClearanceDiameter: 2.40,
       heatSetInsertPocket: { diameter: 2.90, depth: 3.20 },
       screwCount: reportData.closure.screwCount,
+      screwPlan: reportData.closure.screwPlan,
       minimumInsertBlindWall: reportData.closure.minimumInsertBlindWall,
-      controllerInsertFaceClearance: reportData.closure.controllerInsertFaceClearance,
-      controllerRearPostClearance: reportData.closure.controllerRearPostClearance,
       blindInsertChecks,
+      removedBossCheck,
       formerFastenerAreaChecks,
       cleanFrontFaceChecks,
       frontRearIntersectionVolume: reportData.closure.closedBezelIntersectionVolume,
@@ -471,8 +588,17 @@ occtimportjs.then((occt) => {
       foldedWithinMainXYFootprint: standWithinFootprint,
       foldedIntersectionVolume: reportData.stand.foldedIntersectionVolume,
       pivotClearanceHoleDiameter: 2.40,
-      heatSetInsertPocket: { diameter: 2.90, depth: 3.20 },
+      pivotHolesThrough,
+      pivotAxisHits,
+      lugBodyHits,
+      nutTrapsPresent,
+      nutTrapHits,
+      fasteners: 'M2x10 screw + M2 nut per side',
       deployedPreviewAngle: 30.00,
+    },
+    fitCheckPlate: {
+      tubesOpen: fitPlateTubesOpen,
+      intersectionVolume: reportData.pcbFit.fitCheckPlateIntersectionVolume,
     },
     antenna: {
       externalOpening: false,
@@ -483,8 +609,8 @@ occtimportjs.then((occt) => {
       unifiedRectangle,
       leftWallIsContinuous,
       leftWallContinuityChecks,
-      bodyEnvelope: { xMin: -70.39, xMax: 51.61, yMin: -17.903, yMax: 64.097 },
-      bottomFeetYMin: -25.903,
+      bodyEnvelope: OUT,
+      bottomFeetYMin: FEET_BOTTOM_Y,
     },
     printability: {
       ...printProfile,
