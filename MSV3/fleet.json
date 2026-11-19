@@ -2112,6 +2112,12 @@
       "parts_stock": "enough for 5 MSV4 boards currently (maintainer wording; whether this count includes already-built board 1 was not stated)",
       "planned_additional_builds": 5,
       "batch_in_progress": {
+        "planned_r15_rework": {
+          "boards": [3, 4, 5],
+          "target_ohms": 5600,
+          "status": "planned",
+          "source": "Maintainer, 2026-11-19: 'Ok i am going to solder boards 3-5 with 5.6ks'"
+        },
         "verified": "2026-10-29",
         "source": "maintainer stated 2026-10-29 about board 5: 'found the issue it was a short on the BQ chip pads'. Before that: maintainer stated 2026-10-26 ~13:40 PDT: 'Out of time today but save this for later, I need to reflow 3 on board 5 because its shorting 3v3 to gnd i think and my multimeter caught that one'. Before that: maintainer stated 2026-10-13 during the boards 2-5 batch build",
         "assembled_unflashed": [],
