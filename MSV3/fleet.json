@@ -2113,7 +2113,7 @@
       "planned_additional_builds": 5,
       "batch_in_progress": {
         "planned_r15_rework": {
-          "boards": [3, 4, 5],
+          "boards": [3, 4],
           "target_ohms": 5600,
           "status": "planned",
           "source": "Maintainer, 2026-11-19: 'Ok i am going to solder boards 3-5 with 5.6ks'"
@@ -2633,6 +2633,8 @@
           ],
           "panel": "NOT STATED",
           "housing": "NOT STATED",
+          "r15": {"ohms": 5600, "verified": "2026-11-19", "source": "Maintainer reported board 5 has the new resistor after specifying 5.6 kohm for boards 3-5. After the failed hand test, the maintainer identified a short from R15 to ground."},
+          "hand_test_2026_11_19": "Passed with 5.6 kohm R15 after the maintainer identified the R15-to-ground short. Maintainer confirmed the live response in MSV4 Lab. The supplied trace shows two high plateaus and two returns near baseline.",
           "rework": "U3 and U4 resoldered; U4 was the cause of the failed first analog bring-up and the full retest passed after it was resoldered (maintainer, 2026-10-29). The maintainer confirmed both U3 and U4 required resoldering on every MSV4 board. Board 5 additionally had a solder short on the BQ25504 pads, repaired before successful power-up/SWD flash. Exact BQ pads and repair method NOT STATED.",
           "ntc": "Physical population NOT STATED; electrical path returned 24.09 C / 10352 ohm."
         },
