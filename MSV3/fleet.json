@@ -2565,9 +2565,9 @@
       {
         "board": 5,
         "identity_basis": "OBSERVED 2026-10-29: a 15-second BLE scan found the two known bring-up boards 5667 and D7D2 plus one new board, MSV4-BU-9FA3 at C8:48:67:8B:9F:A3, immediately after the maintainer reported the last board alive from its SWD flash. The console then read its exact build identity.",
-        "sensor_id": null,
-        "sensor_id_source": "NOT ASSIGNED: still on the bring-up image. IDs 1-11 are taken; the receiver accepts 1-16.",
-        "ble_name": "MSV4-BU-9FA3",
+        "sensor_id": 14,
+        "sensor_id_source": "Assigned by the maintainer on 2026-11-19 for board 5's living-room hourly test.",
+        "ble_name": "MSV4-MOISTURE-014",
         "application_address": "C8:48:67:8B:9F:A3",
         "recovery_address": "C8:48:67:8B:9F:A4",
         "recovery_address_source": "DERIVED, not observed: lowest address byte + 1, following the pinned bootloader's recovery-address rule.",
@@ -2575,15 +2575,30 @@
         "bootloader_source": "Intended and manifest-verified by the guarded 2026-10-29 SWD command on COM4: --msv3 1.0.3 --app v262152. The maintainer reported it worked; application identity was observed over BLE, bootloader identity was not independently read.",
         "bootloader_key_sha256": "0fc6341903a1391ec264d98e9ae7d3fcead2cebee9f6adeb944c7038d3976daa",
         "device_type": "0x3356",
-        "installed_application_version": 262152,
-        "installed_build": "MSV4-BUILD:bringup-live-2026-10-11",
-        "installed_verification": "OBSERVED 2026-10-29 over BLE: exact firmware/build and app_version 262152; uptime 47 s, reset reason 0x1, boot count 1. SWD-written, so the anti-rollback floor is NOT seeded; finish a production board with signed OTA.",
+        "installed_application_version": 262174,
+        "installed_build": "MSV4-BUILD:fresh30-rs5600-2026-11-19",
+        "installed_verification": "Signed BLE OTA from 262173 completed in 40 s. DIS at C8:48:67:8B:9F:A3 returned the installed build string and version 262174. The sensor 14 progress scan captured fresh, valid counters 1 and 2 at 23:57:25 PST on November 19 and 00:27:23 PST on November 20, 2026, with no intervening reports.",
+        "active_test": {
+          "verified": "2026-11-20",
+          "source": "Maintainer requested one fresh reading every 30 minutes for a planned living-room deployment. Build flags, signed OTA, BLE Device Information and two consecutive reporting windows verified. See MSV4/docs/MSV4_BOARD5_AIR_AND_CADENCE_2026-11-19.md.",
+          "schedule": "Fresh blade, battery and temperature readings every 30 minutes. One normally five-second BLE advertising window per measurement, radio silent between windows. The first two fresh reports were 1798 s apart.",
+          "package_sha256": "28589fd5a1918c0ea7ddcc9a3343e52c3443e495775a72778a1e5327e1e8d56d",
+          "air_calibration": "Bare probe in air after label removal: DIS returned 'Cp 0.00 pF default; boot open 8.94 pF'. The direct floating-electrode measurement is recorded separately from applied Cp. The first blade fit was 134.334 kohm, below the 400 kohm automatic air threshold, so reported Cd includes node Cp. The earlier bring-up sweep refitted with the fitted 5.6 kohm R15 gave 8.96 pF with the label still on."
+        },
         "physical_state": {
-          "verified": "2026-10-29",
-          "source": "maintainer confirmed 2026-10-29 after the passing retest: board 5's failed analog path was repaired by resoldering U4; U3 was also resoldered, as both U3 and U4 had to be on every board. Board 5 additionally had the BQ25504-pad short. Before that, after the intervening board work: 'K 5 is back online lets give it another shot'.",
-          "location": "NOT STATED (within BLE range of the maintainer's computer)",
-          "pot": "NOT STATED",
-          "power": "battery connected; console read 4057 mV, not checked against a meter",
+          "verified": "2026-11-19",
+          "source": "Maintainer confirmed board 5 on the desk in air, the hand response checked earlier today, and a fitted 5.6 kohm R15 chosen to center the range. The maintainer then removed the #5 tape for air calibration. Rework details date to 2026-10-29.",
+          "location": "On the desk. Planned deployment: living room, the maintainer's darkest location.",
+          "pot": "None; blade in air, #5 tape removed for air calibration.",
+          "power": "BLE console read VBAT 4006 mV on 2026-11-19. Battery connection last confirmed 2026-10-29.",
+          "mods": [
+            {
+              "part": "R15",
+              "value": "5.6 kohm",
+              "source": "Maintainer confirmed the fitted value on 2026-11-19.",
+              "consequence": "Build this board's moisture firmware with -RsOhms 5600. The original bring-up console calculated spectra with Rs = 1000 ohm."
+            }
+          ],
           "panel": "NOT STATED",
           "housing": "NOT STATED",
           "rework": "U3 and U4 resoldered; U4 was the cause of the failed first analog bring-up and the full retest passed after it was resoldered (maintainer, 2026-10-29). The maintainer confirmed both U3 and U4 required resoldering on every MSV4 board. Board 5 additionally had a solder short on the BQ25504 pads, repaired before successful power-up/SWD flash. Exact BQ pads and repair method NOT STATED.",
