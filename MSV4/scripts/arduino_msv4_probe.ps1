@@ -39,8 +39,8 @@ param(
   # probe stays planted. 0 (the default) leaves it out. Never guess it or copy another board's.
   [ValidateRange(0, 2550)]
   [int]$CpCentiPf = 0,
-  # arduino/MSV4_Moisture_BLE_Sleep only. This board's R15 in ohms when it is not the netlist's
-  # 1 kohm (board 2: 3300). The fit's admittances scale with it, so a wrong value reads every
+  # Both sketches (the bring-up console's spectrum fits use it too). This board's R15 in ohms when
+  # it is not the netlist's 1 kohm. The fit's admittances scale with it, so a wrong value reads every
   # Cp, Cd and Cm off by the ratio and Rsoil by its inverse. 0 (the default) leaves 1000. Read
   # the value from fleet.json msv4_boards (physical_state.mods), never from another board.
   [ValidateRange(0, 20000)]

@@ -781,7 +781,14 @@ static void runPhaseSet(uint16_t n, uint16_t m, bool withResidual)
 // 4 MHz only M = 4 phases exist and the 3rd/5th harmonics weigh 1/9 and 1/25. Dividing by the
 // DRV_OUT channel (same switch, H = 1) normalises amplitude and switch phase, and the fit below
 // models the aliasing exactly instead of pretending it is absent.
-constexpr double SPEC_RS = 1000.0;       // R15
+// Rs appears only in the product Rs*Y, so a wrong Rs scales every fitted admittance by the ratio.
+// A board whose R15 is not the netlist's 1 kohm is built with -RsOhms, as the moisture sketch is.
+#ifdef MSV4_RS_OHMS
+static_assert(MSV4_RS_OHMS >= 500 && MSV4_RS_OHMS <= 20000, "MSV4_RS_OHMS is this board's R15 in ohms: 500..20000");
+constexpr double SPEC_RS = MSV4_RS_OHMS;
+#else
+constexpr double SPEC_RS = 1000.0;       // R15 as in the netlist
+#endif
 static double g_specCp = 12e-12;          // replaced by `spectrum open`
 // N = 4 (4 MHz) dropped 2026-09-23 with Cs. It existed to chase permittivity, and it is the
 // worst-conditioned point in the sweep: M = 4 is the fewest phases, so the aliasing correction
@@ -1210,6 +1217,7 @@ static void cmdInfo()
   uint32_t hf = 0;
   sd_clock_hfclk_is_running(&hf);
   out("%s app_version=%lu", MSV4_BUILD_ID, static_cast<unsigned long>(MSV4_APP_VERSION));
+  out("fit Rs (R15) = %.0f ohm", SPEC_RS);
   out("name=%s addr=%08lX%08lX", g_deviceName, static_cast<unsigned long>(NRF_FICR->DEVICEADDR[1] & 0xFFFF),
       static_cast<unsigned long>(NRF_FICR->DEVICEADDR[0]));
   out("uptime=%lus reset_reason=0x%08lX boot_count=%u", millis() / 1000,
