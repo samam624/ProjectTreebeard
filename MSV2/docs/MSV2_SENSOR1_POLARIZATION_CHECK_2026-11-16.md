@@ -31,7 +31,9 @@ Asymmetries:
 5. Both plates only ever go positive against GND. If nothing else in the soil is grounded, that
    common mode has no return path through the soil.
 
-## Data: cloud history to 2026-11-16 01:00, `data/sensor_logs/latest/sensor1_polarization_check.png`
+## Data: cloud history to 2026-11-16 01:00
+
+[Sensor 1 polarization check plot](../../data/sensor_logs/studies/polarization/sensor1_polarization_check.png)
 
 The reading is the oscillator rate in kHz; lower is wetter. It moves in coarse steps of about
 8-12 kHz.

@@ -30,8 +30,8 @@ Reproduce:
     python MSV4/scripts/msv4_tempco_check.py data/sensor_logs/msv4_sensor10_all_2026-10-27.csv
     python MSV4/scripts/msv4_tempco_check.py --self-test
 
-The outputs are in `data/sensor_logs/msv4_tempco_check_2026-10-27.txt` and
-`msv4_tempco_check_selftest_2026-10-27.txt`.
+The outputs are in [msv4_tempco_check_2026-10-27.txt](../../data/sensor_logs/studies/temperature/msv4_tempco_check_2026-10-27.txt) and
+[msv4_tempco_check_selftest_2026-10-27.txt](../../data/sensor_logs/studies/temperature/msv4_tempco_check_selftest_2026-10-27.txt).
 
 **Data used:**
 - 27,234 readings from 10-08 21:57 to 10-27 22:54.
@@ -130,13 +130,13 @@ The maintainer pointed out, with a crop of the moisture-vs-mass plot from 10-22 
 lines wobble far more late in a dry-down than right after a watering. Reproduce with:
 
     python MSV4/scripts/msv4_daily_staircase.py data/sensor_logs/msv4_sensor10_all_2026-10-27.csv \
-        --plot MSV4/docs/msv4_sensor10_daily_staircase_2026-10-27.png
+        --plot MSV4/docs/figures/msv4_sensor10_daily_staircase_2026-10-27.png
     python MSV4/scripts/msv4_daily_staircase.py --self-test
 
-The output is in `data/sensor_logs/msv4_daily_staircase_2026-10-27.txt`. The self-test recovers a
+The output is in [msv4_daily_staircase_2026-10-27.txt](../../data/sensor_logs/studies/temperature/msv4_daily_staircase_2026-10-27.txt). The self-test recovers a
 synthetic pot's 53 % noon share (52 % found) and its 20 g of noon loss (19.7 g found).
 
-![daily staircase](msv4_sensor10_daily_staircase_2026-10-27.png)
+![daily staircase](figures/msv4_sensor10_daily_staircase_2026-10-27.png)
 
 **The wobble is a staircase: one step a day, in the noon hours (measured).** The probe's drop each
 day was split at 11:00 and 15:00, using the number at 2 %/C. Grams come from a line through the

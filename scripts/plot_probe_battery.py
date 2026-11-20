@@ -10,14 +10,14 @@ left off by default because forcing it onto a uniformly noisy signal produces
 meaningless clutter, not real events.
 
 Example (MSV3 probe, true mV, spike labels on):
-  python scripts/plot_probe_battery.py --csv data/sensor_logs/msv3_sensor4_raw.csv \\
+  python scripts/plot_probe_battery.py --csv data/sensor_logs/archive/msv3_sensor4_raw.csv \\
       --column raw_battery_mv --unit mV --probe-label "Probe 4" --spike-threshold 30 \\
-      --out data/sensor_logs/probe4_battery_mv.png
+      --out data/sensor_logs/latest/probe4_battery_mv.png
 
 Example (MSV2 probe, no raw mV, no spike detection):
-  python scripts/plot_probe_battery.py --csv data/sensor_logs/msv2_sensor2_30d.csv \\
+  python scripts/plot_probe_battery.py --csv data/sensor_logs/archive/msv2_sensor2_30d.csv \\
       --column battery_percent --unit % --probe-label "Probe 2" \\
-      --out data/sensor_logs/probe2_battery_pct.png
+      --out data/sensor_logs/latest/probe2_battery_pct.png
 """
 
 from __future__ import annotations

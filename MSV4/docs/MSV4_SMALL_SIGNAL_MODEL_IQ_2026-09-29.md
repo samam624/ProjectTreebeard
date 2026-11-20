@@ -7,10 +7,10 @@ of the firmware's `specNodeH` in
 [`test_msv4_spectrum_fit.py`](../scripts/test_msv4_spectrum_fit.py), so the figure and the fit use
 the same model.
 
-![small-signal model](MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png)
+![small-signal model](figures/MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png)
 
 A clean version for slides, with symbols only and no values, is
-[`MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png`](MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png)
+[`MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png`](figures/MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png)
 (`python MSV4/scripts/msv4_sensor_schematic.py`, needs `pip install schemdraw`). It draws the
 textbook two-mixer I/Q demodulator. The board gets the same I and Q from one chopper swept in phase.
 

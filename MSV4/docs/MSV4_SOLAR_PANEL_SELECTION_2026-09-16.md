@@ -42,7 +42,7 @@ active silicon area is rearranged correctly.
 ## What probe 4 actually harvested
 
 Source window: probe 4 after 2026-08-30 through the unplug, excluding the three labelled USB
-interventions. `data/sensor_logs/probe4_battery_mv.png` is the saved plot of the Supabase raw
+interventions. [probe4_battery_mv.png](../../data/sensor_logs/studies/power/probe4_battery_mv.png) is the saved plot of the Supabase raw
 `raw_battery_mv` export. The night-only load calculation is documented in
 `MSV3/docs/MSV3_VIN_DC_OVERVOLTAGE_ROOT_CAUSE_2026-09-15.md`.
 

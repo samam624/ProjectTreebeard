@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Annotated electrode cross-sections for v1.2, MSV3 and MSV4, with lambda and lambda/2pi.
 
-Draws MSV4/docs/ELECTRODE_CROSS_SECTIONS_2026-09-30.{png,pdf}. All three sections share one mm scale
+Draws MSV4/docs/figures/ELECTRODE_CROSS_SECTIONS_2026-09-30.{png,pdf}. All three sections share one mm scale
 in x, and the 1/e field depth lambda/2pi is drawn to that scale on each.
 
 Geometry sources:
@@ -24,7 +24,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Patch, Rectangle  # noqa: E402
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "ELECTRODE_CROSS_SECTIONS_2026-09-30"
+OUT = Path(__file__).resolve().parents[1] / "docs" / "figures" / "ELECTRODE_CROSS_SECTIONS_2026-09-30"
 
 INK, MUTED, RULE = "#1b1b1b", "#5a5a5a", "#c9c9c4"
 SOIL, BOARD, HOT, GND = "#f5efe4", "#dfe5d6", "#1f4e8c", "#9aa3ad"

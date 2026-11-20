@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sensing depth into soil: the pitch-only equation against the 2D field solve.
 
-Draws MSV4/docs/MSV4_SENSING_DEPTH_EQUATION_VS_SIM_2026-09-30.png and prints the table.
+Draws MSV4/docs/figures/MSV4_SENSING_DEPTH_EQUATION_VS_SIM_2026-09-30.png and prints the table.
 
 Equation (MSV3/docs/MSV4_ELECTRODE_ARCHITECTURE_2026-09-15.md), lambda = 2 x electrode
 centre-to-centre spacing:
@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-FIGURE = ROOT / "docs" / "MSV4_SENSING_DEPTH_EQUATION_VS_SIM_2026-09-30.png"
+FIGURE = ROOT / "docs" / "figures" / "MSV4_SENSING_DEPTH_EQUATION_VS_SIM_2026-09-30.png"
 SLIDE = FIGURE.with_name(FIGURE.stem + "_SLIDE.png")     # 9 x 6 in, 1:1 on a 10 x 7.5 in slide
 COMPARE = ROOT / "generated" / "electrode_compare_2026-09-23.json"
 

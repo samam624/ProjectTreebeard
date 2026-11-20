@@ -161,12 +161,12 @@ separately measured.
 
 ## Figures
 
-From `MSV4/scripts/msv4_rawsweep_plot.py data/sensor_logs/msv4_rawsweep_2026-10-15 --out-dir data/sensor_logs`:
-- `msv4_rawsweep_models_2026-10-15.png`: each model's residual by medium, and its mask C change
+From `MSV4/scripts/msv4_rawsweep_plot.py data/sensor_logs/msv4_rawsweep_2026-10-15`:
+- [msv4_rawsweep_models_2026-10-15.png](../../data/sensor_logs/msv4_rawsweep_2026-10-15/msv4_rawsweep_models_2026-10-15.png): each model's residual by medium, and its mask C change
   with one pinch.
-- `msv4_rawsweep_timeline_2026-10-15.png`: tip, water R, mask C and Cd for every logged sweep,
+- [msv4_rawsweep_timeline_2026-10-15.png](../../data/sensor_logs/msv4_rawsweep_2026-10-15/msv4_rawsweep_timeline_2026-10-15.png): tip, water R, mask C and Cd for every logged sweep,
   from the dunk to the salt.
-- `msv4_rawsweep_loop_2026-10-15.png`: lumped R and mask C against the tip through the swing.
+- [msv4_rawsweep_loop_2026-10-15.png](../../data/sensor_logs/msv4_rawsweep_2026-10-15/msv4_rawsweep_loop_2026-10-15.png): lumped R and mask C against the tip through the swing.
   Its slopes come from the cooling leg alone (-1.75 %/C and +0.23 %/C), so they differ slightly
   from the joint fit above, which also uses the pre-swing window and a time term.
 

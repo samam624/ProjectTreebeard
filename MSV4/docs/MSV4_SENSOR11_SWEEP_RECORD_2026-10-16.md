@@ -22,7 +22,7 @@ Reproduce:
         --history data/sensor_logs/msv4_sensor11_history_2026-10-16.csv \
         --step "2026-10-16 11:20" --flat "2026-10-16 04:00" "2026-10-16 11:20"
 
-The full output is in `data/sensor_logs/msv4_sensor11_sweep_record_2026-10-16.txt`.
+The full output is in the [sweep record](../../data/sensor_logs/studies/sweep-fits/msv4_sensor11_sweep_record_2026-10-16.txt).
 
 ## The feed (measured)
 

@@ -23,7 +23,7 @@ watering is required to (3 pF), so the first watering can show that it responds,
 everything it does is water. Worked through with Codex (phone-a-friend consultation
 `msv4-temp-free-moisture-2026-10-10`).
 
-![temperature, the stored number and the experimental reading](MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.png)
+![temperature, the stored number and the experimental reading](figures/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.png)
 
 ## Where it is
 
@@ -35,7 +35,7 @@ everything it does is water. Worked through with Codex (phone-a-friend consultat
 
 ```
 python cloud/scripts/fetch_supabase_history.py --receiver MSV2088A3104A7AC --sensor 10 --raw --since-hours 100 --csv data/sensor_logs/msv4_sensor10_all_2026-10-10.csv
-python MSV4/scripts/msv4_experimental_moisture.py data/sensor_logs/msv4_sensor10_all_2026-10-10.csv --bin 30 --window "2026-10-09 19:00" "2026-10-10 23:59" --figure MSV4/docs/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.png
+python MSV4/scripts/msv4_experimental_moisture.py data/sensor_logs/msv4_sensor10_all_2026-10-10.csv --bin 30 --window "2026-10-09 19:00" "2026-10-10 23:59" --figure MSV4/docs/figures/MSV4_EXPERIMENTAL_MOISTURE_2026-10-10.png
 ```
 
 ## Is it the firmware? What was checked (measured)
@@ -596,7 +596,7 @@ Uncertainty of each fitted value for the same noise on all sixteen numbers (0.1 
 - A change is one resistor and three constants (`SPEC_RS` in the sketch, the page and the
   script; the build gate holds them equal).
 
-![Bode diagram of board 1's front end](MSV4_BODE_BOARD1_2026-10-11.png)
+![Bode diagram of board 1's front end](figures/MSV4_BODE_BOARD1_2026-10-11.png)
 
 The same thing as a Bode diagram (`MSV4/scripts/msv4_bode_figure.py`): SENSE ÷ DRV and its delay
 against frequency for the fitted values in air, in the dry pot (18:00–19:14 on 10-10), moist
@@ -606,7 +606,7 @@ plain-capacitor corner (0.71) lies above the sweep in every case. The shelf in t
 between 250 kHz and 1 MHz is the soil path switching on, which is what the fit reads `Rsoil`
 and `Cm` from.
 
-![The same diagram with poles and zeros](MSV4_BODE_POLES_BOARD1_2026-10-11.png)
+![The same diagram with poles and zeros](figures/MSV4_BODE_POLES_BOARD1_2026-10-11.png)
 
 Poles and zero (`--poles`). With `C1 = Cp + Cd`, clearing the fraction in `H = 1/(1 + Rs·Y)`:
 
@@ -628,7 +628,7 @@ The low pole and the zero are the soil path: they sit inside the sweep, and how 
 are is how much of a step the soil path makes (7 % apart dry, 37 % moist). The high pole is the
 plain resistor-and-capacitor corner and lies above the sweep in every case.
 
-![The soil path opening with frequency](MSV4_SOIL_PATH_OPENING_BOARD1_2026-10-11.png)
+![The soil path opening with frequency](figures/MSV4_SOIL_PATH_OPENING_BOARD1_2026-10-11.png)
 
 The soil path on its own (`--soil-path`). The mask opposes with `1/(ω·Cm)`, which falls as
 frequency rises; the soil opposes with `Rsoil` at every frequency. They are equal at

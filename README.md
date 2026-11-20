@@ -286,7 +286,7 @@ Next:
 | [`docs/`](docs/) | Cross-project notes: known issues, roadmap and the engineering paper |
 | [`hardware/`](hardware/) | Shared Altium libraries and parts ordering |
 | [`scripts/`](scripts/) | Shared tools: the Bluetooth updater, the fleet scanner and the wired-programming utilities |
-| [`data/`](data/), [`dumps/`](dumps/) | Captured measurements and probe diagnostic dumps |
+| [Sensor plots and data](data/sensor_logs/), [`dumps/`](dumps/) | Latest charts, experiment records and probe diagnostic dumps |
 
 > [!NOTE]
 > **Dated documents are history and are never edited afterwards.** Hardware moves between work

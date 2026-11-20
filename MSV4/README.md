@@ -10,7 +10,7 @@ the [main README](../README.md#status-and-next-steps) for where each board is no
 | **Firmware** | [`arduino/MSV4_Moisture_BLE_Sleep`](arduino/MSV4_Moisture_BLE_Sleep/) (production) · [`arduino/MSV4_Probe_Bringup_BLE`](arduino/MSV4_Probe_Bringup_BLE/) (bring-up console) |
 | **Tools** | [`scripts/`](scripts/): build, Bluetooth update, advertisement scanner, bench lab, analysis · [`ui/`](ui/): the bench lab page |
 | **Parts** | [`procurement/`](procurement/): BOM and the LCSC order for five boards |
-| **Write-ups** | [`docs/`](docs/) |
+| **Measurements** | [Sensor plots and data](../data/sensor_logs/) · [Write-ups](docs/) · [Figures for write-ups and slides](docs/figures/) |
 
 Start with:
 [board 1 bring-up](docs/MSV4_BOARD1_BRINGUP_2026-10-01.md) ·

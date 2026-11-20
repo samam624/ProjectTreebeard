@@ -13,7 +13,8 @@ Method (same family as msv4_moisture_plot.py, but one line PER WATERING CYCLE):
 Temperature correction is the repo's normal view: the number is as built (2 %/C), Cm is corrected
 to 25 C by the tip coefficient fitted on the first settled dry day. --raw uses uncorrected Cm.
 
-Two figures are written beside the input CSV:
+For a CSV under data/sensor_logs the two figures go in latest/. For a standalone CSV they go
+beside the input. Use --out-dir to choose another directory.
   msv4_mass_vs_moisture_number.png    msv4_mass_vs_cm.png
 
     python MSV4/scripts/msv4_mass_vs_value_plot.py data/sensor_logs/<sensor10 history>.csv [--raw]
@@ -34,6 +35,7 @@ import matplotlib.pyplot as plt
 import msv4_experimental_moisture as reading
 import msv4_moisture_competition as comp
 import msv4_moisture_tempcorr as tempcorr
+from msv4_plot_paths import default_plot_dir
 
 NL = chr(10)
 
@@ -94,7 +96,8 @@ def main() -> None:
     pairs = [p for p in comp.pair(rows, merged, waterings) if not p["excluded"] and p["saucer"] is False]
     t0 = rows[0]["time"]
     bounds = list(waterings) + [rows[-1]["time"] + timedelta(hours=1)]
-    out_dir = args.out_dir or args.csv.parent
+    out_dir = args.out_dir or default_plot_dir(args.csv)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     def cycle_curves(label, value, color, unit):
         """One segment per watering cycle, each from its own line; returns curves and the notes."""

@@ -12,9 +12,9 @@ out of the water between moves (15:07:17) was deleted from the cloud at the main
 `MSV4_SENSOR11_HISTORY_DELETION_2026-10-14.md`.
 
 Figures and table: `MSV4/scripts/msv4_cup_test_plot.py`
-- `data/sensor_logs/msv4_cuptest_timeline_2026-10-14.png`
-- `data/sensor_logs/msv4_cuptest_salt_ladder_2026-10-14.png`
-- `data/sensor_logs/msv4_cuptest_cm_vs_cd_2026-10-14.png`
+- [msv4_cuptest_timeline_2026-10-14.png](../../data/sensor_logs/studies/cup-test/msv4_cuptest_timeline_2026-10-14.png)
+- [msv4_cuptest_salt_ladder_2026-10-14.png](../../data/sensor_logs/studies/cup-test/msv4_cuptest_salt_ladder_2026-10-14.png)
+- [msv4_cuptest_cm_vs_cd_2026-10-14.png](../../data/sensor_logs/studies/cup-test/msv4_cuptest_cm_vs_cd_2026-10-14.png)
 
 ## Measured: medians of each settled window
 

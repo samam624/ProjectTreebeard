@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 
 import msv4_experimental_moisture as reading
 import msv4_moisture_competition as comp
+from msv4_plot_paths import default_plot_dir
 
 INK, MUTED, GRID, BLUE = "#1a1a1a", "#666666", "#e3e3e3", "#2563a8"
 NL = chr(10)
@@ -31,7 +32,7 @@ NL = chr(10)
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", type=Path)
-    ap.add_argument("-o", "--out", type=Path)
+    ap.add_argument("-o", "--out", type=Path, help="output PNG (default: latest/ for project data, beside the CSV elsewhere)")
     args = ap.parse_args()
     rows = [r for r in reading.load(args.csv, None) if r["coupled"] is not None]
     sensor = rows[0]["sensor"]
@@ -113,7 +114,8 @@ def main() -> None:
              "Reading: the moisture number the sensor reports (temperature-corrected at 2 %/C).",
              fontsize=9, color=MUTED, ha="left", va="bottom")
     fig.tight_layout(rect=(0, 0.06, 1, 0.9))
-    out = args.out or args.csv.with_name("msv4_moisture_validation.png")
+    out = args.out or default_plot_dir(args.csv) / "msv4_moisture_validation.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=160)
     print(out, f"rms {rms:.1f} g, {inside}/{len(errors)} within 40 g")
 

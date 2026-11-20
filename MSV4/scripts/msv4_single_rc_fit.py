@@ -11,7 +11,7 @@ those, on the SAME stored sweeps and through the SAME measurement model (R15, Cp
   cpe / tline / two-branch                                     as msv4_raw_sweep_models.py
 
     python MSV4/scripts/msv4_single_rc_fit.py --sensor 11 --since-hours 336 --rs 3300 --cp 8.75 --cd0 13.71 \\
-        --out data/sensor_logs/msv4_sensor11_single_rc_fits.csv --fig-dir data/sensor_logs
+        --out data/sensor_logs/cache/sensor11_single_rc_fits.csv --fig-dir data/sensor_logs/latest
 
 The residual is the RMS of (model - measured) over the 8 complex points, in 1e-4 of drive. A model
 with more free parameters can only do better; compare parameter count with residual.
@@ -149,6 +149,7 @@ def main() -> int:
     fits = [fit_models(s, rs, cp, cd0) for s in sweeps]
 
     fields = ["observed_at", "wake", "lumped_R_ohm"] + [f"{m}_rms_e4" for m in ORDER]
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(fields)
@@ -178,6 +179,7 @@ def main() -> int:
         r_ohm = 1.0 / fits[i]["lumped"]["p"]["Gs"]
         picks.append((f"{label or 'sweep'}: {t:%m-%d %H:%M}, lumped R {r_ohm:,.0f} ohm", i))
     if picks:
+        args.fig_dir.mkdir(parents=True, exist_ok=True)
         figures(rows, fits, picks, rs, cp, cd0, args.fig_dir)
     return 0
 

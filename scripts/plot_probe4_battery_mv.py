@@ -6,7 +6,7 @@ plots raw_battery_mv (true ADC millivolts, not the calibrated percent) as-is:
 no smoothing, no annotations, just the raw series.
 
 Example:
-  python scripts/plot_probe4_battery_mv.py --csv data/sensor_logs/msv3_sensor4_raw.csv --out data/sensor_logs/probe4_battery_mv.png
+  python scripts/plot_probe4_battery_mv.py --csv data/sensor_logs/archive/msv3_sensor4_raw.csv --out data/sensor_logs/latest/probe4_battery_mv.png
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def find_spikes(t: np.ndarray, v: np.ndarray, window: int = 15, threshold: float
 def main() -> int:
     parser = argparse.ArgumentParser(description="Plot probe 4 raw battery mV over time.")
     parser.add_argument("--csv", type=Path, default=Path("data/sensor_logs/msv3_sensor4_raw.csv"))
-    parser.add_argument("--out", type=Path, default=Path("data/sensor_logs/probe4_battery_mv.png"))
+    parser.add_argument("--out", type=Path, default=Path("data/sensor_logs/latest/probe4_battery_mv.png"))
     parser.add_argument(
         "--since-trough",
         action="store_true",

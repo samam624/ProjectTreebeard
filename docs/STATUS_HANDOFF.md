@@ -52,7 +52,7 @@ New docs: `MSV3/docs/MSV3_ELECTRODE_VS_READOUT_THERMAL_2026-09-19.md`,
   comparison; the MSV2-electrode column is unmeasured, not measured-as-quiet.
 - **Probe 4's cloud history was cleaned and its split point corrected.** 18 out-of-range v65566 rows
   deleted from `msv2_sensor_history`, backed up to
-  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv` (all 21 columns, re-insertable).
+  `data/sensor_logs/archive/probe4_deleted_v65566_outofrange_2026-09-19.csv` (all 21 columns, re-insertable).
   **Split at 20:53:20, not 16:38.** Also: the rig was **physically disturbed at 15:17 on 09-19**
   (+82,831 counts, two dropped wakes, RSSI shift) — do not pool data across that step.
 - **Probe 4's solar charging ramp is gone** in the most sun it has ever seen: eight days of +25 to
@@ -114,7 +114,7 @@ and DigiKey leftovers are in `MSV4/procurement/MSV4_pull_from_MSV3_stock_5boards
   started 17:00:10 but ran **on the bench** until the probe went into the pot at 20:53:20. A 16:38
   split pulls both of those into the series and yields nonsense (+9.0 %/C, r²=0.21). The 18
   out-of-range v65566 rows were deleted from `msv2_sensor_history` on 2026-09-19 and backed up to
-  `data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv`. Plan: position swap with
+  `data/sensor_logs/archive/probe4_deleted_v65566_outofrange_2026-09-19.csv`. Plan: position swap with
   sensor 3 after 3-4 clean days. To return it to production, build a new capless image **above
   65567**.
 - **The shared Alocasia pot had no temperature channel from 09-14 to 09-18** (probe 8 went to the

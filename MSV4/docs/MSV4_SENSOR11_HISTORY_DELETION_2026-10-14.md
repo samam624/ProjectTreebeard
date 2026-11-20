@@ -7,6 +7,9 @@ clean plots of this".
 **DURABILITY WARNING.** The backup CSV is under `data/sensor_logs/`, which is gitignored
 (`data/sensor_logs/*.csv`). It exists only on this machine until it is copied somewhere durable.
 
+**Archive check, 2026-11-19.** The CSV is now under the local, Git-ignored
+`data/sensor_logs/archive/` directory. Its SHA-256 matched the original checksum below.
+
 ## What was deleted and why
 
 One row: `receiver_id = 'MSV2088A3104A7AC'`, `sensor_id = 11` (MSV4 board 2), `id = 803694`,
@@ -28,7 +31,7 @@ the run. It is preserved in the backup, not discarded.
 ## Backup
 
 ```text
-path    data/sensor_logs/msv4_sensor11_deleted_outofwater_2026-10-14.csv
+path    data/sensor_logs/archive/msv4_sensor11_deleted_outofwater_2026-10-14.csv
 sha256  21b64b67428bec0662daa2573a7cefe5b9d062f95726fdb02e37d6acb6e0a20d
 rows    1 data + 1 header, all 21 columns including id and observation_id
 ```

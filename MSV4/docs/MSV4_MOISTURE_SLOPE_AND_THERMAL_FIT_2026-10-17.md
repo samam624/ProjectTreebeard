@@ -20,9 +20,9 @@ Reproduce:
     python msv4_moisture_slope_diagnosis.py ../../data/sensor_logs/msv4_sensor10_all_2026-10-17.csv
     python msv4_thermal_refit_plot.py ../../data/sensor_logs/msv4_sensor10_all_2026-10-17.csv
 
-The outputs as run are in `data/sensor_logs/msv4_moisture_slope_diagnosis_2026-10-17.txt` and
-`data/sensor_logs/msv4_thermal_refit_2026-10-17.txt`. The figure is
-`data/sensor_logs/msv4_thermal_refit.png`. Both scripts have a `--self-test`.
+The outputs as run are in [msv4_moisture_slope_diagnosis_2026-10-17.txt](../../data/sensor_logs/studies/temperature/msv4_moisture_slope_diagnosis_2026-10-17.txt) and
+[msv4_thermal_refit_2026-10-17.txt](../../data/sensor_logs/studies/temperature/msv4_thermal_refit_2026-10-17.txt). The figure is
+[msv4_thermal_refit.png](../../data/sensor_logs/studies/temperature/msv4_thermal_refit.png). Both scripts have a `--self-test`.
 
 ## 1. A one-way shift across the first watering (measured; the largest effect)
 

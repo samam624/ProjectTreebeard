@@ -11,7 +11,7 @@ not a measurement.
 
 Reads the CSV that cloud/scripts/fetch_supabase_history.py --raw writes.
 
-  python MSV4/scripts/msv4_bode_figure.py data/sensor_logs/msv4_s10.csv --out MSV4/docs/MSV4_BODE_BOARD1_2026-10-11.png \
+  python MSV4/scripts/msv4_bode_figure.py data/sensor_logs/msv4_s10.csv --out MSV4/docs/figures/MSV4_BODE_BOARD1_2026-10-11.png \
       --regime "Dry pot" "2026-10-10 18:00" "2026-10-10 19:14" \
       --regime "Moist, after two cups" "2026-10-10 21:14" "2026-10-11 01:20" \
       --moment "First reading with water" "2026-10-10 19:14:59"

@@ -30,6 +30,7 @@ import msv4_experimental_moisture as reading
 import msv4_moisture_competition as comp
 import msv4_moisture_slope_diagnosis as diag
 import msv4_moisture_tempcorr as tempcorr
+from msv4_plot_paths import default_plot_dir
 
 CAPACITANCES = ("direct capacitance above air", "contact capacitance Cm",
                 "soil-coupled capacitance (Cm + Cd - air)", "soil capacitance (derived)")
@@ -82,7 +83,7 @@ def interval_miss(points: list[dict], k: float) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("csv", type=Path)
-    parser.add_argument("-o", "--out", type=Path)
+    parser.add_argument("-o", "--out", type=Path, help="output PNG (default: latest/ for project data, beside the CSV elsewhere)")
     args = parser.parse_args()
     rows = [r for r in reading.load(args.csv, None) if r["coupled"] is not None]
     _, waterings = comp.load_pot(rows[0]["sensor"])
@@ -151,7 +152,8 @@ def main() -> None:
                  f"since the {waterings[-1]:%m-%d %H:%M} watering (+{comp.WATER_SETTLE_HOURS} h), "
                  f"each converted to grams by a line through the weighings since then",
                  fontsize=12, color=INK)
-    out = args.out or args.csv.parent / "msv4_thermal_refit.png"
+    out = args.out or default_plot_dir(args.csv) / "msv4_thermal_refit.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=110, bbox_inches="tight", facecolor="#fcfcfb")
     print(out)
 

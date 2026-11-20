@@ -5,7 +5,7 @@ PDT clock times. Each phase's value is the median over its settled window, the m
 next move. The warm bath that followed (from ~15:33) is left out: it changed the coupling one way and
 did not come back as the cup cooled.
 
-    python MSV4/scripts/msv4_cup_test_plot.py data/sensor_logs/msv4_sensor11_cuptest_2026-10-14.csv --out-dir data/sensor_logs
+    python MSV4/scripts/msv4_cup_test_plot.py data/sensor_logs/archive/msv4_sensor11_cuptest_2026-10-14.csv --out-dir data/sensor_logs/studies/cup-test
 """
 from __future__ import annotations
 

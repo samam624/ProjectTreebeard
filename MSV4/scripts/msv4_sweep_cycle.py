@@ -13,7 +13,7 @@ drying rate day by day and by day and night (MSV4/docs/MSV4_SENSOR11_FIRST_CYCLE
         --since-hours 290 --csv data/sensor_logs/msv4_sensor11_history_2026-10-27.csv
     python MSV4/scripts/msv4_sweep_cycle.py --fits data/sensor_logs/msv4_sensor11_sweep_fits_2026-10-27.csv \\
         --history data/sensor_logs/msv4_sensor11_history_2026-10-27.csv \\
-        --water "2026-10-18 13:31" "2026-10-27 12:31" --plot MSV4/docs/msv4_sensor11_cycle_2026-10-27.png
+        --water "2026-10-18 13:31" "2026-10-27 12:31" --plot MSV4/docs/figures/msv4_sensor11_cycle_2026-10-27.png
     python MSV4/scripts/msv4_sweep_cycle.py --self-test
 
 Times are local. A watering time is any moment between the last dry sweep and the first wet one.

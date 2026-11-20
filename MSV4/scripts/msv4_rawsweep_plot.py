@@ -1,6 +1,6 @@
 """Figures for the 2026-10-15 raw-sweep test (MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md).
 
-    python MSV4/scripts/msv4_rawsweep_plot.py data/sensor_logs/msv4_rawsweep_2026-10-15 --out-dir data/sensor_logs
+    python MSV4/scripts/msv4_rawsweep_plot.py data/sensor_logs/msv4_rawsweep_2026-10-15
 
 Writes three PNGs dated 2026-10-15:
   msv4_rawsweep_models_*    each model's residual by medium, and its mask C change with one pinch
@@ -213,12 +213,13 @@ def figure_loop(rows: list[dict], out: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("folder", type=Path, help="data/sensor_logs/msv4_rawsweep_2026-10-15")
-    parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--out-dir", type=Path, help="where to save the three figures (default: the capture folder)")
     args = parser.parse_args()
     plt.rcParams.update({"font.family": "Segoe UI", "font.size": 10.5})
     rows = swing.fit_log(args.folder / "monitor.txt", RS, 8.75e-12, CD0, args.folder / "swing_fits.csv")
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    outs = [args.out_dir / f"msv4_rawsweep_{k}_{DAY}.png" for k in ("models", "timeline", "loop")]
+    out_dir = args.out_dir or args.folder
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outs = [out_dir / f"msv4_rawsweep_{k}_{DAY}.png" for k in ("models", "timeline", "loop")]
     figure_models(media_summary(args.folder), outs[0])
     figure_timeline(rows, outs[1])
     figure_loop(rows, outs[2])

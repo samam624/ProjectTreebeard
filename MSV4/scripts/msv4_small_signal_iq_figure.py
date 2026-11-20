@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """MSV4 small-signal model of the moisture front end, and what it says about I/Q demodulation.
 
-Draws MSV4/docs/MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png and prints the numbers quoted in
+Draws MSV4/docs/figures/MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png and prints the numbers quoted in
 MSV4/docs/MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.md.
 
 The model is the one the firmware fits (`specNodeH` in MSV4_Probe_Bringup_BLE.ino), imported from
@@ -31,7 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_msv4_spectrum_fit import CP_DEFAULT, SPEC_RS, node_h  # noqa: E402
 
-FIGURE = Path(__file__).resolve().parents[1] / "docs" / "MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png"
+FIGURE = Path(__file__).resolve().parents[1] / "docs" / "figures" / "MSV4_SMALL_SIGNAL_MODEL_IQ_2026-09-29.png"
 W = 2 * np.pi * 1.0e6
 BASE = {"Cm": 671e-12, "R": 355.0, "Cs": 14.9e-12, "Cd": 5e-12}
 TC_G, TC_EPS = 0.02, -0.004          # per C: soil conductivity, water permittivity

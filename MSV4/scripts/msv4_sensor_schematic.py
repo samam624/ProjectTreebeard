@@ -19,7 +19,7 @@ import schemdraw  # noqa: E402
 import schemdraw.dsp as dsp  # noqa: E402
 import schemdraw.elements as elm  # noqa: E402
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png"
+OUT = Path(__file__).resolve().parents[1] / "docs" / "figures" / "MSV4_SENSOR_SMALL_SIGNAL_SCHEMATIC.png"
 RAIL, TAP, Y_I, Y_Q, X_SPLIT = 6.0, 8.2, 8.2, 3.2, 13.5
 
 plt.rcParams.update({"mathtext.fontset": "stix"})

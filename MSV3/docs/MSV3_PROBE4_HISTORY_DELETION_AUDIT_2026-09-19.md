@@ -10,6 +10,9 @@ committed (or the CSV is copied somewhere durable and its checksum verified agai
 the deleted rows are recoverable only from this one machine. Commit this note, and store the CSV
 outside the ignore rule if the rows are worth keeping.
 
+**Archive check, 2026-11-19.** The audit is now tracked. The CSV is in the local, Git-ignored
+`data/sensor_logs/archive/` directory. Its SHA-256 matched the original checksum below.
+
 ## What was deleted and why
 
 18 rows, `receiver_id = 'MSV2088A3104A7AC'`, `sensor_id = 4`,
@@ -43,7 +46,7 @@ Boundaries fixed by wake-counter resets, 2026-09-18, PDT:
 ## Backup
 
 ```text
-path    data/sensor_logs/probe4_deleted_v65566_outofrange_2026-09-19.csv
+path    data/sensor_logs/archive/probe4_deleted_v65566_outofrange_2026-09-19.csv
 sha256  65e2abc88768b50ad2aeb933f60caeae42dd4e283b108b2ab25cd1cfb3b6e986
 rows    18 data + 1 header
 ```

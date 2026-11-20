@@ -13,7 +13,7 @@ in `MSV3/fleet.json`, `msv4_boards` board 2. The 10-18 watering is seen only in 
 maintainer has not stated it. The pot is not weighed, so nothing here says which reading follows
 the water best.
 
-![cycle](msv4_sensor11_cycle_2026-10-27.png)
+![cycle](figures/msv4_sensor11_cycle_2026-10-27.png)
 
 Reproduce:
 
@@ -23,9 +23,9 @@ Reproduce:
         --since-hours 290 --csv data/sensor_logs/msv4_sensor11_history_2026-10-27.csv
     python MSV4/scripts/msv4_sweep_cycle.py --fits data/sensor_logs/msv4_sensor11_sweep_fits_2026-10-27.csv \
         --history data/sensor_logs/msv4_sensor11_history_2026-10-27.csv \
-        --water "2026-10-18 13:31" "2026-10-27 12:31" --plot MSV4/docs/msv4_sensor11_cycle_2026-10-27.png
+        --water "2026-10-18 13:31" "2026-10-27 12:31" --plot MSV4/docs/figures/msv4_sensor11_cycle_2026-10-27.png
 
-The full output is in `data/sensor_logs/msv4_sensor11_cycle_2026-10-27.txt`. The script's
+The full output is in [msv4_sensor11_cycle_2026-10-27.txt](../../data/sensor_logs/studies/sweep-fits/msv4_sensor11_cycle_2026-10-27.txt). The script's
 `--self-test` checks that it recovers a known temperature coefficient from a synthetic nine-day
 dry-down that has a daily temperature swing.
 
