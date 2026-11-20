@@ -1,0 +1,39 @@
+# MSV4 board 2 (MSV4-BU-6528), bring-up console v262177 (Rs 5600), blade dry in air on the desk
+# per the maintainer 2026-11-20 ('The boards are both in air rn get a reading'). Captured with
+# msv4_ble_console.py --cmd 'spectrum open' --cmd 'spectrum ab' --cmd moisture x3 --cmd temp
+Connecting to MSV4-BU-6528 at CB:23:3B:C2:65:28 ...
+Connected. MTU payload 244 bytes. Type 'help'; Ctrl+C to quit.
+> spectrum open
+   250000 Hz M=16 |H| 0.9643 ph   -4.61 deg
+   333333 Hz M=16 |H| 0.9602 ph   -6.18 deg
+   500000 Hz M=16 |H| 0.9517 ph   -9.17 deg
+   666667 Hz M=12 |H| 0.9379 ph  -12.02 deg
+  1000000 Hz M=16 |H| 0.9081 ph  -17.65 deg
+  1333333 Hz M=12 |H| 0.8695 ph  -22.50 deg
+  2000000 Hz M= 8 |H| 0.7840 ph  -30.62 deg
+  2666667 Hz M= 6 |H| 0.7028 ph  -36.66 deg
+Cp = 8.92 pF (+/- 2.7 %), fit rms 0.02114 -- stored for `spectrum`
+> spectrum ab
+orientation A done
+orientation B done
+   250000 Hz M=16 |H| 0.9373 ph  -12.29 deg
+   333333 Hz M=16 |H| 0.9192 ph  -16.11 deg
+   500000 Hz M=16 |H| 0.8732 ph  -23.31 deg
+   666667 Hz M=12 |H| 0.8146 ph  -29.53 deg
+  1000000 Hz M=16 |H| 0.7049 ph  -40.04 deg
+  1333333 Hz M=12 |H| 0.6024 ph  -47.68 deg
+  2000000 Hz M= 8 |H| 0.4535 ph  -57.76 deg
+  2666667 Hz M= 6 |H| 0.3590 ph  -63.33 deg
+  Rsoil 1/Gs    121906.3 ohm +/-  13.9 %  <- MOISTURE. lower = wetter
+  Cm interface     22.99 pF  +/- 106.0 %  <- contact quality: gaps/crusts move this
+  Cd direct        16.30 pF  +/-   1.9 %  <- board/fringe, should NOT track moisture
+  interface corner Gs/(2pi Cm) = 57 kHz
+  Rsoil @25C    115791.2 ohm  (tip 22.49 C, 2 %/C EC tempco)
+> moisture
+moisture Rsoil25=115218.4 Rsoil=121259.5 T=22.51 Cm=21.6 Cd=16.30 rms=0.00932
+> moisture
+moisture Rsoil25=114027.4 Rsoil=120112.7 T=22.47 Cm=20.5 Cd=16.28 rms=0.00957
+> moisture
+moisture Rsoil25=114086.5 Rsoil=120315.0 T=22.41 Cm=20.5 Cd=16.27 rms=0.00941
+> temp
+TEMP=22.49 C (NTC 11008 ohm, node 1727 mV, VDD 3296 mV) DIE=23.00 C
