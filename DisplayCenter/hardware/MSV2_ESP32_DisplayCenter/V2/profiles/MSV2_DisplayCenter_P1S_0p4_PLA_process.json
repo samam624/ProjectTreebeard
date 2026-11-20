@@ -7,13 +7,6 @@
   "compatible_printers": [
     "Bambu Lab P1S 0.4 nozzle"
   ],
-  "printable_area": [
-    "0x0",
-    "256x0",
-    "256x256",
-    "0x256"
-  ],
-  "printable_height": "256",
   "curr_bed_type": "Textured PEI Plate",
   "layer_height": "0.20",
   "initial_layer_print_height": "0.20",

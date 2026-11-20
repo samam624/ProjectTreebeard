@@ -534,6 +534,22 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
       <section class="network-card">
         <div class="editor-head">
           <div>
+            <div class="editor-title">Screen Orientation</div>
+            <div class="meta">For enclosures that mount the screen upside down</div>
+          </div>
+        </div>
+        <label class="check-row">
+          <input id="displayFlippedInput" type="checkbox">
+          <div>
+            Flip screen 180&deg;
+            <span>Saved on this receiver only. Also on the display: long-press, then Flip screen.</span>
+          </div>
+        </label>
+        <div class="notice" id="orientationNotice"></div>
+      </section>
+      <section class="network-card">
+        <div class="editor-head">
+          <div>
             <div class="editor-title">Receiver Pairing</div>
             <div class="meta" id="claimStatusText">Loading receiver...</div>
           </div>
@@ -1410,6 +1426,34 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         return;
       }
       $("soundNotice").textContent = enabled ? "Alert sounds on." : "Alert sounds muted.";
+    }
+
+    // Non-fatal on purpose: a missing orientation reading must not stop the rest of the page
+    // (WiFi setup in particular) from loading.
+    async function loadOrientation() {
+      try {
+        const response = await fetch("/orientation", { cache: "no-store" });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const info = await response.json();
+        $("displayFlippedInput").checked = Boolean(info.flipped);
+      } catch (error) {
+        $("orientationNotice").textContent = "Could not read orientation: " + (error.message || String(error));
+      }
+    }
+
+    async function saveOrientation() {
+      const flipped = $("displayFlippedInput").checked;
+      const response = await fetch("/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flipped })
+      });
+      if (!response.ok) {
+        $("displayFlippedInput").checked = !flipped;
+        $("orientationNotice").textContent = "Save failed: " + (await parseErrorText(response));
+        return;
+      }
+      $("orientationNotice").textContent = flipped ? "Screen flipped." : "Screen in normal orientation.";
     }
 
     function renderConfigMeta() {
@@ -3310,6 +3354,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     $("wifiForgetButton").addEventListener("click", forgetWifi);
     $("wifiLocalOnlyInput").addEventListener("change", updateWifiControls);
     $("soundEnabledInput").addEventListener("change", saveSound);
+    $("displayFlippedInput").addEventListener("change", saveOrientation);
     $("claimRefreshButton").addEventListener("click", loadClaim);
     $("copyReceiverIdButton").addEventListener("click", () => copyText(claimInfo?.receiverId, "Receiver ID copied."));
     $("copyClaimCodeButton").addEventListener("click", () => copyText(claimInfo?.claimCode, "Claim code copied."));
@@ -3326,6 +3371,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         await loadClaim();
         await loadCloud();
         await loadSound();
+        await loadOrientation();
       } catch (error) {
         $("setupNotice").textContent = "Reload failed: " + (error.message || String(error));
       }
@@ -3381,6 +3427,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         await loadClaim();
         await loadCloud();
         await loadSound();
+        await loadOrientation();
         setInterval(loadReadings, 3000);
         setInterval(() => {
           if (!$("historyView").classList.contains("hidden") && !historyLoadInFlight) loadHistory();

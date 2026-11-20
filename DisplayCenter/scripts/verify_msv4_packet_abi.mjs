@@ -178,9 +178,25 @@ assert.match(probe, /#define ADV_FLAG2_CP_DEFAULT\s+\(1U << 6\)/);
 assert.match(probe, /\(g_cpCalibrated \? 0 : ADV_FLAG2_CP_DEFAULT\)/);
 assert.match(probe,
   /const bool saneOpenReading = rsoil >= FIT_OPEN_OHM && bestRms < SPEC_CAL_MAX_RMS;\s*if \(!g_cpCalibrated && saneOpenReading\) cd = calibrateCpAfterOpenReading\(cd\);/);
-assert.equal(probe.match(/measureCp\(/g).length, 2,
-  "measureCp() must have one caller: a calibration taken with something on the blade is how " +
-  "board 1 came to report Cd 7 pF low on 2026-10-08.");
+// Only calibrateCpAfterOpenReading() may turn a measureCp() into the applied Cp: a calibration
+// taken with something on the blade is how board 1 came to report Cd 7 pF low on 2026-10-08.
+// 0b97b6b (2026-11-19) added a second caller, but it only fills the report-only g_bootOpenCp and
+// exists only in MSV4_REPORT_BOOT_OPEN_CP bench builds, so the rule is checked directly rather
+// than by counting calls.
+assert.deepEqual(probe.match(/measureCp\([^)]*\)/g),
+  ["measureCp(double& cp)", "measureCp(cp)", "measureCp(g_bootOpenCp)"],
+  "measureCp() callers changed: re-check that none of them can set the applied Cp.");
+assert.match(probe,
+  /static double calibrateCpAfterOpenReading\(double cd\)\s*\{[^}]*if \(!measureCp\(cp\)\) return cd;[^}]*g_specCp = cp;\s*g_cpCalibrated = true;/,
+  "The applied Cp must come only from the measurement taken after a sane open reading.");
+// Anywhere on a line, so a writer tacked onto another statement still counts; the declaration's
+// initialiser is excluded.
+assert.equal(probe.match(/(?<!double )g_specCp = /g).length, 1, "g_specCp must have exactly one writer.");
+assert.equal(probe.match(/g_cpCalibrated = true;/g).length, 1,
+  "g_cpCalibrated must be set in exactly one place.");
+assert.match(probe,
+  /#ifdef MSV4_REPORT_BOOT_OPEN_CP\s*if \(g_wakesSinceBoot == 1\)\s*\{[^}]*else measureCp\(g_bootOpenCp\);[^}]*\}\s*#endif/,
+  "The boot open-Cp measurement must stay report-only and bench-build-only.");
 assert.match(probe, /constexpr double SPEC_CP_DEFAULT = 0\.0;/,
   "Until it is calibrated Cp is zero: a Cp above the node capacitance pins Cd and bends Rsoil.");
 assert.match(scanner, /^FLAG2_CP_DEFAULT = 1 << 6$/m);
@@ -261,7 +277,10 @@ assert.match(probe, /snprintf\(g_maskText, sizeof\(g_maskText\), "%s %s mV n%u",
 assert.ok(scanner.includes(String.raw`re.fullmatch(r"A([+-]\d+\.\d) B([+-]\d+\.\d) mV(?: n(\d+))?", text)`),
   "The scanner must decode the probe's mask text, with or without the count, and nothing looser.");
 // Once a day and on a boot's first measurement wake, still after the sweep of the same wake.
-assert.match(probe, /static uint16_t g_wakesSinceMaskCheck = MASK_CHECK_EVERY_WAKES;/);
+// Counted in minutes since 0b97b6b (2026-11-19): a fresh-only build sleeps several minutes per
+// wake, so a wake count would stretch "a day".
+assert.match(probe, /constexpr uint16_t MASK_CHECK_MINUTES = 1440;/);
+assert.match(probe, /static uint16_t g_minutesSinceMaskCheck = MASK_CHECK_MINUTES;/);
 assert.match(probe, /if \(maskCheckDue\(\)\) checkMask\(\);/);
 assert.match(probe, /checkMask\(\);\s*\}\s*else\s*\{\s*g_wakesUntilMoisture--;/,
   "The DC step belongs after the sweep of the same wake, never before it.");

@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-10 tls-psram-v1"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-20 boot-repaint-v2"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -154,6 +154,7 @@ void loop()
 #include "BleScanFlush.h"
 #endif
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <string.h>
 #if TREEBEARD_ENABLE_WIFI
 #include <LittleFS.h>
@@ -245,6 +246,7 @@ const char CLOUD_CONFIG_PATH[] = "/cloud.json";
 const char DISPLAY_SETTINGS_PATH[] = "/display.json";
 const char TOUCH_CALIBRATION_PATH[] = "/touch-calibration.json";
 const char SOUND_SETTINGS_PATH[] = "/sound.json";
+const char ORIENTATION_SETTINGS_PATH[] = "/orientation.json";
 const char AUTOCAL_CACHE_PATH[] = "/autocal-cache-v1.json";
 const char AUTOCAL_CACHE_TEMP_PATH[] = "/autocal-cache-v1.tmp";
 const char TEMPERATURE_COMPENSATION_CACHE_PATH[] = "/temp-comp-v3.json";
@@ -3025,7 +3027,37 @@ uint32_t cloudTlsConnectFailuresThisBoot = 0;
 // RTC_NOINIT survives ESP.restart(); after a power loss the magic cannot match.
 RTC_NOINIT_ATTR uint32_t rtcCloudStallRestartMagic;
 bool bootWasCloudStallRestart = false;
+// currentRotation is the PHYSICAL rotation last set on the panel; mapRawTouchToScreen() keys on
+// it. logicalRotation is what the layout asked for (ui.json "rotation", forced landscape).
+// They differ by 180 degrees when displayFlipped is set - a per-device mounting choice (the
+// build-two enclosure holds the panel upside down relative to the board), kept local like the
+// sound mute and never part of the cloud-synced ui.json, which is shared between receivers.
 uint8_t currentRotation = 1;
+uint8_t logicalRotation = 1;
+bool displayFlipped = false;
+// The reason line of the WiFi setup screen currently shown, so an orientation change made
+// while the setup portal is up can repaint that same screen the right way up.
+const char* wifiSetupScreenReason = nullptr;
+// True only while the plain "MSV2 booting" screen is up. bootLog() mirrors each boot step onto
+// it, so a receiver that stops there says on its own face which step it stopped at - a unit
+// on a wall charger has no serial to ask. Every full-screen paint starts with
+// applyDisplayRotation(), which clears this.
+bool bootScreenActive = false;
+// USB-serial bench commands (see handleSerialCommand()). Serial only, so nothing on the network
+// can reach them.
+char serialCommandBuffer[48];
+uint8_t serialCommandLength = 0;
+// The receiver otherwise never transmits over BLE (it only scans), so a PC has nothing to
+// measure its BLE signal from. "ble-beacon <s>" puts a plain named beacon on air for that.
+bool rssiBeaconActive = false;
+uint32_t rssiBeaconUntilMs = 0;
+// Boot watchdog: setup() normally finishes in ~3 s. A board seen on 2026-11-19 sat on "MSV2
+// booting" indefinitely with a silent serial port and no core dump, so a hang in setup() was
+// leaving neither recovery nor evidence. If setup() has not returned by this deadline the timer
+// panics on purpose (see bootWatchdogFired()). The longest legitimate setup() is a full touch
+// calibration: 30 s + 3 x 20 s of target waits plus settling, well under this.
+const uint32_t BOOT_WATCHDOG_MS = 180000UL;
+esp_timer_handle_t bootWatchdogTimer = nullptr;
 uint32_t lastArtFrameMs = 0;
 const uint16_t ART_FRAME_DEFAULT_MS = 500;
 const uint32_t ART_RENDER_POLL_MS = 25;
@@ -3114,7 +3146,7 @@ bool overlayOpenedThisGesture = false;
 // coordinate (see touchPendingConfirm's use of it), and never reclassified from a later,
 // possibly-drifted sample - the release handler dispatches on this latched target instead of
 // re-deriving one from lastTouchX/lastTouchY.
-enum class OverlayTouchTarget : uint8_t { None, Minus, Plus, Slider, Screen, Sound, Close };
+enum class OverlayTouchTarget : uint8_t { None, Minus, Plus, Slider, Screen, Sound, Flip, Close };
 OverlayTouchTarget overlayTouchTarget = OverlayTouchTarget::None;
 // True from the moment a slider touch read (the confirmed press itself, or a later drag
 // sample) has a coordinate waiting to be painted, until previewTouchBrightness() actually
@@ -3243,6 +3275,15 @@ void bootLog(const char* message)
   Serial.print("[Treebeard boot] ");
   Serial.println(message);
   Serial.flush();
+#if TREEBEARD_ENABLE_DISPLAY
+  if (bootScreenActive)
+  {
+    // One fixed-width line, cleared and rewritten per step; boot-only, so there is no
+    // periodic path for the surgical-redraw rule to apply to.
+    tft.fillRect(8, 24, 464, 10, TFT_BLACK);
+    drawTextLeft(message, 8, 24, 1, TFT_WARNING, TFT_BLACK);
+  }
+#endif
 }
 
 uint16_t parseColor(const char* value, uint16_t fallback)
@@ -4178,6 +4219,278 @@ void setSoundEnabledLocal(bool enabled)
   persistSoundSettings();
 }
 
+// Screen flip is local receiver config for the same reason the sound mute is: it describes how
+// THIS board is mounted, so it is never written into the cloud-synced ui.json "rotation", which
+// is shared configuration and would flip every other receiver too.
+void persistOrientationSettings()
+{
+  StaticJsonDocument<64> doc;
+  doc["flipped"] = displayFlipped;
+  File file = LittleFS.open(ORIENTATION_SETTINGS_PATH, "w");
+  if (!file)
+  {
+    return;
+  }
+  serializeJson(doc, file);
+  file.close();
+}
+
+void loadOrientationSettings()
+{
+  displayFlipped = false;
+  if (!LittleFS.exists(ORIENTATION_SETTINGS_PATH))
+  {
+    return;
+  }
+  File file = LittleFS.open(ORIENTATION_SETTINGS_PATH, "r");
+  if (!file)
+  {
+    return;
+  }
+  StaticJsonDocument<64> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (!error)
+  {
+    displayFlipped = doc["flipped"] | false;
+  }
+}
+
+// Repaints whichever full screen is current. Two callers, both one-time events rather than a
+// periodic path (see the display-surgical-redraw rule: full draws are for "layout just
+// changed"): a 180-degree flip, which moves every pixel, and serviceBootRepaint(). Must run on
+// loopTask - the flip arrives from the touch release handler, the /orientation POST handler and
+// the serial command handler, all reached from loop().
+void repaintCurrentScreen()
+{
+#if TREEBEARD_ENABLE_DISPLAY
+#if TREEBEARD_ENABLE_WIFI
+  if (pendingRestartMs != 0)
+  {
+    renderWifiSavedScreen();
+    lastDisplaySpiActivityMs = millis();
+    return;
+  }
+  if (wifiSetupPortalActive)
+  {
+    renderWifiSetupScreen(wifiSetupScreenReason);
+    lastDisplaySpiActivityMs = millis();
+    return;
+  }
+#endif
+  renderUi();
+  if (brightnessOverlayOpen)
+  {
+    drawBrightnessOverlay();
+  }
+  lastDisplaySpiActivityMs = millis();
+#endif
+}
+
+void setDisplayFlippedLocal(bool flipped)
+{
+  if (flipped == displayFlipped)
+  {
+    return;
+  }
+  displayFlipped = flipped;
+  persistOrientationSettings();
+  Serial.print("[Treebeard display] flipped=");
+  Serial.println(displayFlipped ? "true" : "false");
+  repaintCurrentScreen();
+}
+
+// Boot recovery repaint (2026-11-20). After the board has been unpowered for a while, the panel
+// can ignore every write for a window that starts at the first XPT2046 read in setup(). The
+// firmware keeps running, but a static screen (the WiFi setup portal) is never redrawn, so the
+// stale "MSV2 booting" image stays up indefinitely. Measured three times on the build-two
+// receiver: writes were landing again in under 2 minutes, and a full repaint brought the screen
+// back every time. The cause is not established (see docs/ESP32_DISPLAY_FLASHING.md), so this
+// repaints blindly, once, at 10 s of uptime (the maintainer's choice; a window longer than that
+// would still leave the screen stale). If a finger is down at 10 s it waits for the release.
+const uint32_t BOOT_REPAINT_AT_MS = 10000UL;
+bool bootRepaintDone = false;
+
+void serviceBootRepaint(uint32_t now)
+{
+  if (bootRepaintDone || now < BOOT_REPAINT_AT_MS)
+  {
+    return;
+  }
+  // Same guard as loop()'s periodic writers, plus a finger still down: never repaint under a
+  // gesture or across a touch read.
+  if (touchWasDown || touchPendingConfirm || touchAcquisitionPending)
+  {
+    return;
+  }
+  bootRepaintDone = true;
+  Serial.printf("[Treebeard display] boot repaint at %lu ms\n", (unsigned long)now);
+  repaintCurrentScreen();
+}
+
+// The WiFi setup screen's "Flip screen" button. One definition for both the draw in
+// renderWifiSetupScreen() and the hit-test in handleTouchInput(), so they cannot drift apart.
+// Bottom-right of whichever way up the screen currently is.
+void setupFlipButtonRect(int& x, int& y, int& w, int& h)
+{
+  w = 96;
+  h = 30;
+  x = tft.width() - 16 - w;
+  y = tft.height() - 8 - h;
+}
+
+// Deliberate panic rather than esp_restart(): the panic path writes a core dump (the coredump
+// partition is enabled in this core) holding loopTask's backtrace, which is the evidence a hung
+// boot otherwise never leaves. The reset that follows shows as "reset: panic" on the boot screen.
+void bootWatchdogFired(void* arg)
+{
+  (void)arg;
+  abort();
+}
+
+void startBootWatchdog()
+{
+  esp_timer_create_args_t args = {};
+  args.callback = bootWatchdogFired;
+  args.name = "boot_wdt";
+  if (esp_timer_create(&args, &bootWatchdogTimer) == ESP_OK)
+  {
+    esp_timer_start_once(bootWatchdogTimer, (uint64_t)BOOT_WATCHDOG_MS * 1000ULL);
+  }
+  else
+  {
+    bootWatchdogTimer = nullptr;
+  }
+}
+
+void stopBootWatchdog()
+{
+  if (bootWatchdogTimer != nullptr)
+  {
+    esp_timer_stop(bootWatchdogTimer);
+    esp_timer_delete(bootWatchdogTimer);
+    bootWatchdogTimer = nullptr;
+  }
+}
+
+void startRssiBeacon(uint32_t seconds)
+{
+#if !TREEBEARD_ENABLE_BLE
+  (void)seconds;
+  Serial.println("[Treebeard beacon] BLE disabled in this build");
+#else
+  if (benchCommandAdvertising)
+  {
+    Serial.println("[Treebeard beacon] busy: a bench command is on air; try again in a few seconds");
+    return;
+  }
+  // A no-op when the scanner already brought BLE up. In the WiFi setup portal the scanner is
+  // deferred, so this is the first init, and BLE then stays up until the next reboot.
+  if (!BLEDevice::init("MSV2-DISPLAY"))
+  {
+    Serial.println("[Treebeard beacon] BLE init failed");
+    return;
+  }
+  BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  if (advertising == nullptr)
+  {
+    Serial.println("[Treebeard beacon] no advertiser");
+    return;
+  }
+  BLEAdvertisementData advertisementData;
+  advertisementData.setFlags(0x06);  // LE General Discoverable, BR/EDR not supported
+  advertisementData.setName("MSV2-DISPLAY");
+  advertising->setAdvertisementData(advertisementData);
+  advertising->setScanResponse(false);
+  // Non-connectable, with the same backend split as benchSendCommand() - see its comment.
+#if defined(CONFIG_NIMBLE_ENABLED)
+  advertising->setAdvertisementType(BLE_GAP_CONN_MODE_NON);
+#elif defined(CONFIG_BLUEDROID_ENABLED)
+  advertising->setAdvertisementType(ADV_TYPE_NONCONN_IND);
+#endif
+  advertising->start();
+  rssiBeaconActive = true;
+  rssiBeaconUntilMs = millis() + seconds * 1000UL;
+  // getPower() only decodes the original ESP32's level enum, so the raw level goes out too.
+  Serial.printf("[Treebeard beacon] on air %lu s as MSV2-DISPLAY address=%s txPowerDbm=%d rawLevel=%d\n",
+    (unsigned long)seconds, BLEDevice::getAddress().toString().c_str(), BLEDevice::getPower(ESP_BLE_PWR_TYPE_ADV),
+    (int)esp_ble_tx_power_get(ESP_BLE_PWR_TYPE_ADV));
+#endif
+}
+
+void serviceRssiBeacon()
+{
+#if TREEBEARD_ENABLE_BLE
+  if (!rssiBeaconActive || (int32_t)(millis() - rssiBeaconUntilMs) < 0)
+  {
+    return;
+  }
+  rssiBeaconActive = false;
+  // A bench command that started since owns the advertiser now; its own service stops it.
+  if (!benchCommandAdvertising)
+  {
+    BLEAdvertising* advertising = BLEDevice::getAdvertising();
+    if (advertising != nullptr)
+    {
+      advertising->stop();
+    }
+  }
+  Serial.println("[Treebeard beacon] off air");
+#endif
+}
+
+//   flip on | flip off      local screen flip, same as the overlay / setup-screen button
+//   ble-beacon <1-600>      advertise "MSV2-DISPLAY" for that many seconds
+void handleSerialCommand(const char* line)
+{
+  if (strcmp(line, "flip on") == 0 || strcmp(line, "flip off") == 0)
+  {
+    setDisplayFlippedLocal(strcmp(line, "flip on") == 0);
+    Serial.print("[Treebeard cmd] flipped=");
+    Serial.println(displayFlipped ? "true" : "false");
+    return;
+  }
+  if (strncmp(line, "ble-beacon", 10) == 0)
+  {
+    long seconds = atol(line + 10);
+    if (seconds < 1 || seconds > 600)
+    {
+      Serial.println("[Treebeard cmd] usage: ble-beacon <1-600>");
+      return;
+    }
+    startRssiBeacon((uint32_t)seconds);
+    return;
+  }
+  Serial.println("[Treebeard cmd] unknown; commands: flip on | flip off | ble-beacon <1-600>");
+}
+
+void serviceSerialCommands()
+{
+  while (Serial.available() > 0)
+  {
+    int c = Serial.read();
+    if (c < 0)
+    {
+      return;
+    }
+    if (c == '\r' || c == '\n')
+    {
+      if (serialCommandLength == 0)
+      {
+        continue;
+      }
+      serialCommandBuffer[serialCommandLength] = '\0';
+      serialCommandLength = 0;
+      handleSerialCommand(serialCommandBuffer);
+      continue;
+    }
+    if (serialCommandLength < sizeof(serialCommandBuffer) - 1)
+    {
+      serialCommandBuffer[serialCommandLength++] = (char)c;
+    }
+  }
+}
+
 void buzzerBeginStep(uint32_t now)
 {
   const BuzzerStep& step = buzzerState.steps[buzzerState.stepIndex];
@@ -4350,21 +4663,32 @@ bool writeDisplaySettingsJson(const String& body)
   return true;
 }
 
+// Logical rotation -> physical panel rotation. XOR 2 is the 180-degree partner (0<->2, 1<->3),
+// which keeps the same width/height, so landscape stays landscape.
+uint8_t physicalRotationFor(uint8_t logical)
+{
+  return displayFlipped ? (uint8_t)(logical ^ 2) : logical;
+}
+
 void applyDisplayRotation(uint8_t requestedRotation, bool forceLandscape)
 {
+  // Every full-screen paint calls this first, so the boot screen is about to be replaced.
+  bootScreenActive = false;
   requestedRotation = (uint8_t)clampInt(requestedRotation, 0, 3);
-  tft.setRotation(requestedRotation);
-  currentRotation = requestedRotation;
+  logicalRotation = requestedRotation;
+  currentRotation = physicalRotationFor(requestedRotation);
+  tft.setRotation(currentRotation);
 
   if (forceLandscape && tft.width() < tft.height())
   {
     const uint8_t rotations[] = { 1, 3, 0, 2 };
     for (uint8_t i = 0; i < sizeof(rotations); i++)
     {
-      tft.setRotation(rotations[i]);
+      tft.setRotation(physicalRotationFor(rotations[i]));
       if (tft.width() > tft.height())
       {
-        currentRotation = rotations[i];
+        logicalRotation = rotations[i];
+        currentRotation = physicalRotationFor(rotations[i]);
         return;
       }
     }
@@ -4729,11 +5053,29 @@ bool runTouchCalibration(uint32_t firstPointTimeoutMs)
   drawTextCenter("Touch calibration", tft.width() / 2, tft.height() / 2 - 18, 2, TFT_WHITE, TFT_BLACK);
   drawTextCenter("Press each crosshair, then release", tft.width() / 2, tft.height() / 2 + 12, 1, TFT_MUTED, TFT_BLACK);
 
+  // The stored calibration is always in the physical rotation-1 frame (mapRawTouchToScreen()
+  // converts from there). When the screen is flipped the panel is in physical rotation 3, so
+  // the rotation-1 corner a slot needs sits at the diagonally opposite screen position. Place
+  // each target there, so the raw reading lands in the slot it belongs to and an existing
+  // calibration stays valid across a flip in either direction.
+  const int lastX = tft.width() - 1;
+  const int lastY = tft.height() - 1;
+  const bool rotated = currentRotation == 3;
+  const int m = TOUCH_TARGET_MARGIN;
+  const int tlSX = rotated ? lastX - m : m;
+  const int tlSY = rotated ? lastY - m : m;
+  const int trSX = rotated ? m : lastX - m;
+  const int trSY = rotated ? lastY - m : m;
+  const int blSX = rotated ? lastX - m : m;
+  const int blSY = rotated ? m : lastY - m;
+  const int brSX = rotated ? m : lastX - m;
+  const int brSY = rotated ? m : lastY - m;
+
   int16_t tlX, tlY, trX, trY, blX, blY, brX, brY;
-  if (!captureCalibrationPoint(TOUCH_TARGET_MARGIN, TOUCH_TARGET_MARGIN, tlX, tlY, firstPointTimeoutMs) ||
-      !captureCalibrationPoint(tft.width() - 1 - TOUCH_TARGET_MARGIN, TOUCH_TARGET_MARGIN, trX, trY, 20000UL) ||
-      !captureCalibrationPoint(TOUCH_TARGET_MARGIN, tft.height() - 1 - TOUCH_TARGET_MARGIN, blX, blY, 20000UL) ||
-      !captureCalibrationPoint(tft.width() - 1 - TOUCH_TARGET_MARGIN, tft.height() - 1 - TOUCH_TARGET_MARGIN, brX, brY, 20000UL))
+  if (!captureCalibrationPoint(tlSX, tlSY, tlX, tlY, firstPointTimeoutMs) ||
+      !captureCalibrationPoint(trSX, trSY, trX, trY, 20000UL) ||
+      !captureCalibrationPoint(blSX, blSY, blX, blY, 20000UL) ||
+      !captureCalibrationPoint(brSX, brSY, brX, brY, 20000UL))
   {
     delay(1200);
     return false;
@@ -4753,9 +5095,11 @@ bool runTouchCalibration(uint32_t firstPointTimeoutMs)
   int16_t checkX = 0;
   int16_t checkY = 0;
   bool mapped = mapRawTouchToScreen(brX, brY, checkX, checkY);
+  // mapRawTouchToScreen() returns current-rotation screen coordinates, so compare against
+  // where the fourth target was actually drawn.
   bool accurate = mapped &&
-    abs(checkX - (tft.width() - 1 - TOUCH_TARGET_MARGIN)) <= 55 &&
-    abs(checkY - (tft.height() - 1 - TOUCH_TARGET_MARGIN)) <= 55;
+    abs(checkX - brSX) <= 55 &&
+    abs(checkY - brSY) <= 55;
   if (!accurate || !persistTouchCalibration())
   {
     touchCalibration = previous;
@@ -4901,6 +5245,10 @@ void drawBrightnessOverlay()
   tft.fillRoundRect(panelX, panelY, panelW, panelH, 10, TFT_SURFACE);
   tft.drawRoundRect(panelX, panelY, panelW, panelH, 10, TFT_SURFACE_2);
   drawTextLeft("Display brightness", panelX + 16, panelY + 14, 2, TFT_WHITE, TFT_SURFACE);
+  // Same x/width as the Close button below so the right-hand column lines up. Its label never
+  // changes (a flip is obvious on its own), so it has no separate data-only redraw.
+  tft.fillRoundRect(panelX + panelW - 104, panelY + 10, 88, 30, 6, TFT_SURFACE_2);
+  drawTextCenter("Flip screen", panelX + panelW - 60, panelY + 21, 1, TFT_WHITE, TFT_SURFACE_2);
 
   drawBrightnessSliderRow(brightness, screenOn);
 
@@ -5348,6 +5696,10 @@ void handleTouchInput(uint32_t now)
       {
         overlayTouchTarget = OverlayTouchTarget::Sound;
       }
+      else if (pointInside(x, y, panelX + panelW - 112, panelY + 4, 104, 42))
+      {
+        overlayTouchTarget = OverlayTouchTarget::Flip;
+      }
       else if (pointInside(x, y, panelX + panelW - 112, buttonY - 6, 104, 46) || !pointInside(x, y, panelX, panelY, panelW, panelH))
       {
         overlayTouchTarget = OverlayTouchTarget::Close;
@@ -5447,6 +5799,18 @@ void handleTouchInput(uint32_t now)
     bool dashboardControlsAllowed = true;
 #if TREEBEARD_ENABLE_WIFI
     dashboardControlsAllowed = !wifiSetupPortalActive && pendingRestartMs == 0;
+    if (wifiSetupPortalActive && pendingRestartMs == 0)
+    {
+      // The setup screen's only control. A generous margin around the drawn button, since a
+      // corner of a resistive panel inside an enclosure lip is not a precise place to tap.
+      int flipX, flipY, flipW, flipH;
+      setupFlipButtonRect(flipX, flipY, flipW, flipH);
+      if (pointInside(lastTouchX, lastTouchY, flipX - 12, flipY - 12, flipW + 24, flipH + 20))
+      {
+        setDisplayFlippedLocal(!displayFlipped);
+      }
+      return;
+    }
 #endif
     if (dashboardControlsAllowed)
     {
@@ -5523,6 +5887,11 @@ void handleTouchInput(uint32_t now)
       // already reflects the new state here.
       drawBrightnessSoundButtonRow(soundEnabled);
       lastDisplaySpiActivityMs = millis();
+      break;
+    case OverlayTouchTarget::Flip:
+      // Leaves the overlay open, repainted the new way up, so a wrong guess is one more tap
+      // on the same button (which is now on the opposite physical side).
+      setDisplayFlippedLocal(!displayFlipped);
       break;
     case OverlayTouchTarget::Close:
       brightnessOverlayOpen = false;
@@ -7219,6 +7588,7 @@ void renderWifiSetupScreen(const char* reason)
   sensorDataDirty = false;
   displayDirty = false;
   wifiSetupScreenDrawn = true;
+  wifiSetupScreenReason = reason;
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
   drawTextLeft("WiFi Setup", 16, 14, 2, TFT_WHITE, TFT_BLACK);
@@ -7232,6 +7602,13 @@ void renderWifiSetupScreen(const char* reason)
   drawTextLeft("If no page appears, open Safari/Chrome and type:", 16, 216, 1, TFT_MUTED, TFT_BLACK);
   drawTextLeft("192.168.4.1", 16, 238, 2, TFT_ACCENT, TFT_BLACK);
   drawTextLeft("Then tap Setup > Receiver WiFi.", 16, 268, 1, TFT_WHITE, TFT_BLACK);
+
+  // Setup is the first screen a new enclosure shows, and the dashboard's long-press overlay is
+  // not reachable from here, so the flip has to be too.
+  int flipX, flipY, flipW, flipH;
+  setupFlipButtonRect(flipX, flipY, flipW, flipH);
+  tft.fillRoundRect(flipX, flipY, flipW, flipH, 6, TFT_SURFACE_2);
+  drawTextCenter("Flip screen", flipX + flipW / 2, flipY + 11, 1, TFT_WHITE, TFT_SURFACE_2);
 #endif
 }
 
@@ -7304,7 +7681,9 @@ void renderUi()
   uint16_t dangerColor = parseColor(theme["danger"] | "#FF5A5F", TFT_DANGER);
   staleSeconds = doc["staleSeconds"] | DEFAULT_STALE_SECONDS;
   JsonObject layout = doc["layout"];
-  uint8_t requestedRotation = doc["rotation"] | currentRotation;
+  // logicalRotation, not currentRotation: the latter is already flipped when displayFlipped is
+  // set, and feeding it back in would flip it a second time.
+  uint8_t requestedRotation = doc["rotation"] | logicalRotation;
   applyDisplayRotation(requestedRotation, layoutWantsLandscape(layout));
 
   setCheckpoint("render: header draw");
@@ -11213,6 +11592,37 @@ void setupServer()
     server.send(200, "application/json", "{\"ok\":true}");
   });
 
+  server.on("/orientation", HTTP_GET, []() {
+    Serial.println("[Treebeard web] GET /orientation");
+    server.sendHeader("Cache-Control", "no-store");
+    StaticJsonDocument<64> doc;
+    doc["ok"] = true;
+    doc["flipped"] = displayFlipped;
+    String output;
+    serializeJson(doc, output);
+    server.send(200, "application/json", output);
+  });
+
+  server.on("/orientation", HTTP_POST, []() {
+    Serial.println("[Treebeard web] POST /orientation");
+    if (!isAdminActionAllowed())
+    {
+      server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
+      return;
+    }
+    StaticJsonDocument<64> doc;
+    DeserializationError error = deserializeJson(doc, server.arg("plain"));
+    if (error || !doc["flipped"].is<bool>())
+    {
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"flipped (boolean) is required\"}");
+      return;
+    }
+    // Reply first: the repaint is a full-screen write and the phone should not wait on it.
+    const bool flipped = doc["flipped"].as<bool>();
+    server.send(200, "application/json", flipped ? "{\"ok\":true,\"flipped\":true}" : "{\"ok\":true,\"flipped\":false}");
+    setDisplayFlippedLocal(flipped);
+  });
+
   server.on("/snapshot", HTTP_GET, []() {
     Serial.println("[Treebeard web] GET /snapshot");
     server.sendHeader("Cache-Control", "no-store");
@@ -11635,6 +12045,12 @@ void setupWifi()
 
 void setup()
 {
+  // Stops the boot watchdog on every way out of setup(), including its early error returns.
+  struct BootWatchdogGuard
+  {
+    ~BootWatchdogGuard() { stopBootWatchdog(); }
+  } bootWatchdogGuard;
+  startBootWatchdog();
   Serial.begin(115200);
   delay(2000);
   Serial.println();
@@ -11721,6 +12137,7 @@ void setup()
   loadDisplaySettings();
   loadTouchCalibration();
   loadSoundSettings();
+  loadOrientationSettings();
   bootLog("LittleFS ready");
 
   bootLog("initializing buzzer PWM (GPIO38)");
@@ -11774,12 +12191,20 @@ void setup()
   applyDisplayRotation(1, true);
   Serial.print("[Treebeard display] rotation=");
   Serial.print(currentRotation);
+  Serial.print(displayFlipped ? " flipped" : "");
   Serial.print(" size=");
   Serial.print(tft.width());
   Serial.print("x");
   Serial.println(tft.height());
   tft.fillScreen(TFT_BLACK);
   drawTextLeft("MSV2 booting", 8, 8, 1, TFT_WHITE, TFT_BLACK);
+  {
+    // A panic or watchdog here means a boot loop, which looks identical to a hang otherwise.
+    char resetLine[48];
+    snprintf(resetLine, sizeof(resetLine), "reset: %s", resetReasonName(resetReason));
+    drawTextLeft(resetLine, 8, 40, 1, TFT_MUTED, TFT_BLACK);
+  }
+  bootScreenActive = true;
   bootLog("display ready");
 
   bootLog("initializing XPT2046 touch");
@@ -11928,6 +12353,8 @@ void loop()
   // display guard: the command is triggered over HTTP now, so nothing about it depends on the
   // panel being present or awake. Returns immediately when no command is in flight.
   serviceBenchCommandBroadcast();
+  serviceRssiBeacon();
+  serviceSerialCommands();
 
 #if TREEBEARD_ENABLE_WIFI
   maintainWifiConnection(now);
@@ -11952,6 +12379,9 @@ void loop()
 
 #if TREEBEARD_ENABLE_DISPLAY
   handleTouchInput(now);
+  // Ahead of the overlay and setup-portal early returns below: those are exactly the screens
+  // that otherwise never repaint.
+  serviceBootRepaint(now);
   if (brightnessOverlayOpen)
   {
     // Keep the modal stable while a finger is dragging. Sensor data remains

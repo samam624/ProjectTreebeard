@@ -4,10 +4,12 @@ A rectangular two-part enclosure (front cover + rear shell) with a folding
 kickstand, built around the display module and the DisplayCenter controller
 PCB soldered together through the display's 14-pin header.
 
-**Current design: prototype 9 (2026-11-17).** Print pack:
-[`output/p1s_0p4_pla_v2/`](output/p1s_0p4_pla_v2/). Print the fit-check plate
-first; see that folder's `PRINT_IN_BAMBU_STUDIO.md`. The v1 pack (prototype 8,
-2026-09-24) is kept for history and should not be printed.
+**Current design: prototype 9 (2026-11-17).** Print packs:
+[`output/p1s_0p4_pla_v2/`](output/p1s_0p4_pla_v2/) (Bambu P1S, sliced
+`.gcode.3mf`, including a one-plate build of the whole enclosure; re-sliced
+2026-11-19, see its `PRINT_IN_BAMBU_STUDIO.md`) and
+[`output/mk4s_0p4_pla_v2/`](output/mk4s_0p4_pla_v2/) (Prusa MK4S). The v1
+pack (prototype 8, 2026-09-24) is kept for history and should not be printed.
 
 ## Why prototype 9 exists
 
@@ -119,7 +121,18 @@ generator disagrees. If the fit-check plate shows a different offset, change
 `controllerAsBuiltOffset` in the generator and `AS_BUILT_OFFSET` in the
 validator together.
 
-Slicing (Bambu Studio 02.09.01.70 command line) uses the profiles in
-`profiles/` on top of the built-in `Bambu Lab P1S 0.4 nozzle` machine preset.
-The rear-shell process inherits a user preset that the command line cannot
-resolve, so slice with a copy whose `inherits` is `0.20mm Standard @BBL X1C`.
+P1S slicing (Bambu Studio 02.09 installed):
+
+```powershell
+python DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\tools\slice_p1s_pack.py
+```
+
+Do not point the Bambu Studio command line at the stock presets directly. It
+does not resolve their `inherits` chains or the P1S preset's `include` list
+(where its start/end G-code lives), and on 2026-11-17 that produced plates with
+a `G28`-only start sequence and generic speeds and cooling. The script
+flattens the presets itself, using the overlays in `profiles/`, and slices with
+the flattened copies in `profiles/p1s_flattened/`. It checks the G-code against
+them setting by setting, and refuses the pack on any difference. The overlays
+must not set machine keys such as `printable_area`; the script refuses that
+too.

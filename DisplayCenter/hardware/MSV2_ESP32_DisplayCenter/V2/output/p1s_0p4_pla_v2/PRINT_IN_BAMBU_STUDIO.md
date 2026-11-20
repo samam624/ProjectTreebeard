@@ -1,22 +1,44 @@
 # MSV2 DisplayCenter enclosure v2 - P1S / 0.4 mm / PLA
 
-Prototype 9 (2026-11-17). It fixes the six problems found on the v1 print:
-screen edges showing, boards not lining up, the half-mounted stack, the
-off-centre USB-C, the uneven top and bottom borders, and the blind prop holes.
+Prototype 9 (2026-11-17), re-sliced on 2026-11-19. Every file here is a
+sliced `.gcode.3mf` for a Bambu Lab P1S with a 0.4 mm nozzle, a Textured PEI
+Plate and PLA. Send one to the printer and print it. Nothing needs re-slicing.
 
-All three projects are pre-sliced for a Bambu Lab P1S with a 0.4 mm nozzle,
-Textured PEI Plate, 0.20 mm layers, three walls, 20% gyroid infill, and a 5 mm
-outer brim. Open each 3MF in Bambu Studio, pick the loaded PLA spool, and print
-the plate as prepared. Do not auto-orient.
+| File | What is on the plate | Time | PLA | Supports |
+| --- | --- | --- | --- | --- |
+| `..._full_enclosure_v2.gcode.3mf` | **whole enclosure on one plate**: front cover, rear shell, kickstand | 3 h 08 min | 85.1 g | rear shell only |
+| `..._fit_check_plate_v2.gcode.3mf` | fit-check plate | 27 min | 8.3 g | none |
+| `..._front_and_stand_v2.gcode.3mf` | front cover + kickstand | 1 h 01 min | 20.2 g | none |
+| `..._rear_shell_v2.gcode.3mf` | rear shell | 2 h 26 min | 66.1 g | tree, build plate only |
 
-## Step 1: fit-check plate (print this first)
+The one-plate build matches the MK4S pack's `full_enclosure`. Tree supports
+are on for the rear shell and switched off per object for the cover and the
+kickstand. The parts are separate objects, so one can be skipped from the
+printer without stopping the others. The two split plates are the same parts,
+for when the plate is busy or one part has to be reprinted.
 
-`MSV2_DisplayCenter_P1S_0p4_PLA_fit_check_plate_v2.3mf`: about 39 min, 8.3 g.
+Settings: Bambu `0.20mm Standard @BBL X1C` (0.20 mm layers), with 3 walls,
+5 top and 5 bottom layers, 20% gyroid infill, and a 5 mm outer brim. Generic
+PLA at 220 C, with the bed at 55 C.
 
-The controller board's position was worked out from photos and calipers, not
-measured directly, so it is good to about +/-0.4 mm. The display holes give
-an M2 screw only +/-0.6 mm of slack. Check the position before the 7-hour
-print:
+## Sending a file to the printer
+
+- **Bambu Studio**: File > Open, pick the `.gcode.3mf`. It opens already
+  sliced, as a preview. Click **Print plate**, choose the P1S, and leave bed
+  levelling on. Map filament 1 to the AMS slot or external spool holding the
+  PLA, then Send.
+- **microSD card**: copy the `.gcode.3mf` to the card, put it in the P1S, then
+  pick the file under Files on the touchscreen.
+
+The filament colour in the file is Bambu's default green. It is only a label;
+the print uses whatever PLA is loaded.
+
+## Fit check
+
+The controller board's position comes from photos and calipers, good to about
++/-0.4 mm. The display holes give an M2 screw only +/-0.6 mm of slack. If this
+board stack has not already been fitted to a prototype-9 print (the MK4S
+one-plate build of 2026-11-17 counts), print the fit-check plate first:
 
 1. Lay the plate, tubes up, on the screen of the soldered board stack.
 2. Drop an M2 screw or a 2 mm drill bit down each of the four tubes.
@@ -26,20 +48,8 @@ print:
 4. With a full-white screen, the window should show only lit pixels, with
    nothing important cut off.
 
-If a tube misses its hole, note which tube and which way the hole is, and the
-offset will be corrected before printing the enclosure.
-
-## Step 2: front cover and kickstand
-
-`MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v2.3mf`: about 1 h 47 min, 20.2 g.
-No supports. Front cover prints face down, kickstand on its foot.
-
-## Step 3: rear shell
-
-`MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v2.3mf`: about 5 h 16 min, 58.5 g.
-Stands on its right side wall. Build-plate-only tree supports are enabled.
-
-The enclosure alone takes about 7 h 03 min and 78.7 g PLA.
+If a tube misses its hole, note which tube and which way the hole is, so the
+offset can be corrected before the enclosure is printed.
 
 ## Hardware
 
@@ -70,4 +80,31 @@ have plain 2.4 mm clearance holes.
    add a thin washer or foam pad.
 6. Mount the antenna inside, away from the LCD's metal frame.
 
-The four STL files are included for reslicing.
+## Why these files replaced the 2026-11-17 ones
+
+The first v2 files (`*_v2.3mf`, removed on 2026-11-19; they are in git
+history) must not be printed. They were sliced with the Bambu Studio 02.09
+command line pointed at the stock P1S, process and filament presets. That
+command line does not resolve those presets' `inherits` chains or the P1S
+preset's `include` list (which is where its G-code lives), so the slices ran on
+generic defaults:
+
+- start G-code was `G28` / `G1 Z5`: no bed levelling, nozzle wipe, purge line
+  or textured-plate Z offset, and Z homed while the nozzle was heating and
+  oozing; the end G-code was generic too
+- 122 settings differed, for example 500 mm/s^2 acceleration (10000 is
+  standard), 60 mm/s inner walls (300), and a 20% minimum PLA fan (100%), which
+  is why the old estimates were twice as long
+
+`tools/slice_p1s_pack.py` flattens each preset itself (`inherits`, `include`,
+and the overlay in `profiles/`). It slices with those flattened presets, then
+checks every setting in the G-code against them: 415 per plate, with the five
+custom G-code blocks compared character by character. It refuses the pack on
+any difference. The flattened presets are kept in `profiles/p1s_flattened/`.
+It also fills two `slice_info` fields that the command line leaves blank or
+uninitialised, `printer_model_id` (`C12`) and `first_layer_time`, as the GUI
+would. The G-code itself is not touched; its MD5 is checked after
+repackaging. Details are in
+`sliced_release_report.json`.
+
+The four STL files are included for re-slicing.

@@ -2,7 +2,163 @@
 
 Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
-## Current Known-Good Status
+## Build-two receiver (second DisplayCenter, V2 enclosure)
+
+There are now two receivers. Identify them by chip MAC (`esptool read-mac`), not by COM port:
+the main receiver is `28:84:85:46:70:D8` (historically `COM16`); the build-two board is
+`28:84:85:27:9a:d8`.
+
+As of 2026-11-20 ~14:35 PST the build-two board runs `Treebeard runtime build 2026-11-20
+boot-repaint-v2`, flashed the same way. Hash verified. It is `screen-flip-v2` plus the single
+boot repaint described under the open issue below. Serial showed `boot repaint at 10001 ms` on
+its first boot. Its flip setting (on) carried over in LittleFS. (`boot-repaint-v1`, flashed
+~14:26, repainted at 10 s, 30 s, 2 min and 5 min; the maintainer asked for the 10 s one only.)
+
+As of 2026-11-19 ~13:45 PST the build-two board, on `COM3` over its native USB, ran
+`Treebeard runtime build 2026-11-19 screen-flip-v2`, flashed with `arduino_display.ps1 -Action
+upload -Port COM3`. Hash verified. Before the first flash (`screen-flip-v1`, ~13:20) its
+partition table was read back and matched the build's `huge_app` 4 MB layout, so LittleFS
+(including its touch calibration) was kept. It is in the first-time WiFi setup portal, with the
+flip set on through `flip on` over serial.
+
+What the build adds:
+
+- **Screen flip**, for the V2 enclosure, which holds the panel upside down relative to the board.
+  You can set it in five places: the **Flip screen** button at the bottom right of the WiFi
+  setup screen; long-press the dashboard and tap **Flip screen**; the phone app's Setup page
+  under **Screen Orientation**; `POST /orientation {"flipped":true}`; or `flip on` / `flip off`
+  over USB serial. It is stored in `/orientation.json` on the receiver only
+  and is never written to the cloud-synced ui.json `rotation`, because that config is shared
+  between receivers. Touch calibration stays in the physical rotation-1 frame, so a flip does
+  not need a recalibration. A calibration run while flipped puts each target at the matching
+  rotation-1 corner.
+- **Boot screen diagnostics.** Until the first real screen is drawn, the "MSV2 booting" screen
+  shows the current boot step and the reset reason, so a board on a wall charger that stops
+  there shows where it stopped.
+- **Boot watchdog.** If `setup()` has not returned 180 s after it starts, an `esp_timer` calls
+  `abort()`. The panic writes a core dump with loopTask's backtrace to the coredump partition,
+  then reboots, and the boot screen then shows `reset: panic`. Decode the dump against the
+  build's ELF in `.arduino-build/display-normal/`. Not yet exercised on hardware.
+- **USB serial commands** (115200, newline-terminated): `flip on`, `flip off`, and
+  `ble-beacon <1-600>`. The last advertises a non-connectable `MSV2-DISPLAY` beacon for that many
+  seconds so a PC can measure this board's BLE signal. The receiver otherwise never transmits
+  over BLE. In the setup portal this is also the first BLE init, and BLE then stays up until
+  the next reboot.
+
+BLE signal from the board to the PC, measured 2026-11-19 ~13:45 PST. The antenna was inside the
+V2 enclosure and the board was next to the maintainer's computer (not its final location). The
+PC heard 48 reports in 70 s from `28:84:85:27:9a:d9` at +9 dBm TX (`esp_ble_tx_power_get` raw
+level 11): median −35 dBm, range −41 to −33. The board's WiFi AP beacon (same antenna, 2412 MHz)
+read −39 dBm on the PC's WiFi adapter in five scans out of five. At this distance the reading
+says the antenna is connected and radiating, but nothing about loss at range.
+
+Open issue, reported 2026-11-19: the maintainer has seen this board stay on "MSV2 booting"
+indefinitely after being plugged in. Measured on 2026-11-19:
+
+- A reset over USB, and a real unplug/replug (reset reason `power-on`) with a serial reader
+  attached, both reached the setup portal in about 3 s.
+- The coredump partition (0x3F0000) was blank before the flash. Core dumps to flash are enabled
+  in this core (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH 1`), so the board had not panicked. Panics
+  include the task and interrupt watchdog resets. Brownout resets write no core dump.
+- While it was stuck, the serial port was enumerated and silent for 12 s with the port open,
+  and showed no reset or re-enumeration.
+
+Not yet reproduced. On `screen-flip-v2`, the maintainer unplugged and replugged it a few more
+times with no serial reader attached, and it booted normally every time (2026-11-19 ~13:55 PST).
+No firmware change targeted a cause, so treat the issue as intermittent and unexplained, not
+fixed. If it recurs, read the boot screen's step line, then the coredump partition once the
+boot watchdog has fired. ~~In first-time setup mode, the setup screen is painted before anything slow
+runs, so a stall that keeps "MSV2 booting" visible has to come before `setupWifi()`, or from
+local-only mode, which paints nothing until after BLE init. That is inferred from the code
+path, not measured.~~ **Wrong, see 2026-11-20: the firmware was not stalled at all.**
+
+**Recurred 2026-11-20, and it is not a hang.** The maintainer plugged the board into the PC
+after it had been unplugged for a while ("the first time in a while") and it stayed on "MSV2
+booting". The maintainer's hypothesis is that it only happens after the board has been
+unpowered for some time, which is why replugging it straight away on 11-19 never reproduced it.
+Measured, in order (times PST, session clock):
+
+- Windows `DEVPKEY_Device_LastArrivalDate` for the composite device: 13:37:33. It did not
+  change for the rest of the session, so the board never reset or re-enumerated.
+- The boot screen read `initializing XPT2046 touch` on the step line and `reset: power-on`
+  (maintainer, read off the panel).
+- COM3 opened with DTR and RTS both deasserted (asserting RTS resets an ESP32-S3 over
+  USB-Serial-JTAG): silent for 8 s.
+- ~13:45: sending the unknown word `ping` over COM3 returned `[Treebeard cmd] unknown; ...`
+  within 4 s. Only `loop()` calls `serviceSerialCommands()`, so `setup()` had returned and the
+  loop was running. That is also why the boot watchdog never fired: `setup()` returning
+  disarms it.
+- 13:51:01: `flip off` printed `[Treebeard display] flipped=false`, which runs a full repaint.
+  The maintainer confirmed the screen then showed the right content. `flip on` at 13:53:39
+  restored the setting.
+
+So every display write after the `initializing XPT2046 touch` step line was lost: the next
+`bootLog()` (drawn unconditionally after the first `touched()` check) and the setup or
+dashboard paint. By 13:51 writes landed again. A static screen is never repainted, so the stale
+boot screen stayed up indefinitely. Not established: whether the panel recovered on its own
+before 13:51 or was recovered by the repaint, and whether the touch controller was also
+unreachable during the window.
+
+**Third occurrence, same day.** After another long unplug the maintainer plugged it in at
+14:12:17 (`LastArrivalDate`), and it showed the same symptom (step line not read this time).
+`ping` was answered at 14:14:06. A `flip off` + `flip on` pair at 14:14:17-14:14:23 (two full
+repaints, final setting unchanged) brought up the correct screen, which the maintainer
+confirmed. So the panel was accepting writes again less than 2 minutes after plug-in. The lost
+window starts after the `initializing XPT2046 touch` step line is drawn, a few seconds into
+boot, and ends at some point within those 2 minutes. Its exact length is not measured.
+
+**Mitigation, `boot-repaint-v2` (2026-11-20).** `serviceBootRepaint()` in `loop()` repaints the
+current full screen once, at 10 s of uptime, and never again that boot. 10 s alone is the
+maintainer's choice. It uses `repaintCurrentScreen()`, the same repaint the flip uses (renamed
+from `repaintAfterOrientationChange()`). It runs ahead of the overlay and setup-portal early
+returns, and it holds off while a finger is down or a touch read is pending. It logs
+`[Treebeard display] boot repaint at <ms> ms`. This hides the symptom; it does not explain it.
+Not yet tested against a real cold plug-in: the next one needs the board unplugged for a while
+first. The dead window was measured only as under 2 minutes. If the screen is still stale after
+10 s, the window outlasted the repaint, and later repaints (as `boot-repaint-v1` had) are the
+next step.
+
+Flashing it needed `DisplayCenter/scripts/verify_msv4_packet_abi.mjs` brought up to date with
+MSV4 commit `0b97b6b` (2026-11-19), which had broken the receiver's pre-flash gate. The mask
+check is now counted in minutes (`g_minutesSinceMaskCheck`/`MASK_CHECK_MINUTES = 1440`). There is
+a new report-only `measureCp(g_bootOpenCp)` in `MSV4_REPORT_BOOT_OPEN_CP` bench builds. The
+"one caller" count became the rule it stood for: only `calibrateCpAfterOpenReading()` writes
+`g_specCp`/`g_cpCalibrated`, and the boot call stays bench-only. Mutation-tested: a boot call that
+writes the applied Cp, an ungated boot call, an extra caller and a second writer on a shared
+line are all caught.
+
+Ruled out:
+
+- **The touch library re-routing the bus.** `XPT2046_Touchscreen::begin()` (library 1.4)
+  calls `SPIClass::begin()` with no pins, but in core 3.3.12 that returns at once when the bus
+  is already started (`if (_spi) return true;`), and `Arduino_HWSPI::begin()` (GFX 1.6.9) has
+  already started it with the display's pins. Read from source, not measured.
+- **The 32 kHz crystal pads.** `TFT_RST` (GPIO15) and `TFT_CS` (GPIO16) are the S3's
+  XTAL_32K_P/N pins, but this build uses `CONFIG_RTC_CLK_SRC_INT_RC=y`, so those pads are never
+  enabled.
+- **A corrupted touch calibration from a phantom press.** The library's pressure is
+  `z1 + 4095 - z2`, so a touch controller that does not answer (both reads equal, all zeros or
+  all ones) reads as pressure 4095, a hard press. That would start `runTouchCalibration()`
+  unseen, but four identical points fail its accuracy check and the previous calibration is
+  restored. Read from source.
+
+Instruments that would separate the remaining causes (panel ignoring writes vs. the shared SPI
+bus not reaching either chip): record the raw XPT2046 pressure from the boot `touched()` check
+(4095 would mean the touch controller was not answering either), and read the ST7796S back over
+the wired `TFT_MISO`/GPIO10 (`RDDPM` 0Ah, `RDDMADCTL` 0Bh, `RDDCOLMOD` 0Ch) after each boot
+stage. Neither exists yet. JTAG over the built-in USB was not available: the JTAG interface
+(`MI_02`) is bound to Microsoft's generic `winusb.inf` with no `DeviceInterfaceGUIDs`, so
+OpenOCD's libusb fails with `LIBUSB_ERROR_NOT_FOUND`. Fixing that needs an admin driver
+install (Espressif's driver or Zadig).
+
+Separately, the "previous checkpoint before reset" line cannot do its job. `lastCheckpoint*`
+are `RTC_DATA_ATTR` with initializers, and the ESP-IDF bootloader reloads initialized RTC data
+on every reset except a deep-sleep wake. So the line reads "fresh boot" after an ordinary reset
+too, and it read exactly that after every reset on 2026-11-19. Moving the checkpoints to
+`RTC_NOINIT_ATTR` with a validity magic, like `rtcCloudStallRestartMagic`, would make them
+survive.
+
+## Current Known-Good Status (main receiver)
 
 As of 2026-11-10 ~00:45 PST, the receiver on `COM16` runs
 `Treebeard runtime build 2026-11-10 tls-psram-v1`, flashed with `arduino_display.ps1 -Action
