@@ -157,11 +157,17 @@ const uint8_t BLE_MAGIC[4] = {'M', 'S', 'V', '2'};
 // One advertisement a minute carries battery and tip temperature measured on that wake. The
 // spectrum sweep is far more expensive than an FDC read (about 5 s awake with HFXO and the CPU
 // running, measured on board 1 through the console on 2026-10-01), so it runs on every
-// MOISTURE_EVERY_N_WAKES-th wake and the packets in between repeat its result.
+// MOISTURE_EVERY_N_WAKES-th minute and the packets in between repeat its result.
+// A -FreshOnly build sleeps across the intermediate minutes and reports once per sweep.
 // Ten unless the build says otherwise (-MoistureEveryNWakes on arduino_msv4_probe.ps1). At 1
 // every wake measures and every wake opens the connectable window: modelled 2.2-2.4 mAh/day
 // against 0.57-0.69 at ten (MSV4/scripts/msv4_power_budget.py), nothing measured.
 const uint32_t WAKE_PERIOD_MS = 60000;
+#ifdef MSV4_FRESH_ONLY
+constexpr bool FRESH_ONLY = true;
+#else
+constexpr bool FRESH_ONLY = false;
+#endif
 #ifdef MSV4_MOISTURE_EVERY_N_WAKES
 static_assert(MSV4_MOISTURE_EVERY_N_WAKES >= 1 && MSV4_MOISTURE_EVERY_N_WAKES <= 60,
               "MSV4_MOISTURE_EVERY_N_WAKES must be 1..60");
@@ -283,9 +289,15 @@ static volatile uint16_t g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
 // of one advertising window, so it must advance once per window and never otherwise.
 static uint32_t g_advertCount = 0;
 static uint32_t g_lastAdvertOkMs = 0;
+static uint32_t g_advertStallLimitMs = ADVERT_STALL_RESET_MS;
 
 static MoistureReading g_reading = {false, 0, 0, 0, 0, false};
+#ifdef MSV4_REPORT_BOOT_OPEN_CP
+static double g_bootOpenCp = 0.0;
+static char g_hardwareRev[48];
+#else
 static char g_hardwareRev[24];
+#endif
 static uint8_t g_wakesUntilMoisture = 0;   // 0 = measure on this wake
 static uint8_t g_wakesSinceBoot = 0;       // saturates; only compared with small counts
 
@@ -1055,8 +1067,8 @@ static bool readFrontEnd(float& senseMv, float& drvMv)
 // the change in U3's leakage between open and closed: 2 uA at most by its data sheet (IOZ), 2 mV
 // across R15. A 1 Mohm path reads 3.3 mV and a 100 kohm path 33 mV.
 // It takes about 20 ms, at the 3.3 V the sweep's own square wave reaches, and runs after a sweep:
-// on every measurement wake in 262163, and since 262165 once in MASK_CHECK_EVERY_WAKES (a
-// day) and on a boot's first measurement wake. A mask does not change by the minute.
+// on every measurement wake in 262163, and since 262165 once a day and on a boot's first
+// measurement wake. A mask does not change by the minute.
 // The result is NOT in the packet: it is the DIS "String" characteristic, "A+0.3 B-0.1 mV n2",
 // which MSV4/scripts/msv4_adv_scan.py --read-build reads. The number after n counts this boot's
 // checks (262165 onward), so a reader can tell a new result from the one it read before. That
@@ -1065,12 +1077,12 @@ static bool readFrontEnd(float& senseMv, float& drvMv)
 // the mask whole, so one check cannot show a path above about 500 kohm. Nothing here judges the
 // number.
 constexpr uint32_t MASK_SETTLE_MS = 5;   // 40 or more of the filters' 100 us time constants
-constexpr uint16_t MASK_CHECK_EVERY_WAKES = 1440;
+constexpr uint16_t MASK_CHECK_MINUTES = 1440;
 constexpr uint16_t MASK_CHECK_COUNT_MAX = 9999;   // what the text has room for
-static uint16_t g_wakesSinceMaskCheck = MASK_CHECK_EVERY_WAKES;   // due on a boot's first measurement
+static uint16_t g_minutesSinceMaskCheck = MASK_CHECK_MINUTES;   // due on a boot's first measurement
 static uint16_t g_maskChecks = 0;
 
-static bool maskCheckDue() { return g_wakesSinceMaskCheck >= MASK_CHECK_EVERY_WAKES; }
+static bool maskCheckDue() { return g_minutesSinceMaskCheck >= MASK_CHECK_MINUTES; }
 
 // Signed tenths of a millivolt as text; this printf has no %f.
 static void formatDeciMv(char* out, size_t size, char plate, float mv)
@@ -1108,7 +1120,7 @@ static void checkMask()
     formatDeciMv(a, sizeof(a), 'A', (drv[1] - sense[1]) - floating);
     formatDeciMv(b, sizeof(b), 'B', (drv[2] - sense[2]) - floating);
     // A check that could not be read is tried again on the next measurement wake, not a day on.
-    g_wakesSinceMaskCheck = 0;
+    g_minutesSinceMaskCheck = 0;
     if (g_maskChecks < MASK_CHECK_COUNT_MAX) g_maskChecks++;
     snprintf(g_maskText, sizeof(g_maskText), "%s %s mV n%u", a, b, (unsigned)g_maskChecks);
   }
@@ -1399,6 +1411,16 @@ static void publishCp()
   const unsigned cpCenti = (unsigned)(g_specCp * 1e14 + 0.5);
   snprintf(g_hardwareRev, sizeof(g_hardwareRev), "Cp %u.%02u pF%s", cpCenti / 100, cpCenti % 100,
            g_cpCalibrated ? "" : " default");
+#ifdef MSV4_REPORT_BOOT_OPEN_CP
+  const size_t used = strlen(g_hardwareRev);
+  if (g_bootOpenCp > 0)
+  {
+    const unsigned openCenti = (unsigned)(g_bootOpenCp * 1e14 + 0.5);
+    snprintf(g_hardwareRev + used, sizeof(g_hardwareRev) - used, "; boot open %u.%02u pF",
+             openCenti / 100, openCenti % 100);
+  }
+  else snprintf(g_hardwareRev + used, sizeof(g_hardwareRev) - used, "; boot open unavailable");
+#endif
   if (g_hardwareRevReady) g_hardwareRevChar.write(g_hardwareRev, strlen(g_hardwareRev));
 }
 
@@ -2131,7 +2153,7 @@ void setup()
 void loop()
 {
   // No feed on a stalled radio: see ADVERT_STALL_RESET_MS.
-  if (millis() - g_lastAdvertOkMs > ADVERT_STALL_RESET_MS)
+  if (millis() - g_lastAdvertOkMs > g_advertStallLimitMs)
   {
     for (;;) {}
   }
@@ -2161,17 +2183,26 @@ void loop()
   // after a boot; see SHORT_ADV_MS.
   const bool longWindow = g_wakesUntilMoisture == 0 || g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;
   if (g_wakesSinceBoot < 255) g_wakesSinceBoot++;
-  if (g_wakesSinceMaskCheck < MASK_CHECK_EVERY_WAKES) g_wakesSinceMaskCheck++;
   bool fresh = false;
   if (g_wakesUntilMoisture == 0)
   {
     g_reading = takeMoistureReading();
     fresh = g_reading.valid;
+#ifdef MSV4_REPORT_BOOT_OPEN_CP
+    if (g_wakesSinceBoot == 1)
+    {
+      // On a bench the operator knows the blade is in air even if the blade fit misses the
+      // open threshold. Expose the floating measurement independently of the applied Cp.
+      if (g_cpCalibrated) g_bootOpenCp = g_specCp;
+      else measureCp(g_bootOpenCp);
+      publishCp();
+    }
+#endif
     // Announce only after the analog result is complete. The LED shares its rail with the front
     // end; putting these edges before the sweep made 262165's fitted Rsoil and Cm noisy.
     ledAnnounceMeasurement();
     // A failed sweep is retried on the next wake rather than left standing for the whole interval.
-    g_wakesUntilMoisture = g_reading.valid ? moistureEvery - 1 : 0;
+    g_wakesUntilMoisture = g_reading.valid && !FRESH_ONLY ? moistureEvery - 1 : 0;
     // After the sweep, so the DC step cannot be in the reading it follows. Once a day.
     if (maskCheckDue()) checkMask();
   }
@@ -2191,8 +2222,11 @@ void loop()
   // There cannot be a legitimate existing connection here: every one is disconnected below before
   // the probe returns to its sleep cadence.
   g_otaConnectionHandle = BLE_CONN_HANDLE_INVALID;
-  if (startAdv(g_reading, fresh, vbatOk, vbatMv, tempOk, tempC, dieTempOk, dieTempQ4, otaPowerOk,
-               longWindow))
+  const bool advertised = startAdv(g_reading, fresh, vbatOk, vbatMv, tempOk, tempC, dieTempOk,
+                                   dieTempQ4, otaPowerOk, longWindow);
+  // If the radio failed to start, retry in a minute so the normal stall recovery still works.
+  const uint8_t nextWakeMinutes = FRESH_ONLY && advertised ? moistureEvery : 1;
+  if (advertised)
   {
     if (longWindow)
     {
@@ -2205,6 +2239,7 @@ void loop()
       if (Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.stop();
     }
     g_lastAdvertOkMs = millis();
+    g_advertStallLimitMs = ADVERT_STALL_RESET_MS + (nextWakeMinutes - 1) * WAKE_PERIOD_MS;
     bootGuardNoteHealthyAdvert();
   }
 
@@ -2217,6 +2252,8 @@ void loop()
 
   cycleCounterDisable();
   burnUntilRest(cycleStartMs);
+  g_minutesSinceMaskCheck = min((uint16_t)(g_minutesSinceMaskCheck + nextWakeMinutes), MASK_CHECK_MINUTES);
+  const uint32_t cycleMs = nextWakeMinutes * WAKE_PERIOD_MS;
   const uint32_t awakeMs = millis() - cycleStartMs;
-  sleepFeeding(awakeMs < WAKE_PERIOD_MS ? (WAKE_PERIOD_MS - awakeMs) : 1);
+  sleepFeeding(awakeMs < cycleMs ? cycleMs - awakeMs : 1);
 }

@@ -231,8 +231,8 @@ async def wait_for_connectable(address: str, timeout_s: float):
         if is_production and len(payload) >= 24 and payload[23] & SHORT_BURST_FLAG2:
             candidate = None
             if bursts == 0:
-                print("  heard a short non-connectable burst; waiting for the next connectable "
-                      "window (up to ten minutes)", flush=True)
+                print("  heard a short non-connectable burst; waiting for the next measurement window",
+                      flush=True)
             bursts += 1
             return
         if is_production:
@@ -321,9 +321,8 @@ def main() -> int:
                         help="Run every package and target check and stop before the radio")
     parser.add_argument("--skip-jump", action="store_true",
                         help="Board is already sitting in its bootloader; go straight to the transfer")
-    parser.add_argument("--app-timeout", type=float, default=700.0,
-                        help="Seconds to wait for a connectable advertisement (default 700: the "
-                             "production image opens one every ten minutes)")
+    parser.add_argument("--app-timeout", type=float, default=3700.0,
+                        help="Seconds to wait for a connectable advertisement (default 3700 covers an hourly image)")
     parser.add_argument("--bootloader-timeout", type=float, default=60.0,
                         help="Seconds to wait for the bootloader after a jump (default 60)")
     parser.add_argument("--connect-delay", type=float, default=2.0,

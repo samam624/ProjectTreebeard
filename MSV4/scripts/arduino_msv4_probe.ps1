@@ -26,6 +26,12 @@ param(
   # says so, never one starting "prod".
   [ValidateRange(0, 60)]
   [int]$MoistureEveryNWakes = 0,
+  # Sleep through the minutes between moisture samples. Every reporting cycle attempts a fresh
+  # sweep. The existing cadence and low-battery floor are both in minutes.
+  [switch]$FreshOnly,
+  # Report a floating-electrode Cp measurement on the first wake in DIS for bench verification.
+  # The normal air and fit checks still decide whether to apply a calibration.
+  [switch]$ReportBootOpenCp,
   # arduino/MSV4_Moisture_BLE_Sleep only, for a probe that is ALREADY IN SOIL. The Cp it last
   # calibrated, in 0.01 pF, read from its DIS hardware revision string before the update
   # ("Cp 8.69 pF" -> 869). The image calibrates Cp only on a sane reading in air, so an update's
@@ -119,6 +125,13 @@ if (($BurnFloorMv -gt 0) -ne ($BuildTag -like "burn*")) {
   throw "-BurnFloorMv and a -BuildTag starting with 'burn' go together: a discharge-burn image must be labelled as one, and nothing else may carry that label."
 }
 
+if (($FreshOnly -or $ReportBootOpenCp) -and $sketchName -ne 'MSV4_Moisture_BLE_Sleep') {
+  throw "-FreshOnly and -ReportBootOpenCp require the MSV4 moisture sketch."
+}
+if ($FreshOnly -and $BurnFloorMv -gt 0) {
+  throw "The discharge-burn experiment requires one-minute battery checks."
+}
+
 if ($Package -and -not $AcceptSharedMsv3DeviceType) {
   throw @"
 -Package would sign an MSV4 image with MSV3's device type 0x3356, which every MSV3 field bootloader
@@ -132,6 +145,8 @@ New-Item -ItemType Directory -Force -Path $buildPath, $outDir | Out-Null
 $defines = @("-DMSV4_APP_VERSION=$ApplicationVersion")
 if ($BuildTag) { $defines += "-DMSV4_BUILD_TAG=$BuildTag" }
 if ($SensorId -gt 0) { $defines += "-DMSV4_SENSOR_ID=$SensorId" }
+if ($FreshOnly) { $defines += "-DMSV4_FRESH_ONLY=1" }
+if ($ReportBootOpenCp) { $defines += "-DMSV4_REPORT_BOOT_OPEN_CP=1" }
 if ($BurnFloorMv -gt 0) { $defines += "-DMSV4_BURN_FLOOR_MV=$BurnFloorMv" }
 if ($MoistureEveryNWakes -gt 0) {
   if ($MoistureEveryNWakes -ne 10 -and $BuildTag -like "prod*") {

@@ -8,10 +8,11 @@ other, and run --self-test before trusting this against hardware.
 Examples:
   python MSV4/scripts/msv4_adv_scan.py --self-test
   python MSV4/scripts/msv4_adv_scan.py --seconds 150 --sensor 10 --require-progress
+  python MSV4/scripts/msv4_adv_scan.py --seconds 3700 --sensor 14 --require-progress
   python MSV4/scripts/msv4_adv_scan.py --seconds 0 --csv data/sensor_logs/msv4_s10.csv
   python MSV4/scripts/msv4_adv_scan.py --read-build F6:26:7D:76:AD:95
 
-The probe advertises for 5 s once a minute, so anything under about 70 s can miss it entirely.
+For a fresh-only build, allow two full sample intervals plus a margin to verify progress.
 """
 
 from __future__ import annotations
@@ -772,8 +773,8 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--self-test", action="store_true",
                         help="Decode synthetic packets and exit; no radio")
-    parser.add_argument("--seconds", type=float, default=150.0,
-                        help="How long to listen (default 150; 0 = until Ctrl+C)")
+    parser.add_argument("--seconds", type=float,
+                        help="Scan duration (default 150; 0 = until Ctrl+C), or build-read timeout (default 3700)")
     parser.add_argument("--sensor", type=int, help="Only report this sensor ID")
     parser.add_argument("--require-progress", action="store_true",
                         help="Exit 1 unless at least two advancing counters were seen")
@@ -787,10 +788,10 @@ def main() -> int:
     if args.self_test:
         return self_test()
     if args.read_build:
-        # Connectable windows can be ten minutes apart, so the default wait covers one full cycle.
-        return asyncio.run(read_build(args.read_build, max(args.seconds, 700.0)))
+        return asyncio.run(read_build(args.read_build, args.seconds or 3700.0))
     try:
-        seen = asyncio.run(scan(args.seconds, args.sensor, args.csv, args.sweep_csv))
+        seconds = 150.0 if args.seconds is None else args.seconds
+        seen = asyncio.run(scan(seconds, args.sensor, args.csv, args.sweep_csv))
     except KeyboardInterrupt:
         return 0
     if not seen:

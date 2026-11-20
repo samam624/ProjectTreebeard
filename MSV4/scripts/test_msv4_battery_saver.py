@@ -51,9 +51,12 @@ for line in (
     "const bool longWindow = g_wakesUntilMoisture == 0 || g_wakesSinceBoot < LONG_WINDOW_BOOT_WAKES;",
     # The LED and front end share a rail. The indication must follow the analog result it
     # announces; 262165 had these in the opposite order and made Rsoil and Cm noisy.
-    "g_reading = takeMoistureReading();\n    fresh = g_reading.valid;\n    // Announce only after the analog result is complete.",
+    "g_reading = takeMoistureReading();\n    fresh = g_reading.valid;",
     "ledAnnounceMeasurement();\n    // A failed sweep is retried on the next wake",
-    "g_wakesUntilMoisture = g_reading.valid ? moistureEvery - 1 : 0;",
+    "g_wakesUntilMoisture = g_reading.valid && !FRESH_ONLY ? moistureEvery - 1 : 0;",
+    "const uint8_t nextWakeMinutes = FRESH_ONLY && advertised ? moistureEvery : 1;",
+    "g_advertStallLimitMs = ADVERT_STALL_RESET_MS + (nextWakeMinutes - 1) * WAKE_PERIOD_MS;",
+    "const uint32_t cycleMs = nextWakeMinutes * WAKE_PERIOD_MS;",
     "(g_powerLevel != PowerLevel::Full ? ADV_FLAG2_SAVER : 0) |",
     # No level may change what a wake sends or how often the probe wakes.
     "Bluefruit.Advertising.setInterval(SHORT_ADV_INTERVAL_UNITS, SHORT_ADV_INTERVAL_UNITS);",
@@ -61,14 +64,19 @@ for line in (
 ):
     _require(line)
 
+loop = fit.SKETCH.split("void loop()", 1)[1]
+if loop.index("g_reading = takeMoistureReading();") > loop.index("ledAnnounceMeasurement();"):
+    raise SystemExit("LED is back ahead of the analog measurement")
+
 FULL, SAVING = "Full", "Saving"
 
 
 class Probe:
     """The saver and the wake schedule, as saverJudge() and loop() have them."""
 
-    def __init__(self, build_every: int):
+    def __init__(self, build_every: int, fresh_only: bool = False):
         self.build_every = build_every
+        self.fresh_only = fresh_only
         self.level = FULL
         self.level_set = False
         self.pending_wakes = 0
@@ -94,7 +102,7 @@ class Probe:
     def every(self) -> int:
         return max(self.build_every, SAVING_EVERY if self.level == SAVING else 0)
 
-    def wake(self, mv: float | None, sweep_ok: bool = True) -> dict:
+    def wake(self, mv: float | None, sweep_ok: bool = True, advertised: bool = True) -> dict:
         """One wake with that battery reading (None = unusable). What the probe does on it."""
         self.judge(mv)
         every = self.every()
@@ -106,11 +114,12 @@ class Probe:
         if self.until_moisture == 0:
             measured = True
             led = self.level_set and self.level == FULL and self.since_boot > 1
-            self.until_moisture = every - 1 if sweep_ok else 0
+            self.until_moisture = every - 1 if sweep_ok and not self.fresh_only else 0
         else:
             self.until_moisture -= 1
         return {"level": self.level, "measured": measured, "fresh": measured and sweep_ok, "window": window,
-                "led": led, "saver_flag": self.level != FULL}
+                "led": led, "saver_flag": self.level != FULL,
+                "next_minutes": every if self.fresh_only and advertised else 1}
 
 
 def run(build_every: int, record: list[float | None], sweeps: list[bool] | None = None) -> list[dict]:
@@ -268,6 +277,18 @@ def main() -> int:
 
     # Saving begins where an update is refused anyway, so it never hides a way in that was open.
     check("Saving begins at or below the OTA floor", SAVING_BELOW_MV <= OTA_MIN_BATTERY_MV, True)
+
+    for mv in (4000.0, 3450.0):
+        probe = Probe(30, fresh_only=True)
+        for ok in (True, True, False, True):
+            wake = probe.wake(mv, sweep_ok=ok)
+            check("fresh-only always attempts a sweep", wake["measured"], True)
+            check("failed measurement never repeats a prior success", wake["fresh"], ok)
+            check("fresh-only reporting interval", wake["next_minutes"], 30)
+            check("fresh-only schedules the full window", wake["window"], True)
+        check("a failed advertising start retries in a minute", probe.wake(mv, advertised=False)["next_minutes"], 1)
+        check("radio retry takes a new measurement", probe.wake(mv)["fresh"], True)
+    check("saving floor in fresh-only mode", Probe(10, fresh_only=True).wake(3450.0)["next_minutes"], SAVING_EVERY)
 
     print(f"From the sketch: Saving below {SAVING_BELOW_MV:.0f} mV, left {RETURN_MV:.0f} mV higher, "
           f"after {CONFIRM_WAKES} wakes in a row; moisture every {SAVING_EVERY}th wake at most while saving.\n")

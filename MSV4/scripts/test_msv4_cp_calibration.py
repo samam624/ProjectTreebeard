@@ -59,8 +59,10 @@ for line in (
     "(g_cpCalibrated ? 0 : ADV_FLAG2_CP_DEFAULT);",
 ):
     _require(line)
-# measureCp() has exactly one caller, and it sits behind the open test.
-if fit.SKETCH.count("measureCp(") != 2:
+# The optional bench measurement goes into a separate DIS field. Only the gated caller
+# above changes the Cp used for readings.
+_require("if (g_cpCalibrated) g_bootOpenCp = g_specCp;\n      else measureCp(g_bootOpenCp);")
+if fit.SKETCH.count("measureCp(") != 3:
     raise SystemExit("measureCp() is defined or called somewhere this test does not know about")
 
 
