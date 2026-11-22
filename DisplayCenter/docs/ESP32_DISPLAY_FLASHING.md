@@ -23,6 +23,14 @@ native USB. Firmware (`boot-repaint-v2`), flip (on) and touch calibration are un
 still in the first-time WiFi setup portal, so it is not yet scanning for probes. The connector's
 strength under cable strain was not tested.
 
+**Firmware confirmed current, 2026-11-21 ~18:45 PST, before commissioning.** `origin/main`
+(`6e6c0b7`) had no receiver firmware change after `24a3ee0`. A clean `arduino_display.ps1 -Action
+compile` of that source was byte-identical to the 11-20 `boot-repaint-v2` image (app SHA-256
+`28bc414b…`, plus the same bootloader and partition table). `esptool verify-flash` on `COM3` (MAC
+`28:84:85:27:9a:d8`) then matched the board's own MD5 for the bootloader, partition table,
+boot_app0 and application. The check was read-only, so LittleFS was untouched. Afterwards the
+firmware answered `ping` over serial.
+
 As of 2026-11-20 ~14:35 PST the build-two board runs `Treebeard runtime build 2026-11-20
 boot-repaint-v2`, flashed the same way. Hash verified. It is `screen-flip-v2` plus the single
 boot repaint described under the open issue below. Serial showed `boot repaint at 10001 ms` on
@@ -128,10 +136,19 @@ maintainer's choice. It uses `repaintCurrentScreen()`, the same repaint the flip
 from `repaintAfterOrientationChange()`). It runs ahead of the overlay and setup-portal early
 returns, and it holds off while a finger is down or a touch read is pending. It logs
 `[Treebeard display] boot repaint at <ms> ms`. This hides the symptom; it does not explain it.
-Not yet tested against a real cold plug-in: the next one needs the board unplugged for a while
-first. The dead window was measured only as under 2 minutes. If the screen is still stale after
+~~Not yet tested against a real cold plug-in: the next one needs the board unplugged for a while
+first.~~ The dead window was measured only as under 2 minutes. If the screen is still stale after
 10 s, the window outlasted the repaint, and later repaints (as `boot-repaint-v1` had) are the
 next step.
+
+**The repaint worked, reported 2026-11-21 ~18:45 PST.** The maintainer: "the loading screen hung
+earlier and the 10s repaint caught it." So on that boot the screen stuck as before, and the
+display was accepting writes again by 10 s of uptime. That narrows the lost window to under 10 s
+for that boot. This was observed by the maintainer, not captured: no serial log or step line was
+recorded. The maintainer did not say which boot it was. The likely one is the first plug-in after
+the USB connector was resoldered, since the board was unpowered during the repair, but that is
+inferred. The cause of the lost display writes is still unknown. If a later boot's window runs
+past 10 s, the screen will stay stale again.
 
 Flashing it needed `DisplayCenter/scripts/verify_msv4_packet_abi.mjs` brought up to date with
 MSV4 commit `0b97b6b` (2026-11-19), which had broken the receiver's pre-flash gate. The mask
