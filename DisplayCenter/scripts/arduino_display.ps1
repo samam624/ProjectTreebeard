@@ -5,6 +5,7 @@ param(
   [string]$Sketch = "DisplayCenter/arduino/Treebeard_ESP32_Display_Runtime",
   [string]$CliPath = "C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe",
   [switch]$ForceWifiSetup,
+  [switch]$IncludeWifiCredentials,
   # Diagnostic builds only. Production stays "none". "error" is enough to surface the esp32
   # core's own log_e lines - notably ssl_client.cpp's `socket error on fd %d, errno: %d`, which
   # carries the real SO_ERROR that NetworkClientSecure otherwise discards when it returns a
@@ -126,6 +127,7 @@ $Fqbn = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,UploadMode=default,CPUF
 $BuildArgs = @()
 $BuildName = if ($ForceWifiSetup) { "display-force-wifi-setup" } else { "display-normal" }
 if ($CoreDebugLevel -ne "none") { $BuildName = "$BuildName-debug-$CoreDebugLevel" }
+if ($IncludeWifiCredentials) { $BuildName += "-private-wifi" }
 $BuildPath = Join-Path $RepoRoot ".arduino-build\$BuildName"
 
 if ($Action -in @("compile", "upload")) {
@@ -134,8 +136,11 @@ if ($Action -in @("compile", "upload")) {
   New-Item -ItemType Directory -Force -Path $BuildPath | Out-Null
 }
 
-if ($ForceWifiSetup) {
-  $BuildArgs += @("--build-property", "compiler.cpp.extra_flags=-DTREEBEARD_FORCE_WIFI_SETUP=1")
+$ExtraDefines = @()
+if ($ForceWifiSetup) { $ExtraDefines += "-DTREEBEARD_FORCE_WIFI_SETUP=1" }
+if ($IncludeWifiCredentials) { $ExtraDefines += "-DTREEBEARD_INCLUDE_WIFI_CREDENTIALS=1" }
+if ($ExtraDefines.Count -gt 0) {
+  $BuildArgs += @("--build-property", ("compiler.cpp.extra_flags=" + ($ExtraDefines -join " ")))
 }
 
 switch ($Action) {

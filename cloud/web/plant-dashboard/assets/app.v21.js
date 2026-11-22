@@ -198,6 +198,9 @@ async function loadSnapshots() {
   });
   const body = await response.json();
   if (!response.ok || !body.ok) {
+    if (response.status !== 401 && response.status !== 403) {
+      throw new Error(body.error || "Could not refresh plants. Try again shortly.");
+    }
     clearShareToken();
     renderLinkState();
     byId("receivers").className = "empty";
@@ -703,7 +706,7 @@ document.addEventListener("visibilitychange", () => {
 
 applyPairingParams();
 renderLinkState();
-if (!state.shareToken && shouldAutoConnect()) {
+if (shouldAutoConnect()) {
   connectHousehold().catch(() => {
     setNotice("Could not auto-connect from the QR link. Tap Connect to try again.", "error");
   });

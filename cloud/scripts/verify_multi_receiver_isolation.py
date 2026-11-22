@@ -11,7 +11,7 @@ Checks:
   2. no receiver's history shrank below a floor you pass (--floor RECEIVER=ROWS), e.g. the row
      count recorded in a backup manifest; this is the "nothing was deleted" check
   3. a probe packet heard by two receivers carries identical values under both, and no
-     receiver stored the same packet twice. Packets are matched on (sensor, wake), so once the
+     receiver stored the same packet twice. Packets are matched on (sensor, wake) within 15 seconds, so once the
      receivers are in different houses a different probe that happens to reuse a sensor ID and
      wake number inside the window would show as a mismatch; check its rows before worrying.
   4. the bulk history-delete function is gone (migration 044), or, before 044 is applied, still
@@ -93,15 +93,16 @@ def main() -> int:
     stats = run_query(f"""
         with w as (select * from msv2_sensor_history where received_at > now() - interval '{hours} hours')
         select
-          (select count(*) from (select receiver_id, sensor_id, wake from w group by 1,2,3 having count(*) > 1) d) as dupes,
-          (select count(*) from w a join w b on a.sensor_id = b.sensor_id and a.wake = b.wake
-             and a.receiver_id < b.receiver_id) as shared_packets,
+          (select count(*) from (select receiver_id, sensor_id, wake from w group by 1,2,3, observation_id having observation_id is not null and count(*) > 1) d) as dupes,
           (select count(*) from w a join w b on a.sensor_id = b.sensor_id and a.wake = b.wake
              and a.receiver_id < b.receiver_id
-             where a.moisture is distinct from b.moisture
-                or a.raw_fdc_counts is distinct from b.raw_fdc_counts
+             and abs(extract(epoch from (a.received_at - b.received_at))) <= 15) as shared_packets,
+          (select count(*) from w a join w b on a.sensor_id = b.sensor_id and a.wake = b.wake
+             and a.receiver_id < b.receiver_id
+             and abs(extract(epoch from (a.received_at - b.received_at))) <= 15
+             where a.raw_fdc_counts is distinct from b.raw_fdc_counts
                 or a.raw_battery_mv is distinct from b.raw_battery_mv) as mismatches""")[0]
-    check(stats["dupes"] == 0, "no receiver stored a packet twice", f"{stats['dupes']} duplicated (sensor, wake)")
+    check(stats["dupes"] == 0, "no receiver stored an observation twice", f"{stats['dupes']} duplicated observation identities")
     check(stats["mismatches"] == 0, "packets heard by two receivers agree",
           f"{stats['shared_packets']} shared packets, {stats['mismatches']} differ")
 

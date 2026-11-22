@@ -24,6 +24,8 @@ import csv
 import json
 import re
 import shutil
+import tempfile
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -109,9 +111,9 @@ def main() -> int:
     parser.add_argument(
         "--cache",
         action="store_true",
-        help="Keep ONE growing file per sensor at data/sensor_logs/cache/sensor<N>[_raw].csv instead of a "
-        "dated snapshot: the first run fetches everything stored, later runs fetch only rows newer than "
-        "the file's last one and append them (--since-hours and --csv are ignored).",
+        help="Keep a growing file per receiver and sensor at data/sensor_logs/cache/<receiver>/sensor<N>[_raw].csv instead of a "
+        "dated snapshot: each run refreshes the full receiver/sensor history so delayed uploads are included; "
+        "--since-hours and --csv are ignored.",
     )
     parser.add_argument(
         "--raw",
@@ -127,17 +129,14 @@ def main() -> int:
         parser.error("receiver ID contains unexpected characters")
 
     columns = RAW_DB_COLUMNS if args.raw else ["wake", "moisture", "battery_percent", "rssi", "age_ms"]
-    select_list = "sensor_id, " + ", ".join(columns) + ", received_at"
+    select_list = ("id, receiver_id, " if args.cache else "") + "sensor_id, " + ", ".join(columns) + ", received_at"
 
-    old_rows: list[dict] = []
     since_clause = f"received_at >= now() - interval '{float(args.since_hours)} hours' "
     if args.cache:
-        args.csv = CACHE_DIR / f"sensor{int(args.sensor)}{'_raw' if args.raw else ''}.csv"
-        if args.csv.exists():
-            with args.csv.open(newline="", encoding="utf-8") as handle:
-                old_rows = list(csv.DictReader(handle))
-        since_clause = (f"received_at > '{old_rows[-1]['timestamp_iso']}' " if old_rows
-                        else "received_at > '2000-01-01' ")
+        args.csv = CACHE_DIR / args.receiver / f"sensor{int(args.sensor)}{'_raw' if args.raw else ''}.csv"
+        # The observation time can precede earlier exports when an outage queue drains.
+        # Re-read with IDs so delayed inserts and concurrent transactions are included.
+        since_clause = "true "
 
     sql = (
         f"select {select_list} "
@@ -157,45 +156,54 @@ def main() -> int:
         print(f"Could not parse supabase db query output: {exc}")
         return 1
 
-    if not rows and old_rows:
-        print(f"{args.csv} is current ({len(old_rows)} rows, last {old_rows[-1]['timestamp_iso']}).")
-        return 0
     if not rows:
         print("No rows returned. Is cloud sync enabled on the receiver, and has it uploaded yet?")
         return 1
 
+    # Rebuilding from the authoritative query also repairs incomplete exports.
+    # Legacy unscoped caches stay available as archives.
     fields = RAW_CSV_FIELDS if args.raw else CSV_FIELDS
+    if args.cache:
+        fields = fields + ["id", "receiver_id"]
     args.csv.parent.mkdir(parents=True, exist_ok=True)
-    with args.csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
+    temporary = tempfile.NamedTemporaryFile(mode="w", newline="", encoding="utf-8",
+                                            dir=args.csv.parent, delete=False)
+    temporary_path = Path(temporary.name)
+    try:
+        with temporary as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
 
-        first_ts = parse_ts(old_rows[0]["timestamp_iso"]) if old_rows else None
-        for old in old_rows:
-            writer.writerow(old)
-        for row in rows:
-            received_at = row["received_at"]
-            this_ts = parse_ts(received_at)
-            if first_ts is None:
-                first_ts = this_ts
-            elapsed_s = (this_ts - first_ts).total_seconds()
+            first_ts = None
+            for row in rows:
+                received_at = row["received_at"]
+                this_ts = parse_ts(received_at)
+                if first_ts is None:
+                    first_ts = this_ts
+                elapsed_s = (this_ts - first_ts).total_seconds()
 
-            record = {
-                "timestamp_iso": received_at,
-                "elapsed_s": f"{elapsed_s:.1f}",
-                "sensor": row["sensor_id"],
-            }
-            for column in columns:
-                value = row.get(column)
-                record[column] = "" if value is None else value
+                record = {
+                    "timestamp_iso": received_at,
+                    "elapsed_s": f"{elapsed_s:.1f}",
+                    "sensor": row["sensor_id"],
+                }
+                for column in columns:
+                    value = row.get(column)
+                    record[column] = "" if value is None else value
 
-            if args.raw:
-                quarter_c = row.get("board_temp_quarter_c")
-                record["board_temp_c"] = "" if quarter_c is None else f"{quarter_c / 4.0:.2f}"
+                if args.raw:
+                    quarter_c = row.get("board_temp_quarter_c")
+                    record["board_temp_c"] = "" if quarter_c is None else f"{quarter_c / 4.0:.2f}"
 
-            writer.writerow(record)
+                if args.cache:
+                    record["id"] = row["id"]
+                    record["receiver_id"] = row["receiver_id"]
+                writer.writerow(record)
+        os.replace(temporary_path, args.csv)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
-    print(f"Wrote {len(old_rows) + len(rows)} rows to {args.csv} ({len(rows)} new)")
+    print(f"Wrote {len(rows)} rows to {args.csv} ({len(rows)} fetched)")
     return 0
 
 

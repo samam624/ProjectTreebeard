@@ -164,7 +164,7 @@ async function shareSnapshotsApi(request: Request): Promise<Response> {
     p_share_token: shareToken,
   });
   if (error) {
-    return jsonResponse({ ok: false, error: error.message }, 401);
+    return jsonResponse({ ok: false, error: error.message }, error.message === "invalid share token" ? 401 : 503);
   }
 
   return jsonResponse({ ok: true, snapshots: (data ?? []) as SnapshotRow[] });

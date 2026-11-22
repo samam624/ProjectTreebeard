@@ -26,6 +26,8 @@ import argparse
 import asyncio
 import functools
 import json
+import os
+import tempfile
 import re
 import sys
 import time
@@ -127,10 +129,11 @@ def preflight(package: Path, board: dict) -> dict:
                           f"{board['board']} is sensor {expected}")
 
     version = int(init["application_version"])
-    installed = int(board["installed_application_version"])
+    installed = max(int(board["installed_application_version"]),
+                    int(board.get("highest_transferred_application_version", 0)))
     if version <= installed:
         raise Refused(f"{package.name}: application version {version} is not above the "
-                      f"{installed} recorded as installed. The bootloader keeps a monotonic "
+                      f"{installed} recorded as installed or transferred. The bootloader keeps a monotonic "
                       f"floor; rebuild with a larger -ApplicationVersion.")
 
     info = {"build": builds[0], "sensor": names[0] if names else None, "version": version,
@@ -311,6 +314,36 @@ async def live(package: Path, board: dict, args) -> int:
             pump.cancel()
 
 
+def record_transferred_version(board: dict, version: int) -> None:
+    """Keep the transfer floor even when the subsequent observation is interrupted."""
+    source = FLEET_PATH.read_text(encoding="utf-8")
+    registry = json.loads(source)
+    current = next(b for b in registry["msv4_boards"]["boards"] if b["board"] == board["board"])
+    if current["application_address"] != board["application_address"]:
+        raise Refused("Registry target changed during transfer; record the transferred version manually.")
+    floor = max(version, int(current.get("highest_transferred_application_version", 0)))
+    start = source.index(f'"board": {board["board"]},', source.index('"msv4_boards"'))
+    end = source.find('"board":', start + 8)
+    if end < 0:
+        end = len(source)
+    section = source[start:end]
+    if '"highest_transferred_application_version"' in section:
+        section = re.sub(r'("highest_transferred_application_version": )\d+',
+                         lambda m: m[1] + str(floor), section)
+    else:
+        section = section.replace('"installed_application_version"',
+                                  f'"highest_transferred_application_version": {floor},\n        "installed_application_version"', 1)
+    updated = source[:start] + section + source[end:]
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=FLEET_PATH.parent,
+                                     delete=False) as handle:
+        handle.write(updated)
+        temporary = Path(handle.name)
+    try:
+        os.replace(temporary, FLEET_PATH)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -343,11 +376,14 @@ def main() -> int:
         parser.error(f"package not found: {args.package}")
     try:
         board = load_board(args.board)
-        preflight(args.package.resolve(), board)
+        info = preflight(args.package.resolve(), board)
         if args.preflight_only:
             print("\nPreflight passed. Stopping before the radio (--preflight-only).")
             return 0
-        return asyncio.run(live(args.package.resolve(), board, args))
+        result = asyncio.run(live(args.package.resolve(), board, args))
+        if result == 0:
+            record_transferred_version(board, info["version"])
+        return result
     except Refused as error:
         print(f"\nREFUSED: {error}", file=sys.stderr)
         return 2

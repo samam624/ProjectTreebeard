@@ -2,6 +2,10 @@
 
 Use this when reflashing the wall-powered ESP32-S3 display receiver.
 
+Builds omit the private `WiFiCredentials.h` by default. Pass `-IncludeWifiCredentials` to
+`arduino_display.ps1` to embed the local header deliberately. Phone-provisioned WiFi continues
+to come from the receiver's saved settings. Private builds use a separate build directory.
+
 ## Build-two receiver (second DisplayCenter, V2 enclosure)
 
 There are now two receivers. Identify them by chip MAC (`esptool read-mac`), not by COM port:

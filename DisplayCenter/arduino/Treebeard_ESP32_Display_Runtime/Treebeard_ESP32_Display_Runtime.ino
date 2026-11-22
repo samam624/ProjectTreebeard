@@ -170,7 +170,7 @@ void loop()
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <mbedtls/platform.h>
-#if __has_include("WiFiCredentials.h")
+#if defined(TREEBEARD_INCLUDE_WIFI_CREDENTIALS) && __has_include("WiFiCredentials.h")
 #include "WiFiCredentials.h"
 #endif
 

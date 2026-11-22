@@ -21,6 +21,8 @@ jobs:
       - name: Check public claims and evidence paths
         run: python scripts/check_portfolio_claims.py
       - name: Check dashboard JavaScript syntax
-        run: node --check cloud/web/plant-dashboard/assets/app.v18.js
+        run: node cloud/scripts/test_dashboard_link.mjs
       - name: Verify moisture-alert parity checks
         run: node DisplayCenter/scripts/verify_moisture_alert_thresholds.mjs
+      - name: Check export and progress regressions
+        run: python scripts/test_review_regressions.py

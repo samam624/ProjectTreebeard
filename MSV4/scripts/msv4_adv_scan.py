@@ -10,7 +10,7 @@ Examples:
   python MSV4/scripts/msv4_adv_scan.py --seconds 150 --sensor 10 --require-progress
   python MSV4/scripts/msv4_adv_scan.py --seconds 3700 --sensor 14 --require-progress
   python MSV4/scripts/msv4_adv_scan.py --seconds 0 --csv data/sensor_logs/msv4_s10.csv
-  python MSV4/scripts/msv4_adv_scan.py --read-build F6:26:7D:76:AD:95
+  python MSV4/scripts/msv4_adv_scan.py --read-build F6:26:7D:76:AD:95 --rs-ohms 5600
 
 For a fresh-only build, allow two full sample intervals plus a margin to verify progress.
 """
@@ -485,6 +485,8 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None,
     from bleak import BleakScanner
 
     seen: dict[int, list[int]] = {}
+    candidates: dict[tuple[str, int], int] = {}
+    addresses: dict[int, str] = {}
     writer = handle = None
     if csv_path:
         csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -537,6 +539,15 @@ async def scan(seconds: float, sensor: int | None, csv_path: Path | None,
         row = decode(bytes(payload)) if payload else None
         if row is None or (sensor is not None and row["sensor"] != sensor):
             return
+        # Windows can deliver the previous window's cached payload once. Require a repeat
+        # from the same address before accepting a counter as an observed wake.
+        key = (device.address.upper(), row["sensor"])
+        if candidates.get(key) != row["counter"]:
+            candidates[key] = row["counter"]
+            return
+        previous_address = addresses.setdefault(row["sensor"], key[0])
+        if previous_address != key[0]:
+            return
         counters = seen.setdefault(row["sensor"], [])
         if row["counter"] in counters:
             return  # one advertising window repeats the same frame many times
@@ -572,11 +583,9 @@ DIS_HARDWARE_REVISION_UUID = "00002a27-0000-1000-8000-00805f9b34fb"
 # The GATT "String" characteristic, which application 262162 onward puts in DIS for its mask
 # check; see checkMask() in the sketch. The text is an ABI with parse_mask_check().
 MASK_CHECK_UUID = "00002a3d-0000-1000-8000-00805f9b34fb"
-MASK_RS_OHM = 1000.0     # R15
 MASK_DRIVE_MV = 3300.0   # nominal 3V3 rail; the probe does not send what DRV read
 # Not a pass mark. The switch's own leakage may change by up to 2 uA between open and closed
-# (FSUSB42 IOZ), which is 2 mV across R15, so nothing below that can be called a leak.
-MASK_SWITCH_FLOOR_MV = 2.0
+# (FSUSB42 IOZ). Convert this current to a voltage using the fitted R15.
 
 
 def parse_mask_check(text: str):
@@ -645,19 +654,20 @@ def describe_adc_calibration(text: str, wakes: int | None = None, version: int |
             f"needed more than one and {cal['bad_wakes']} ended out")
 
 
-def describe_mask_check(text: str) -> str:
+def describe_mask_check(text: str, rs_ohms: float = 1000.0) -> str:
     drops = parse_mask_check(text)
     if drops is None:
         return text
+    switch_floor_mv = rs_ohms * 0.002  # 2 uA switch leakage, converted to mV
     parts = []
     for plate, mv in (("A", drops["a_mv"]), ("B", drops["b_mv"])):
-        if abs(mv) <= MASK_SWITCH_FLOOR_MV:
-            parts.append(f"{plate} {mv:+.1f} mV (within the switch's own {MASK_SWITCH_FLOOR_MV:.0f} mV)")
+        if abs(mv) <= switch_floor_mv:
+            parts.append(f"{plate} {mv:+.1f} mV (within the switch's own {switch_floor_mv:g} mV)")
         elif mv < 0:
             # A leak can only pull SENSE down. Board 1 read as low as -3.5 mV on 2026-10-11.
             parts.append(f"{plate} {mv:+.1f} mV (the wrong way for a DC path: the reading's own scatter)")
         else:
-            ohm = MASK_RS_OHM * (MASK_DRIVE_MV - mv) / mv
+            ohm = rs_ohms * (MASK_DRIVE_MV - mv) / mv
             parts.append(f"{plate} {mv:+.1f} mV (a DC path of about {ohm / 1000.0:,.0f} kohm)")
     if "checks" in drops:
         parts.append(f"check {drops['checks']} of this boot (one a day)")
@@ -693,7 +703,7 @@ def describe_calibration_experiment(text: str) -> str:
         for name, high, turn in zip(CAL_EXPERIMENT_ARMS, counts["high"], turns))
 
 
-async def read_build(address: str, timeout: float) -> int:
+async def read_build(address: str, timeout: float, rs_ohms: float = 1000.0) -> int:
     """Connect during the probe's next advertising window and read what it says it is running.
 
     The probe drops an idle central after 30 s, so this connects, reads two strings and leaves.
@@ -750,7 +760,7 @@ async def read_build(address: str, timeout: float) -> int:
         # Absent before application 262162, and "not checked" until a measurement wake has run.
         try:
             mask = bytes(await client.read_gatt_char(MASK_CHECK_UUID)).split(b"\x00")[0].decode("utf-8", "replace")
-            print(f"mask check: {describe_mask_check(mask)}", flush=True)
+            print(f"mask check: {describe_mask_check(mask, rs_ohms)}", flush=True)
         except Exception as error:  # noqa: BLE001
             print(f"mask check: not offered by this build ({type(error).__name__})", flush=True)
         # Absent before application 262163, and "not checked" until the first wake has calibrated.
@@ -775,6 +785,8 @@ def main() -> int:
                         help="Decode synthetic packets and exit; no radio")
     parser.add_argument("--seconds", type=float,
                         help="Scan duration (default 150; 0 = until Ctrl+C), or build-read timeout (default 3700)")
+    parser.add_argument("--rs-ohms", type=float, required=False,
+                        help="Fitted R15 for mask diagnostics with --read-build")
     parser.add_argument("--sensor", type=int, help="Only report this sensor ID")
     parser.add_argument("--require-progress", action="store_true",
                         help="Exit 1 unless at least two advancing counters were seen")
@@ -788,12 +800,14 @@ def main() -> int:
     if args.self_test:
         return self_test()
     if args.read_build:
-        return asyncio.run(read_build(args.read_build, args.seconds or 3700.0))
+        if args.rs_ohms is None or args.rs_ohms <= 0:
+            parser.error("--read-build requires --rs-ohms with the fitted R15 value")
+        return asyncio.run(read_build(args.read_build, args.seconds or 3700.0, args.rs_ohms))
     try:
         seconds = 150.0 if args.seconds is None else args.seconds
         seen = asyncio.run(scan(seconds, args.sensor, args.csv, args.sweep_csv))
     except KeyboardInterrupt:
-        return 0
+        return 130
     if not seen:
         print("No MSV4 production advertisement seen.")
         return 1

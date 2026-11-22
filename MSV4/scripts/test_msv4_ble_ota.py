@@ -108,6 +108,12 @@ class PreflightTest(unittest.TestCase):
         self.assert_refused(self.package(PRODUCTION + b"MSV4-BUILD:other\x00"), "exactly one MSV4-BUILD")
         self.assert_refused(self.package(PRODUCTION + b"MSV4-MOISTURE-011\x00"), "more than one")
 
+    def test_transferred_version_remains_a_floor_before_verification(self):
+        board = {**BOARD, "highest_transferred_application_version": 262155}
+        self.assert_refused(self.package(PRODUCTION, version=262154), "not above", board)
+        self.assert_refused(self.package(PRODUCTION, version=262155), "not above", board)
+        self.assertEqual(self.preflight(self.package(PRODUCTION, version=262156), board)["version"], 262156)
+
     def test_bootloader_packages_are_refused(self):
         path = self.package(PRODUCTION, extra_manifest={"softdevice_bootloader": {}})
         self.assert_refused(path, "not an application-only package")
@@ -129,6 +135,17 @@ class LoadBoardTest(unittest.TestCase):
                 self.assertIn("bootloader_key_sha256", str(caught.exception))
                 with self.assertRaises(ota.Refused):
                     ota.load_board(2)
+
+    def test_transfer_floor_records_without_changing_verified_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fleet = Path(directory) / "fleet.json"
+            fleet.write_text(json.dumps({"msv4_boards": {"boards": [BOARD]}}, indent=2), encoding="utf-8")
+            with mock.patch.object(ota, "FLEET_PATH", fleet):
+                ota.record_transferred_version(BOARD, 262160)
+                ota.record_transferred_version(BOARD, 262159)
+            board = json.loads(fleet.read_text())["msv4_boards"]["boards"][0]
+            self.assertEqual(board["highest_transferred_application_version"], 262160)
+            self.assertEqual(board["installed_application_version"], BOARD["installed_application_version"])
 
     def test_tracked_registry_has_a_usable_board_1(self):
         board = ota.load_board(1)
