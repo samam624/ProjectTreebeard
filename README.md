@@ -10,12 +10,15 @@ probe in the soil wakes about once a minute, takes a measurement, broadcasts it 
 and goes back to sleep, running on a small battery charged by a solar panel. A receiver on a shelf
 hears every probe, shows each plant on a screen and uploads the history to a phone dashboard. Four
 probe generations, MSV1 to MSV4 ("moisture sensor version"), have been built since April 2026.
+**MSV4 is the final generation.** After a month in two weighed pots, its readings are good enough
+to decide when to water. The sensing work is done apart from coating and enclosing the probes for
+outdoor use, and the next stage is a pump that waters automatically.
 
 **Sam's role:** hardware architecture, Altium schematic and PCB design, hand assembly and rework,
 test planning, bench and field measurement, firmware requirements, and hardware validation.
 Software implementation was AI-assisted and verified against physical hardware and recorded data;
-the exact contribution boundary is documented in [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md). This is an
-active engineering project, and the repository keeps the failures alongside the things that worked.
+the exact contribution boundary is documented in [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md). The
+repository keeps the failures alongside the things that worked.
 
 <p align="center">
   <img src="MSV4/hardware/MSV4_Probe_PCB/images/MSV4_four_assembled_boards.jpg" height="260" alt="Four assembled MSV4 probe boards">
@@ -96,7 +99,7 @@ about separating those effects from the water.
 Every board was designed in Altium. Each board page has the schematic, layout, 3D views and the
 Gerbers the board was built from.
 
-### MSV4 probe (current)
+### MSV4 probe (final)
 
 A two-layer probe that measures the soil's impedance with a lock-in front end built from two analog
 switches, at eight frequencies from 250 kHz to 2.67 MHz. The blade carries two matching electrodes
@@ -189,7 +192,7 @@ low-pass filter and a comparator.
 | **MSV1** | A comb electrode read by 555 timers and analog filtering | Soil moisture can be measured this way, but the analog output squeezed most of the useful range together |
 | **MSV2** | Time the electrode digitally and broadcast from a sleeping radio chip | A useful monitor is a whole system: sensing, power, radio, display, calibration and history all matter |
 | **MSV3** | A custom board with a capacitance-to-digital converter and solar charging | Resolution was never the bottleneck. Electrode geometry, soil temperature and the solar panel's voltage were |
-| **MSV4** | A new electrode, an impedance measurement instead of capacitance, and a panel that suits the charger | Still being learned |
+| **MSV4** | A new electrode, an impedance measurement instead of capacitance, and a panel that suits the charger | A reading that follows the water closely enough to trigger watering. What is left is in the soil around the blade, not in the electronics |
 
 **MSV2 proved the system.** The receiver, the phone setup, the cloud backend and the dashboard were
 all built around it, and it monitored real plants for months. Field use turned up the problems
@@ -207,11 +210,38 @@ it could see, and the daily swing came in through the electrode rather than the 
 **MSV4 changes three things at once.** The electrodes are spaced to sense several times deeper.
 Instead of capacitance, the probe measures the soil's impedance and fits a small circuit model, and
 the tip temperature is sent alongside so the receiver can correct for it. And a 2 V solar panel
-stays well inside the charger's input limit, where MSV3's 6 V panel did not. So far: a window-light
-test produced a 108 mV battery rise over a morning and showed cutoff near 3.82-3.83 V; its first
-watering took soil resistance from 15.3 kΩ to 3.0 kΩ; and a probe now checks that
-it is in clean air before calibrating itself, after one calibrated against a hand. Its power draw
-is still modeled, not measured.
+stays well inside the charger's input limit, where MSV3's 6 V panel did not.
+
+**MSV4 does the job.** Two boards spent a month (2026-10-08 to 11-20) in two houseplant pots that
+were weighed on a kitchen scale throughout, so the reading could be checked against the actual
+water. Measured:
+
+- **It tracks the scale.** In the small Begonia pot the stored moisture number sat 13.5 g rms off
+  one straight line through three watering cycles, and within a day it was as steady as its
+  per-reading noise allows (0.28 g rms). In the larger Alocasia pot each drying cycle, fitted on
+  its own, was within 4-11 g rms.
+- **The temperature correction is right.** The scale gives 1.93 ± 0.18 %/°C for the soil
+  resistance against the tip thermistor. The receiver uses 2 %/°C.
+- **The daily swing is gone.** Measured the same way as the MSV3 experiment, as a share of the
+  probe's own watering step: the MSV3 blade read through the older analog circuit swung 29.7 % a
+  day, MSV3 as built 3.8 %, and MSV4 2.7 % in the Begonia pot.
+- **What is left is in the soil, not the electronics.** Both boards have the same per-reading noise
+  (0.6-0.7 % of soil resistance), and all 104,018 stored numbers from both probes were recomputed
+  from their stored resistance and temperature and matched to within rounding, so the two pots
+  were processed identically. The Alocasia's extra error came in two forms the scale did not see:
+  its offset stepped wetter after the two small waterings, not the full ones, and an afternoon
+  wobble appeared only as the soil dried. The likely cause, not yet tested, is that the soil around
+  the blade in a large pot holds water differently from the pot as a whole.
+
+Sources: [both pots against the scale](MSV4/docs/MSV4_R15_NOISE_SENSOR10_VS_11_2026-11-04.md) ·
+[temperature coefficient](MSV4/docs/MSV4_SENSOR10_TEMPCO_CHECK_2026-10-27.md) ·
+[daily swing, MSV3 against MSV4](MSV4/docs/figures/MSV4_VS_MSV3_DAILY_SWING_2026-11-18.png) ·
+[latest plots](data/sensor_logs/latest/)
+
+The probe also checks that it is in clean air before calibrating itself, after one calibrated
+against a hand. A window-light test raised the battery 108 mV over a morning and showed the
+charger stopping at 3.82-3.83 V. Its current draw has not been measured directly; one board held
+3.82-3.85 V through a twelve-day drying cycle.
 
 ## Engineering highlights
 
@@ -243,35 +273,40 @@ Problems that were measured to the bottom rather than patched around.
   cloud so other electrode models can be compared; a constant-phase-element model had the lowest
   residual on the documented soil capture. [Notes](MSV4/docs/MSV4_LOCKIN_MEASUREMENT_NOTES_2026-10-01.md) ·
   [Electrode models](MSV4/docs/MSV4_BOARD2_RAW_SWEEP_MODELS_2026-10-15.md)
-- **Compared with a pot-mass reference.** In one pot over eight days and one 460 g watering, daily
-  mass measurements were used to compare seven candidate moisture metrics and temperature effects.
-  The result is exploratory—not a calibrated accuracy specification or a general winner—and the
-  write-up records where the estimators did not match the reference closely enough.
-  [Why the readings miss](MSV4/docs/MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md)
+- **Checked against a kitchen scale for a month.** Two MSV4 probes in two weighed pots, through
+  several waterings each. In the smaller pot the reading stayed within
+  13.5 g rms of one calibration line across every cycle. The 2 %/°C temperature correction was
+  confirmed against the scale (1.93 ± 0.18 %/°C). Before blaming the larger pot's error on the
+  probe, every stored number was recomputed from its raw fields to prove both pots were processed
+  the same way, and a proposed cause, steady polarization from the probe's own drive, was tested
+  against the record and rejected by about 5.7 sigma. These are two pots, not a calibrated accuracy specification.
+  [Write-up](MSV4/docs/MSV4_R15_NOISE_SENSOR10_VS_11_2026-11-04.md) ·
+  [First eight days](MSV4/docs/MSV4_MOISTURE_SLOPE_AND_THERMAL_FIT_2026-10-17.md)
 - **A receiver that stopped uploading for 6.7 hours with Wi-Fi up.** Nothing was lost: 1,812 rows
   were queued and delivered after a reset. The receiver now records the real TLS error and
   restarts itself after a stall. [Incident report](DisplayCenter/docs/RECEIVER_TLS_STALL_2026-10-14.md)
 
 ## Status and next steps
 
-*As of 2026-10-18. [`MSV3/fleet.json`](MSV3/fleet.json) is the live record of where every board is.*
+*MSV4, receiver and dashboard rows as of 2026-11-21; MSV3 and MSV2 rows as of 2026-10-18.
+[`MSV3/fleet.json`](MSV3/fleet.json) is the live record of where every board is.*
 
 | | State |
 | --- | --- |
-| **MSV4** | Two boards running. Board 1 has been in a weighed Alocasia pot since 2026-10-08; board 2 is in a pot of its own and sends raw measurement sweeps to the cloud. More boards are being assembled from a batch of ten PCBs. |
+| **MSV4** | **Final design.** Five boards built and flashed, all with the same 5.6 kΩ drive resistor. The month-long weighed pot test ended on 2026-11-20. The moisture number in use is soil resistance corrected to 25 °C on the tip thermistor. Boards 1-4 are being sealed for outdoor use: epoxy on the board edges and thermistor (done), conformal coating on the electronics and an epoxy-sealed enclosure, with the sensing blade left as bare solder mask. Board 5 stays in a screw-together enclosure as a demonstration unit. |
 | **MSV3** | Five boards built. One is back in soil; the rest are on the desk or out of soil since a two-week comparison experiment ended on 2026-09-30. |
 | **MSV2** | One probe is still in a pot outdoors. |
-| **DisplayCenter** | Running. It hears all three probe generations and uploads to the cloud. |
+| **DisplayCenter** | Running. It hears all three probe generations, marks a learned "water now" region on each plant and uploads to the cloud. A second receiver for a separate household was built and tested alongside it in November. |
 | **Dashboard** | [Live](https://msv2-plants.netlify.app). |
 
-Next:
+The moisture sensor is complete apart from coating and enclosing it for outdoors. Next:
 
-1. **A second weighed watering.** Weights just before and after it will show whether MSV4's offset
-   is the probe settling in or something each watering adds.
-2. **Choose MSV4's moisture reading by the scale.** Derived soil capacitance leads so far; its
-   temperature correction rests on a few days and needs more dry days to confirm.
-3. **Measure MSV4's real power draw.** Every energy figure for it is still modeled.
-4. **Bring up the next MSV4 boards** from the batch being assembled.
+1. **Seal boards 1-4 and test them outdoors**, checking each probe's air reading again after
+   coating before trusting its earlier calibration.
+2. **Automatic watering.** A dedicated pump board, taking its signal from the receiver's "water
+   now" region, drives a 12 V peristaltic pump. The board and the pump's mounting are designed in
+   Altium; none of it has been built yet.
+   [Pump mounting plan](DisplayCenter/docs/AUTO_WATERING_PUMP_MOUNT_PLAN_2026-11-11.md)
 
 ## Repository guide
 

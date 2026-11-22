@@ -2113,6 +2113,12 @@
       "curing": "applied 2026-11-20; board 5 is curing over the weekend (the others presumably likewise, NOT STATED). Air readings taken while it cures are not a stable baseline.",
       "measurement_note": "INFERRED, not tested: today's epoxy is a second candidate, alongside the R15 swap, for boards 1 and 2 reading Cd 16.3 pF in air at ~15:00 against 13.4-14.2 pF at 11:18-11:28; both changes happened between those readings. Board 5's Cd did not move (23.64 pF at 15:10 vs 23.65-23.72 before), but whether its epoxy was on by 15:10 is NOT STATED."
     },
+    "design_status_2026_11_21": {
+      "verified": "2026-11-21",
+      "source": "maintainer stated 2026-11-21: 'MSV4 is now confirmed to be the final version and I have deemed it working well enough to give me good enough data to trigger a watering system. The moisture sensor part of this project is complete other than the coating and enclosing for outdoor systems'",
+      "status": "FINAL probe generation (maintainer: 'the final version'). The maintainer judges its data good enough to trigger a watering system.",
+      "remaining_sensor_work": "coating and enclosing for outdoor use only (see finish_plan_2026_11_21)."
+    },
     "finish_plan_2026_11_21": {
       "verified": "2026-11-21",
       "source": "maintainer stated 2026-11-21 ~18:30 PST: 'Ok so we have boards 1,2,3,4 all getting conformal coating tomorrow, and board 5 is going to stay as a screw together only, non sealed version so I can show off when i present it. The other ones will be fully sealed'",
