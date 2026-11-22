@@ -83,7 +83,6 @@ Deno.serve(async (request) => {
     if (path.endsWith("/api/share-snapshots")) return await shareSnapshotsApi(request);
     if (path.endsWith("/api/share-config")) return await shareConfigApi(request);
     if (path.endsWith("/api/share-history")) return await shareHistoryApi(request);
-    if (path.endsWith("/api/share-history-clear")) return await shareHistoryClearApi(request);
     if (path.endsWith("/api/share-autocal-reset")) return await shareAutocalResetApi(request);
     if (path.endsWith("/api/snapshots")) return await userSnapshotsApi(request);
 
@@ -97,7 +96,6 @@ Deno.serve(async (request) => {
         shareSnapshots: "/functions/v1/plant-dashboard/api/share-snapshots",
         shareConfig: "/functions/v1/plant-dashboard/api/share-config",
         shareHistory: "/functions/v1/plant-dashboard/api/share-history",
-        shareHistoryClear: "/functions/v1/plant-dashboard/api/share-history-clear",
         shareAutocalReset: "/functions/v1/plant-dashboard/api/share-autocal-reset",
       },
     });
@@ -377,33 +375,6 @@ async function shareHistoryApi(request: Request): Promise<Response> {
     sampled: sampleEvery > 1,
     pointBudget: HISTORY_POINT_BUDGET,
   });
-}
-
-async function shareHistoryClearApi(request: Request): Promise<Response> {
-  if (request.method !== "POST") {
-    return jsonResponse({ ok: false, error: "method not allowed" }, 405);
-  }
-
-  const shareToken = bearerToken(request);
-  if (!shareToken) {
-    return jsonResponse({ ok: false, error: "share token required" }, 401);
-  }
-
-  const body = await parseJsonBody(request);
-  const receiverId = String(body.receiverId ?? "").trim();
-  if (!receiverId) {
-    return jsonResponse({ ok: false, error: "receiverId required" }, 400);
-  }
-
-  const { data, error } = await serviceClient().rpc("msv2_clear_share_sensor_history", {
-    p_share_token: shareToken,
-    p_receiver_id: receiverId,
-  });
-  if (error) {
-    return jsonResponse({ ok: false, error: error.message }, 401);
-  }
-
-  return jsonResponse({ ok: true, deleted: data ?? 0 });
 }
 
 // Local app only (see MobileAppPage.h's Setup tab) - forces one sensor's learned range

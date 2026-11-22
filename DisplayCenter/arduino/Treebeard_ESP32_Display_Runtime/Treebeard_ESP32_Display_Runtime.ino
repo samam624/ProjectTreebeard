@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-21 boot-repaint-rename-v1"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-21 no-clear-history-v1"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -3087,7 +3087,7 @@ bool displayFlipped = false;
 // The reason line of the WiFi setup screen currently shown, so an orientation change made
 // while the setup portal is up can repaint that same screen the right way up.
 const char* wifiSetupScreenReason = nullptr;
-// True only while the plain "MSV2 booting" screen is up. bootLog() mirrors each boot step onto
+// True only while the plain "Treebeard booting" screen is up. bootLog() mirrors each boot step onto
 // it, so a receiver that stops there says on its own face which step it stopped at - a unit
 // on a wall charger has no serial to ask. Every full-screen paint starts with
 // applyDisplayRotation(), which clears this.

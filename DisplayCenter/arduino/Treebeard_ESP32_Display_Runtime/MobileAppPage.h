@@ -652,7 +652,6 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
               <option value="custom">Custom range...</option>
             </select>
           </label>
-          <button type="button" class="ghost" id="historyClearButton">Clear All History</button>
         </div>
         <!-- Extra alongside the presets above, not a replacement - lets you pin an exact
              historical window (e.g. 2026-10-29 through 2026-10-31) instead of only "last N
@@ -3111,39 +3110,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
     }
 
-    // Deletes all stored history for this receiver (every probe, every sensor) - not
-    // range- or probe-scoped, since data logged before a sensing-firmware change is
-    // uniformly meaningless, not just the currently-viewed slice.
-    async function clearAllHistory() {
-      if (!confirm("Delete all stored history for every probe on this receiver? This can't be undone.")) {
-        return;
-      }
-
-      $("historyNotice").textContent = "Clearing...";
-      try {
-        const token = await getOrMintShareToken();
-        const response = await fetch(SHARE_API_BASE + "/api/share-history-clear", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
-          body: JSON.stringify({ receiverId: claimInfo.receiverId }),
-        });
-        const body = await response.json();
-        if (!response.ok || !body.ok) {
-          $("historyNotice").textContent = body.error || ("HTTP " + response.status);
-          return;
-        }
-
-        await loadHistory();
-      } catch (err) {
-        $("historyNotice").textContent = "Clear failed: " + err.message;
-      }
-    }
-
     // Forces one sensor's learned range back into "learning" mode from fresh data (see
     // docs/STATUS_HANDOFF.md's redesign item 3) - for cases like moving a probe to a new
     // plant/pot, where the old learned range no longer means anything. Server-side, this
     // just moves the calibration window's lower bound forward (msv2_reset_sensor_calibration);
-    // History-tab data is untouched. Same share-token pattern as loadHistory/clearAllHistory.
+    // History-tab data is untouched. Same share-token pattern as loadHistory.
     async function resetSensorCalibration(button) {
       const index = button.dataset.index;
       const sensorId = Number(button.dataset.sensor);
@@ -3378,7 +3349,6 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       loadHistory();
     });
     $("historyCustomApply").addEventListener("click", loadHistory);
-    $("historyClearButton").addEventListener("click", clearAllHistory);
 
     // Smoothing panel: initialize from whatever was last saved (or firmware defaults), then
     // recompute both charts straight from the already-cached raw rows on every edit - no

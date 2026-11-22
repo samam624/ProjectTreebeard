@@ -8,7 +8,14 @@ There are now two receivers. Identify them by chip MAC (`esptool read-mac`), not
 the main receiver is `28:84:85:46:70:D8` (historically `COM16`); the build-two board is
 `28:84:85:27:9a:d8`.
 
-**Status 2026-11-21 ~17:55 PST: working.** Its USB connector broke off the board while being
+**Status 2026-11-21 ~20:30 PST: ready to hand over to the maintainer's parents.** Cloud receiver
+ID `MSV2D89A27858428`, its own household. Both receivers now run `Treebeard runtime build
+2026-11-21 no-clear-history-v1` (the History tab's "Clear All History" button is gone). Build two's
+copy was compiled with the gitignored `WiFiCredentials.h` set aside, so it carries no home WiFi and
+sits in the first-time setup portal with its identity and cloud token kept. Tested alongside the
+main receiver first: see [MULTI_RECEIVER_TEST_2026-11-21.md](MULTI_RECEIVER_TEST_2026-11-21.md).
+
+**Earlier, 2026-11-21 ~17:55 PST: working.** Its USB connector broke off the board while being
 plugged in (roughly the 50th insertion). The maintainer resoldered it with more reinforcement. Checked
 afterwards on `COM3`:
 
