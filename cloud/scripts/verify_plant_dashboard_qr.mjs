@@ -424,7 +424,7 @@ async function main() {
     console.log("PASS live scan stopped and released its MediaStream");
     console.log("PASS denied camera permission produced actionable Safari guidance");
     console.log("PASS late camera permission resolution could not leak a MediaStream");
-    console.log("PASS captured-photo fallback decoded an MSV2 pairing QR locally");
+    console.log("PASS captured-photo fallback decoded a Treebeard pairing QR locally");
     console.log("PASS read-only portfolio demo rendered four clearly labeled synthetic plant states");
     console.log("PASS dashboard and photo QR fallback worked fully offline after precaching");
   } finally {

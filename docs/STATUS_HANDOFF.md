@@ -1,4 +1,4 @@
-# MSV2 Status Handoff
+# Project Treebeard Status Handoff
 
 Date: 2026-09-19 (the section immediately below is current; older deployment-status notes are historical)
 

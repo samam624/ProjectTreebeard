@@ -1,5 +1,5 @@
 /*********************************************************************
-  MSV2 ESP32 BLE advertisement display runtime.
+  Treebeard ESP32 BLE advertisement display runtime.
 
   Flash this sketch once. After that, update the screen layout by pushing
   ui.json over WiFi:
@@ -12,8 +12,8 @@
     - ArduinoJson
     - XPT2046_Touchscreen
 
-  The board starts an access point named MSV2-Display by default:
-    SSID:     MSV2-Display
+  The board starts an access point named Display-Center by default (MSV2-Display before rename-pass2-v3):
+    SSID:     Display-Center
     password: none
     updater:  http://192.168.4.1/ui
     status:   http://192.168.4.1/data
@@ -37,7 +37,7 @@
 // own date/suffix rather than reusing the 2026-08-31 one, so the two prefixes never describe
 // the same tag - every historical record at or before 2026-08-31 legitimately reads
 // "MSV2 runtime build ..." because that is what those binaries actually reported.
-#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-20 boot-repaint-v2"
+#define TREEBEARD_BUILD_TAG "Treebeard runtime build 2026-11-21 boot-repaint-rename-v1"
 
 #ifndef TREEBEARD_FORCE_WIFI_SETUP
 #define TREEBEARD_FORCE_WIFI_SETUP 0
@@ -46,6 +46,8 @@
 #include <Arduino.h>
 #include "esp_heap_caps.h"
 #include <math.h>
+#include "esp32-hal-periman.h" // buzzer: which LEDC channel GPIO38 got (buzzerSynthIsr)
+#include "hal/ledc_ll.h"
 
 #if TREEBEARD_ENABLE_WIFI
 #include <FS.h>
@@ -110,7 +112,7 @@ void setup()
   testGfx->setTextColor(0xFFFF, 0x0000);
   testGfx->setCursor(8, 8);
   testGfx->setTextSize(2);
-  testGfx->println("MSV2 display test");
+  testGfx->println("Treebeard display test");
   testGfx->setTextColor(0x07E0, 0x0000);
   testGfx->setCursor(8, 32);
   testGfx->setTextSize(1);
@@ -217,7 +219,7 @@ HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==
 )PEM";
 #endif
 
-const char AP_SSID[] = "MSV2-Display";
+const char AP_SSID[] = "Display-Center";
 const char AP_PASSWORD[] = "";
 const char LOCAL_CONFIG_SOURCE[] = "receiver-local";
 
@@ -647,16 +649,28 @@ const uint32_t WIFI_RECONNECT_MIN_DELAY_MS = 5000;
 const uint32_t WIFI_RECONNECT_MAX_DELAY_MS = 60000;
 const uint8_t WIFI_RECONNECT_RADIO_RESET_EVERY = 5;
 
-// Buzzer output on GPIO38 through PCB transistor Q3, driven with LEDC PWM (never left
-// continuously high). Duty/envelope numbers are bench-tested on the assembled unit, not
-// calculated - see docs/DISPLAY_CENTER_BUZZER_SOUND_DESIGN.md. The replacement buzzer
-// soldered onto real units is an unknown-spec passive part (the original TDK piezo did
-// not work), so don't "improve" these from a datasheet; they were picked by ear.
+// Buzzer output on GPIO38 through PCB transistor Q3 (2N7002, low side, no flyback diode).
+// The replacement buzzer on real units is an unknown-spec two-pin passive part (the original
+// TDK piezo did not work).
+//
+// 2026-11-19, docs/BUZZER_DOG_FRIENDLY_DRIVE_2026-11-19.md: the tone used to be a 0/1 square
+// wave at the note's own frequency with its volume set by a 4 % duty. A pulse that narrow puts
+// ~80 % of the drive power at 4-45 kHz (2.4 kHz harmonics within 2 dB of the tone), the band
+// dogs hear best, and its 8 ms onset is in the startle range. Now Q3 switches at a fixed
+// BUZZER_CARRIER_HZ carrier, far above any dog's hearing, and a timer interrupt
+// (buzzerSynthIsr) moves that carrier's duty as a smooth sine at the note frequency, under a
+// slow raised-cosine envelope. The coil and diaphragm average the carrier away, so the volume
+// is the size of that swing (soundVolumePercent), not a pulse width. NOT YET TRIED BY EAR on a
+// bench unit: how loud each volume is depends on the unknown buzzer.
 const uint8_t BUZZER_PIN = 38;
-const uint8_t BUZZER_PWM_RESOLUTION_BITS = 8;
-const uint16_t BUZZER_PWM_MAX = (1U << BUZZER_PWM_RESOLUTION_BITS) - 1U;
-const uint8_t BUZZER_DUTY_PERCENT = 4; // 8% was audibly harsher/louder on the bench unit
-const uint16_t BUZZER_ENVELOPE_MS = 8; // attack/release ramp; suppresses PWM switching clicks
+// The LEDC runs from the 40 MHz crystal on this core (LEDC_USE_XTAL_CLK), so 156.25 kHz allows
+// exactly 8 bits. v1 asked for 9, ledcAttach() failed, and the buzzer was dead (2026-11-19).
+const uint32_t BUZZER_CARRIER_HZ = 156250;      // 40 MHz / 256
+const uint8_t BUZZER_CARRIER_BITS = 8;
+const uint32_t BUZZER_SAMPLE_HZ = 40000;        // duty updates; images land at 39-41 kHz, 30+ dB down
+const uint16_t BUZZER_ATTACK_MS = 120;          // raised-cosine fade in (startle is onset-driven)
+const uint16_t BUZZER_RELEASE_MS = 220;         // and out, so each note dies away like a chime
+const uint8_t SOUND_VOLUME_DEFAULT_PERCENT = 35;
 // How often the water-warning re-fires while a plant stays critically low. The bench
 // audition looped every 60s indefinitely; shipped behavior is once immediately on the
 // critical transition, then hourly until watered, to avoid nagging.
@@ -669,18 +683,49 @@ struct BuzzerStep
   uint16_t silenceMs;
 };
 
-// Ascending major triad, played once after setup() reaches a ready state.
-const BuzzerStep BUZZER_STARTUP_SOUND[] = {
-  { 1047, 55, 22 },
-  { 1319, 60, 22 },
-  { 1568, 115, 0 },
-};
+// 2026-11-19: a choice of sounds, picked in the phone app (Setup > Sound Alerts) and stored in
+// /sound.json by key. Every note gets the same slow envelope (BUZZER_ATTACK_MS/RELEASE_MS, halved
+// for short notes), so they all fade in and out. Kept to C5-C6 (523-1047 Hz): low enough to
+// stay under a dog's best band, high enough for this buzzer to carry. Was one fixed startup
+// blip (C6-E6-G6, 55-115 ms) and a 2400 Hz double buzz played three times.
+// { frequencyHz, toneMs, silenceMs after }
+const BuzzerStep SOUND_STARTUP_CHIME[] = { { 523, 260, 0 }, { 659, 260, 0 }, { 784, 420, 0 } };
+const BuzzerStep SOUND_STARTUP_SUNRISE[] = { { 523, 330, 0 }, { 784, 330, 0 }, { 1047, 650, 0 } };
+const BuzzerStep SOUND_STARTUP_HELLO[] = { { 784, 220, 30 }, { 1047, 520, 0 } };
+const BuzzerStep SOUND_STARTUP_SPROUT[] = { { 523, 140, 0 }, { 587, 140, 0 }, { 659, 140, 0 }, { 784, 140, 0 }, { 1047, 480, 0 } };
+const BuzzerStep SOUND_STARTUP_BELL[] = { { 659, 900, 0 } };
+const BuzzerStep SOUND_WATER_DINGDONG[] = { { 880, 420, 60 }, { 659, 620, 0 } };
+const BuzzerStep SOUND_WATER_DROPLETS[] = { { 784, 120, 90 }, { 659, 120, 90 }, { 523, 320, 0 } };
+const BuzzerStep SOUND_WATER_FALLING[] = { { 1047, 200, 0 }, { 880, 200, 0 }, { 698, 200, 0 }, { 587, 460, 0 } };
+const BuzzerStep SOUND_WATER_LOWBELL[] = { { 523, 900, 0 } };
+const BuzzerStep SOUND_WATER_TWICE[] = { { 880, 360, 40 }, { 659, 480, 320 }, { 880, 360, 40 }, { 659, 600, 0 } };
 
-// Minimal double buzz; serviceWaterAlert() repeats this 3x with a 350ms gap per alert.
-const BuzzerStep BUZZER_WATER_WARNING[] = {
-  { 2400, 48, 72 },
-  { 2400, 58, 0 },
+struct BuzzerSound
+{
+  const char* key;
+  const char* label;
+  const BuzzerStep* steps;
+  uint8_t count;
 };
+#define BUZZER_SOUND_ENTRY(key, label, notes) { key, label, notes, (uint8_t)(sizeof(notes) / sizeof(notes[0])) }
+
+const BuzzerSound STARTUP_SOUNDS[] = {
+  BUZZER_SOUND_ENTRY("chime", "Rising chime", SOUND_STARTUP_CHIME),
+  BUZZER_SOUND_ENTRY("sunrise", "Sunrise", SOUND_STARTUP_SUNRISE),
+  BUZZER_SOUND_ENTRY("hello", "Two-note hello", SOUND_STARTUP_HELLO),
+  BUZZER_SOUND_ENTRY("sprout", "Sprout (quick climb)", SOUND_STARTUP_SPROUT),
+  BUZZER_SOUND_ENTRY("bell", "Single bell", SOUND_STARTUP_BELL),
+  { "off", "Off (silent)", nullptr, 0 },
+};
+const BuzzerSound WATER_SOUNDS[] = {
+  BUZZER_SOUND_ENTRY("dingdong", "Ding-dong", SOUND_WATER_DINGDONG),
+  BUZZER_SOUND_ENTRY("droplets", "Droplets", SOUND_WATER_DROPLETS),
+  BUZZER_SOUND_ENTRY("falling", "Falling four", SOUND_WATER_FALLING),
+  BUZZER_SOUND_ENTRY("lowbell", "Low bell", SOUND_WATER_LOWBELL),
+  BUZZER_SOUND_ENTRY("twice", "Ding-dong twice", SOUND_WATER_TWICE),
+};
+const uint8_t STARTUP_SOUND_COUNT = sizeof(STARTUP_SOUNDS) / sizeof(STARTUP_SOUNDS[0]);
+const uint8_t WATER_SOUND_COUNT = sizeof(WATER_SOUNDS) / sizeof(WATER_SOUNDS[0]);
 
 // Keep this first helper below BuzzerStep. Arduino inserts generated prototypes immediately
 // before the first .ino function definition; moving a function above this struct makes those
@@ -785,10 +830,6 @@ static void appendMsv4HistoryRawJson(String& output, uint32_t packed, uint16_t e
   appendMsv4RawJson(output, packed, (uint8_t)(rawFdcCounts >> 24), 0, dieTempValid, dieTempQuarterC);
 }
 
-uint16_t buzzerDutyRaw()
-{
-  return (uint16_t)((BUZZER_PWM_MAX * BUZZER_DUTY_PERCENT + 50U) / 100U);
-}
 
 // Five samples are enough to reject two isolated spikes while adding only four packets
 // of warm-up. The center, not either envelope of the noise cloud, feeds the low-pass.
@@ -1074,6 +1115,10 @@ struct AutoCalState
   // its own local timezone - see MobileAppPage.h's wateredAgoText(). Not consumed by
   // firmware itself, just piped through to the local /data endpoint.
   double lastWateredAtMs = -1.0;
+  // 2026-11-19: millis() when this state arrived from a cloud pull, 0 if it came from the
+  // LittleFS cache (which does not keep daysSinceLastWatering). The receiver has no wall
+  // clock, so a card's "Watered Nd ago" is daysSinceLastWatering plus the time since this.
+  uint32_t pulledAtMillis = 0;
   // Retained for compatibility with older cloud responses. Watering-cycle calibration
   // no longer uses the rolling-percentile floor clamp, so new responses leave this false.
   bool dryBoundTrendingLower = false;
@@ -2776,6 +2821,10 @@ struct PlantArtSlot
   bool lastBoardTempInitialized = false;
   bool lastBoardTempValid = false;
   int16_t lastBoardTempQuarterC = 0;
+  // Last-drawn "Watered Nd ago" row (drawCardWateredRow()); text cached so a redraw happens
+  // only when the words change (once an hour at most).
+  bool lastWateredInitialized = false;
+  char lastWateredText[24] = "";
   // Last-drawn state for drawPlantCardDetailDataOnly()'s diagnostic rows - same "only
   // repaint what changed" principle as the fields above, see seedDetailCache() and the
   // display-surgical-redraw skill. Formatted text is cached (not raw values) so the
@@ -3183,6 +3232,14 @@ bool cloudDisplayApiReady = false;
 uint16_t cloudDisplayConsecutiveFailures = 0;
 
 bool soundEnabled = true;
+uint8_t soundVolumePercent = SOUND_VOLUME_DEFAULT_PERCENT; // 1-100, persisted in /sound.json
+// 2026-11-19: false = tone, Q3 driven at the note's own pitch with the slow envelope and the
+// volume as its duty. true = the 156 kHz carrier sine: SILENT on the bench buzzer at every
+// volume (maintainer, after v3 fixed the LEDC clock): a coil's current cannot build in sub-3 us
+// pulses with no flyback diode. No longer selectable; kept for a board with a diode fitted.
+bool soundModeSine = false;
+uint8_t startupSoundIndex = 0; // STARTUP_SOUNDS, persisted by key
+uint8_t waterSoundIndex = 0;   // WATER_SOUNDS
 bool buzzerReady = false;
 bool waterAlertActive = false;
 uint32_t nextWaterAlertMs = 0;
@@ -3196,13 +3253,35 @@ struct BuzzerState
   uint8_t stepIndex = 0;
   uint8_t repeatsRemaining = 0;
   uint16_t interRepeatGapMs = 0;
-  uint32_t releaseAtMs = 0;
   uint32_t stepEndMs = 0;
-  bool releaseTriggered = false;
   BuzzerPhase phase = BuzzerPhase::Idle;
 };
 
 BuzzerState buzzerState;
+
+// What buzzerSynthIsr() plays: one note at a time, set up by buzzerStartNote() from loop().
+// The ISR only reads these and the tables, all in DRAM, and writes LEDC registers.
+struct BuzzerSynth
+{
+  volatile bool active;
+  volatile uint32_t phase;
+  volatile uint32_t phaseStep;        // 2^32 * f / BUZZER_SAMPLE_HZ
+  volatile uint32_t sample;
+  volatile uint32_t attackSamples;
+  volatile uint32_t releaseStart;
+  volatile uint32_t endSample;
+  volatile uint32_t peakDutyQ4;       // peak duty in 1/16 counts (the LEDC duty's 4 fraction bits)
+  volatile bool sine;                 // false: constant wave (tone mode, the LEDC runs at the note's pitch)
+  volatile uint32_t isrCount;         // diagnostics, /sound
+  volatile uint32_t lastDutyQ4;
+  uint8_t channel;
+};
+DRAM_ATTR BuzzerSynth buzzerSynth = {};
+DRAM_ATTR uint16_t buzzerSineTable[256];  // (1 + sin) / 2, 0-65535
+DRAM_ATTR uint16_t buzzerRiseTable[256];  // raised cosine 0 -> 65535
+hw_timer_t* buzzerTimer = nullptr;
+uint8_t buzzerSetupStep = 255; // 0 ok, else the step of buzzerBegin() that failed (/sound)
+bool buzzerTimerRunning = false;
 
 #if TREEBEARD_ENABLE_WIFI
 IPAddress currentIpAddress();
@@ -3330,7 +3409,7 @@ void ensureDefaultUi()
   file.print(
     "{"
     "\"_meta\":{\"schema\":1,\"version\":1,\"updatedMs\":0,\"updatedBy\":\"factory-default\"},"
-    "\"title\":\"MSV2 Garden\","
+    "\"title\":\"Display Center\","
     "\"staleSeconds\":3900,"
     "\"rotation\":1,"
     "\"theme\":{\"background\":\"#0E141B\",\"surface\":\"#17212B\",\"text\":\"#F5F7FA\",\"muted\":\"#8FA3AD\",\"accent\":\"#20C997\",\"warning\":\"#FFB020\",\"danger\":\"#FF5A5F\"},"
@@ -4173,10 +4252,23 @@ void setDisplaySettingsLocal(uint8_t brightnessPercent, bool screenOn, const cha
 // Sound mute state is purely local receiver config, not part of the cloud-synced
 // DisplaySettings/snapshot schema (no version/pendingCloudUpdate bookkeeping needed) -
 // nothing outside this device needs to know whether its buzzer is muted.
+int findBuzzerSound(const BuzzerSound* list, uint8_t count, const char* key)
+{
+  if (key == nullptr) return -1;
+  for (uint8_t k = 0; k < count; k++)
+  {
+    if (strcmp(list[k].key, key) == 0) return k;
+  }
+  return -1;
+}
+
 void persistSoundSettings()
 {
-  StaticJsonDocument<64> doc;
+  StaticJsonDocument<128> doc;
   doc["enabled"] = soundEnabled;
+  doc["volume"] = soundVolumePercent;
+  doc["startup"] = STARTUP_SOUNDS[startupSoundIndex].key;
+  doc["water"] = WATER_SOUNDS[waterSoundIndex].key;
   File file = LittleFS.open(SOUND_SETTINGS_PATH, "w");
   if (!file)
   {
@@ -4197,13 +4289,145 @@ void loadSoundSettings()
   {
     return;
   }
-  StaticJsonDocument<64> doc;
+  StaticJsonDocument<128> doc;
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   if (!error)
   {
     soundEnabled = doc["enabled"] | true;
+    soundVolumePercent = (uint8_t)clampInt(doc["volume"] | (int)SOUND_VOLUME_DEFAULT_PERCENT, 1, 100);
+    // "mode" (sine) is ignored: the 156 kHz carrier was silent on the bench buzzer (2026-11-19).
+    const int startup = findBuzzerSound(STARTUP_SOUNDS, STARTUP_SOUND_COUNT, doc["startup"] | "");
+    const int water = findBuzzerSound(WATER_SOUNDS, WATER_SOUND_COUNT, doc["water"] | "");
+    startupSoundIndex = startup >= 0 ? (uint8_t)startup : 0;
+    waterSoundIndex = water >= 0 ? (uint8_t)water : 0;
   }
+}
+
+// ---- tone synthesis (2026-11-19; see the comment at BUZZER_PIN) ----
+
+static inline void IRAM_ATTR buzzerWriteDutyQ4(uint32_t dutyQ4)
+{
+  ledc_dev_t* hw = LEDC_LL_GET_HW();
+  const ledc_mode_t mode = (ledc_mode_t)(buzzerSynth.channel / SOC_LEDC_CHANNEL_NUM);
+  const ledc_channel_t ch = (ledc_channel_t)(buzzerSynth.channel % SOC_LEDC_CHANNEL_NUM);
+  // The same register sequence as ledc_set_duty() + ledc_update_duty(), without their locks.
+  hw->channel_group[mode].channel[ch].duty.duty = dutyQ4;
+  ledc_ll_set_fade_param(hw, mode, ch, 1, 1, 0, 1);
+  ledc_ll_set_sig_out_en(hw, mode, ch, true);
+  ledc_ll_set_duty_start(hw, mode, ch);
+  ledc_ll_ls_channel_update(hw, mode, ch);
+}
+
+// BUZZER_SAMPLE_HZ timer interrupt: duty = peak x envelope x (1 + sin) / 2. Masked during flash
+// writes (the gptimer interrupt is not cache-safe in this core), which only pauses a note.
+void IRAM_ATTR buzzerSynthIsr()
+{
+  if (!buzzerSynth.active) return;
+  const uint32_t n = buzzerSynth.sample;
+  if (n >= buzzerSynth.endSample)
+  {
+    buzzerWriteDutyQ4(0);
+    buzzerSynth.active = false;
+    return;
+  }
+  uint32_t envelope;
+  if (n < buzzerSynth.attackSamples)
+  {
+    envelope = buzzerRiseTable[(n * 255U) / buzzerSynth.attackSamples];
+  }
+  else if (n < buzzerSynth.releaseStart)
+  {
+    envelope = 65535U;
+  }
+  else
+  {
+    envelope = buzzerRiseTable[((buzzerSynth.endSample - n) * 255U) / (buzzerSynth.endSample - buzzerSynth.releaseStart)];
+  }
+  buzzerSynth.sample = n + 1;
+  const uint32_t phase = buzzerSynth.phase + buzzerSynth.phaseStep;
+  buzzerSynth.phase = phase;
+  const uint32_t wave = buzzerSynth.sine ? buzzerSineTable[phase >> 24] : 65535U;
+  const uint32_t dutyQ4 = (((buzzerSynth.peakDutyQ4 * (envelope >> 8)) >> 8) * (wave >> 8)) >> 8;
+  buzzerSynth.isrCount++;
+  if (dutyQ4 > buzzerSynth.lastDutyQ4) buzzerSynth.lastDutyQ4 = dutyQ4; // the peak since the note began
+  buzzerWriteDutyQ4(dutyQ4);
+}
+
+// Peak duty for a volume: half the carrier at 100 %, on a square law so the low end of the
+// slider has room (1 % -> 0.005 % duty, 35 % -> 6 %).
+uint32_t buzzerPeakDutyQ4(uint8_t volumePercent)
+{
+  const float share = 0.5f * (volumePercent / 100.0f) * (volumePercent / 100.0f);
+  return (uint32_t)(share * (float)(1UL << BUZZER_CARRIER_BITS) * 16.0f + 0.5f);
+}
+
+void buzzerStartNote(const BuzzerStep& step)
+{
+  buzzerSynth.active = false;
+  // Tone mode: the LEDC runs at the note's own pitch; sine mode: at the fixed carrier.
+  const uint32_t pwmHz = soundModeSine ? BUZZER_CARRIER_HZ : step.frequencyHz;
+  if (ledcReadFreq(BUZZER_PIN) != pwmHz && ledcChangeFrequency(BUZZER_PIN, pwmHz, BUZZER_CARRIER_BITS) == 0)
+  {
+    return; // cannot run at that rate: stay silent rather than play at a wrong one
+  }
+  buzzerSynth.sine = soundModeSine;
+  buzzerSynth.lastDutyQ4 = 0;
+  const uint32_t total = max(2UL, (unsigned long)step.toneMs * BUZZER_SAMPLE_HZ / 1000UL);
+  const uint32_t attack = max(1UL, min((unsigned long)BUZZER_ATTACK_MS * BUZZER_SAMPLE_HZ / 1000UL, (unsigned long)total / 2));
+  const uint32_t release = max(1UL, min((unsigned long)BUZZER_RELEASE_MS * BUZZER_SAMPLE_HZ / 1000UL, (unsigned long)(total - attack)));
+  buzzerSynth.phase = 0;
+  buzzerSynth.phaseStep = (uint32_t)(((uint64_t)step.frequencyHz << 32) / BUZZER_SAMPLE_HZ);
+  buzzerSynth.sample = 0;
+  buzzerSynth.attackSamples = attack;
+  buzzerSynth.releaseStart = total - release;
+  buzzerSynth.endSample = total;
+  buzzerSynth.peakDutyQ4 = buzzerPeakDutyQ4(soundVolumePercent);
+  buzzerSynth.active = true;
+}
+
+void buzzerSilence()
+{
+  buzzerSynth.active = false;
+  if (buzzerTimer != nullptr && buzzerTimerRunning) timerStop(buzzerTimer);
+  buzzerTimerRunning = false;
+  if (buzzerReady) buzzerWriteDutyQ4(0);
+  buzzerState.phase = BuzzerPhase::Idle;
+}
+
+bool buzzerBegin()
+{
+  for (int k = 0; k < 256; k++)
+  {
+    buzzerSineTable[k] = (uint16_t)lroundf(32767.5f * (1.0f + sinf(2.0f * (float)M_PI * k / 256.0f)));
+    buzzerRiseTable[k] = (uint16_t)lroundf(32767.5f * (1.0f - cosf((float)M_PI * k / 255.0f)));
+  }
+  // The first note sets the real frequency (buzzerStartNote); attach at a tone pitch, which
+  // always fits, and record whether the carrier fits too.
+  if (!ledcAttach(BUZZER_PIN, 1000, BUZZER_CARRIER_BITS))
+  {
+    buzzerSetupStep = 1;
+    return false;
+  }
+  ledcWrite(BUZZER_PIN, 0);
+  ledc_channel_handle_t* bus = (ledc_channel_handle_t*)perimanGetPinBus(BUZZER_PIN, ESP32_BUS_TYPE_LEDC);
+  if (bus == nullptr)
+  {
+    buzzerSetupStep = 2;
+    return false;
+  }
+  buzzerSynth.channel = bus->channel;
+  buzzerTimer = timerBegin(1000000);
+  if (buzzerTimer == nullptr)
+  {
+    buzzerSetupStep = 3;
+    return false;
+  }
+  timerAttachInterrupt(buzzerTimer, &buzzerSynthIsr);
+  timerAlarm(buzzerTimer, 1000000UL / BUZZER_SAMPLE_HZ, true, 0);
+  timerStop(buzzerTimer);
+  buzzerSetupStep = 0;
+  return true;
 }
 
 void setSoundEnabledLocal(bool enabled)
@@ -4213,8 +4437,7 @@ void setSoundEnabledLocal(bool enabled)
   {
     // Cut off an in-flight pattern immediately rather than letting it finish playing
     // after the user just asked for silence.
-    buzzerState.phase = BuzzerPhase::Idle;
-    ledcWrite(BUZZER_PIN, 0);
+    buzzerSilence();
   }
   persistSoundSettings();
 }
@@ -4491,15 +4714,16 @@ void serviceSerialCommands()
   }
 }
 
+void setSoundVolumeLocal(uint8_t volumePercent)
+{
+  soundVolumePercent = (uint8_t)clampInt(volumePercent, 1, 100);
+  persistSoundSettings();
+}
+
 void buzzerBeginStep(uint32_t now)
 {
   const BuzzerStep& step = buzzerState.steps[buzzerState.stepIndex];
-  ledcChangeFrequency(BUZZER_PIN, step.frequencyHz, BUZZER_PWM_RESOLUTION_BITS);
-  uint16_t attackMs = step.toneMs < BUZZER_ENVELOPE_MS * 2 ? step.toneMs / 2 : BUZZER_ENVELOPE_MS;
-  uint16_t releaseMs = (step.toneMs - attackMs) < BUZZER_ENVELOPE_MS ? (step.toneMs - attackMs) : BUZZER_ENVELOPE_MS;
-  ledcFade(BUZZER_PIN, 0, buzzerDutyRaw(), attackMs);
-  buzzerState.releaseTriggered = false;
-  buzzerState.releaseAtMs = now + (step.toneMs > releaseMs ? step.toneMs - releaseMs : 0);
+  buzzerStartNote(step);
   buzzerState.stepEndMs = now + step.toneMs + step.silenceMs;
   buzzerState.phase = BuzzerPhase::Tone;
 }
@@ -4520,8 +4744,21 @@ void startBuzzerPattern(const BuzzerStep* steps, uint8_t count, uint8_t repeatCo
   buzzerState.stepIndex = 0;
   buzzerState.repeatsRemaining = repeatCount - 1;
   buzzerState.interRepeatGapMs = interRepeatGapMs;
+  if (!buzzerTimerRunning)
+  {
+    timerStart(buzzerTimer);
+    buzzerTimerRunning = true;
+  }
   buzzerBeginStep(millis());
 }
+
+void playBuzzerSound(const BuzzerSound& sound)
+{
+  if (sound.steps != nullptr && sound.count > 0) startBuzzerPattern(sound.steps, sound.count, 1, 0);
+}
+
+void playStartupSound() { playBuzzerSound(STARTUP_SOUNDS[startupSoundIndex]); }
+void playWaterSound() { playBuzzerSound(WATER_SOUNDS[waterSoundIndex]); }
 
 // Advances whatever pattern startBuzzerPattern() started, purely by comparing millis()
 // against scheduled deadlines - no delay() anywhere. Call every loop() iteration.
@@ -4540,12 +4777,6 @@ void serviceBuzzer(uint32_t now)
       buzzerBeginStep(now);
     }
     return;
-  }
-
-  if (!buzzerState.releaseTriggered && (int32_t)(now - buzzerState.releaseAtMs) >= 0)
-  {
-    ledcFade(BUZZER_PIN, buzzerDutyRaw(), 0, BUZZER_ENVELOPE_MS);
-    buzzerState.releaseTriggered = true;
   }
 
   if ((int32_t)(now - buzzerState.stepEndMs) < 0)
@@ -4568,8 +4799,7 @@ void serviceBuzzer(uint32_t now)
     return;
   }
 
-  buzzerState.phase = BuzzerPhase::Idle;
-  ledcWrite(BUZZER_PIN, 0);
+  buzzerSilence();
 }
 
 // Reuses the exact same "critically low" condition that already drives the physical
@@ -4592,7 +4822,7 @@ void serviceWaterAlert(uint32_t now, bool anyCardNeedsAlert)
   }
   waterAlertActive = true;
   nextWaterAlertMs = now + BUZZER_WATER_ALERT_REPEAT_MS;
-  startBuzzerPattern(BUZZER_WATER_WARNING, sizeof(BUZZER_WATER_WARNING) / sizeof(BUZZER_WATER_WARNING[0]), 3, 350);
+  playWaterSound();
 }
 
 bool applyRemoteDisplaySettings(uint8_t brightnessPercent, bool screenOn, uint32_t version, const char* source)
@@ -6468,6 +6698,7 @@ void cachePlantArtSlot(
   slot.warningColor = warningColor;
   slot.dangerColor = dangerColor;
   slot.frame = 0;
+  slot.lastWateredInitialized = false; // a reused slot may hold another card's text
   slot.frameIntervalMs = artFrameInterval(slot.art, slot.frame);
   // Randomize only the starting phase so multiple cards do not switch on the same SPI
   // tick. Once started, every pose keeps the source GIF's own deterministic duration.
@@ -6597,6 +6828,49 @@ void drawCardTempHeader(int x, int y, int w, int h, bool valid, int16_t tempQuar
   if (hasText && infoWidth >= CARD_INFO_COLUMN_WIDTH)
   {
     drawTextRight(tempHeader, rightX, rowY, 1, textColor, surfaceColor);
+  }
+}
+
+// 2026-11-19: time since the cloud's last detected watering (region.ts; rain counts for an
+// outdoor probe), so a card still works as a watering timer where the level is doubtful.
+// Region-calibrated sensors only, and only after a cloud pull this boot (the cache does not
+// keep it). Hours under a day, whole days after; no clock, so rolling 24 h days, never
+// "today"/"yesterday". Writes "" when there is nothing to show or it does not fit maxChars.
+void formatWateredAgo(uint16_t sensorId, size_t maxChars, char* out, size_t outSize)
+{
+  out[0] = '\0';
+  AutoCalState learned;
+  if (sensorId == 0 || sensorId > MAX_SENSOR_ID || !copyAutoCalState(sensorId, learned)) return;
+  if (!learned.ready || !learned.region || learned.daysSinceLastWatering < 0.0f || learned.pulledAtMillis == 0) return;
+  const double hours = (double)learned.daysSinceLastWatering * 24.0 + (double)(uint32_t)(millis() - learned.pulledAtMillis) / 3600000.0;
+  const long whole = hours < 24.0 ? (long)hours : (long)(hours / 24.0);
+  const char unit = hours < 24.0 ? 'h' : 'd';
+  char text[24];
+  snprintf(text, sizeof(text), "Watered %ld%c ago", whole, unit);
+  if (strlen(text) > maxChars) snprintf(text, sizeof(text), "%ld%c ago", whole, unit);
+  if (strlen(text) <= maxChars) strlcpy(out, text, outSize);
+}
+
+// The row under the plant name (y+15, the temp header's row), left of the info column. Free on
+// every regular card: the art band starts at y+24.
+void drawCardWateredRow(int x, int y, int w, int h, uint16_t sensorId, uint16_t textColor, uint16_t surfaceColor, bool clearFirst, char* drawn, size_t drawnSize)
+{
+  const int leftX = x + cardHeaderInset(h);
+  const int rowWidth = max(0, cardInfoColumnLeftX(x, w, h) - CARD_INFO_GAP - leftX);
+  char text[24];
+  formatWateredAgo(sensorId, (size_t)(rowWidth / 6), text, sizeof(text));
+  if (drawn != nullptr && drawnSize > 0)
+  {
+    if (strcmp(drawn, text) == 0) return;
+    strlcpy(drawn, text, drawnSize);
+  }
+  if (clearFirst && rowWidth > 0)
+  {
+    tft.fillRect(leftX, y + 14, rowWidth, 10, surfaceColor);
+  }
+  if (text[0] != '\0')
+  {
+    drawTextLeft(text, leftX, y + 15, 1, textColor, surfaceColor);
   }
 }
 
@@ -6732,6 +7006,7 @@ void drawPlantCard(
   // this is a secondary diagnostic stat, not worth the collision risk on the tightest layout.
   const bool boardTempValid = reading != nullptr && reading->boardTempValid;
   drawCardTempHeader(x, y, w, h, boardTempValid, boardTempValid ? reading->rawBoardTempQuarterC : 0, mutedColor, surfaceColor, false);
+  drawCardWateredRow(x, y, w, h, sensorId, mutedColor, surfaceColor, false, nullptr, 0);
 
   if (showArt)
   {
@@ -6854,6 +7129,14 @@ void drawPlantCardDataOnly(PlantArtSlot& slot)
     slot.lastBoardTempQuarterC = boardTempQuarterC;
   }
 
+  // Cleared and redrawn only when its words change (drawCardWateredRow compares the cache).
+  if (!slot.lastWateredInitialized)
+  {
+    slot.lastWateredText[0] = '\x01'; // matches no real text: forces one paint
+    slot.lastWateredInitialized = true;
+  }
+  drawCardWateredRow(x, y, w, h, slot.sensorId, slot.mutedColor, slot.surfaceColor, true, slot.lastWateredText, sizeof(slot.lastWateredText));
+
   slot.metricsInitialized = true;
   slot.lastMoistureStale = stale;
   slot.lastMoistureRaw = stale ? slot.lastMoistureRaw : reading->moisture;
@@ -6920,6 +7203,7 @@ void restoreCardsFromCache()
     }
     slot.metricsInitialized = false;
     slot.lastBoardTempInitialized = false;
+    slot.lastWateredInitialized = false;
     drawPlantCardDataOnly(slot);
   }
 }
@@ -7568,7 +7852,7 @@ void renderWifiConnectingScreen(const char* ssid, const char* source)
 #else
   applyDisplayRotation(1, true);
   tft.fillScreen(TFT_BLACK);
-  drawTextLeft("MSV2 Plants", 16, 16, 2, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("Display Center", 16, 16, 2, TFT_WHITE, TFT_BLACK);
   drawTextLeft("Connecting to home WiFi...", 16, 48, 1, TFT_ACCENT, TFT_BLACK);
   drawTextLeft("Network", 16, 84, 1, TFT_MUTED, TFT_BLACK);
   drawTextLeft(ssid == nullptr || ssid[0] == '\0' ? "(none)" : ssid, 92, 84, 1, TFT_WHITE, TFT_BLACK);
@@ -7595,7 +7879,7 @@ void renderWifiSetupScreen(const char* reason)
   drawTextLeft(reason == nullptr || reason[0] == '\0' ? "Ready for first-time setup" : reason, 16, 43, 1, TFT_WARNING, TFT_BLACK);
 
   drawSetupStep(78, "1", "On your phone, open WiFi settings.", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
-  drawSetupStep(110, "2", "Join network: MSV2-Display", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
+  drawSetupStep(110, "2", "Join network: Display-Center", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
   drawSetupStep(142, "3", "No password needed", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
   drawSetupStep(174, "4", "Choose home WiFi or local-only mode.", TFT_WHITE, TFT_ACCENT, TFT_BLACK);
 
@@ -7688,7 +7972,7 @@ void renderUi()
 
   setCheckpoint("render: header draw");
   tft.fillScreen(backgroundColor);
-  const char* title = doc["title"] | "MSV2";
+  const char* title = doc["title"] | "Display Center";
   drawTextLeft(title, 8, 8, 2, textColor, backgroundColor);
 #if TREEBEARD_ENABLE_WIFI
   if (!wifiSetupPortalActive)
@@ -8414,7 +8698,7 @@ String snapshotJsonWithHistory(const PendingHistoryReading* historyBatch, size_t
     uiFile.close();
     if (!uiError)
     {
-      config["title"] = uiDoc["title"] | "MSV2 Plants";
+      config["title"] = uiDoc["title"] | "Display Center";
       JsonArray sourceCards = uiDoc["cards"].as<JsonArray>();
       if (!sourceCards.isNull())
       {
@@ -9531,6 +9815,7 @@ void runCloudAutoCalPull(uint32_t now)
         learned.wetBound = sensorRow["wetBound"] | 0;
         learned.daysSinceLastWatering = sensorRow["daysSinceLastWatering"] | -1.0f;
         learned.lastWateredAtMs = sensorRow["lastWateredAtMs"] | -1.0;
+        learned.pulledAtMillis = max(1UL, (unsigned long)millis());
         learned.dryBoundTrendingLower = sensorRow["dryBoundTrendingLower"] | false;
         learned.region = sensorRow["region"] | false;
         if (learned.ready &&
@@ -11430,7 +11715,7 @@ void setupServer()
   auto redirectToSetupApp = []() {
     server.sendHeader("Location", "http://192.168.4.1/app", true);
     server.sendHeader("Cache-Control", "no-store");
-    server.send(302, "text/plain", "Open MSV2 setup at http://192.168.4.1/app\n");
+    server.send(302, "text/plain", "Open Treebeard setup at http://192.168.4.1/app\n");
   };
 
   server.on("/", HTTP_GET, []() {
@@ -11566,9 +11851,30 @@ void setupServer()
   server.on("/sound", HTTP_GET, []() {
     Serial.println("[Treebeard web] GET /sound");
     server.sendHeader("Cache-Control", "no-store");
-    StaticJsonDocument<64> doc;
+    DynamicJsonDocument doc(1536);
     doc["ok"] = true;
     doc["enabled"] = soundEnabled;
+    doc["volume"] = soundVolumePercent;
+    doc["startupSound"] = STARTUP_SOUNDS[startupSoundIndex].key;
+    doc["waterSound"] = WATER_SOUNDS[waterSoundIndex].key;
+    JsonArray startupOptions = doc.createNestedArray("startupOptions");
+    for (uint8_t k = 0; k < STARTUP_SOUND_COUNT; k++)
+    {
+      JsonObject option = startupOptions.createNestedObject();
+      option["key"] = STARTUP_SOUNDS[k].key;
+      option["label"] = STARTUP_SOUNDS[k].label;
+    }
+    JsonArray waterOptions = doc.createNestedArray("waterOptions");
+    for (uint8_t k = 0; k < WATER_SOUND_COUNT; k++)
+    {
+      JsonObject option = waterOptions.createNestedObject();
+      option["key"] = WATER_SOUNDS[k].key;
+      option["label"] = WATER_SOUNDS[k].label;
+    }
+    doc["ready"] = buzzerReady;
+    doc["setupStep"] = buzzerSetupStep;
+    doc["isrCount"] = buzzerSynth.isrCount;
+    doc["lastPeakDutyQ4"] = buzzerSynth.lastDutyQ4;
     String output;
     serializeJson(doc, output);
     server.send(200, "application/json", output);
@@ -11581,14 +11887,35 @@ void setupServer()
       server.send(401, "application/json", "{\"ok\":false,\"error\":\"admin session expired - power-cycle to reconfigure\"}");
       return;
     }
-    StaticJsonDocument<64> doc;
+    // Any of: enabled (bool), volume (1-100), startupSound / waterSound (a key from GET's
+    // options), play ("startup" | "water": play it now, even while muted - the user asked to
+    // hear it), test (true: same as play "water", kept for older app pages).
+    StaticJsonDocument<192> doc;
     DeserializationError error = deserializeJson(doc, server.arg("plain"));
-    if (error || !doc["enabled"].is<bool>())
+    const bool hasEnabled = !error && doc["enabled"].is<bool>();
+    const bool hasVolume = !error && doc["volume"].is<int>() && doc["volume"].as<int>() >= 1 && doc["volume"].as<int>() <= 100;
+    const int startup = error ? -1 : findBuzzerSound(STARTUP_SOUNDS, STARTUP_SOUND_COUNT, doc["startupSound"] | "");
+    const int water = error ? -1 : findBuzzerSound(WATER_SOUNDS, WATER_SOUND_COUNT, doc["waterSound"] | "");
+    const char* play = error ? "" : (const char*)(doc["play"] | ((doc["test"] | false) ? "water" : ""));
+    const bool wantsPlay = strcmp(play, "startup") == 0 || strcmp(play, "water") == 0;
+    if (!hasEnabled && !hasVolume && startup < 0 && water < 0 && !wantsPlay)
     {
-      server.send(400, "application/json", "{\"ok\":false,\"error\":\"enabled (boolean) is required\"}");
+      server.send(400, "application/json", "{\"ok\":false,\"error\":\"enabled, volume (1-100), startupSound, waterSound or play is required\"}");
       return;
     }
-    setSoundEnabledLocal(doc["enabled"].as<bool>());
+    if (startup >= 0) startupSoundIndex = (uint8_t)startup;
+    if (water >= 0) waterSoundIndex = (uint8_t)water;
+    if (hasVolume) soundVolumePercent = (uint8_t)doc["volume"].as<int>();
+    if (hasEnabled) setSoundEnabledLocal(doc["enabled"].as<bool>()); // persists everything
+    else if (hasVolume || startup >= 0 || water >= 0) persistSoundSettings();
+    if (wantsPlay && buzzerReady)
+    {
+      const bool wasEnabled = soundEnabled;
+      soundEnabled = true;
+      if (strcmp(play, "startup") == 0) playStartupSound();
+      else playWaterSound();
+      soundEnabled = wasEnabled;
+    }
     server.send(200, "application/json", "{\"ok\":true}");
   });
 
@@ -11725,7 +12052,7 @@ void setupServer()
     {
       server.sendHeader("Location", "http://192.168.4.1/app", true);
       server.sendHeader("Cache-Control", "no-store");
-      server.send(302, "text/plain", "Open MSV2 setup at http://192.168.4.1/app\n");
+      server.send(302, "text/plain", "Open Treebeard setup at http://192.168.4.1/app\n");
       return;
     }
     server.send(404, "text/plain", "not found\n");
@@ -12141,14 +12468,10 @@ void setup()
   bootLog("LittleFS ready");
 
   bootLog("initializing buzzer PWM (GPIO38)");
-  buzzerReady = ledcAttach(BUZZER_PIN, 1000, BUZZER_PWM_RESOLUTION_BITS);
-  if (buzzerReady)
+  buzzerReady = buzzerBegin();
+  if (!buzzerReady)
   {
-    ledcWrite(BUZZER_PIN, 0);
-  }
-  else
-  {
-    bootLog("buzzer PWM attach failed");
+    bootLog("buzzer carrier/timer setup failed");
   }
 
 #if TREEBEARD_ENABLE_DISPLAY
@@ -12197,7 +12520,7 @@ void setup()
   Serial.print("x");
   Serial.println(tft.height());
   tft.fillScreen(TFT_BLACK);
-  drawTextLeft("MSV2 booting", 8, 8, 1, TFT_WHITE, TFT_BLACK);
+  drawTextLeft("Treebeard booting", 8, 8, 1, TFT_WHITE, TFT_BLACK);
   {
     // A panic or watchdog here means a boot loop, which looks identical to a hang otherwise.
     char resetLine[48];
@@ -12257,7 +12580,7 @@ void setup()
   }
   setupServer();
   bootLog("WiFi/server ready");
-  if (xTaskCreatePinnedToCore(cloudSyncTask, "msv2_cloud_sync", CLOUD_SYNC_TASK_STACK_BYTES, nullptr, CLOUD_SYNC_TASK_PRIORITY, &cloudSyncTaskHandle, 0) == pdPASS)
+  if (xTaskCreatePinnedToCore(cloudSyncTask, "tb_cloud_sync", CLOUD_SYNC_TASK_STACK_BYTES, nullptr, CLOUD_SYNC_TASK_PRIORITY, &cloudSyncTaskHandle, 0) == pdPASS)
   {
     bootLog("cloud sync task running");
   }
@@ -12279,7 +12602,7 @@ void setup()
 #endif
   {
     bootLog("initializing BLE scanner");
-    BLEDevice::init("MSV2-DISPLAY");
+    BLEDevice::init("TREEBEARD-DISPLAY");
     bleScan = BLEDevice::getScan();
     bleScanCallbacks = new Msv2AdvertisedDeviceCallbacks();
     bleScan->setAdvertisedDeviceCallbacks(bleScanCallbacks, true);
@@ -12289,7 +12612,7 @@ void setup()
     bleScan->setActiveScan(true);
     bleScan->setInterval(120);
     bleScan->setWindow(40);
-    if (xTaskCreatePinnedToCore(bleScanTask, "msv2_ble_scan", BLE_SCAN_TASK_STACK_BYTES, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
+    if (xTaskCreatePinnedToCore(bleScanTask, "tb_ble_scan", BLE_SCAN_TASK_STACK_BYTES, nullptr, BLE_SCAN_TASK_PRIORITY, &bleScanTaskHandle, 0) == pdPASS)
     {
       bootLog("BLE scanner task running");
     }
@@ -12303,10 +12626,10 @@ void setup()
 #endif
 
 #if TREEBEARD_ENABLE_WIFI
-  Serial.print("MSV2 display runtime ready at http://");
+  Serial.print("Treebeard display runtime ready at http://");
   Serial.println(currentIpAddress());
 #else
-  Serial.println("MSV2 display runtime ready");
+  Serial.println("Treebeard display runtime ready");
 #endif
   bootLog("initial render");
   displayDirty = false;
@@ -12334,7 +12657,7 @@ void setup()
   // can come at night, so it stays silent.
   if (!bootWasCloudStallRestart)
   {
-    startBuzzerPattern(BUZZER_STARTUP_SOUND, sizeof(BUZZER_STARTUP_SOUND) / sizeof(BUZZER_STARTUP_SOUND[0]), 1, 0);
+    playStartupSound();
   }
   bootLog("setup complete");
 }

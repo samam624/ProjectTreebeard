@@ -1,4 +1,4 @@
-// MSV2 ESP32-S3 -> nRF52840 SWD flasher.
+// Treebeard ESP32-S3 -> nRF52840 SWD flasher.
 //
 // Turns an ESP32-S3 devkit into a standalone SWD debug adapter that can attach to,
 // erase, and program an nRF52840 target (XIAO nRF52840 Sense probes today, MSV3's
@@ -715,7 +715,7 @@ static const size_t MAX_IMAGE_BYTES = 200UL * 1024UL;
 static uint8_t *g_imageBuf = nullptr;
 
 static void printHelp() {
-  Serial.println(F("MSV2 SWD flasher commands:"));
+  Serial.println(F("Treebeard SWD flasher commands:"));
   Serial.println(F("  id                 - connect (read-only) and report target identity"));
   Serial.println(F("  probe              - loop checking for SWD contact (for hand-held wiring)"));
   Serial.println(F("  halt               - hardware-reset target then halt the core"));
@@ -1351,7 +1351,7 @@ void setup() {
   pinMode(PIN_NRESET, INPUT); // idle high-Z; only driven low during a reset pulse
 
   Serial.println();
-  Serial.println(F("MSV2 ESP32-S3 SWD flasher ready."));
+  Serial.println(F("Treebeard ESP32-S3 SWD flasher ready."));
   Serial.println(F("SWCLK=GPIO5  SWDIO=GPIO6  nRESET=GPIO7  (target GND to ESP32 GND)"));
   printHelp();
 }

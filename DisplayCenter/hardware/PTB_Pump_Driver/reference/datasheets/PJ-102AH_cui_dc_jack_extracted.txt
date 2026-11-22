@@ -1,0 +1,154 @@
+
+===PAGE 1===
+date
+09/12/2024
+page 1 of 3
+MODEL: PJ-102AH | DESCRIPTION: DC POWER JACK
+sameskydevices.com
+FEATURES
+• 2.0 mm center pin
+• 5.0 A rating
+• right-angle orientation
+• through hole
+SPECIFICATIONS
+parameter
+conditions/description
+min
+typ
+max
+units
+rated input voltage
+24
+Vdc
+rated input current
+5.0
+A
+contact resistance
+30
+mΩ
+insulation resistance
+at 500 Vdc
+100
+MΩ
+voltage withstand
+for 1 minute
+500
+Vac
+insertion/withdrawal force
+0.3
+3
+kg
+terminal strength
+any direction for 10 seconds
+500
+g
+operating temperature
+-25
+85
+°C
+life
+5,000
+cycles
+flammability rating
+UL94V-0
+RoHS
+yes
+SOLDERABILITY
+parameter
+conditions/description
+min
+typ
+max
+units
+wave soldering
+dipped in solder pot for 5 ±0.5 seconds
+255
+260
+265
+°C
+CUI Devices is now Same Sky!    Learn More
+Additional Resources:    Product Page    |    3D Model    |    PCB Footprint
+
+===PAGE 2===
+SAME SKY | MODEL: PJ-102AH | DESCRIPTION: DC POWER JACK
+date 09/12/2024 | page 2 of 3
+sameskydevices.com
+MECHANICAL DRAWING
+SCHEMATIC
+3
+2
+1
+Model
+PJ-102AH
+Center Pin
+Ø2.0 mm
+MATING PLUG
+Jack Insertion Depth: 9.5 mm
+DESCRIPTION
+MATERIAL
+PLATING/COLOR
+center pin
+copper
+nickel
+terminal 1
+brass
+silver
+terminal 2
+copper alloy
+silver
+terminal 3
+brass 
+silver
+housing
+PBT (UL94V-0)
+black
+cover
+PBT (UL94V-0)
+black
+units: mm
+tolerance:
+X ±0.50 mm
+X.X ±0.30 mm
+X.XX ±0.20 mm
+PCB: ±0.05 mm
+unless otherwise specified
+Recommended PCB Layout
+Top View
+Additional Resources:    Product Page    |    3D Model    |    PCB Footprint
+
+===PAGE 3===
+SAME SKY | MODEL: PJ-102AH | DESCRIPTION: DC POWER JACK
+date 09/12/2024 | page 3 of 3
+Same Sky offers a one (1) year limited warranty.  Complete warranty information is listed on our website.
+Same Sky reserves the right to make changes to the product at any time without notice.  Information provided by Same Sky is believed to be accurate and 
+reliable.  However, no responsibility is assumed by Same Sky for its use, nor for any infringements of patents or other rights of third parties which may result 
+from its use.
+Same Sky products are not authorized or warranted for use as critical components in equipment that requires an extremely high level of reliability.  A critical 
+component is any component of a life support device or system whose failure to perform can be reasonably expected to cause the failure of the life support 
+device or system, or to affect its safety or effectiveness.
+sameskydevices.com
+rev.
+description
+date
+1.0
+initial release
+11/17/2005
+1.01
+applied new spec template
+01/08/2015
+1.02
+updated datasheet
+05/12/2016
+1.03
+brand update
+10/30/2019
+1.04
+product reengineered for improved manufacturability and production yield, see 
+PCN for details
+01/13/2023
+1.05
+CUI Devices rebranded to Same Sky
+09/12/2024
+The revision history provided is for informational purposes only and is believed to be accurate.
+REVISION HISTORY
+Additional Resources:    Product Page    |    3D Model    |    PCB Footprint

@@ -1,10 +1,14 @@
 # Display Center Buzzer Sound Design
 
+> **2026-11-19: SUPERSEDED for the runtime.** The square-wave 4 % duty drive, the 8 ms envelope
+> and both sounds below were replaced by a carrier-synthesized sine with slow fades and a volume
+> setting: see `BUZZER_DOG_FRIENDLY_DRIVE_2026-11-19.md`. This page stays as the 08-14 record.
+
 This document records the sound choices bench-tested on the Project Treebeard Display
 Center PCB on 2026-08-14. The standalone audition firmware is in:
 
 ```text
-arduino/MSV2_ESP32_Buzzer_Audition/MSV2_ESP32_Buzzer_Audition.ino
+arduino/Treebeard_ESP32_Buzzer_Audition/Treebeard_ESP32_Buzzer_Audition.ino
 ```
 
 ## Installed Hardware

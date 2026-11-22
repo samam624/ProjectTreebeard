@@ -200,7 +200,7 @@ assert.match(
 );
 assert.match(
   firmware,
-  /if \(!bootWasCloudStallRestart\)\s*\{\s*startBuzzerPattern\(BUZZER_STARTUP_SOUND/,
+  /if \(!bootWasCloudStallRestart\)\s*\{\s*playStartupSound\(\)/,
   "An unattended stall restart must not play the startup chime.",
 );
 

@@ -1,0 +1,70 @@
+
+===PAGE 1===
+ 
+   
+Wall Plug - Ins 
+ 
+Web: www.TriadMagnetics.com 
+Phone 951-277-0757 
+Fax 951-277-2757 
+460 Harley Knox Blvd. 
+Perris, California  92571 
+Publish Date: August 18, 2021 
+ 
+WSU120-1000 
+ 
+Electrical Specifications (@25C) 
+1. Input Voltage rating: 100-240VAC, 50-60Hz 
+2. Input Voltage range: 90-264VAC 
+3. Input current: <0.35A(RMS) @ 115VAC 
+4. Max Inrush Current: <60A peak @ 115VAC (Cold start) 
+5. Output Voltage: 12VDC 
+6. Output Current: 1.0A 
+7. Regulation (line & load): ±5% 
+8. Ripple & Noise: 150mVpk-pk Max 
+9. No load power (stand by): <100mW 
+10. Average Efficiency: ≥82.96%. Meets minimum level VI efficiency. 
+ 
+Environmental Specifications 
+1. Operating Temperature Range: 0°C to +40° C @ full load 
+2. Storage Temperature Range: -20°C to 60°C 
+3. Humidity: 5% to 95%, Non-condensing 
+ 
+Reliability Specifications 
+1. Leakage Current: <0.25mA (264VAC) 
+2. Dielectric Strength (Hi-pot): 4242VDC/3secs., 5mA Max 
+3. Warranty: 5 years 
+ 
+Mechanical Parameters 
+Case Type: Thermoplastic molded enclosure.  
+Output Cord: 24 AWG, 6 Ft. Long Nom. 
+ 
+Safety & EMI  
+UL: 62368-1 Class II, Double Insulated  
+UL File Number: E345519 
+EMI standard: FCC part15 Subpart B, ICES-003 Issue 6, ANSI C63.4-2014 
+Over voltage and short circuit protected
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+EISA 2007/CEC Compliance: All WSU Power Supplies manufactured after February 10, 2016 will 
+meet the minimum efficiency levels for direct operation as defined by DOE Docket Number 
+EERE-2008-BT-STD-0005-0219. Triad’s level VI products will have date code no later than 1605 
+(YYWW) where 16 is the year and 05 is the 5th week of 2016. In accordance with DOE requirement the 
+label will also contain the Roman numeral VI with a circle. 
+ 
+RoHS Compliance: As of manufacturing date February 2016, all standard products meet the 
+requirements of 2015/863/EU, known as the RoHS 3 initiative. 
+ 
+Upon printing, this document is considered “uncontrolled”. Please contact Triad Magnetics’ website for 
+the most current version. 
+Dim.: mm 
+RoHS 
+2015/863/EU 
+VI 

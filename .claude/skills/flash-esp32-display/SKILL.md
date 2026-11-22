@@ -1,9 +1,9 @@
 ---
 name: flash-esp32-display
-description: Compile and flash the MSV2 ESP32-S3 display receiver firmware to a connected device via arduino-cli. Use when asked to flash, upload, or verify firmware changes to the physical display receiver, or to check board/port status.
+description: Compile and flash the Treebeard ESP32-S3 display receiver firmware to a connected device via arduino-cli. Use when asked to flash, upload, or verify firmware changes to the physical display receiver, or to check board/port status.
 ---
 
-# Flash the MSV2 ESP32 display receiver
+# Flash the Treebeard ESP32 display receiver
 
 Full reference: [DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md](../../../DisplayCenter/docs/ESP32_DISPLAY_FLASHING.md) — read it if anything below is ambiguous or the known-good status/build tag needs checking.
 

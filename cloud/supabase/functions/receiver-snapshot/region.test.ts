@@ -257,6 +257,50 @@ test("a small watering after the region is fixed does not lower the line", () =>
   assert.match(small.waterings[2].verdict, /region fixed, not lowered/);
 });
 
+// Sensor 1 (MSV2, outdoors), from its 2026-10-07 calibration reset to 2026-11-19 23:00 PST: one
+// watering 11-13 from the dry level (278), then a week of rain. It reads in steps of 7-9 counts.
+const sensor1 = JSON.parse(
+  readFileSync(new URL("./fixtures/region-sensor1-outdoors-hourly.json", import.meta.url), "utf8"),
+) as RegionRawSensor;
+
+test("outdoors: rain on soil that has not dried teaches nothing (rule 8)", () => {
+  const end = deriveRegion(sensor1, endOf(sensor1.hours));
+  // Until 2026-11-19 the 11-16 rain (from 315 against a scale of 316) taught a drop of 1, and the
+  // mean of 38 and 1 put water now at 312: WATER NOW at 308 after a week of rain.
+  const rain = end.waterings.find((w) => new Date(w.atMs).toISOString() === "2026-11-16T23:00:00.000Z")!;
+  assert.equal(rain.taughtDrop, null);
+  assert.match(rain.verdict, /teaches nothing/);
+  assert.equal(end.taught, 1);
+  assert.equal(Math.round(end.drop!), 38);
+  assert.ok(sensor1.hours.at(-1)![1] > end.top!, `reading ${sensor1.hours.at(-1)![1]} against ${end.top}`);
+});
+
+test("outdoors: one-step wiggles are not waterings, rain and waterings are (rule 9)", () => {
+  // The line set by hand on 2026-11-19 at the maintainer's word (dry level 278 = overdue).
+  const stored = { ...sensor1, regionDrop: 44.3, regionMode: "span", regionTop: 289, regionBottom: 278, regionFull: 330, regionLineHour: 498575 };
+  const end = deriveRegion(stored, endOf(sensor1.hours));
+  // 34 at 0.15 of a drop of 19.5: every 7-9 count step and the nightly 278 <-> 289.
+  const local = end.waterings.map((w) => new Date(w.atMs).toLocaleString("sv-SE", { timeZone: "America/Los_Angeles" }).slice(5, 13));
+  assert.deepEqual(local, ["10-10 16", "10-22 07", "11-03 13", "11-13 11", "11-15 17", "11-16 15", "11-18 09", "11-18 23", "11-19 05"]);
+  assert.deepEqual([end.top, end.bottom, end.settled], [289, 278, 330]);
+  assert.ok(sensor1.hours.at(-1)![1] > end.top!);
+});
+
+test("a watering that taught nothing does not stop the region being fixed later", () => {
+  const dryDown = (from: number, rate = 40) => (k: number) => from - k * rate;
+  const hours = record(
+    [30, 14000], [60, dryDown(21000)],         // watering 1 at 14000, settles ~20300
+    [250, dryDown(24000)],                     // rain at ~18600, near the scale: teaches nothing
+    [60, dryDown(21000)],                      // watering 3 from ~14000 completes the teaching
+  );
+  const region = deriveRegion({ sensorId: 10, scale: 4, hours }, endOf(hours));
+  assert.equal(region.waterings.length, 3);
+  assert.match(region.waterings[1].verdict, /teaches nothing/);
+  assert.equal(region.taught, 2);
+  assert.equal(region.fixed, true);
+  assert.match(region.waterings[2].verdict, /region fixed here/);
+});
+
 test("nothing is ready before a watering has settled", () => {
   const hours = record([40, 14000], [10, 21000]);
   const region = deriveRegion({ sensorId: 10, scale: 4, hours }, endOf(hours));

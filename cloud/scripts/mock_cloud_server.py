@@ -20,7 +20,7 @@ LATEST_SNAPSHOTS: dict[str, dict[str, Any]] = {}
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "MSV2MockCloud/0.1"
+    server_version = "TreebeardMockCloud/0.1"
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -162,12 +162,12 @@ def render_dashboard() -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#287a55">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="MSV2 Plants">
+  <meta name="apple-mobile-web-app-title" content="Display Center">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon.svg">
-  <title>MSV2 Mock Cloud</title>
+  <title>Treebeard Mock Cloud</title>
   <style>
     :root {{
       color-scheme: light;
@@ -313,7 +313,7 @@ def render_dashboard() -> str:
 </head>
 <body>
   <header>
-    <h1>MSV2 Mock Cloud</h1>
+    <h1>Treebeard Mock Cloud</h1>
     <p>Local prototype of the future cloud-backed app view. Auto-refreshes every 10 seconds.</p>
   </header>
   <main>
@@ -332,8 +332,8 @@ def render_dashboard() -> str:
 
 def web_manifest() -> dict[str, Any]:
     return {
-        "name": "MSV2 Plants",
-        "short_name": "MSV2",
+        "name": "Display Center",
+        "short_name": "Display Center",
         "start_url": "/app",
         "scope": "/",
         "display": "standalone",
@@ -419,7 +419,7 @@ def render_receiver_card(receiver_id: str, snapshot: dict[str, Any]) -> str:
     network = snapshot.get("network", {})
     config = snapshot.get("config", {})
     plants = snapshot.get("plants", [])
-    title = config.get("title") or "MSV2 Plants"
+    title = config.get("title") or "Display Center"
     card_by_sensor = config_cards_by_sensor(config)
     received_at = snapshot.get("_mockReceivedAtMs", 0)
     plant_cards = "\n".join(render_plant_card(plant, card_by_sensor.get(plant.get("sensor"), {})) for plant in plants) or "<p>No plant readings in this snapshot.</p>"
@@ -526,13 +526,13 @@ def format_ms(ms: Any) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run a local MSV2 mock cloud API.")
+    parser = argparse.ArgumentParser(description="Run a local Treebeard mock cloud API.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8088)
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"MSV2 mock cloud listening on http://{args.host}:{args.port}")
+    print(f"Treebeard mock cloud listening on http://{args.host}:{args.port}")
     print("dashboard: GET /")
     print("health: GET /health")
     print("snapshots: GET /api/v1/snapshots")

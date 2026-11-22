@@ -1,0 +1,6 @@
+Designator,Library Reference,Manufacturer Part Number,LCSC Part #,Footprint,Sourcing Status
+"X1","TPS70933DBVR","TPS70933DBVR","C89347","TB_TPS709_DBV0005A","LCSC catalog ID checked 2026-11-11; live stock not exposed; recheck before ordering"
+"X2","AO3400A","AO3400A","C20917","TB_AOS_SOT23_PO00001M","LCSC catalog ID checked 2026-11-11; live stock not exposed; recheck before ordering"
+"X3","SS34-E3_57T","SS34-E3/57T","C13354","TB_VISHAY_SMC_SS34","LCSC catalog ID checked 2026-11-11; live stock not exposed; recheck before ordering"
+"X4","BA4AAPC_LAYOUT_CHECK","BA4AAPC","C6748055","TB_MPD_BA4AAPC_REVH","LCSC catalog ID checked 2026-11-11; live stock not exposed; recheck before ordering"
+"X5","C_RADIAL_D10_P5","","","TB_CAP_RADIAL_D10_P5","Lab sourced; verify body and pitch"

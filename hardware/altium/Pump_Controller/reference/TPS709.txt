@@ -1,0 +1,6633 @@
+TPS709 150-mA, 30-V, 1-µA IQ Voltage Regulators With Enable
+1 Features
+•
+Ultra-low IQ: 1 μA
+•
+Reverse current protection
+•
+Low ISHUTDOWN: 150 nA
+•
+Input voltage range: 2.7 V to 30 V
+•
+Supports 200-mA peak output
+•
+2% accuracy over temperature
+•
+Available in fixed-output voltages:
+1.2 V to 6.5 V
+•
+Thermal shutdown and overcurrent protection
+•
+Packages: SOT-23-5, WSON-6
+2 Applications
+•
+Smoke and heat detectors
+•
+Thermostats
+•
+Motion detectors (PIR, uWave, and so forth)
+•
+Cordless power tools
+•
+Appliance battery packs
+•
+Electricity meters
+•
+Water meters
+3 Description
+The TPS709 series of linear regulators are ultralow, 
+quiescent current devices designed for power-
+sensitive applications. A precision band-gap and error 
+amplifier provides 2% accuracy over temperature. 
+Quiescent current of only 1 µA makes these 
+devices ideal solutions for battery-powered, always-
+on systems that require very little idle-state power 
+dissipation. These devices have thermal-shutdown, 
+current-limit, and reverse-current protections for 
+added safety.
+Shutdown mode is enabled by pulling the EN pin low. 
+The shutdown current in this mode goes down to 
+150 nA, typical.
+The TPS709 series is available in WSON-6 and
+SOT-23-5 packages.
+Device Information(1) 
+PART NUMBER
+PACKAGE
+BODY SIZE (NOM)
+TPS709
+SOT-23 (5)
+2.90 mm × 1.60 mm
+WSON (6)
+2.00 mm × 2.00 mm
+(1)
+For all available packages, see the package option 
+addendum at the end of the datasheet.
+ 
+ 
+ 
+Typical Application Circuit
+0.5
+0.8
+1
+1.2
+1.5
+1.8
+2
+0
+5
+10
+15
+20
+25
+30
+35
+Input Voltage (V)
+Ground Pin Current (µA)
+TA = −40°C
+TA = +25°C
+TA = +85°C
+TPS70912
+G014 
+GND Current vs VIN and Temperature
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+An IMPORTANT NOTICE at the end of this data sheet addresses availability, warranty, changes, use in safety-critical applications, 
+intellectual property matters and other important disclaimers. PRODUCTION DATA.
+
+Table of Contents
+1 Features............................................................................1
+2 Applications.....................................................................1
+3 Description.......................................................................1
+4 Revision History.............................................................. 2
+5 Pin Configuration and Functions...................................3
+6 Specifications.................................................................. 4
+6.1 Absolute Maximum Ratings........................................ 4
+6.2 ESD Ratings............................................................... 4
+6.3 Recommended Operating Conditions.........................4
+6.4 Thermal Information....................................................4
+6.5 Electrical Characteristics.............................................5
+6.6 Typical Characteristics................................................6
+7 Detailed Description......................................................12
+7.1 Overview...................................................................12
+7.2 Functional Block Diagram.........................................12
+7.3 Feature Description...................................................12
+7.4 Device Functional Modes..........................................13
+8 Application and Implementation..................................14
+8.1 Application Information............................................. 14
+8.2 Typical Application.................................................... 14
+9 Power Supply Recommendations................................15
+9.1 Power Dissipation..................................................... 15
+10 Layout...........................................................................16
+10.1 Layout Guidelines................................................... 16
+10.2 Layout Example...................................................... 16
+11 Device and Documentation Support..........................17
+11.1 Device Support........................................................17
+11.2 Documentation Support.......................................... 17
+11.3 Support Resources................................................. 17
+11.4 Trademarks............................................................. 17
+11.5 Electrostatic Discharge Caution..............................17
+11.6 Glossary..................................................................17
+12 Mechanical, Packaging, and Orderable 
+Information.................................................................... 18
+4 Revision History
+NOTE: Page numbers for previous revisions may differ from page numbers in the current version.
+Changes from Revision G (November 2015) to Revision H (July 2021)
+Page
+•
+Updated the numbering format for tables, figures, and cross-references throughout the document..................1
+•
+Changed Applications section............................................................................................................................ 1
+•
+Changed VEN(HI) row (changed parameter description and added test condition) in Electrical Characteristics 
+table....................................................................................................................................................................5
+•
+Added VEN(LOW) row to Electrical Characteristics table...................................................................................... 5
+•
+Added M3 suffix information to Device Nomenclature table............................................................................. 17
+Changes from Revision F (December 2014) to Revision G (November 2015)
+Page
+•
+Added DBV package for TPS709A to Pin Configurations and Functions section.............................................. 3
+•
+Added DBV package for TPS709B to Pin Configurations and Functions section.............................................. 3
+•
+Added TPS709A and TPS709B to Pin Functions table......................................................................................3
+•
+Moved operating junction temperature from Electrical Characteristics to Recommended Operating Conditions 
+............................................................................................................................................................................4
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+2
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+5 Pin Configuration and Functions
+OUT
+NC
+IN
+GND
+EN
+1
+2
+3
+5
+4
+Figure 5-1. TPS709: DBV Package, 5-Pin SOT-23, 
+Top View 
+EN
+NC
+OUT
+GND
+IN
+1
+2
+3
+5
+4
+Figure 5-2. TPS709A: DBV Package, 5-Pin SOT-23, 
+Top View 
+EN
+NC
+GND
+IN
+OUT
+1
+2
+3
+5
+4
+Figure 5-3. TPS709B: DBV Package, 5-Pin SOT-23, 
+Top View 
+IN
+NC
+EN
+6
+5
+4
+OUT
+NC
+GND
+1
+2
+3
+GND
+Figure 5-4. DRV Package, 6-Pin WSON, Top View 
+Table 5-1. Pin Functions
+PIN
+I/O
+DESCRIPTION
+NAME
+DRV
+DBV
+TPS709
+TPS709
+TPS709A
+TPS709B
+EN
+4
+3
+5
+5
+I
+Enable pin. Drive this pin high to enable the device. Drive this pin 
+low to put the device into low current shutdown. This pin can be 
+left floating to enable the device. The maximum voltage must remain 
+below 6.5 V.
+GND
+3
+2
+2
+1
+—
+Ground
+IN
+6
+1
+3
+2
+I
+Unregulated input to the device
+NC
+2, 5
+4
+4
+4
+—
+No internal connection
+OUT
+1
+5
+1
+3
+O
+Regulated output voltage. Connect a small 2.2-µF or greater ceramic 
+capacitor from this pin to ground to assure stability.
+Thermal pad
+—
+—
+—
+—
+The thermal pad is electrically connected to the GND node. Connect 
+this pad to the GND plane for improved thermal performance.
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+3
+Product Folder Links: TPS709
+
+6 Specifications
+6.1 Absolute Maximum Ratings
+specified at TJ = –40°C to 125°C (unless otherwise noted); all voltages are with respect to GND(1)
+MIN
+MAX
+UNIT
+Voltage
+VIN
+–0.3
+32
+V
+VEN
+–0.3
+7
+VOUT
+–0.3
+7
+Maximum output current
+IOUT
+Internally limited
+Output short-circuit duration
+Indefinite
+Continuous total power dissipation
+PDISS
+See Thermal Information
+Operating junction temperature, TJ
+–55
+150
+°C
+Storage temperature, Tstg
+–55
+150
+°C
+(1)
+Stresses beyond those listed under Absolute Maximum Ratings may cause permanent damage to the device. These are stress 
+ratings only, which do not imply functional operation of the device at these or any other conditions beyond those indicated under 
+Recommended Operating Conditions. Exposure to absolute-maximum-rated conditions for extended periods may affect device 
+reliability.
+6.2 ESD Ratings
+VALUE
+UNIT
+V(ESD)
+Electrostatic discharge
+Human body model (HBM), per ANSI/ESDA/JEDEC JS-001(1)
+±2000
+V
+Charged device model (CDM), per JEDEC specification JESD22-C101(2)
+±500
+(1)
+JEDEC document JEP155 states that 2-kV HBM allows safe manufacturing with a standard ESD control process.
+(2)
+JEDEC document JEP157 states that 500-V CDM allows safe manufacturing with a standard ESD control process.
+6.3 Recommended Operating Conditions
+over operating junction temperature range (unless otherwise noted)
+MIN
+NOM
+MAX
+UNIT
+VIN
+Input voltage
+2.7
+30
+V
+VOUT
+Output voltage
+1.2
+6.5
+V
+VEN
+Enable voltage
+0
+6.5
+V
+TJ
+Operating junction temperature
+–40
+125
+°C
+6.4 Thermal Information
+THERMAL METRIC(1)
+TPS709
+UNIT
+DBV
+DRV
+5 PINS
+6 PINS
+RθJA
+Junction-to-ambient thermal resistance
+212.1
+73.1
+°C/W
+RθJC(top)
+Junction-to-case (top) thermal resistance
+78.5
+97.0
+°C/W
+RθJB
+Junction-to-board thermal resistance
+39.5
+42.6
+°C/W
+ψJT
+Junction-to-top characterization parameter
+2.86
+2.9
+°C/W
+ψJB
+Junction-to-board characterization parameter
+38.7
+42.9
+°C/W
+RθJC(bot)
+Junction-to-case (bottom) thermal resistance
+N/A
+12.8
+°C/W
+(1)
+For more information about traditional and new thermal metrics, see the Semiconductor and IC Package Thermal Metrics application 
+report.
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+4
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+6.5 Electrical Characteristics
+at ambient temperature (TA) = –40°C to +85°C, VIN = VOUT(typ) + 1 V or 2.7 V (whichever is greater), IOUT = 1 mA, VEN = 2 V, 
+and CIN = COUT = 2.2-μF ceramic (unless otherwise noted); typical values are at TA = 25°C
+PARAMETER
+TEST CONDITIONS
+MIN
+TYP
+MAX
+UNIT
+VIN
+Input voltage range
+2.7
+30
+V
+VOUT
+Output voltage range
+1.2
+6.5
+V
+VOUT
+DC output accuracy
+VOUT < 3.3 V
+–2%
+2%
+VOUT ≥ 3.3 V
+–1%
+1%
+ΔVOUT
+Line regulation
+(VOUT(nom) + 1 V, 2.7 V) ≤ VIN ≤ 30 V
+3
+10
+mV
+Load regulation
+VIN = VOUT(typ) + 1.5 V or 3 V (whichever is 
+greater), 100 µA ≤ IOUT ≤ 150 mA
+20
+50
+VDO
+Dropout voltage(1) (3)
+TPS70933, IOUT = 50 mA
+295
+650
+mV
+TPS70933, IOUT = 150 mA
+960
+1400
+TPS70950, IOUT = 50 mA
+245
+500
+TPS70950, IOUT = 150 mA
+690
+1200
+TPS70965, IOUT = 50 mA
+180
+500
+TPS70965, IOUT = 150 mA
+460
+1000
+I(CL)
+Output current limit(4)
+VOUT = 0.9 × VOUT(nom)
+200
+320
+500
+mA
+IGND
+Ground pin current
+IOUT = 0 mA, VOUT ≤ 3.3 V
+1.3
+2.05
+µA
+IOUT = 0 mA, VOUT > 3.3 V
+1.4
+2.25
+IOUT = 150 mA
+350
+ISHUTDOWN
+Shutdown current
+VEN ≤ 0.4 V, VIN = 2.7 V
+150
+nA
+PSRR
+Power-supply rejection 
+ratio
+f = 10 Hz
+80
+dB
+f = 100 Hz
+62
+f = 1 kHz
+52
+Vn
+Output noise voltage
+BW = 10 Hz to 100 kHz, IOUT = 10 mA,
+VIN = 2.7 V, VOUT = 1.2 V
+190
+μVRMS
+tSTR
+Start-up time(2)
+VOUT(nom) ≤ 3.3 V
+200
+600
+µs
+VOUT(nom) > 3.3 V
+500
+1500
+VEN(HI)
+Enable pin high-level 
+input voltage
+Device enabled
+0.9
+V
+VEN(LOW)
+Enable pin low-level input 
+voltage
+Device disabled
+0
+0.4
+V
+IEN
+EN pin current
+EN = 1.0 V, VIN = 5.5 V
+300
+nA
+I(REV)
+Reverse current
+(flowing out of IN pin)
+VOUT = 3 V, VIN = VEN = 0 V
+10
+nA
+Reverse current
+(flowing into OUT pin)
+VOUT = 3 V, VIN = VEN = 0 V
+100
+tSD
+Thermal shutdown 
+temperature
+Shutdown, temperature increasing
+158
+°C
+Reset, temperature decreasing
+140
+(1)
+VDO is measured with VIN = 0.98 × VOUT(nom).
+(2)
+Start-up time = time from EN assertion to 0.95 × VOUT(nom) and load = 47 Ω.
+(3)
+Dropout is only valid when VOUT ≥ 2.8 V because of the minimum input voltage limits.
+(4)
+Measured with VIN = VOUT + 3 V for VOUT ≤ 2.5 V. Measured with VIN = VOUT + 2.5 V for VOUT > 2.5 V.
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+5
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+1.195
+1.2
+1.205
+0
+5
+10
+15
+20
+25
+30
+Input Voltage (V)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70912
+G001 
+ 
+Figure 6-1. 1.2-V Line Regulation vs VIN and Temperature
+3.29
+3.295
+3.3
+3.305
+3.31
+0
+5
+10
+15
+20
+25
+30
+Input Voltage (V)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70933
+G002 
+ 
+Figure 6-2. 3.3-V Line Regulation vs VIN and Temperature
+6.49
+6.495
+6.5
+6.505
+6.51
+5
+10
+15
+20
+25
+30
+Input Voltage (V)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70965
+G003 
+ 
+Figure 6-3. 6.5-V Line Regulation vs VIN and Temperature
+1.18
+1.185
+1.19
+1.195
+1.2
+1.205
+0
+20
+40
+60
+80
+100
+120
+140
+160
+Output Current (mA)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70912
+G004 
+ 
+Figure 6-4. 1.2-V Load Regulation vs IOUT and Temperature
+3.275
+3.28
+3.285
+3.29
+3.295
+3.3
+3.305
+0
+20
+40
+60
+80
+100
+120
+140
+160
+Output Current (mA)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70933
+G005 
+ 
+Figure 6-5. 3.3-V Load Regulation vs IOUT and Temperature
+6.46
+6.465
+6.47
+6.475
+6.48
+6.485
+6.49
+6.495
+6.5
+6.505
+0
+20
+40
+60
+80
+100
+120
+140
+160
+Output Current (mA)
+Output Voltage (V)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70965
+G006 
+ 
+Figure 6-6. 6.5-V Load Regulation vs IOUT and Temperature
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+6
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics (continued)
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+1.18
+1.185
+1.19
+1.195
+1.2
+1.205
+−50 −35 −20 −5
+10
+25
+40
+55
+70
+85
+100 115 130
+Junction Temperature (°C)
+Output Voltage (V)
+IOUT = 10 mA
+IOUT = 150 mA
+TPS70912
+G007 
+ 
+Figure 6-7. VOUT vs Temperature
+6.465
+6.47
+6.475
+6.48
+6.485
+6.49
+6.495
+6.5
+6.505
+−50 −35 −20 −5
+10
+25
+40
+55
+70
+85
+100 115 130
+Junction Temperature (°C)
+Output Voltage (V)
+IOUT = 10 mA
+IOUT = 150 mA
+TPS70965
+G008 
+ 
+Figure 6-8. VOUT vs Temperature
+0
+200
+400
+600
+800
+1000
+1200
+1400
+1600
+2.5
+3.5
+4.5
+5.5
+6.5
+Input Voltage (V)
+Dropout Voltage (mV)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70965
+IOUT = 150 mA
+G009 
+ 
+Figure 6-9. Dropout Voltage vs VIN and Temperature
+0
+200
+400
+600
+800
+1000
+1200
+1400
+1600
+0
+20
+40
+60
+80
+100
+120
+140
+160
+Output Current (mA)
+Dropout Voltage (mV)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70965
+G010 
+ 
+Figure 6-10. Dropout Voltage vs IOUT and Temperature
+200
+250
+300
+350
+400
+450
+500
+3
+3.5
+4
+4.5
+5
+5.5
+6
+6.5
+7
+Input Voltage (V)
+Current Limit (mA)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70912
+G011 
+ 
+Figure 6-11. 1.2-V Current Limit vs VIN and Temperature
+300
+350
+400
+450
+500
+5
+5.5
+6
+6.5
+7
+7.5
+8
+8.5
+Input Voltage (V)
+Current Limit (mA)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70933
+G012 
+ 
+Figure 6-12. 3.3-V Current Limit vs VIN and Temperature
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+7
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics (continued)
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+300
+350
+400
+450
+500
+8
+8.5
+9
+9.5
+10
+10.5
+11
+11.5
+12
+Input Voltage (V)
+Current Limit (mA)
+TJ = −40°C
+TJ = +25°C
+TJ = +85°C
+TJ = +125°C
+TPS70965
+G013 
+ 
+Figure 6-13. 6.5-V Current Limit vs VIN and Temperature
+0.5
+0.8
+1
+1.2
+1.5
+1.8
+2
+0
+5
+10
+15
+20
+25
+30
+35
+Input Voltage (V)
+Ground Pin Current (µA)
+TA = −40°C
+TA = +25°C
+TA = +85°C
+TPS70912
+G014 
+ 
+Figure 6-14. GND Current vs VIN and Temperature
+0.5
+0.75
+1
+1.25
+1.5
+1.75
+2
+2.25
+2.5
+0
+5
+10
+15
+20
+25
+30
+35
+Input Voltage (V)
+Ground Pin Current (µA)
+TA = −40°C
+TA = +25°C
+TA = +85°C
+TPS70933
+EN = open
+G035 
+ 
+Figure 6-15. GND Current vs VIN and Temperature
+0
+100
+200
+300
+400
+500
+600
+0
+20
+40
+60
+80
+100
+120
+140
+160
+Output Current (mA)
+Ground Pin Current (µA)
+TA = −40°C
+TA = +25°C
+TA = +85°C
+TPS70912
+G015 
+ 
+Figure 6-16. GND Current vs IOUT and Temperature
+0
+0.1
+0.2
+0.3
+0.4
+0
+5
+10
+15
+20
+25
+30
+35
+Input Voltage (V)
+Ground Pin Current (µA)
+TA = −40°C
+TA = +25°C
+TA = +85°C
+Shutdown Current
+TPS70912
+G016 
+ 
+Figure 6-17. Shutdown Current vs VIN and Temperature
+0
+20
+40
+60
+80
+100
+10
+100
+1k
+10k
+100k
+1M
+10M
+Frequency (Hz)
+PSRR (dB)
+VOUT = 2.8 V
+VIN = 3.8 V
+COUT = 2.2 µF
+G017 
+ 
+Figure 6-18. Power-Supply Rejection Ratio vs Frequency
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+8
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics (continued)
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+0
+1
+2
+3
+4
+5
+6
+7
+10
+100
+1k
+10k
+100k
+Frequency (Hz)
+Voltage ( µV / Hz )
+VOUT = 2.8 V
+G018 
+ 
+Figure 6-19. Noise
+100
+110
+120
+130
+140
+−50 −35 −20 −5
+10
+25
+40
+55
+70
+85
+100 115 130
+Temperature (°C)
+Time (µs)
+TPS70912
+G019 
+ 
+Figure 6-20. Start-Up Time vs Temperature
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (100
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 2.7 V
+OUT
+OUT
+IN
+G020
+ 
+Figure 6-21. TPS70912 Load Transient
+(0 mA to 50 mA)
+Channel 4
+(100 mA / div)
+Channel 2
+(200 mV / div)
+Time (500
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 2.7 V
+OUT
+OUT
+IN
+G021
+ 
+Figure 6-22. TPS70912 Load Transient
+(1 mA to 150 mA)
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (10 ms / div)
+Channel 2 = V
+Channel 4 = I
+V
+= 2.7 V
+OUT
+OUT
+IN
+G022
+ 
+Figure 6-23. TPS70912 Load Transient
+(50 mA to 0 mA)
+Channel 4
+(100 mA / div)
+Channel 2
+(200 mV / div)
+Time (100
+s / div)
+m
+Channel 2 = V
+4 = I
+V
+= 2.7 V
+OUT
+OUT
+IN
+Channel
+G023
+ 
+Figure 6-24. TPS70912 Load Transient
+(50 mA to 150 mA)
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+9
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics (continued)
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (100
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 4.3 V
+OUT
+OUT
+IN
+G024
+ 
+Figure 6-25. TPS70933 Load Transient
+(0 mA to 50 mA)
+Channel 4
+(100 mA / div)
+Channel 2
+(200 mV / div)
+Time (500
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 4.3 V
+OUT
+OUT
+IN
+G025
+ 
+Figure 6-26. TPS70933 Load Transient
+(1 mA to 150 mA)
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (10 ms / div)
+Channel 2 = V
+Channel 4 = I
+V
+= 4.3 V
+OUT
+OUT
+IN
+G026
+ 
+Figure 6-27. TPS70933 Load Transient
+(50 mA to 0 mA)
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (500
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 4.3 V
+OUT
+OUT
+IN
+G027
+ 
+Figure 6-28. TPS70933 Load Transient
+(50 mA to 150 mA)
+Channel 4
+(2 V / div)
+Channel 2
+(50 mV / div)
+Time (50
+s / div)
+m
+G028
+Channel 2 = V
+4 = V
+I
+= 10 mA
+OUT
+IN
+OUT
+Channel
+ 
+Figure 6-29. TPS70912 Line Transient
+(2.7 V to 3.7 V)
+Channel 4
+(2 V / div)
+Channel 2
+(50 mV / div)
+Time (50
+s / div)
+m
+G029
+Channel 2 = V
+4 = V
+I
+= 50 mA
+OUT
+IN
+OUT
+Channel
+ 
+Figure 6-30. TPS70912 Line Transient
+(2.7 V to 3.7 V)
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+10
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+6.6 Typical Characteristics (continued)
+over operating temperature range (TJ = –40°C to 125°C), IOUT = 10 mA, VEN = 2 V, COUT = 2.2 μF, and VIN = VOUT(typ) + 1 V 
+or 2.7 V (whichever is greater), unless otherwise noted; typical values are at TJ = 25°C
+Channel 4
+(2 V / div)
+Channel 2
+(50 mV / div)
+Time (50
+s / div)
+m
+G030
+Channel 2 = V
+4 = V
+I
+= 10 mA
+OUT
+IN
+OUT
+Channel
+ 
+Figure 6-31. TPS70933 Line Transient
+(4.3 V to 5.3 V)
+Channel 4
+(2 V / div)
+Channel 2
+(50 mV / div)
+Time (50
+s / div)
+m
+G031
+Channel 2 = V
+4 = V
+I
+= 50 mA
+OUT
+IN
+OUT
+Channel
+ 
+Figure 6-32. TPS70933 Line Transient
+(4.3 V to 5.3 V)
+Channel 2
+(1 V / div)
+Channel 1
+(500 mV / div)
+Time (50
+s / div)
+m
+G032
+Channel 1 = EN
+2 = V
+V
+= 4.3 V
+C
+= 2.2
+F
+TPS70933
+Channel
+OUT
+IN
+OUT
+m
+ 
+Figure 6-33. Power-Up With Enable
+Channel 2
+(1 V / div)
+Channel 1
+(1 V / div)
+Time (500 ms / div)
+G033
+Channel 1 = V
+2 = V
+I
+= 3 mA
+TPS70933
+IN
+OUT
+Channel
+OUT
+ 
+Figure 6-34. Power-Up and Power-Down Response
+Channel 2
+(1 V / div)
+Channel 1
+(1 V / div)
+Time (500 ms / div)
+G034
+Channel 1 = V
+2 = V
+I
+= 150 mA
+TPS70933
+IN
+OUT
+Channel
+OUT
+ 
+Figure 6-35. Power-Up and Power-Down Response
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+11
+Product Folder Links: TPS709
+
+7 Detailed Description
+7.1 Overview
+The TPS709 series of devices are ultra-low quiescent current, low-dropout (LDO) linear regulators. The TPS709 
+offers reverse current protection to block any discharge current from the output into the input. The TPS709 also 
+features current limit and thermal shutdown for reliable operation.
+7.2 Functional Block Diagram
+Thermal
+Shutdown
+Current
+Limit
+Bandgap
+IN
+EN
+OUT
+Logic
+GND
+Device
+7.3 Feature Description
+7.3.1 Internal Current Limit
+The TPS709 internal current limit helps protect the regulator during fault conditions. During current limit, the 
+output sources a fixed amount of current that is largely independent of output voltage. In such a case, the output 
+voltage is not regulated, and can be measured as (VOUT = ILIMIT × RLOAD). The PMOS pass transistor dissipates 
+[(VIN – VOUT) × ILIMIT] until a thermal shutdown is triggered and the device turns off. When cool, the device is 
+turned on by the internal thermal shutdown circuit. If the fault condition continues, the device cycles between 
+current limit and thermal shutdown; see the Thermal Protection section for more details.
+The TPS709 is characterized over the recommended operating output current range up to 150 mA. The internal 
+current limit begins to limit the output current at a minimum of 200 mA of output current. The TPS709 continues 
+to operate for output currents between 150 mA and 200 mA but some data sheet parameters may not be met.
+7.3.2 Dropout Voltage
+The TPS709 use a PMOS pass transistor to achieve low dropout voltage. When (VIN – VOUT) is less than 
+the dropout voltage (VDO), the PMOS pass device is in the linear region of operation and the input-to-output 
+resistance is the RDS(ON) of the PMOS pass element. VDO approximately scales with the output current because 
+the PMOS device functions like a resistor in dropout.
+The ground pin current of many linear voltage regulators increases substantially when the device is operated in 
+dropout. This increase in ground pin current while operating in dropout can be several orders of magnitude larger 
+than when the device is not in dropout. The TPS709 employs a special control loop that limits the increase in 
+ground pin current while operating in dropout. This functionality allows for the most efficient operation while in 
+dropout conditions that can greatly increase battery run times.
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+12
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+7.3.3 Undervoltage Lockout (UVLO)
+The TPS709 uses an undervoltage lockout (UVLO) circuit to keep the output shut off until the internal circuitry 
+operates properly.
+7.3.4 Reverse-Current Protection
+The TPS709 has integrated reverse-current protection. Reverse-current protection prevents the flow of current 
+from the OUT pin to the IN pin when output voltage is higher than input voltage. The reverse-current protection 
+circuitry places the power path in high impedance when the output voltage is higher than the input voltage. This 
+setting reduces leakage current from the output to the input to 10 nA, typical. The reverse current protection is 
+always active regardless of the enable pin logic state or if the OUT pin voltage is greater than 1.8 V. Reverse 
+current can flow if the output voltage is less than 1.8 V and if input voltage is less than the output voltage.
+If voltage is applied to the input pin, then the maximum voltage that can be applied to the OUT pin is the lower of 
+three times the nominal output voltage or 6.5 V. For example, if the 1.2-V output voltage version is used, then the 
+maximum reverse bias voltage that can be applied to the OUT pin is 3.6 V. If the 5.0-V output voltage version is 
+used, then the maximum reverse bias voltage that can be applied to the OUT pin is 6.5 V.
+7.4 Device Functional Modes
+The TPS709 has the following functional modes:
+1.
+Enabled: When the enable pin (EN) goes above 0.9 V, the device is enabled. EN is pulled high by a 300-nA 
+current source; therefore, EN can be left floating to enable the device. Do not connect EN to VIN. The EN 
+pin is clamped by a 6.5-V Zener diode. Do not exceed the 7-V absolute maximum rating on the enable pin or 
+excessive current flowing into the Zener clamp will destroy the device.
+2.
+Disabled: When EN goes below 0.4 V, the device is disabled. During this time, OUT is high impedance and 
+the current into IN (I(SHUTDOWN)) is typically 150 nA.
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+13
+Product Folder Links: TPS709
+
+8 Application and Implementation
+Note
+Information in the following applications sections is not part of the TI component specification, 
+and TI does not warrant its accuracy or completeness. TI’s customers are responsible for 
+determining suitability of components for their purposes, as well as validating and testing their design 
+implementation to confirm system functionality.
+8.1 Application Information
+The TPS709 is a series of devices that consume low quiescent current and deliver excellent line and load 
+transient performance. This performance, combined with low noise and very good PSRR with little (VIN – VOUT) 
+headroom, makes this device ideal for RF portable applications, current limit, and thermal protection. The 
+TPS709 is specified from –40°C to +125°C.
+8.1.1 Input and Output Capacitor
+The TPS709 devices are stable with output capacitors with an effective capacitance of 2.0 μF or greater for 
+output voltages below 1.5 V. For output voltages equal or greater than 1.5 V, the minimum effective capacitance 
+for stability is 1.5 µF. The maximum capacitance for stability is 47 µF. The equivalent series resistance (ESR) of 
+the output capacitor must be between 0 Ω and 0.2 Ω for stability.
+The effective capacitance is the minimum capacitance value of a capacitor after taking into account variations 
+resulting from tolerances, temperature, and dc bias effects. X5R- and X7R-type ceramic capacitors are 
+recommended because these capacitors have minimal variation in value and ESR over temperature.
+Although an input capacitor is not required for stability, good analog design practice is to connect a 0.1-µF to
+2.2-µF capacitor from IN to GND. This capacitor counteracts reactive input sources and improves transient 
+response, input ripple, and PSRR. An input capacitor is necessary if line transients greater than 10 V in 
+magnitude are anticipated.
+8.1.2 Transient Response
+As with any regulator, increasing the output capacitor size reduces over- and undershoot magnitude, but 
+increases transient response duration.
+8.2 Typical Application
+TPS70933
+EN
+IN
+OUT
+VIN
+VOUT
+1
+F
+m
+2.2
+F
+m
+GND
+NC
+Figure 8-1. Wide Input, 3.3-V, Low-IQ Rail
+8.2.1 Design Requirements
+Table 8-1 summarizes the design requirements for Figure 8-1.
+Table 8-1. Design Requirements for a Wide Input, 3.3-V, Low-IQ Rail Application
+PARAMETER
+DESIGN SPECIFICATION
+VIN
+5 V to 20 V
+VOUT
+3.3 V
+I(IN) (no load)
+< 5 μA
+IOUT (max)
+150 mA
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+14
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+8.2.2 Detailed Design Procedure
+Select a 2.2-µF, 10-V X7R output capacitor to satisfy the minimum output capacitance requirement with a 3.3-V 
+dc bias.
+Select a 1.0-µF, 25-V X7R input capacitor to provide input noise filtering and eliminate high-frequency voltage 
+transients.
+8.2.3 Application Curves
+Channel 4
+(50 mA / div)
+Channel 2
+(200 mV / div)
+Time (500
+s / div)
+m
+Channel 2 = V
+Channel 4 = I
+V
+= 4.3 V
+OUT
+OUT
+IN
+G027
+Figure 8-2. TPS70933 Load Transient
+(50 mA to 150 mA)
+Channel 2
+(1 V / div)
+Channel 1
+(500 mV / div)
+Time (50
+s / div)
+m
+G032
+Channel 1 = EN
+2 = V
+V
+= 4.3 V
+C
+= 2.2
+F
+TPS70933
+Channel
+OUT
+IN
+OUT
+m
+Figure 8-3. Power-Up With Enable
+9 Power Supply Recommendations
+This device is designed to operate with an input supply range of 2.7 V to 30 V. If the input supply is noisy, 
+additional input capacitors with low ESR can help improve output noise performance.
+9.1 Power Dissipation
+The ability to remove heat from the die is different for each package type, presenting different considerations in 
+the printed circuit board (PCB) layout. The PCB area around the device that is free of other components moves 
+the heat from the device to ambient air. Performance data for JEDEC low and high-K boards are given in the 
+Thermal Information table. Using heavier copper increases the effectiveness in removing heat from the device. 
+The addition of plated through-holes to heat-dissipating layers also improves the heat sink effectiveness.
+Power dissipation depends on input voltage and load conditions. Power dissipation (PDISS) is equal to the 
+product of the output current and the voltage drop across the output pass element, as shown in Equation 1:
+PDISS = (VIN – VOUT) × IOUT
+(1)
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+15
+Product Folder Links: TPS709
+
+10 Layout
+10.1 Layout Guidelines
+Place input and output capacitors as close to the device pins as possible. To improve ac performance (such as 
+PSRR, output noise, and transient response), TI recommends that the board be designed with separate ground 
+planes for VIN and VOUT, with the ground plane connected only at the GND pin of the device. In addition, the 
+ground connection for the output capacitor must be connected directly to the device GND pin.
+10.1.1 Thermal Protection
+Thermal protection disables the output when the junction temperature rises to approximately 165°C, allowing 
+the device to cool. When the junction temperature cools to approximately 145°C, the output circuitry is again 
+enabled. Depending on power dissipation, thermal resistance, and ambient temperature, the thermal protection 
+circuit can cycle on and off. This cycling limits the dissipation of the regulator, protecting it from damage as a 
+result of overheating.
+Any tendency to activate the thermal protection circuit indicates excessive power dissipation or an inadequate 
+heat sink. For reliable operation, limit junction temperature to 125°C, maximum. To estimate the margin of safety 
+in a complete design (including heat sink), increase the ambient temperature until the thermal protection is 
+triggered; use worst-case loads and signal conditions. For good reliability, thermal protection must trigger at least 
+35°C above the maximum expected ambient condition of the particular application. This configuration produces 
+a worst-case junction temperature of 125°C at the highest expected ambient temperature and worst-case load.
+The TPS709 internal protection circuitry is designed to protect against overload conditions. This circuitry is not 
+intended to replace proper heat sinking. Continuously running the TPS709 into thermal shutdown degrades 
+device reliability.
+10.2 Layout Example
+  
+  
+  
+COUT
+VOUT
+VIN
+GND PLANE
+CIN
+Represents via used for 
+application specific connections
+1
+2
+3
+4
+5
+Figure 10-1. Layout Example for DBV Package
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+16
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+11 Device and Documentation Support
+11.1 Device Support
+11.1.1 Development Support
+11.1.1.1 Evaluation Modules
+An evaluation module (EVM) is available to assist in the initial circuit performance evaluation using the 
+TPS709xx. The TPS70933EVM-110 evaluation module (and related user guide) can be requested at the Texas 
+Instruments website through the product folders or purchased directly from the TI eStore.
+11.1.1.2 Spice Models
+Computer simulation of circuit performance using SPICE is often useful when analyzing the performance of 
+analog circuits and systems. A SPICE model for the TPS709 is available through the product folders under 
+Simulation Models.
+11.1.2 Device Nomenclature
+Table 11-1. Device Nomenclature(1) 
+PRODUCT
+VOUT
+TPS709xx(x) yyy z
+or
+TPS709xx(x) yyy zM3
+XX(X) is the nominal output voltage. For output voltages with a resolution of 100 mV, two 
+digits are used in the ordering number; otherwise, three digits are used (for example, 28 = 2.8 
+V; 125 = 1.25 V).
+YYY is the package designator.
+Z is the tape and reel quantity (R = 3000, T = 250).
+M3 suffix device has same electrical specs as other devices and shares same design.
+(1)
+For the most current package and ordering information see the Package Option Addendum at the end of this document, or see the TI 
+web site at www.ti.com.
+11.2 Documentation Support
+11.2.1 Related Documentation
+For related documentation see the following:
+Texas Instruments, TPS70933EVM-110 Evaluation Module user guide
+11.3 Support Resources
+TI E2E™ support forums are an engineer's go-to source for fast, verified answers and design help — straight 
+from the experts. Search existing answers or ask your own question to get the quick design help you need.
+Linked content is provided "AS IS" by the respective contributors. They do not constitute TI specifications and do 
+not necessarily reflect TI's views; see TI's Terms of Use.
+11.4 Trademarks
+TI E2E™ is a trademark of Texas Instruments.
+All trademarks are the property of their respective owners.
+11.5 Electrostatic Discharge Caution
+This integrated circuit can be damaged by ESD. Texas Instruments recommends that all integrated circuits be handled 
+with appropriate precautions. Failure to observe proper handling and installation procedures can cause damage.
+ESD damage can range from subtle performance degradation to complete device failure. Precision integrated circuits may 
+be more susceptible to damage because very small parametric changes could cause the device not to meet its published 
+specifications.
+11.6 Glossary
+TI Glossary 
+This glossary lists and explains terms, acronyms, and definitions.
+www.ti.com
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+Copyright © 2021 Texas Instruments Incorporated
+Submit Document Feedback
+17
+Product Folder Links: TPS709
+
+12 Mechanical, Packaging, and Orderable Information
+The following pages include mechanical, packaging, and orderable information. This information is the most 
+current data available for the designated devices. This data is subject to change without notice and revision of 
+this document. For browser-based versions of this data sheet, refer to the left-hand navigation.
+TPS709
+SBVS186H – MARCH 2012 – REVISED JULY 2021
+www.ti.com
+18
+Submit Document Feedback
+Copyright © 2021 Texas Instruments Incorporated
+Product Folder Links: TPS709
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+PACKAGING INFORMATION
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70912DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVT.A
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS70912DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCX
+TPS709135DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS709135DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS709135DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS709135DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS709135DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS709135DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCY
+TPS70915DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVT.A
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+Addendum-Page 1
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70915DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVTG4
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVTG4.A
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70915DRVTG4.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIM
+TPS70916DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70916DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70916DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70916DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70916DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70916DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SCZ
+TPS70918DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVTG4
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVTG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DBVTG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVRG4
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVRG4.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVRG4.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVRM3
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVRM3.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70918DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDA
+TPS70919DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+TPS70919DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+Addendum-Page 2
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70919DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+TPS70919DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+SDB
+TPS70919DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+SDB
+TPS70919DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+TPS70919DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+TPS70919DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDB
+TPS70925DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS70925DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS70925DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVT.A
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70925DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDC
+TPS70927DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70927DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70927DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70927DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70927DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70927DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDD
+TPS70928DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+TPS70928DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+TPS70928DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+TPS70928DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+TPS70928DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+Addendum-Page 3
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70928DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDE
+TPS70930DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS70930DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS70930DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVRG4
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVRG4.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVRG4.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70930DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDF
+TPS70933DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVRG4
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVRG4
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVRG4.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+Addendum-Page 4
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70933DRVRG4.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVRM3
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVRM3.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70933DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDG
+TPS70936DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SEJ
+TPS70936DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 125
+1FV
+TPS70936DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 125
+1FV
+TPS70936DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-2-260C-1 YEAR
+-40 to 125
+1FV
+TPS70936DRVRM3
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+1FV
+TPS70936DRVRM3.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+1FV
+TPS70938DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVTG4
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVTG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70938DBVTG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIC
+TPS70939DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+TPS70939DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+TPS70939DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+TPS70939DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+TPS70939DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+TPS70939DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SID
+Addendum-Page 5
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS70950DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVRG4
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVR
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVR.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVR.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVRG4
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVRG4.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVRG4.B
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVRM3
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVRM3.A
+Active
+Production
+WSON (DRV) | 6
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVT
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70950DRVT.B
+Active
+Production
+WSON (DRV) | 6
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SDH
+TPS70960DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVRG4
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS70960DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+SIT
+TPS709A30DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+TPS709A30DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+TPS709A30DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+Addendum-Page 6
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+Orderable part number
+Status
+(1)
+Material type
+(2)
+Package | Pins
+Package qty | Carrier
+RoHS
+(3)
+Lead finish/
+Ball material
+(4)
+MSL rating/
+Peak reflow
+(5)
+Op temp (°C)
+Part marking
+(6)
+TPS709A30DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+TPS709A30DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+TPS709A30DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11RF
+TPS709A33DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU | SN
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709A33DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709A33DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709A33DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS709A33DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+-
+Call TI
+Call TI
+-40 to 125
+TPS709A33DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709A33DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709A33DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+11SF
+TPS709B33DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B33DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B33DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B33DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B33DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B33DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13C7
+TPS709B345DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+1XSW
+TPS709B345DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+1XSW
+TPS709B345DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+1XSW
+TPS709B50DBVR
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVR.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVR.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVRG4
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVRG4.A
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVRG4.B
+Active
+Production
+SOT-23 (DBV) | 5
+3000 | LARGE T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVT
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVT.A
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+TPS709B50DBVT.B
+Active
+Production
+SOT-23 (DBV) | 5
+250 | SMALL T&R
+Yes
+NIPDAU
+Level-1-260C-UNLIM
+-40 to 125
+13D7
+ 
+(1) Status:  For more details on status, see our product life cycle.
+Addendum-Page 7
+
+PACKAGE OPTION ADDENDUM
+www.ti.com
+10-Apr-2026
+ 
+(2) Material type:  When designated, preproduction parts are prototypes/experimental devices, and are not yet approved or released for full production. Testing and final process, including without limitation quality assurance,
+reliability performance testing, and/or process qualification, may not yet be complete, and this item is subject to further changes or possible discontinuation. If available for ordering, purchases will be subject to an additional
+waiver at checkout, and are intended for early internal evaluation purposes only. These items are sold without warranties of any kind.
+ 
+(3) RoHS values:  Yes, No, RoHS Exempt. See the TI RoHS Statement for additional information and value definition.
+ 
+(4) Lead finish/Ball material:  Parts may have multiple material finish options. Finish options are separated by a vertical ruled line. Lead finish/Ball material values may wrap to two lines if the finish value exceeds the maximum
+column width.
+ 
+(5) MSL rating/Peak reflow:  The moisture sensitivity level ratings and peak solder (reflow) temperatures. In the event that a part has multiple moisture sensitivity ratings, only the lowest level per JEDEC standards is shown.
+Refer to the shipping label for the actual reflow temperature that will be used to mount the part to the printed circuit board.
+ 
+(6) Part marking:  There may be an additional marking, which relates to the logo, the lot trace code information, or the environmental category of the part.
+ 
+Multiple part markings will be inside parentheses. Only one part marking contained in parentheses and separated by a "~" will appear on a part. If a line is indented then it is a continuation of the previous line and the two
+combined represent the entire part marking for that device.
+ 
+Important Information and Disclaimer:The information provided on this page represents TI's knowledge and belief as of the date that it is provided. TI bases its knowledge and belief on information provided by third parties, and
+makes no representation or warranty as to the accuracy of such information. Efforts are underway to better integrate information from third parties. TI has taken and continues to take reasonable steps to provide representative
+and accurate information but may not have conducted destructive testing or chemical analysis on incoming materials and chemicals. TI and TI suppliers consider certain information to be proprietary, and thus CAS numbers
+and other limited information may not be available for release.
+ 
+In no event shall TI's liability arising out of such information exceed the total purchase price of the TI part(s) at issue in this document sold by TI to Customer on an annual basis.
+ 
+ OTHER QUALIFIED VERSIONS OF TPS709 :
+• Automotive : TPS709-Q1
+ NOTE: Qualified Version Definitions:
+• Automotive - Q100 devices qualified for high-reliability automotive applications targeting zero defects
+Addendum-Page 8
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+TAPE AND REEL INFORMATION
+Reel Width (W1)
+REEL DIMENSIONS
+A0
+B0
+K0
+W
+Dimension designed to accommodate the component length
+Dimension designed to accommodate the component thickness
+Overall width of the carrier tape
+Pitch between successive cavity centers
+Dimension designed to accommodate the component width
+TAPE DIMENSIONS
+K0
+ P1
+B0 W
+A0
+Cavity
+QUADRANT ASSIGNMENTS FOR PIN 1 ORIENTATION IN TAPE
+Pocket Quadrants
+Sprocket Holes
+Q1
+Q1
+Q2
+Q2
+Q3
+Q3
+Q4
+Q4
+User Direction of Feed
+P1
+Reel
+Diameter
+ 
+*All dimensions are nominal
+Device
+Package
+Type
+Package
+Drawing
+Pins
+SPQ
+Reel
+Diameter
+(mm)
+Reel
+Width
+W1 (mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+TPS70912DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70912DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.3
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70912DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70912DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70912DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70912DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS709135DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709135DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS709135DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS709135DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70915DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70915DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70915DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70915DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70915DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70915DRVR
+WSON
+DRV
+6
+3000
+179.0
+8.4
+2.2
+2.2
+1.2
+4.0
+8.0
+Q2
+Pack Materials-Page 1
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+Device
+Package
+Type
+Package
+Drawing
+Pins
+SPQ
+Reel
+Diameter
+(mm)
+Reel
+Width
+W1 (mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+TPS70915DRVT
+WSON
+DRV
+6
+250
+179.0
+8.4
+2.2
+2.2
+1.2
+4.0
+8.0
+Q2
+TPS70915DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70915DRVTG4
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70916DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70916DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70916DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70916DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70918DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70918DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70918DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70918DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70918DBVTG4
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70918DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70918DRVRG4
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70918DRVRM3
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70918DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70919DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70919DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70919DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70925DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70925DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70925DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70925DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70925DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70927DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70927DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70927DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70928DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70928DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70928DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70930DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70930DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70930DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70930DRVRG4
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70930DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70933DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70933DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70933DBVRG4
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70933DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70933DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70933DRVRG4
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+Pack Materials-Page 2
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+Device
+Package
+Type
+Package
+Drawing
+Pins
+SPQ
+Reel
+Diameter
+(mm)
+Reel
+Width
+W1 (mm)
+A0
+(mm)
+B0
+(mm)
+K0
+(mm)
+P1
+(mm)
+W
+(mm)
+Pin1
+Quadrant
+TPS70933DRVRM3
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70933DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70936DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70936DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70936DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70936DRVR
+WSON
+DRV
+6
+3000
+178.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70936DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70936DRVRM3
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70938DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70938DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70938DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70938DBVTG4
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70939DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70939DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70950DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70950DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70950DBVRG4
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70950DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70950DRVR
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70950DRVRG4
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70950DRVRM3
+WSON
+DRV
+6
+3000
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70950DRVT
+WSON
+DRV
+6
+250
+180.0
+8.4
+2.3
+2.3
+1.15
+4.0
+8.0
+Q2
+TPS70960DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70960DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS70960DBVRG4
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70960DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS70960DBVT
+SOT-23
+DBV
+5
+250
+180.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS709A30DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS709A30DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709A33DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+8.4
+3.2
+3.2
+1.4
+4.0
+8.0
+Q3
+TPS709A33DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B33DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B33DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B345DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B50DBVR
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B50DBVRG4
+SOT-23
+DBV
+5
+3000
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+TPS709B50DBVT
+SOT-23
+DBV
+5
+250
+178.0
+9.0
+3.23
+3.17
+1.37
+4.0
+8.0
+Q3
+Pack Materials-Page 3
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+TAPE AND REEL BOX DIMENSIONS
+Width (mm)
+W
+L
+H
+ 
+*All dimensions are nominal
+Device
+Package Type
+Package Drawing
+Pins
+SPQ
+Length (mm)
+Width (mm)
+Height (mm)
+TPS70912DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70912DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70912DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70912DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70912DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70912DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS709135DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS709135DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS709135DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS709135DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70915DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70915DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70915DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70915DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70915DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70915DRVR
+WSON
+DRV
+6
+3000
+200.0
+183.0
+25.0
+TPS70915DRVT
+WSON
+DRV
+6
+250
+200.0
+183.0
+25.0
+TPS70915DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+Pack Materials-Page 4
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+Device
+Package Type
+Package Drawing
+Pins
+SPQ
+Length (mm)
+Width (mm)
+Height (mm)
+TPS70915DRVTG4
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70916DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70916DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70916DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70916DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70918DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70918DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70918DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70918DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70918DBVTG4
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70918DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70918DRVRG4
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70918DRVRM3
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70918DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70919DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70919DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70919DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70925DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70925DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70925DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70925DRVR
+WSON
+DRV
+6
+3000
+210.0
+185.0
+35.0
+TPS70925DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70927DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70927DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70927DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70928DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70928DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70928DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70930DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70930DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70930DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70930DRVRG4
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70930DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70933DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70933DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70933DBVRG4
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70933DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70933DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70933DRVRG4
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70933DRVRM3
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70933DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70936DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70936DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+Pack Materials-Page 5
+
+PACKAGE MATERIALS INFORMATION
+ 
+ 
+www.ti.com
+18-Sep-2026
+Device
+Package Type
+Package Drawing
+Pins
+SPQ
+Length (mm)
+Width (mm)
+Height (mm)
+TPS70936DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70936DRVR
+WSON
+DRV
+6
+3000
+208.0
+191.0
+35.0
+TPS70936DRVR
+WSON
+DRV
+6
+3000
+210.0
+185.0
+35.0
+TPS70936DRVRM3
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70938DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70938DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70938DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70938DBVTG4
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70939DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70939DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70950DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS70950DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70950DBVRG4
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70950DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS70950DRVR
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70950DRVRG4
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70950DRVRM3
+WSON
+DRV
+6
+3000
+182.0
+182.0
+20.0
+TPS70950DRVT
+WSON
+DRV
+6
+250
+182.0
+182.0
+20.0
+TPS70960DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70960DBVR
+SOT-23
+DBV
+5
+3000
+210.0
+185.0
+35.0
+TPS70960DBVRG4
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS70960DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS70960DBVT
+SOT-23
+DBV
+5
+250
+210.0
+185.0
+35.0
+TPS709A30DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS709A30DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS709A33DBVR
+SOT-23
+DBV
+5
+3000
+208.0
+191.0
+35.0
+TPS709A33DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS709B33DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS709B33DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+TPS709B345DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS709B50DBVR
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS709B50DBVRG4
+SOT-23
+DBV
+5
+3000
+180.0
+180.0
+18.0
+TPS709B50DBVT
+SOT-23
+DBV
+5
+250
+180.0
+180.0
+18.0
+Pack Materials-Page 6
+
+www.ti.com
+PACKAGE OUTLINE
+C
+0.22
+0.08 TYP
+0.25
+3.0
+2.6
+2X 0.95
+1.9
+1.45
+0.90
+0.15
+0.00 TYP
+5X 0.5
+0.3
+0.6
+0.3 TYP
+8
+0 TYP
+1.9
+(0.1)
+(0.15)
+4X 0 -15
+4X 4 -15
+A
+3.05
+2.75
+B
+1.75
+1.45
+(1.1)
+SOT-23 - 1.45 mm max height
+DBV0005A
+SMALL OUTLINE TRANSISTOR
+4214839/K   08/2024
+NOTES: 
+ 
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+    per ASME Y14.5M.
+2. This drawing is subject to change without notice.
+3. Refernce JEDEC MO-178.
+4. Body dimensions do not include mold flash, protrusions, or gate burrs. Mold flash, protrusions, or gate burrs shall not
+    exceed 0.25 mm per side.
+5. Support pin may differ or may not be present.
+0.2
+C A B
+1
+3
+4
+5
+2
+INDEX AREA
+PIN 1
+ NOTE 5
+GAGE PLANE
+SEATING PLANE
+0.1 C
+SCALE  4.000
+
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.07 MAX
+ARROUND
+0.07 MIN
+ARROUND
+5X (1.1)
+5X (0.6)
+(2.6)
+(1.9)
+2X (0.95)
+(R0.05) TYP
+4214839/K   08/2024
+SOT-23 - 1.45 mm max height
+DBV0005A
+SMALL OUTLINE TRANSISTOR
+NOTES: (continued)
+ 
+6. Publication IPC-7351 may have alternate designs. 
+7. Solder mask tolerances between and around signal pads can vary based on board fabrication site.
+ 
+SYMM
+LAND PATTERN EXAMPLE
+EXPOSED METAL SHOWN
+SCALE:15X
+PKG
+1
+3
+4
+5
+2
+SOLDER MASK
+OPENING
+METAL UNDER
+SOLDER MASK
+SOLDER MASK
+DEFINED
+EXPOSED METAL
+METAL
+SOLDER MASK
+OPENING
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+SOLDER MASK DETAILS
+EXPOSED METAL
+
+www.ti.com
+EXAMPLE STENCIL DESIGN
+(2.6)
+(1.9)
+2X(0.95)
+5X (1.1)
+5X (0.6)
+(R0.05) TYP
+SOT-23 - 1.45 mm max height
+DBV0005A
+SMALL OUTLINE TRANSISTOR
+4214839/K   08/2024
+NOTES: (continued)
+ 
+8. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate
+     design recommendations. 
+9. Board assembly site may have different recommendations for stencil design.
+ 
+SOLDER PASTE EXAMPLE
+BASED ON 0.125 mm THICK STENCIL
+SCALE:15X
+SYMM
+PKG
+1
+3
+4
+5
+2
+
+GENERIC PACKAGE VIEW
+Images above are just a representation of the package family, actual package may vary.
+Refer to the product data sheet for package details.
+DRV 6
+WSON - 0.8 mm max height
+PLASTIC SMALL OUTLINE - NO LEAD
+4206925/F
+
+www.ti.com
+PACKAGE OUTLINE
+C
+6X 0.35
+0.25
+1.6
+0.1
+6X 0.3
+0.2
+2X
+1.3
+1
+0.1
+4X 0.65
+0.8
+0.7
+0.05
+0.00
+B
+2.1
+1.9
+A
+2.1
+1.9
+(0.2) TYP
+WSON - 0.8 mm max height
+DRV0006D
+PLASTIC SMALL OUTLINE - NO LEAD
+4225563/A   12/2019
+PIN 1 INDEX AREA
+SEATING PLANE
+0.08 C
+1
+3
+4
+6
+(OPTIONAL)
+PIN 1 ID
+0.1
+C A B
+0.05
+C
+THERMAL PAD
+EXPOSED
+7
+NOTES:
+ 
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+    per ASME Y14.5M. 
+2. This drawing is subject to change without notice. 
+3. The package thermal pad must be soldered to the printed circuit board for thermal and mechanical performance.
+SCALE  5.500
+
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.07 MIN
+ALL AROUND
+0.07 MAX
+ALL AROUND
+(1)
+4X (0.65)
+(1.95)
+6X (0.3)
+6X (0.45)
+(1.6)
+(R0.05) TYP
+(
+0.2) VIA
+TYP
+(1.1)
+WSON - 0.8 mm max height
+DRV0006D
+PLASTIC SMALL OUTLINE - NO LEAD
+4225563/A   12/2019
+SYMM
+1
+3
+4
+6
+SYMM
+LAND PATTERN EXAMPLE
+EXPOSED METAL SHOWN
+SCALE:25X
+7
+NOTES: (continued)
+ 
+4. This package is designed to be soldered to a thermal pad on the board. For more information, see Texas Instruments literature
+    number SLUA271 (www.ti.com/lit/slua271).
+5. Vias are optional depending on application, refer to device data sheet. If some or all are implemented, recommended via locations are shown.
+ 
+ 
+SOLDER MASK
+OPENING
+SOLDER MASK
+METAL UNDER
+SOLDER MASK
+DEFINED
+EXPOSED
+METAL
+METAL
+SOLDER MASK
+OPENING
+SOLDER MASK DETAILS
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+EXPOSED
+METAL
+
+www.ti.com
+EXAMPLE STENCIL DESIGN
+6X (0.3)
+6X (0.45)
+4X (0.65)
+(0.7)
+(1)
+(1.95)
+(R0.05) TYP
+(0.45)
+WSON - 0.8 mm max height
+DRV0006D
+PLASTIC SMALL OUTLINE - NO LEAD
+4225563/A   12/2019
+NOTES: (continued)
+ 
+6. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate
+    design recommendations. 
+ 
+SOLDER PASTE EXAMPLE
+BASED ON 0.125 mm THICK STENCIL
+ 
+EXPOSED PAD #7
+ 88% PRINTED SOLDER COVERAGE BY AREA UNDER PACKAGE
+SCALE:30X
+SYMM
+1
+3
+4
+6
+SYMM
+METAL
+7
+
+www.ti.com
+PACKAGE OUTLINE
+C
+6X 0.35
+0.25
+1.6
+0.1
+6X 0.3
+0.2
+2X
+1.3
+1
+0.1
+4X 0.65
+0.8
+0.7
+0.05
+0.00
+B
+2.1
+1.9
+A
+2.1
+1.9
+0.1 MIN
+0.08 MAX
+(0.2) TYP
+WSON - 0.8 mm max height
+DRV0006A
+PLASTIC SMALL OUTLINE - NO LEAD
+4222173/C   11/2025
+PIN 1 INDEX AREA
+SEATING PLANE
+0.08 C
+1
+3
+4
+6
+(OPTIONAL)
+PIN 1 ID
+0.1
+C A B
+0.05
+C
+THERMAL PAD
+EXPOSED
+7
+NOTES:
+ 
+1. All linear dimensions are in millimeters. Any dimensions in parenthesis are for reference only. Dimensioning and tolerancing
+    per ASME Y14.5M. 
+2. This drawing is subject to change without notice. 
+3. The package thermal pad must be soldered to the printed circuit board for thermal and mechanical performance.
+4.  Minimum 0.1 mm solder wetting on pin side wall. Available for wettable flank version only.
+SCALE  5.500
+OPTIONAL: SIDE WALL PIN DETAIL
+NOTE 4
+
+www.ti.com
+EXAMPLE BOARD LAYOUT
+0.07 MIN
+ALL AROUND
+0.07 MAX
+ALL AROUND
+(1)
+4X (0.65)
+(1.95)
+6X (0.3)
+6X (0.45)
+(1.6)
+(R0.05) TYP
+(
+0.2) VIA
+TYP
+(1.1)
+WSON - 0.8 mm max height
+DRV0006A
+PLASTIC SMALL OUTLINE - NO LEAD
+4222173/C   11/2025
+SYMM
+1
+3
+4
+6
+SYMM
+LAND PATTERN EXAMPLE
+SCALE:25X
+7
+NOTES: (continued)
+ 
+5. This package is designed to be soldered to a thermal pad on the board. For more information, see Texas Instruments literature
+    number SLUA271 (www.ti.com/lit/slua271).
+6. Vias are optional depending on application, refer to device data sheet. If some or all are implemented, recommended via locations
+    are shown.
+ 
+ 
+SOLDER MASK
+OPENING
+SOLDER MASK
+METAL UNDER
+SOLDER MASK
+DEFINED
+METAL
+SOLDER MASK
+OPENING
+SOLDER MASK DETAILS
+NON SOLDER MASK
+DEFINED
+(PREFERRED)
+
+www.ti.com
+EXAMPLE STENCIL DESIGN
+6X (0.3)
+6X (0.45)
+4X (0.65)
+(0.7)
+(1)
+(1.95)
+(R0.05) TYP
+(0.45)
+WSON - 0.8 mm max height
+DRV0006A
+PLASTIC SMALL OUTLINE - NO LEAD
+4222173/C   11/2025
+NOTES: (continued)
+ 
+7. Laser cutting apertures with trapezoidal walls and rounded corners may offer better paste release. IPC-7525 may have alternate
+    design recommendations. 
+ 
+SOLDER PASTE EXAMPLE
+BASED ON 0.125 mm THICK STENCIL
+ 
+EXPOSED PAD #7
+ 88% PRINTED SOLDER COVERAGE BY AREA UNDER PACKAGE
+SCALE:30X
+SYMM
+1
+3
+4
+6
+SYMM
+METAL
+7
+
+IMPORTANT NOTICE AND DISCLAIMER
+TI PROVIDES TECHNICAL AND RELIABILITY DATA (INCLUDING DATASHEETS), DESIGN RESOURCES (INCLUDING REFERENCE 
+DESIGNS), APPLICATION OR OTHER DESIGN ADVICE, WEB TOOLS, SAFETY INFORMATION, AND OTHER RESOURCES “AS IS” 
+AND WITH ALL FAULTS, AND DISCLAIMS ALL WARRANTIES, EXPRESS AND IMPLIED, INCLUDING WITHOUT LIMITATION ANY 
+IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT OF THIRD 
+PARTY INTELLECTUAL PROPERTY RIGHTS.
+These resources are intended for skilled developers designing with TI products. You are solely responsible for (1) selecting the appropriate 
+TI products for your application, (2) designing, validating and testing your application, and (3) ensuring your application meets applicable 
+standards, and any other safety, security, regulatory or other requirements.
+These resources are subject to change without notice. TI grants you permission to use these resources only for development of an 
+application that uses the TI products described in the resource. Other reproduction and display of these resources is prohibited. No license 
+is granted to any other TI intellectual property right or to any third party intellectual property right. TI disclaims responsibility for, and you fully 
+indemnify TI and its representatives against any claims, damages, costs, losses, and liabilities arising out of your use of these resources.
+TI’s products are provided subject to TI’s Terms of Sale, TI’s General Quality Guidelines, or other applicable terms available either on 
+ti.com or provided in conjunction with such TI products. TI’s provision of these resources does not expand or otherwise alter TI’s applicable 
+warranties or warranty disclaimers for TI products. Unless TI explicitly designates a product as custom or customer-specified, TI products 
+are standard, catalog, general purpose devices.
+TI objects to and rejects any additional or different terms you may propose.
+IMPORTANT NOTICE
+Copyright © 2026, Texas Instruments Incorporated
+Last updated 10/2025

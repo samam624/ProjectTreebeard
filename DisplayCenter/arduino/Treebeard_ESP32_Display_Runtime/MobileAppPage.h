@@ -10,11 +10,11 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
   <meta name="theme-color" content="#0e141b">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="MSV2 Plants">
+  <meta name="apple-mobile-web-app-title" content="Display Center">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/app-icon.svg">
-  <title>MSV2 Plants</title>
+  <title>Display Center</title>
   <style>
     :root {
       color-scheme: dark;
@@ -465,7 +465,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
   <header>
-    <h1 id="appTitle">MSV2 Plants</h1>
+    <h1 id="appTitle">Display Center</h1>
     <div class="subhead">
       <span id="statusText">Loading...</span>
       <span id="saveState"></span>
@@ -493,7 +493,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           </div>
           <button type="button" class="ghost" id="wifiRefreshButton">Refresh</button>
         </div>
-        <div class="notice" id="wifiHelpText">Choose home WiFi below, or use local-only mode to keep editing from MSV2-Display.</div>
+        <div class="notice" id="wifiHelpText">Choose home WiFi below, or use local-only mode to keep editing from <span class="setup-ssid">the receiver's setup WiFi</span>.</div>
         <div class="network-row">
           <label>Network name
             <input id="wifiSsidInput" maxlength="63" autocomplete="off">
@@ -506,7 +506,7 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           <input id="wifiLocalOnlyInput" type="checkbox">
           <div>
             Use without home WiFi
-            <span>The receiver will keep broadcasting MSV2-Display and show the plant dashboard locally.</span>
+            <span>The receiver will keep broadcasting <span class="setup-ssid">its setup WiFi</span> and show the plant dashboard locally.</span>
           </div>
         </label>
         <div class="network-actions">
@@ -526,9 +526,32 @@ const char TREEBEARD_MOBILE_APP_HTML[] PROGMEM = R"rawliteral(
           <input id="soundEnabledInput" type="checkbox">
           <div>
             Play alert sounds
-            <span>Startup chime, plus a short double-buzz that repeats hourly while a plant stays critically low on water.</span>
+            <span>Startup chime, plus a soft two-note chime that repeats hourly while a plant stays critically low on water.</span>
           </div>
         </label>
+        <label class="check-row">
+          <div style="flex:1">
+            Volume <b id="soundVolumeValue">--</b>
+            <input id="soundVolumeInput" type="range" min="1" max="100" step="1" style="width:100%">
+            <span>Plays the water chime when you let go, so you can hear the level.</span>
+          </div>
+        </label>
+        <label class="check-row">
+          <div style="flex:1">
+            Startup sound
+            <select id="soundStartupInput" style="width:100%"></select>
+          </div>
+        </label>
+        <label class="check-row">
+          <div style="flex:1">
+            Water alert sound
+            <select id="soundWaterInput" style="width:100%"></select>
+          </div>
+        </label>
+        <div class="network-actions">
+          <button type="button" class="ghost" id="soundPlayStartupButton">Play startup</button>
+          <button type="button" class="ghost" id="soundTestButton">Play water alert</button>
+        </div>
         <div class="notice" id="soundNotice"></div>
       </section>
       <section class="network-card">
@@ -1273,7 +1296,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       const response = await fetch("/ui", { cache: "no-store" });
       config = await response.json();
       config.cards = Array.isArray(config.cards) ? config.cards : [];
-      $("appTitle").textContent = config.title || "MSV2 Plants";
+      $("appTitle").textContent = config.title || "Display Center";
       $("titleInput").value = config.title || "";
       renderConfigMeta();
       renderEditors();
@@ -1307,8 +1330,16 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       renderWifi();
     }
 
+    // The setup network's name comes from the firmware (AP_SSID, served as /wifi's setupSsid),
+    // never a literal here, so renaming it is one line in the sketch. It was MSV2-Display until
+    // build rename-pass2-v3 (2026-11-20).
+    function setupSsidName() {
+      return (wifiInfo && wifiInfo.setupSsid) || "the receiver's setup WiFi";
+    }
+
     function renderWifi() {
       if (!wifiInfo) return;
+      document.querySelectorAll(".setup-ssid").forEach((el) => { el.textContent = setupSsidName(); });
       const mode = wifiInfo.networkMode || "unknown";
       const ip = wifiInfo.ip || "--";
       const configured = wifiInfo.configuredSsid || "";
@@ -1318,10 +1349,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       $("wifiLocalOnlyInput").checked = localOnly;
       $("wifiStatusText").textContent = `${mode === "station" ? "home WiFi" : mode === "local-only" ? "local-only" : "setup WiFi"} / ${ip}${connected ? " / " + connected : ""}`;
       $("wifiHelpText").textContent = localOnly
-        ? "Local-only mode is on. Your phone must join MSV2-Display to edit this receiver. Uncheck it and enter home WiFi anytime."
+        ? `Local-only mode is on. Your phone must join ${setupSsidName()} to edit this receiver. Uncheck it and enter home WiFi anytime.`
         : mode === "station"
           ? `Connected to home WiFi${connected ? ": " + connected : ""}. Leave this alone unless you want to move the receiver to a different network.`
-          : "Choose your home WiFi below, or check local-only mode to use MSV2-Display without connecting to home WiFi.";
+          : `Choose your home WiFi below, or check local-only mode to use ${setupSsidName()} without connecting to home WiFi.`;
       updateWifiControls();
     }
 
@@ -1362,7 +1393,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       // <script> block above this one) instead of a third-party image service - the
       // pairing receiverId/claimCode never leaves the phone, and this still works when
       // the phone has no internet route at all (e.g. viewing this page over the
-      // receiver's own local-only MSV2-Display AP).
+      // receiver's own local-only setup AP).
       try {
         const qr = qrcode(0, "M");
         qr.addData(url);
@@ -1409,6 +1440,27 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     function renderSound() {
       if (!soundInfo) return;
       $("soundEnabledInput").checked = Boolean(soundInfo.enabled);
+      if (soundInfo.volume != null) {
+        $("soundVolumeInput").value = soundInfo.volume;
+        $("soundVolumeValue").textContent = soundInfo.volume + "%";
+      }
+      const fill = (id, options, current) => {
+        if (!Array.isArray(options)) return;
+        $(id).innerHTML = options.map((o) => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`).join("");
+        if (current) $(id).value = current;
+      };
+      fill("soundStartupInput", soundInfo.startupOptions, soundInfo.startupSound);
+      fill("soundWaterInput", soundInfo.waterOptions, soundInfo.waterSound);
+    }
+
+    // Volume saves on release and plays the chime at the new level; the button replays it.
+    async function postSound(body, okText) {
+      const response = await fetch("/sound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      $("soundNotice").textContent = response.ok ? okText : "Save failed: " + (await parseErrorText(response));
     }
 
     // Saves immediately on toggle, same pattern as wifiLocalOnlyInput's checkbox - no
@@ -1522,7 +1574,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       }
       $("wifiPasswordInput").value = "";
       $("wifiNotice").textContent = localOnly
-        ? "Saved. The receiver is rebooting and will keep using MSV2-Display for local editing."
+        ? `Saved. The receiver is rebooting and will keep using ${setupSsidName()} for local editing.`
         : "Saved. The receiver is rebooting. Reconnect your phone to home WiFi and watch the receiver screen for the plant dashboard.";
     }
 
@@ -1534,7 +1586,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         return;
       }
       $("wifiPasswordInput").value = "";
-      $("wifiNotice").textContent = "Forgotten. After reboot, connect your phone to MSV2-Display to set up WiFi again.";
+      $("wifiNotice").textContent = `Forgotten. After reboot, connect your phone to ${setupSsidName()} to set up WiFi again.`;
     }
 
     // Calendar-day phrasing for autoCal.lastWateredAtMs - informational only (see
@@ -3193,7 +3245,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     function collectConfig() {
       const next = JSON.parse(JSON.stringify(config));
-      next.title = $("titleInput").value.trim() || "MSV2 Plants";
+      next.title = $("titleInput").value.trim() || "Display Center";
       next.cards = Array.isArray(next.cards) ? next.cards : [];
       document.querySelectorAll("[data-field]").forEach((input) => {
         const index = Number(input.dataset.index);
@@ -3355,6 +3407,21 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     $("wifiLocalOnlyInput").addEventListener("change", updateWifiControls);
     $("soundEnabledInput").addEventListener("change", saveSound);
     $("displayFlippedInput").addEventListener("change", saveOrientation);
+    $("soundVolumeInput").addEventListener("input", () => {
+      $("soundVolumeValue").textContent = $("soundVolumeInput").value + "%";
+    });
+    $("soundVolumeInput").addEventListener("change", () => {
+      const volume = Number($("soundVolumeInput").value);
+      postSound({ volume, play: "water" }, "Volume " + volume + "% saved.");
+    });
+    $("soundTestButton").addEventListener("click", () => postSound({ play: "water" }, "Playing the water alert."));
+    $("soundPlayStartupButton").addEventListener("click", () => postSound({ play: "startup" }, "Playing the startup sound."));
+    $("soundStartupInput").addEventListener("change", () => {
+      postSound({ startupSound: $("soundStartupInput").value, play: "startup" }, "Startup sound saved.");
+    });
+    $("soundWaterInput").addEventListener("change", () => {
+      postSound({ waterSound: $("soundWaterInput").value, play: "water" }, "Water alert sound saved.");
+    });
     $("claimRefreshButton").addEventListener("click", loadClaim);
     $("copyReceiverIdButton").addEventListener("click", () => copyText(claimInfo?.receiverId, "Receiver ID copied."));
     $("copyClaimCodeButton").addEventListener("click", () => copyText(claimInfo?.claimCode, "Claim code copied."));
@@ -3444,9 +3511,9 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
 const char TREEBEARD_WEB_MANIFEST[] PROGMEM = R"rawliteral(
 {
-  "name": "MSV2 Plant Monitor",
-  "short_name": "MSV2 Plants",
-  "description": "Local plant status and setup for the MSV2 display hub.",
+  "name": "Display Center",
+  "short_name": "Display Center",
+  "description": "Local plant status and setup for the Treebeard display hub.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",

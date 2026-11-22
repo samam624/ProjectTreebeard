@@ -1,4 +1,4 @@
-// TFT_eSPI setup for the MSV2 ESP32-S3 display wiring.
+// TFT_eSPI setup for the Treebeard ESP32-S3 display wiring.
 //
 // Important: TFT_eSPI compiles its own .cpp files, so including this only from
 // the sketch is not enough in Arduino IDE. Copy this file over the TFT_eSPI
@@ -8,7 +8,7 @@
 
 #define USER_SETUP_LOADED
 
-#define USER_SETUP_INFO "MSV2 ESP32-S3 SPI display"
+#define USER_SETUP_INFO "Treebeard ESP32-S3 SPI display"
 
 // Your working Arduino_GFX test uses Arduino_ST7796 at 320x480, so TFT_eSPI
 // should use the matching ST7796 driver here.

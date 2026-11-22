@@ -406,7 +406,7 @@ Known-good behavior from bench testing (pre-2026-07-07, still holds):
 
 - First-time setup can be tested with `-ForceWifiSetup` without erasing identity, plant setup, or cloud config.
 - After saving home WiFi or local-only mode, resets should return to that saved mode.
-- Local-only mode should keep broadcasting the open `MSV2-Display` network and show the dashboard.
+- Local-only mode should keep broadcasting the open `Display-Center` network and show the dashboard.
 - The save/reboot screen now clears animated plant art and stays clean while restart is pending.
 
 ## Known Good Command
@@ -484,17 +484,17 @@ To verify the first-time setup path without erasing identity, cloud config, or p
 powershell -ExecutionPolicy Bypass -File DisplayCenter\scripts\arduino_display.ps1 -Action upload -Port COM16 -ForceWifiSetup
 ```
 
-This build ignores saved WiFi and `WiFiCredentials.h` until you save a choice from the setup app. The TFT should stay on the setup instructions and the receiver should keep broadcasting the open `MSV2-Display` setup network.
+This build ignores saved WiFi and `WiFiCredentials.h` until you save a choice from the setup app. The TFT should stay on the setup instructions and the receiver should keep broadcasting the open `Display-Center` setup network.
 
-If your phone sees `MSV2-Display` but cannot join it, forget/remove the saved `MSV2-Display` network on the phone and join it again. Older firmware used a password for the same SSID, and phones can keep trying the stale saved security settings even after the receiver changes to an open setup network.
+If your phone sees `Display-Center` but cannot join it, forget/remove the saved network on the phone and join it again. Firmware before `rename-pass2-v3` (2026-11-20) broadcast the same open setup network as `MSV2-Display`, and older firmware than that used a password for it; phones can keep trying stale saved security settings, so forget either old entry.
 
 After you save home WiFi or local-only mode from the setup app, the receiver writes that choice to `/wifi.json`. Future resets should use that saved choice again:
 
 1. Flash with `-ForceWifiSetup`.
-2. Join `MSV2-Display`.
+2. Join `Display-Center`.
 3. Open the setup app.
 4. Save home WiFi, or check `Use without home WiFi` and save local-only mode.
-5. Let the receiver reboot into either home WiFi or the local `MSV2-Display` dashboard.
+5. Let the receiver reboot into either home WiFi or the local `Display-Center` dashboard.
 
 The forced setup build writes `/wifi-setup-unlock-v2.flag` when you save home WiFi or local-only mode. After that, manual resets should return to the saved state instead of setup. Use `Forget WiFi` from the local dashboard when you intentionally want to clear the saved choice and return to first-time setup.
 

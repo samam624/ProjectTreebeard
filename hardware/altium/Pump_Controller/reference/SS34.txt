@@ -1,0 +1,446 @@
+SS32, SS33, SS34, SS35, SS36
+www.vishay.com
+Vishay General Semiconductor
+  
+ 
+Revision: 23-Apr-2020
+1
+Document Number: 88751
+For technical questions within your region: DiodesAmericas@vishay.com, DiodesAsia@vishay.com, DiodesEurope@vishay.com
+THIS DOCUMENT IS SUBJECT TO CHANGE WITHOUT NOTICE. THE PRODUCTS DESCRIBED HEREIN AND THIS DOCUMENT
+ARE SUBJECT TO SPECIFIC DISCLAIMERS, SET FORTH AT www.vishay.com/doc?91000
+Surface-Mount Schottky Barrier Rectifier
+LINKS TO ADDITIONAL RESOURCES
+FEATURES
+• Low profile package
+• Ideal for automated placement
+• Guardring for overvoltage protection
+• Low power losses, high efficiency
+• Low forward voltage drop
+• High surge capability
+• Meets MSL level 1, per J-STD-020, 
+LF maximum peak of 260 °C
+• AEC-Q101 qualified available 
+- Automotive ordering code: base P/NHE3 or P/NHM3
+• Material categorization: for definitions of compliance 
+please see www.vishay.com/doc?99912
+TYPICAL APPLICATIONS
+For use in low voltage high frequency inverters, 
+freewheeling, DC/DC converters, and polarity protection 
+applications.
+MECHANICAL DATA
+Case: SMC (DO-214AB) 
+Molding compound meets UL 94 V-0 flammability rating 
+Base P/N-E3 - RoHS-compliant, commercial grade 
+Base P/N-M3 - halogen-free, RoHS-compliant, commercial 
+grade 
+Base P/NHE3_X - RoHS-compliant and AEC-Q101 qualified 
+Base P/NHM3_X - halogen-free, RoHS-compliant, and 
+AEC-Q101 qualified 
+(“_X” denotes revision code e.g. A, B, .....)
+Terminals: matte tin plated leads, solderable per 
+J-STD-002 and JESD 22-B102 
+E3, M3, HE3, and HM3 suffix meets JESD 201 class 2 
+whisker test
+Polarity: color band denotes the cathode end
+PRIMARY CHARACTERISTICS
+IF(AV)
+3.0 A
+VRRM
+20 V, 30 V, 40 V, 50 V, 60 V
+IFSM
+100 A
+EAS
+20 mJ
+VF
+0.5 V, 0.75 V
+TJ max.
+150 °C
+Package
+SMC (DO-214AB)
+Circuit configuration
+Single
+SMC (DO-214AB) 
+Cathode
+Anode
+Design Tools
+Related
+Documents
+3
+D
+3
+D
+3D Models
+Models
+Application
+Notes
+A
+Marking
+Available
+Available
+MAXIMUM RATINGS (TA = 25 °C unless otherwise noted)
+PARAMETER
+SYMBOL
+SS32
+SS33
+SS34
+SS35
+SS36
+UNIT
+Device marking code
+S2
+S3
+S4
+S5
+S6
+Maximum repetitive peak reverse voltage
+VRRM
+20
+30
+40
+50
+60
+V
+Maximum RMS voltage
+VRMS
+14
+21
+28
+35
+42
+V
+Maximum DC blocking voltage
+VDC
+20
+30
+40
+50
+60
+V
+Maximum average forward rectified current at TL (fig. 1)
+IF(AV)
+3.0
+A
+Peak forward surge current 8.3 ms single half sine-wave 
+superimposed on rated load
+IFSM
+100
+A
+Non-repetitive avalanche energy at TA = 25 °C, 
+IAS = 2.0 A, L = 10 mH
+EAS
+20
+mJ
+Voltage rate of change (rated VR)
+dV/dt
+10 000
+V/μs
+Operating junction temperature range
+TJ
+ -55 to +150
+°C
+Storage temperature range
+TSTG
+-55 to +150
+°C
+
+SS32, SS33, SS34, SS35, SS36
+www.vishay.com
+Vishay General Semiconductor
+  
+ 
+Revision: 23-Apr-2020
+2
+Document Number: 88751
+For technical questions within your region: DiodesAmericas@vishay.com, DiodesAsia@vishay.com, DiodesEurope@vishay.com
+THIS DOCUMENT IS SUBJECT TO CHANGE WITHOUT NOTICE. THE PRODUCTS DESCRIBED HEREIN AND THIS DOCUMENT
+ARE SUBJECT TO SPECIFIC DISCLAIMERS, SET FORTH AT www.vishay.com/doc?91000
+Note
+(1) Pulse test: 300 μs pulse width, 1 % duty cycle
+Note
+(1) PCB mounted with 0.55" x 0.55" (14 mm x 14 mm) copper pad areas
+Note
+(1) AEC-Q101 qualified
+RATINGS AND CHARACTERISTICS CURVES (TA = 25 °C unless otherwise noted)
+Fig. 1 - Forward Current Derating Curve
+Fig. 2 - Maximum Non-Repetitive Peak Forward Surge Current
+ELECTRICAL CHARACTERISTICS (TA = 25 °C unless otherwise noted)
+PARAMETER
+TEST CONDITIONS
+SYMBOL
+SS32
+SS33
+SS34
+SS35
+SS36
+UNIT
+Maximum instantaneous 
+forward voltage (1)
+3.0 A
+VF
+0.5
+0.75
+V
+Maximum DC reverse current 
+at rated DC blocking voltage (1)
+TA = 25 °C
+IR
+0.5
+mA
+TA = 100 °C
+20
+10
+THERMAL CHARACTERISTICS (TA = 25 °C unless otherwise noted)
+PARAMETER
+SYMBOL
+SS32
+SS33
+SS34
+SS35
+SS36
+UNIT
+Typical thermal resistance (1)
+RθJA
+55
+°C/W
+RθJL
+17
+ORDERING INFORMATION (Example)
+PREFERRED P/N
+UNIT WEIGHT (g)
+PREFERRED PACKAGE CODE
+BASE QUANTITY
+DELIVERY MODE
+SS36-E3/57T
+0.235
+57T
+850
+7" diameter plastic tape and reel
+SS36-E3/9AT
+0.235
+9AT
+3500
+13" diameter plastic tape and reel
+SS36HE3_B/H (1)
+0.235
+H
+850
+7" diameter plastic tape and reel
+SS36HE3_B/I (1)
+0.235
+I
+3500
+13" diameter plastic tape and reel
+SS36-M3/57T
+0.235
+57T
+850
+7" diameter plastic tape and reel
+SS36-M3/9AT
+0.235
+9AT
+3500
+13" diameter plastic tape and reel
+SS36HM3_A/H (1)
+0.235
+H
+850
+7" diameter plastic tape and reel
+SS36HM3_A/I (1)
+0.235
+I
+3500
+13" diameter plastic tape and reel
+ 0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+0
+25
+50
+75
+100
+125
+150
+Average Forward Rectified Current (A)
+Lead Temperature (°C)
+PCB Mounted on 0.55" x 0.55"
+(14 mm x 14 mm) Copper Pad Area
+SS32 thru SS36
+1
+10
+100
+0
+20
+40
+60
+80
+100
+Number of Cycles at 60 Hz
+Peak Forward Surge Current (A)
+At Rated TL
+8.3 ms Single Half Sine-Wave
+
+SS32, SS33, SS34, SS35, SS36
+www.vishay.com
+Vishay General Semiconductor
+  
+ 
+Revision: 23-Apr-2020
+3
+Document Number: 88751
+For technical questions within your region: DiodesAmericas@vishay.com, DiodesAsia@vishay.com, DiodesEurope@vishay.com
+THIS DOCUMENT IS SUBJECT TO CHANGE WITHOUT NOTICE. THE PRODUCTS DESCRIBED HEREIN AND THIS DOCUMENT
+ARE SUBJECT TO SPECIFIC DISCLAIMERS, SET FORTH AT www.vishay.com/doc?91000
+Fig. 3 - Typical Instantaneous Forward Characteristics
+Fig. 4 - Typical Reverse Current Characteristics
+Fig. 5 - Typical Junction Capacitance
+Fig. 6 - Typical Transient Thermal Impedance
+PACKAGE OUTLINE DIMENSIONS in inches (millimeters)
+10
+100
+1000
+10000
+0.01
+0.1
+1
+10
+100
+0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+1.6
+2nd line
+Instantaneous Forward Current (A)
+Instantaneous Forward Voltage (V)
+TJ = 150 °C
+TJ = -40 °C
+TJ = 25 °C
+10
+100
+1000
+10000
+0.000001
+0.00001
+0.0001
+0.001
+0.01
+0.1
+1
+10
+100
+1000
+0
+20
+40
+60
+80
+100
+1st line
+2nd line
+Instantaneous Reverse Current (mA)
+Percent of Rated Peak Reverse Voltage (%)
+TJ = 125 °C
+TJ = 75 °C
+TJ = -40 °C
+TJ = 25 °C
+TJ = 150 °C
+0.1
+1
+10
+100
+10
+1000
+Reverse Voltage (V)
+Junction Capacitance (pF)
+100
+SS32 thru SS34
+SS35 and SS36
+TJ = 25 °C
+f = 1.0 MHz
+Vsig = 50 mVp-p
+0.01
+0.1
+1
+10
+100
+0.1
+1
+10
+100
+Transient Thermal Impedance (°C/W)
+t - Pulse Duration (s)
+Cathode Band
+SMC (DO-214AB)
+0.126 (3.20)
+0.114 (2.90)
+0.246 (6.22)
+0.220 (5.59)
+0.280 (7.11)
+0.260 (6.60)
+0.012 (0.305)
+0.006 (0.152)
+0.008 (0.2)
+0 (0)
+0.320 (8.13)
+0.305 (7.75)
+0.060 (1.52)
+0.030 (0.76)
+0.103 (2.62)
+0.079 (2.06)
+Mounting Pad Layout
+0.126 (3.20) MIN.
+0.060 (1.52) MIN.
+0.185 (4.69) MAX.
+0.320 (8.13) REF.
+
+Legal Disclaimer Notice
+www.vishay.com
+Vishay
+   
+ 
+Revision: 01-Jan-2026
+1
+Document Number: 91000
+THIS DOCUMENT IS SUBJECT TO CHANGE WITHOUT NOTICE. THE PRODUCTS DESCRIBED HEREIN AND THIS DOCUMENT
+ARE SUBJECT TO SPECIFIC DISCLAIMERS, SET FORTH AT www.vishay.com/doc?91000
+Disclaimer
+ALL PRODUCT, PRODUCT SPECIFICATIONS AND DATA ARE SUBJECT TO CHANGE WITHOUT NOTICE TO IMPROVE 
+RELIABILITY, FUNCTION OR DESIGN OR OTHERWISE. 
+Vishay Intertechnology, Inc., its affiliates, agents, and employees, and all persons acting on its or their behalf (collectively, 
+“Vishay”), disclaim any and all liability for any errors, inaccuracies or incompleteness contained in any datasheet or in any other 
+disclosure relating to any product.
+Vishay makes no warranty, representation or guarantee regarding the suitability of the products for any particular purpose or 
+the continuing production of any product. To the maximum extent permitted by applicable law, Vishay disclaims (i) any and all 
+liability arising out of the application or use of any product, (ii) any and all liability, including without limitation special, 
+consequential or incidental damages, and (iii) any and all implied warranties, including warranties of fitness for particular 
+purpose, non-infringement and merchantability.
+Statements regarding the suitability of products for certain types of applications are based on Vishay's knowledge of typical 
+requirements that are often placed on Vishay products in generic applications. Such statements are not binding statements 
+about the suitability of products for a particular application. It is the customer's responsibility to validate that a particular product 
+with the properties described in the product specification is suitable for use in a particular application. Parameters provided in 
+datasheets and / or specifications may vary in different applications and performance may vary over time. All operating 
+parameters, including typical parameters, must be validated for each customer application by the customer's technical experts. 
+Product specifications do not expand or otherwise modify Vishay's terms and conditions of purchase, including but not limited 
+to the warranty expressed therein.
+Hyperlinks included in this datasheet may direct users to third-party websites. These links are provided as a convenience and 
+for informational purposes only. Inclusion of these hyperlinks does not constitute an endorsement or an approval by Vishay of 
+any of the products, services or opinions of the corporation, organization or individual associated with the third-party website. 
+Vishay disclaims any and all liability and bears no responsibility for the accuracy, legality or content of the third-party website 
+or for that of subsequent links.
+Vishay products are not designed for use in life-saving or life-sustaining applications or any application in which the failure of 
+the Vishay product could result in personal injury or death unless specifically qualified in writing by Vishay. Customers using or 
+selling Vishay products not expressly indicated for use in such applications do so at their own risk. Please contact authorized 
+Vishay personnel to obtain written terms and conditions regarding products designed for such applications.
+No license, express or implied, by estoppel or otherwise, to any intellectual property rights is granted by this document or by 
+any conduct of Vishay. Product names and markings noted herein may be trademarks of their respective owners.
+© 2026 VISHAY INTERTECHNOLOGY, INC. ALL RIGHTS RESERVED

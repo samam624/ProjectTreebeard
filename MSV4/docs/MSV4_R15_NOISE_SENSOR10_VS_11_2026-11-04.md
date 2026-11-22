@@ -263,3 +263,70 @@ Begonia's pot is small enough that 279-337 g wets most of it.
 
 **Check:** the 11-15 watering was 337 g. A full soak (about 2 cups, as on 10-19) should bring the
 offset back toward the 10-19 line once it settles; another small watering should step it up again.
+
+## Update 2026-11-18: what the within-day wobble is made of (measured)
+
+**Question (maintainer, 2026-11-18):** the within-day wobble of hourly medians (3.6 g Alocasia
+against 0.4 g Begonia in `stored_vs_mass_s10_s11.png`) is the number that makes the Begonia look
+so much better. What is it?
+
+Script: `MSV4/scripts/msv4_within_day_wobble.py`, figure
+`data/sensor_logs/latest/within_day_wobble_s10_s11.png`. Data to 11-15, the caches above, each pot
+through its own 12.0 / 31.2 units/g line.
+
+**Method correction.** The 3.6 / 0.44 g figures take hourly medians about a 24 h running median
+whose window is one-sided near a watering, so the drying slope or the post-watering overshoot leaks
+in. Counting only hours whose full +-12 h window is clean on both sides:
+
+| | Alocasia | Begonia |
+|---|---|---|
+| wobble, clean windows | **3.00 g rms** (676 h) | **0.28 g rms** (342 h) |
+| white floor, per-reading noise / sqrt(readings per hour) | 0.26 g | 0.40 g |
+| part that repeats at the same hour every day | 1.24 g | 0.08 g |
+| hourly steps up / down (water is never added inside a cycle) | 219 g / 1560 g | 20 g / 595 g |
+
+The Begonia is at its averaging floor. The Alocasia is about 11x its floor.
+
+**It is not a property of the probe. It switches on as the pot dries.** Daily wobble, Alocasia:
+under 0.8 g on every day from 10-12 to 10-22 and from 11-11 to 11-15; 2.5-8.5 g on 10-23..10-28 and
+11-04..11-09 (11-05: 0.24 g). By watering cycle: 10-10 cycle 0.47 g, 10-19 cycle 3.58 g, 10-30 cycle
+3.91 g, 11-10 cycle 0.54 g. Inside the 10-19 and 10-30 cycles it starts on day 4 after the
+watering and grows as the pot dries (8.5 g on 10-23, 8.2 g on 11-08). Correlation of daily wobble
+with days since watering: Alocasia +0.42, Begonia +0.78; the Begonia's rises the same way, but
+only from 0.0 to 0.5 g. The 10-10 cycle (the first after planting) stayed quiet through day 6.
+Board 1's firmware did not change in this period (262166 from 10-11).
+
+**What a noisy day looks like.** 10-23: the reading drops about 20 g from 13:00 to 17:00 while the
+tip warms from 23 to 28.5 C, then rises back above the day's median by 23:00. 11-08 has the same
+shape. On 10-17 the tip made the same 22-28.5 C swing and the reading did not move.
+
+**The scale does not see it.** Consecutive weighings 4-16 h apart, the probe's grams over the
+same interval:
+
+| | Alocasia | Begonia |
+|---|---|---|
+| daytime intervals, scale / probe | -2.78 / -2.75 g/h (14) | -1.57 / -1.24 g/h (2) |
+| overnight intervals, scale / probe | -1.04 / -1.46 g/h (16) | -1.64 / -1.72 g/h (2) |
+| probe minus scale, per interval | **11.4 g rms** (30 pairs) | 3.8 g rms (4 pairs) |
+
+The Alocasia's real drying is concentrated in the day on the scale too (about 2.8 against 1.0 g/h),
+so part of the probe's midday drop is real. The afternoon drop and evening recovery, though, cancel
+over a full day: 10-24 10:40 to 00:19, scale -42 g, probe -41 g.
+
+**What it is not**, in the noisy period 10-23..11-09 (Alocasia, 374 h, 4.02 g rms there):
+- the tip temperature: a straight line leaves 3.42 g (r -0.52, -14 units/C, i.e. the 2 %/C
+  correction would need to be about 1.7 %/C); lagged by -3..+6 h it leaves 3.32-4.01 g; adding the
+  warming rate leaves 3.30 g;
+- the die temperature (the electronics above the soil): r -0.55; die plus tip leaves 3.31 g;
+- the battery: r -0.34; the battery was falling through the 10-23..10-30 noise and rising through
+  the 11-04..11-09 noise.
+In the quiet periods every one of these is r below 0.2 and the wobble is 0.4-0.5 g. On the
+Begonia, over the same 10-23..11-09 window, wobble 0.20 g, r -0.10 against tip and -0.09 against die.
+
+**Inferred, not tested:** a daytime, reversible swing in the soil water right around the
+Alocasia's blade that the pot's total weight does not show. One candidate is root uptake near the
+blade in the afternoon with water moving back in overnight. That would get worse as the soil
+dries, because drier soil passes water much more slowly. The other is that drier soil changes the
+reading's real temperature coefficient while the correction stays fixed at 2 %/C. That alone fits
+only about 20 % of it here. Either way the wobble is in the soil around the blade, not in the
+readout, which matches the 11-04 finding that the two boards' per-reading noise is the same.

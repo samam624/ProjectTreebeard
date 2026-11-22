@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-12
 
-This is the durable hardware and firmware reference for the MSV2 display center. It supersedes
+This is the durable hardware and firmware reference for the Treebeard display center. It supersedes
 older assumptions that the backlight is permanently wired on or that the touch controller is
 unknown.
 

@@ -24,7 +24,7 @@ active engineering project, and the repository keeps the failures alongside the 
   &nbsp;
   <img src="MSV3/docs/images/alocasia_five_probe_test.jpg" height="260" alt="Five probes sharing one Alocasia pot for a side-by-side test">
   &nbsp;
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="260" alt="DisplayCenter receiver showing plant cards">
+  <img src="DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="260" alt="DisplayCenter receiver showing plant cards">
 </p>
 
 <p align="center"><em>Four assembled MSV4 boards, an MSV3 probe in its pot, five probes sharing one
@@ -140,14 +140,14 @@ display and uploads over Wi-Fi.
 
 **Main parts:** ESP32-S3-WROOM-1U-N16R8 (external antenna) · AP2112K-3.3 LDO · 2N7002 switches ·
 USB-C · buzzer<br>
-[Board page](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/) ·
-[Schematic](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_schematic_overview.png) ·
-[Gerbers](DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/DisplayCenter_controller_fabrication_2026-07-14.zip)
+[Board page](DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/) ·
+[Schematic](DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/images/DisplayCenter_schematic_overview.png) ·
+[Gerbers](DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/DisplayCenter_controller_fabrication_2026-07-14.zip)
 
 <p>
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="280" alt="DisplayCenter receiver showing plant cards">
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_layout.png" height="280" alt="DisplayCenter PCB layout">
-  <img src="DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_3d.png" height="280" alt="DisplayCenter PCB 3D view">
+  <img src="DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/images/DisplayCenter_receiver.jpg" height="280" alt="DisplayCenter receiver showing plant cards">
+  <img src="DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_layout.png" height="280" alt="DisplayCenter PCB layout">
+  <img src="DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/images/DisplayCenter_pcb_3d.png" height="280" alt="DisplayCenter PCB 3D view">
 </p>
 
 ### MSV2 probe

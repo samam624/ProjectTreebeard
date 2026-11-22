@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000" viewBox="0 0 1200 1000">
+<rect width="1200" height="1000" fill="#fafafa"/>
+<style>text{font-family:Arial,sans-serif;fill:#152635}.title{font-size:23px;font-weight:bold}.small{font-size:14px}</style>
+<text x="30" y="35" class="title">Pump controller: saved Altium footprint geometry</text>
+<text x="30" y="60" class="small">Component-side view. Each panel has its own scale. Yellow = copper; black = holes; blue = body envelope.</text>
+<text x="30" y="120" class="title">TPS70933DBVR</text>
+<text x="30" y="143" class="small">Body: 1.6 × 2.9 mm; height ≤ 1.45 mm</text>
+<rect x="142.85714285714286" y="181.42857142857144" width="114.28571428571429" height="207.14285714285714" fill="#dce9f2" stroke="#59768b"/>
+<rect x="253.57141214285713" y="195.71428285714285" width="78.57145285714286" height="42.85705714285715" fill="#d7ac3a" stroke="none"/>
+<text x="292.85713857142855" y="222.14281142857143" text-anchor="middle" font-size="15" fill="#111">5</text>
+<rect x="253.57141214285713" y="331.42866" width="78.57145285714286" height="42.85705714285715" fill="#d7ac3a" stroke="none"/>
+<text x="292.85713857142855" y="357.85718857142854" text-anchor="middle" font-size="15" fill="#111">4</text>
+<rect x="67.857135" y="331.42866" width="78.57145285714286" height="42.85705714285715" fill="#d7ac3a" stroke="none"/>
+<text x="107.14286142857142" y="357.85718857142854" text-anchor="middle" font-size="15" fill="#111">3</text>
+<rect x="67.857135" y="263.57147142857144" width="78.57145285714286" height="42.85705714285715" fill="#d7ac3a" stroke="none"/>
+<text x="107.14286142857142" y="290.0" text-anchor="middle" font-size="15" fill="#111">2</text>
+<rect x="67.857135" y="195.71428285714285" width="78.57145285714286" height="42.85705714285715" fill="#d7ac3a" stroke="none"/>
+<text x="107.14286142857142" y="222.14281142857143" text-anchor="middle" font-size="15" fill="#111">1</text>
+<text x="30" y="440" class="small">TB_TPS709_DBV0005A</text>
+<text x="430" y="120" class="title">AO3400A</text>
+<text x="430" y="143" class="small">Body: 2.9 × 1.6 mm; height ≤ 1.25 mm</text>
+<rect x="498.1081081081081" y="228.78378378378378" width="203.78378378378378" height="112.43243243243245" fill="#dce9f2" stroke="#59768b"/>
+<rect x="571.8918588648648" y="172.5675247027027" width="56.21628227027027" height="56.21628227027027" fill="#d7ac3a" stroke="none"/>
+<text x="600.0" y="205.67566583783784" text-anchor="middle" font-size="15" fill="#111">3</text>
+<rect x="638.6486605945946" y="341.21619302702703" width="56.21628227027027" height="56.21628227027027" fill="#d7ac3a" stroke="none"/>
+<text x="666.7568017297298" y="374.32433416216213" text-anchor="middle" font-size="15" fill="#111">2</text>
+<rect x="505.1350571351351" y="341.21619302702703" width="56.21628227027027" height="56.21628227027027" fill="#d7ac3a" stroke="none"/>
+<text x="533.2431982702702" y="374.32433416216213" text-anchor="middle" font-size="15" fill="#111">1</text>
+<text x="430" y="440" class="small">TB_AOS_SOT23_PO00001M</text>
+<text x="830" y="120" class="title">SS34-E3/57T</text>
+<text x="830" y="143" class="small">Body: 7.11 × 6.22 mm; height ≤ 2.62 mm</text>
+<rect x="876.5625" y="177.0138888888889" width="246.875" height="215.9722222222222" fill="#dce9f2" stroke="#59768b"/>
+<rect x="1081.4236246527778" y="229.4444232638889" width="59.722190972222215" height="111.11115347222221" fill="#d7ac3a" stroke="none"/>
+<text x="1111.2847201388888" y="290.0" text-anchor="middle" font-size="15" fill="#111">2</text>
+<rect x="858.854184375" y="229.4444232638889" width="59.722190972222215" height="111.11115347222221" fill="#d7ac3a" stroke="none"/>
+<text x="888.7152798611111" y="290.0" text-anchor="middle" font-size="15" fill="#111">1</text>
+<text x="830" y="440" class="small">TB_VISHAY_SMC_SS34</text>
+<text x="30" y="570" class="title">BA4AAPC</text>
+<text x="30" y="593" class="small">Body: 57.48 × 63.09 mm; height ≤ 15.88 mm</text>
+<rect x="83.4077079107505" y="607.0283975659229" width="233.184584178499" height="255.94320486815417" fill="#dce9f2" stroke="#59768b"/>
+<circle cx="200.0" cy="624.2292089249493" r="4.117649127789046" fill="#161e25"/>
+<circle cx="200.0" cy="845.7707910750507" r="4.117649127789046" fill="#161e25"/>
+<rect x="304.34076819472614" y="764.7565894523326" width="8.924952048681542" height="8.924952048681542" fill="#d7ac3a" stroke="none"/>
+<circle cx="308.8032442190669" cy="769.2190654766734" r="2.0689665314401626" fill="#161e25"/>
+<text x="308.8032442190669" y="774.2190654766734" text-anchor="middle" font-size="15" fill="#111">2</text>
+<rect x="304.34076819472614" y="816.2778876267748" width="8.924952048681542" height="8.924952048681542" fill="#d7ac3a" stroke="none"/>
+<circle cx="308.8032442190669" cy="820.7403636511157" r="2.0689665314401626" fill="#161e25"/>
+<text x="308.8032442190669" y="825.7403636511157" text-anchor="middle" font-size="15" fill="#111">1</text>
+<text x="30" y="890" class="small">TB_MPD_BA4AAPC_REVH</text>
+<text x="30" y="913" class="small">1 / 2 are neutral contact IDs: confirm polarity.</text>
+<text x="430" y="570" class="title">Generic radial electrolytic</text>
+<text x="430" y="593" class="small">Body: 10 × 10 mm; height ≤ 20 mm</text>
+<rect x="481.8181818181818" y="616.8181818181818" width="236.36363636363637" height="236.36363636363637" fill="#dce9f2" stroke="#59768b"/>
+<rect x="637.8181962363636" y="713.7272852545454" width="42.54542949090909" height="42.54542949090909" fill="#d7ac3a" stroke="none"/>
+<circle cx="659.0909109818182" cy="735.0" r="10.636372381818182" fill="#161e25"/>
+<text x="659.0909109818182" y="740.0" text-anchor="middle" font-size="15" fill="#111">2</text>
+<rect x="519.6363742727273" y="713.7272852545454" width="42.54542949090909" height="42.54542949090909" fill="#d7ac3a" stroke="none"/>
+<circle cx="540.9090890181818" cy="735.0" r="10.636372381818182" fill="#161e25"/>
+<text x="540.9090890181818" y="740.0" text-anchor="middle" font-size="15" fill="#111">1</text>
+<text x="430" y="890" class="small">TB_CAP_RADIAL_D10_P5</text>
+<text x="430" y="913" class="small">5 mm lead pitch. Pad 1 = positive.</text>
+</svg>

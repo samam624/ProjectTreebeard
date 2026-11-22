@@ -2,6 +2,11 @@
 
 Cosmetic/internal rename only. **No wire format, database, or persisted identifier changed.**
 
+> **2026-11-19:** a second pass renamed the remaining branding and moved
+> `DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/` to `Treebeard_ESP32_DisplayCenter/` (the repo
+> folder holds only exports; the Altium project is outside the repo, so the keep-list reason
+> below did not bind it). See [pass 2 and the Tier 3 plan](../../docs/PROJECT_RENAME_PASS2_2026-11-19.md).
+
 ## "MSV2" means three different things — do not blanket-replace it
 
 | category | examples | action |

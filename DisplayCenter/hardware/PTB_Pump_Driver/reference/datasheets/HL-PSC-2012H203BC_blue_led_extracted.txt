@@ -1,0 +1,595 @@
+
+===PAGE 1===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  1 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+RoHS 
+ Specification  
+规 格 书 
+Client approval 
+客户审核 
+Hongli approval 
+鸿利智汇审核 
+Approval 
+核准 
+Audit 
+确认 
+Approval 
+核准 
+Audit 
+确认 
+Confirmation 
+制作 
+ 
+ 
+ 
+ 
+揭秒业 
+□ Qualified                    □ Disqualified 
+          接受                不接受 
+   DATE: 
+    日期： 
+Adr：No.1,Xianke Yi Road,Huadong Town,Huadu District,Guangzhou,China 
+地址：中国广州市花都区花东镇先科一路1号 
+   
+                               
+ 
+Web/网址：www.honglitronic.com                                   
+     Customer Name： 
+                       客户名称： 
+       Customer P/N： 
+                        客户品号： 
+         Factory P/N： HL-PSC-2012H203BC  
+                        公司品号： 
+        Sending Date： 
+                        送样日期： 
+注:1.此规格书以中英文方式书写,若有冲突以中文版本为准文本. 
+   2.此规格书的最终解释权归鸿利智汇集团股份有限公司 
+   3.此规格书的有效期限为两年,自盖章或签字之日起计算,期满时双方可以续签协议,但应采用书面形式 
+Tel/电话：020-37705135
+Fax/传真：020-37705136     
+
+===PAGE 2===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  2 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+HL-PSC-2012H203BC 
+Package Dimensions（封装尺寸） 
+Description（描述） 
+The Blue source color devices are made with  InGaN  on Substrate Light 
+Emitting Diode 
+蓝光LED由InGaN三种元素芯片激发而成 
+Applications（应用） 
+■ Optical indicator（光学指示） 
+■ Indoor display（室内显示） 
+■ Backlight for LCD, switch and Symbol, display 
+（LCD背光、转换器，开关和标志，显示器等） 
+■ General use（一般应用） 
+Recommended Soldering Pattern 
+（建议焊盘尺寸图） 
+Features( 特征） 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ATTENTION 
+OBSERVE PRECAUTIONS 
+FOR HANDLING 
+ELECTROSTATIC 
+DISCHARGE 
+SENSITIVE 
+DEVICES 
+注意：操作时应注意静电敏感
+释放设备装置 
+0.90 [0.04]
+1.20 [0.05]
+3.00 [0.12]
+Notes:（备注） 
+1. Mark the size of the unit is mm.marked in brackets（标注尺寸单位为毫米,括号内标注为英寸） 
+2. All dimensions allow tolerance ± 0.1mm（所有尺寸允许公差±0.1mm ） 
+Extremely wide viewing angle.（宽的发光角度）
+Suitable for all SMT assembly and solder process.（适用于所有的SMT组装和焊接工艺）
+Available on tape and reel.（适用于载带及卷轴）
+Moisture sensitivity level: Level 4.（防潮等级 Level 4）
+Package:4000pcs/reel..(包装每卷4000PCS）
+RoHS compliant. (RoHS 认证）
+
+===PAGE 3===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  3 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+HL-PSC-2012H203BC 
+Parameter（参数） 
+Symbol 
+（符号） 
+Min. 
+（最小） 
+Typ. 
+（平均） 
+Max. 
+（最大） 
+Units 
+（单位） 
+Test  
+Conditions 
+测试条件 
+Forward Voltage  
+正向电压 
+VF  
+2.8 
+- - 
+3.4 
+V  
+IF=20mA  
+Reverse Current 
+反向电流 
+IR 
+- - 
+- - 
+10 
+μA 
+VR = 5V 
+Dominate Wavelength 
+主波长 
+λd 
+464 
+- - 
+474 
+nm 
+IF=20mA  
+Selection Guide（选择指南） 
+Electrical / Optical Characteristics at Ta=25°C     电性与光学特性 
+Parameter（参数） 
+Rating（值） 
+Units（单位） 
+Symbol（符号） 
+Power Dissipation（功耗） 
+102 
+mW 
+Pd 
+Forward Current（正向电流） 
+30 
+mA 
+IF 
+Peak Pulse Current [1]（峰值脉冲电流） 
+60 
+mA 
+IFP 
+Reverse Voltage（反向电压） 
+5 
+V 
+VR 
+Electrostatic Discharge (HBM)（静电） 
+1000 
+V 
+ESD 
+Operating Temperature（操作温度） 
+-40 ~ +85 
+℃ 
+Topr 
+Storage Temperature（保存温度） 
+℃ 
+-40 ~ +100 
+Tstg 
+Note:(备注） 
+The 2θ1/2 measurement error  ±10 degrees( 角度测试误差为±10°  )     
+2. the above luminous intensity measurement allowance tolerance ±10%. 
+    上述发光强度的测试允许公差为±10% 
+Absolute Maximum Ratings at Ta=25°C      绝对最大额定值 
+Note:（备注） 
+1. 1/10 Duty cycle, 0.1ms pulse width.（脉宽0.1ms,周期1/10） 
+2. The above forward voltage measurement allowance tolerance  is ±0.1V.（以上所示电压测量误差±0.1V） 
+Part No. 型号 
+Dice  
+Lens Type  
+胶体类型 
+Luminous intensity(mcd)                                          
+光强@ 20mA       
+Viewing                                       
+Angle  
+角度 
+Min 
+Typ 
+2θ1/2 
+HL-PSC-2012H203BC 
+Blue (InGaN )    
+Water Clear   
+160 
+220 
+140°     
+
+===PAGE 4===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  4 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+HL-PSC-2012H203BC 
+Relative spectral emission 
+           相对光谱分布特性曲线 
+Radiation diagram  
+辐射图特性曲线 
+Ambient Temperature vs. Forward Current 
+环境温度与正向电流特性曲线 
+Forward Voltage VS. Forward Current 
+         正向电压与正向电流特性曲线 
+Forward Current VS. Relative Intensity 
+正向电流与相对光强特性曲线 
+Typical optical characteristics curves   典型光学特性曲线 
+Ambient Temperature VS. Relative Intensity  
+环境温度与相对光强特性曲线 
+0
+10
+20
+30
+40
+50
+60
+0
+20
+40
+60
+80
+100
+Ambient Temperature      Ta(℃)
+Forward Current(mA)
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+-40
+-20
+0
+20
+40
+60
+80
+Ambient Temperature     Ta(℃)
+Relative Luminous Intensity
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+380
+460
+540
+620
+700
+780
+Wavelength(nm)
+Relative luminous intensity
+
+===PAGE 5===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  5 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+Test Items  
+项目 
+Ref.Standard 
+参考标准 
+Test Condition 
+测试条件 
+Time 
+时间 
+Quantity 
+数量 
+Ac/Re 
+接收/拒收 
+Reflow 
+回流焊 
+JESD22-B106 
+Temp:260℃max   
+ T=10 sec  
+3 times. 
+22Pcs. 
+0/1 
+Temperature Cycle 
+温度循环 
+JESD22-A104 
+100℃±5℃   30 min. 
+↑↓5 min 
+-40℃±5℃   30 min. 
+100 Cycles 
+22Pcs. 
+0/1 
+High Temperature Storage 
+高温保存 
+JESD22-A103 
+Temp:100℃±5℃      
+1000Hrs. 
+22Pcs. 
+0/1 
+Low Temperature Storage 
+低温保存 
+JESD22-A119 
+Temp:-40℃±5℃      
+1000Hrs. 
+22Pcs. 
+0/1 
+Life Test 
+常温通电 
+JESD22-A108 
+Ta=25℃±5℃      
+IF=20mA 
+1000Hrs. 
+22Pcs. 
+0/1 
+High Temperature 
+High Humidity   
+高温高湿保存 
+JESD22-A101 
+85℃±5℃/ 85%RH  
+1000Hrs. 
+22Pcs. 
+0/1 
+HL-PSC-2012H203BC 
+Reliability Test Items And Conditions 信赖性测试项目及条件 
+*The technical information shown in the data sheets are limited to the typical characteristics and 
+circuit examples of the referenced products. It does not constitute the warranting of industrial 
+property nor the granting of any license. 
+数据工作表中所示的技术信息仅限于典型特征和电路实例引用的产品.它既不构成工业特性的保证,也不构成任何许
+可的授权 
+Criteria For Judging Damage 失效判定标准 
+Test Items  
+项目  
+Symbol 
+符号  
+Test Condition 
+测试条件  
+Criteria For Judgement 
+判定标准 
+Min. 最小 
+Max. 最大 
+Forward Voltage 
+正向电压 
+VF  
+IF=20mA 
+- - 
+U.S.L*)x1.1 
+Reverse Current 
+反向电流 
+IR 
+VR = 5V 
+- - 
+U.S.L*)x2.0 
+Luminous Flux 
+光通量 
+lm 
+IF=20mA 
+L.S.L*)x0.7 
+- - 
+U.S.L: Upper standard level    规格上限                    L.S.L: Lower standard level    规格下限 
+
+===PAGE 6===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  6 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+HL-PSC-2012H203BC 
+SMT Reflow Soldering Instructions  SMT回流焊说明 
+Soldering iron  烙铁焊接 
+1.Reflow soldering should not be done more than 
+two times.  回流焊不可以做两次以上 
+2.When  soldering , do not put stress on the LEDs 
+during heating  
+当焊接时，不要在材料受热时用力压胶体表面 
+1.When hand soldering, keep the temperature of  iron below less 300℃ less than 3 seconds 
+当手工焊接时，烙铁的温度必须小于300℃，时间不可超过3秒 
+2.The hand solder should be done only one times  
+手工焊接只可焊接一次 
+Repairing   修补 
+       Repair should not be done after the LEDs have been soldered. 
+When repairing is unavoidable, a double-head soldering iron should 
+be used (as below figure). It should be confirmed in advance  
+whether the characteristics of LEDs will or will not be damaged by 
+repairing. 
+LED回流焊后不应该修复，当修复是不可避免时，必须使用双头烙铁（如下
+图），但必须事先确认此种方式会或不会损坏LED本身的特性。 
+Cautions   注意事项 
+       The encapsulated material of the LEDs is silicone. Therefore the LEDs have a soft surface on 
+the top of package. The pressure to the top surface will be influence to the reliability of the LEDs. 
+Precautions should be taken to avoid the strong pressure on the encapsulated part. So when use 
+the picking up nozzle, the pressure on the silicone resin should be proper. 
+LED封装为硅胶，故LED胶体表面较软，用力按压胶体表面会影响LED可靠性，因此应有预防措施避免在封装的零件上的
+强大压力，当使用吸嘴时，胶体表面的压力应是恰当的。 
+<PH7
+3.Do not stack together assembled PCBs containing 
+LEDs. Impact may scratch the silicone lens or damage 
+the internal circuitry 
+不可将模组材料堆积在一起，它可能会损坏内部电路 
+4.Not suitable to operate in acidic envi-
+ronment, PH<7 
+不可用在PH<7的酸性场所 
+
+===PAGE 7===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  7 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+HL-PSC-2012H203BC 
+Label  标签 
+Tape Specifications   (Units : mm)        载带规格（单位：mm) 
+Reel  Dimensions 
+卷轴尺寸 
+Moisture Resistant Packaging     防潮带包装 
+Note: The tolerances unless mentioned is ±0.1mm ,  Unit: mm         注：标注公差为±0.1mm ，单位：mm  
+13.50±0.30
+60.00±0.40
+178.00±0.20
+8.00±0.50
+PartNo: Part number                 型号 
+IV:  Luminous intensity rank  亮度等级 
+WD:  Dominate Wavelength  波长等级 
+VF:  Forward voltage rank     电压等级 
+LotNo:   Lot number                    批号 
+
+===PAGE 8===
+     SPEC NO：B-10-C-0067                       REV NO:  A/6                          DATE: AUG/10/2017                          PAGE:  8 OF 7                            
+ 
+ 
+Under Development 
+ 
+Mass production 
+● 
+修订次数 
+修订人 
+修订内容 
+修订日期 
+版次 
+1 
+谭娅 
+中英文版 
+2012.9.19 
+A3 
+2 
+林桂全 
+修改发光角度 
+2015.09.09 
+A4 
+3 
+揭秒业 
+修改封面 
+2016.8.12 
+A5 
+4 
+揭秒业 
+统一封面和标签 
+2017.8.10 
+A6 
+5 
+ 
+ 
+ 
+ 
+6 
+ 
+ 
+ 
+ 
+7 
+ 
+ 
+ 
+ 
+8 
+ 
+ 
+ 
+ 
+9 
+ 
+ 
+ 
+ 
+10 
+ 
+ 
+ 
+ 
+11 
+ 
+ 
+ 
+ 
+12 
+ 
+ 
+ 
+ 
+13 
+ 
+ 
+ 
+ 
+14 
+ 
+ 
+ 
+ 
+15 
+ 
+ 
+ 
+ 
+16 
+ 
+ 
+ 
+ 
+17 
+ 
+ 
+ 
+ 
+18 
+ 
+ 
+ 
+ 
+19 
+ 
+ 
+ 
+ 
+20 
+ 
+ 
+ 
+ 
+21 
+ 
+ 
+ 
+ 
+22 
+ 
+ 
+ 
+ 
+23 
+ 
+ 
+ 
+ 
+24 
+ 
+ 
+ 
+ 
+25 
+ 
+ 
+ 
+ 

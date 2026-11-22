@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Push an MSV2 display ui.json file to the ESP32 runtime.
+"""Push a Treebeard display ui.json file to the ESP32 runtime.
 
 Use the IP printed in the ESP32 serial monitor. If it prints 192.168.4.1,
-connect your computer to the board's MSV2-Display WiFi network first.
+connect your computer to the board's Display-Center WiFi network first (MSV2-Display on firmware before rename-pass2-v3).
 
 Examples:
   python scripts/push_display_ui.py --file ui/display_default.json
@@ -57,11 +57,11 @@ def push(url: str, path: Path) -> None:
 def print_error(exc: BaseException, url: str) -> None:
     print(f"Push failed: {exc}")
     print(f"Check the board with: http://{url.split('://', 1)[-1].split('/', 1)[0]}/ping")
-    print("If the board printed 192.168.4.1, your computer must be on the MSV2-Display WiFi network.")
+    print("If the board printed 192.168.4.1, your computer must be on the board's setup WiFi network (Display-Center; MSV2-Display on older firmware).")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Push display UI JSON to an MSV2 ESP32 display.")
+    parser = argparse.ArgumentParser(description="Push display UI JSON to a Treebeard ESP32 display.")
     parser.add_argument("--file", type=Path, default=Path("ui/display_default.json"), help="UI JSON file to push.")
     parser.add_argument("--url", default="http://192.168.4.1", help="ESP32 runtime base URL or /ui endpoint.")
     parser.add_argument("--ping", action="store_true", help="Only test the ESP32 /ping endpoint.")

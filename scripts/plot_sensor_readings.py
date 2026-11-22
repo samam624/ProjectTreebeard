@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Render a sensor-readings CSV (from log_sensor_readings.py) into a self-contained
 HTML chart: moisture and battery over time, each as its own single-series line
-chart (no dual-axis - see MSV2 dataviz conventions), with hover tooltips and a
+chart (no dual-axis - see the project dataviz conventions), with hover tooltips and a
 table-view toggle. Safe to re-run against a growing CSV at any point mid-run.
 
 Example:
@@ -449,7 +449,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Render a sensor-log CSV into an HTML chart.")
     parser.add_argument("--csv", type=Path, required=True, help="CSV produced by log_sensor_readings.py.")
     parser.add_argument("--sensor", type=int, default=None, help="Filter to this sensor ID (default: all rows in the CSV).")
-    parser.add_argument("--title", default="MSV2 sensor readings", help="Chart page title.")
+    parser.add_argument("--title", default="Treebeard sensor readings", help="Chart page title.")
     parser.add_argument("--out", type=Path, default=None, help="Output HTML path (default: <csv>.html).")
     args = parser.parse_args()
 

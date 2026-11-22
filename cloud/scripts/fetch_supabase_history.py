@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Fetch MSV2/MSV3 sensor history from Supabase into CSV.
+"""Fetch sensor history (every probe generation) from Supabase into CSV.
 
 Default output uses the same CSV schema log_sensor_readings.py produces, so
 plot_sensor_readings.py can render either source unchanged. `--raw` instead
@@ -101,7 +101,7 @@ def parse_ts(value: str) -> datetime:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fetch MSV2/MSV3 sensor history from Supabase into a CSV.")
+    parser = argparse.ArgumentParser(description="Fetch sensor history (every probe generation) from Supabase into a CSV.")
     parser.add_argument("--receiver", required=True, help="Receiver ID, e.g. MSV2088A3104A7AC.")
     parser.add_argument("--sensor", type=int, required=True, help="Sensor ID to fetch.")
     parser.add_argument("--since-hours", type=float, default=24, help="How far back to fetch.")

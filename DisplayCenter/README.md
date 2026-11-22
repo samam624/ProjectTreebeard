@@ -6,7 +6,7 @@ a phone-facing setup and status web app, and uploads history to the [cloud backe
 
 | | |
 | --- | --- |
-| **Hardware** | [Controller PCB](hardware/MSV2_ESP32_DisplayCenter/pcb/) · [Tabletop enclosure](hardware/MSV2_ESP32_DisplayCenter/V2/) |
+| **Hardware** | [Controller PCB](hardware/Treebeard_ESP32_DisplayCenter/pcb/) · [Tabletop enclosure](hardware/Treebeard_ESP32_DisplayCenter/V2/) |
 | **Firmware** | [`arduino/Treebeard_ESP32_Display_Runtime`](arduino/Treebeard_ESP32_Display_Runtime/) (production) and the hardware test sketches beside it |
 | **Tools** | [`scripts/`](scripts/): build and flash, and the `verify_*.mjs` checks that hold the probe, receiver and cloud formats equal |
 | **Write-ups** | [`docs/`](docs/) |
@@ -57,13 +57,13 @@ Use [WiFiCredentials.example.h](arduino/Treebeard_ESP32_Display_Runtime/WiFiCred
 
 On boot, the ESP32 first checks whether local-only mode was saved from the phone app. If local-only mode is off, it tries WiFi credentials saved in LittleFS by the phone app, then falls back to `WiFiCredentials.h` if present. While it is trying home WiFi, the TFT says which network it is joining. If it cannot connect within 15 seconds, it switches to first-time setup mode and the TFT shows plain setup instructions:
 
-- SSID: `MSV2-Display`
+- SSID: `Display-Center` (`MSV2-Display` on firmware before `rename-pass2-v3`, 2026-11-20)
 - Password: none; it is an open setup network
 - Board URL: `http://192.168.4.1`
 
-Phones that support captive portals should automatically open the setup app after joining `MSV2-Display`. If the phone only says "No Internet" and does not open a page, open Safari/Chrome and type `192.168.4.1`.
+Phones that support captive portals should automatically open the setup app after joining `Display-Center`. If the phone only says "No Internet" and does not open a page, open Safari/Chrome and type `192.168.4.1`.
 
-The first-time setup page also has a `Use without home WiFi` checkbox. If that is saved, the receiver remembers local-only mode, keeps broadcasting `MSV2-Display`, and shows the plant dashboard without joining a home network. To join home WiFi later, connect your phone to `MSV2-Display`, open `http://192.168.4.1/app`, uncheck local-only mode, enter the home WiFi name/password, and tap `Save & Reboot`.
+The first-time setup page also has a `Use without home WiFi` checkbox. If that is saved, the receiver remembers local-only mode, keeps broadcasting `Display-Center`, and shows the plant dashboard without joining a home network. To join home WiFi later, connect your phone to `Display-Center`, open `http://192.168.4.1/app`, uncheck local-only mode, enter the home WiFi name/password, and tap `Save & Reboot`.
 
 If the receiver has saved home WiFi credentials and cannot reconnect on boot, it reboots and retries the saved network twice before falling back to setup mode. This helps with slow routers and brief home-network outages without trapping users forever.
 
@@ -145,12 +145,12 @@ The ESP32 also serves a web app manifest, service worker, and icon. After openin
 After flashing generic receiver firmware:
 
 1. Power on the receiver.
-2. If it is not already on home WiFi, connect your phone to the open `MSV2-Display` WiFi network. No setup-network password is needed.
+2. If it is not already on home WiFi, connect your phone to the open `Display-Center` WiFi network. No setup-network password is needed.
 3. Wait for the setup page to appear. If it does not, open `http://192.168.4.1/app`.
 4. Go to `Setup > Receiver WiFi` if the page did not open there already.
 5. Either enter the home WiFi name/password, or check `Use without home WiFi` to keep the receiver local-only.
 6. Tap `Save & Reboot` or `Use Local Only`.
-7. If you entered home WiFi, reconnect your phone to home WiFi. If you chose local-only, stay on `MSV2-Display` when you want to edit the receiver.
+7. If you entered home WiFi, reconnect your phone to home WiFi. If you chose local-only, stay on `Display-Center` when you want to edit the receiver.
 8. The receiver screen should leave setup mode and show the plant dashboard.
 
 The app writes WiFi/local-only settings to `LittleFS` at `/wifi.json` through the `/wifi` endpoint. Use `Forget WiFi` to clear saved settings and reboot back into setup mode.
@@ -236,7 +236,7 @@ The ESP32 display sketch is now a small dashboard runtime. Flash it once, then i
 
 ```json
 {
-  "title": "MSV2 Garden",
+  "title": "Display Center",
   "layout": {
     "type": "grid",
     "orientation": "landscape",

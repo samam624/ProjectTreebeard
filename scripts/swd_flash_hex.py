@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send an Intel HEX image to the MSV2 ESP32-S3 SWD flasher over serial.
+"""Send an Intel HEX image to the Treebeard ESP32-S3 SWD flasher over serial.
 
 The flasher's `flash <hexaddr> <declen>` command only handles one contiguous
 byte range per call, but a real firmware/bootloader image (see

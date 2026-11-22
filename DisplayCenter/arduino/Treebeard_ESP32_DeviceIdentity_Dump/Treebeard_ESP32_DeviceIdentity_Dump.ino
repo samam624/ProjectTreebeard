@@ -51,7 +51,7 @@ void setup() {
 
 void loop() {
   Serial.println();
-  Serial.println("=== MSV2 identity dump ===");
+  Serial.println("=== Treebeard identity dump ===");
   dumpFile("/device.json");
   dumpFile("/cloud.json");
   Serial.println("=== end dump (repeats every 5s) ===");

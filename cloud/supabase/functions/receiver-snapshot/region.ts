@@ -43,6 +43,22 @@
 //      settles the pot at the same level, as one watered to runoff does; this pot does not. A
 //      line that cannot follow its own waterings cannot ratchet. The cost: a fertilized watering
 //      reads wetter for the same water, so "water now" comes later until the ions wash out.
+//   8. OUTDOORS (2026-11-19). Rain is a watering for the clock (the maintainer: "a big watering
+//      resets it like rain since its outdoors"), but rain on soil that is still wet is not where
+//      anyone waters, so it must not TEACH the line. A watering teaches only if the pot had dried
+//      by at least TEACH_MIN_DRY of what that watering put back: (scale in force - level before)
+//      >= TEACH_MIN_DRY x (settled - level before). Measured on sensor 1 (MSV2, outdoors): its
+//      line was taught from 11-13 (from 278, settled 316: dried 38) and a rain on 11-16 that began
+//      at 315 against a scale of 316 (dried 1, put back 15). The mean, 19.5, put "water now" at
+//      312, 34 counts above where the pot sits dry (278), and the card said WATER NOW at 308 after
+//      a week of rain. A teaching watering skipped this way no longer stops the region from being
+//      fixed at a later one (the fix used to need exactly the TEACH_CYCLES-th settled watering).
+//   9. In span mode a watering is a step of STEP_UP_SPAN of the drop (0.15 until 2026-11-19).
+//      Sensor 1 moves in steps of 7-9 counts against a drop of ~44; at 0.15 every one-step wiggle
+//      (and the diurnal 278 <-> 289) was a watering, 34 of them in six weeks, so the days since
+//      watering never passed one. Hourly steps measured against the stored drop on 2026-11-19:
+//      sensor 1 wiggles 0.15-0.29, its rain and waterings 0.32-2.2 (each event has an hour >= 0.5);
+//      every real watering of sensors 10 and 11 0.74-2.4. Share mode is unchanged.
 //
 // Everything is causal: the result at `nowMs` uses only hours at or before it.
 
@@ -93,6 +109,10 @@ export type RegionWatering = {
 
 export const REGION = {
   STEP_UP: 0.15,
+  // Rule 9: a watering in span mode, as a share of the drop.
+  STEP_UP_SPAN: 0.4,
+  // Rule 8: a watering teaches the line only if the pot had dried by this share of what it put back.
+  TEACH_MIN_DRY: 0.5,
   // A fall of the whole scale within an hour. 0.20 until 2026-10-18, when probe 7's first noon
   // after a watering fell 22 % and lost its region; sensor 9's noon sun falls reach 29 %.
   STEP_DOWN: 1.0,
@@ -191,6 +211,7 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
     const drop = anchor();
     return drop !== null ? drop : (settled !== null ? Math.max(settled - pre, 0) || null : null);
   };
+  const stepShare = mode === "span" ? REGION.STEP_UP_SPAN : REGION.STEP_UP;
 
   for (let i = 0; i < hours.length; i++) {
     const [hour, current] = hours[i];
@@ -203,7 +224,7 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
 
     if (pre !== null && hour >= quietUntilHour) {
       const scale = stepScale(pre);
-      const stepUp = scale !== null ? REGION.STEP_UP * scale
+      const stepUp = scale !== null ? stepShare * scale
         : mode === "share" ? Math.max(0.5 * (pre - base!), 0.02 * Math.abs(pre)) : 0.15 * Math.abs(pre);
       if (pre <= 0 && current > 0) {
         // Out of "nothing conducting": the probe went into soil. Not a watering, and the soil
@@ -240,7 +261,12 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
         // Where this watering happened, measured against the scale it ended. The first watering
         // on record has no scale before it; the one that follows stands in.
         const reference = scaleBeforeWatering ?? neu;
-        if (teachThisWatering && storedDrop === null && taughtDrops.length < REGION.TEACH_CYCLES) {
+        // Rule 8: rain (or a top-up) on soil still near its scale teaches nothing.
+        const driedEnough = reference - watering.levelBefore >= REGION.TEACH_MIN_DRY * (neu - watering.levelBefore);
+        if (teachThisWatering && !driedEnough && storedDrop === null && taughtDrops.length < REGION.TEACH_CYCLES) {
+          watering.verdict += "; soil had not dried: teaches nothing";
+        }
+        if (teachThisWatering && driedEnough && storedDrop === null && taughtDrops.length < REGION.TEACH_CYCLES) {
           const drop = mode === "share"
             ? 1 - (watering.levelBefore - base!) / (reference - base!)
             : reference - watering.levelBefore;
@@ -284,13 +310,14 @@ export function deriveRegion(sensor: RegionRawSensor, nowMs: number): RegionResu
         scaleVoid = false;
         if (!afterDisturbance) cyclesSettled++;
         const anchorComplete = storedDrop !== null || taughtDrops.length >= REGION.TEACH_CYCLES;
-        if (cyclesSettled === REGION.TEACH_CYCLES && anchorComplete && anchor() !== null) {
-          // The watering that completes the teaching fixes the region (or meets the stored one).
+        if (fixedLine === null && cyclesSettled >= REGION.TEACH_CYCLES && anchorComplete && anchor() !== null) {
+          // The watering that completes the teaching fixes the region. `>=`, not `===` (rule 8): a
+          // watering that taught nothing still settled, so the teaching can complete later.
           const candidate = windowFor(settled, anchor()!);
-          if (fixedLine === null && fits(candidate)) fixedLine = candidate;
-          if (fixedLine !== null) {
+          if (fits(candidate)) {
+            fixedLine = candidate;
             settled = fixedLine.full;
-            if (storedLine === null) watering.verdict += "; region fixed here";
+            watering.verdict += "; region fixed here";
           }
         }
       }

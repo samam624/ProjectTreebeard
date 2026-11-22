@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Continuously log MSV2 probe readings from the ESP32 display hub /data endpoint.
+"""Continuously log probe readings from the ESP32 display hub /data endpoint.
 
 Meant for long unattended runs (e.g. an overnight moisture-drydown test) - polls
 on an interval, appends one row per poll to a CSV, and keeps going through
@@ -59,7 +59,7 @@ def sensor_by_id(payload: dict) -> dict[int, dict]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Log MSV2 probe readings to CSV over time.")
+    parser = argparse.ArgumentParser(description="Log probe readings to CSV over time.")
     parser.add_argument("--url", default="http://192.168.4.1", help="ESP32 display hub base URL.")
     parser.add_argument("--sensor", type=int, required=True, help="Sensor ID to log.")
     parser.add_argument("--interval", type=float, default=5.0, help="Seconds between polls.")

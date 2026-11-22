@@ -457,7 +457,7 @@ def update_mobile_app_catalog(path: Path, sprites: list[Sprite], art_images: dic
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate MSV2 plant sprite firmware/web assets from GIFs.")
+    parser = argparse.ArgumentParser(description="Generate Treebeard plant sprite firmware/web assets from GIFs.")
     parser.add_argument("--source", type=Path, default=Path("assets/plant_gifs"), help="Folder containing source GIFs.")
     parser.add_argument("--out-sketch", type=Path, default=Path("arduino/Treebeard_ESP32_Display_Runtime"), help="ESP32 display sketch folder.")
     parser.add_argument("--generated", type=Path, default=Path("generated/plant_sprites"), help="Generated preview/snippet output folder.")

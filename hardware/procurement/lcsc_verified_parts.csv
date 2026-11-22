@@ -35,3 +35,7 @@ EXACT,B3F-1000,THT 6x6,tact switch,C93157,OMRON,B3F-1000,in stock,2026-09-19,
 EXACT,2.4GHz PCB antenna,50x10 mm,IPEX gen 1 (U.FL),C454914,ZIISOR (Ebyte),TX2400-PCB-5010,in stock (176),2026-09-19,DEAD: HJ Tech C1693678 and C1509197 (404 / no match)
 EXACT,Blue LED,0805,3.3V rail with 470 ohm,C497961,HONGLITRONIC,HL-PSC-2012H203BC,ordered 2026-07-31,2026-07-31,proven on MSV3; alt NationStar C84259 NCD0805B2. DEAD: Bivar SM0805UBWC C5919230 backordered
 EXACT,USBLC6-2P6,SOT-666,USB ESD,C15999,ST,USBLC6-2P6,ordered 2026-07-31,2026-07-31,
+LDO,3.3V,SOT-23-5,30V input 150mA,C89347,Texas Instruments,TPS70933DBVR,in stock (5950; MOQ/multiple 5),2026-11-11,Live browser verified; DBV non-A/B pinout
+MOSFET,N-channel,SOT-23,30V 48mOhm at 2.5V,C20917,Alpha & Omega Semiconductor,AO3400A,in stock (339570; MOQ/multiple 5),2026-11-11,Live browser verified
+Schottky,3A,SMC DO-214AB,40V,C13354,Vishay General Semiconductor,SS34-E3/57T,in stock (5990; MOQ/multiple 5),2026-11-11,Live browser verified; NOT SMA
+Battery holder,4xAA,PCB through-hole,MPD Rev H,C6748055,Memory Protection Devices Inc.,BA4AAPC,out of stock,2026-11-11,Live browser verified; alternate Digi-Key 2439225 availability needs recheck

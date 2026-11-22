@@ -1,4 +1,4 @@
-# MSV2 Supabase Setup
+# Treebeard Supabase Setup
 
 Project URL:
 

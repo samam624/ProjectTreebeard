@@ -11,7 +11,7 @@ design artifacts and measured results.
 - [MSV4 board 1 bring-up](../../MSV4/docs/MSV4_BOARD1_BRINGUP_2026-10-01.md): rail checks,
   resistance-based fault isolation and rework of three hidden fine-pitch solder faults, including a
   0 Ω short under R15.
-- [ESP32-S3 receiver PCB](../../DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/pcb/README.md):
+- [ESP32-S3 receiver PCB](../../DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/pcb/README.md):
   USB-C power, TFT interface, buzzer circuitry and BLE-to-cloud receiver hardware.
 
 ## Validation and reliability

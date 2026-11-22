@@ -1,0 +1,324 @@
+[
+  {
+    "symbol": "TPS70933DBVR",
+    "fp": "TB_TPS709_DBV0005A",
+    "prefix": "U",
+    "manufacturer": "Texas Instruments",
+    "lcsc": "C89347",
+    "desc": "3.3V 150mA 30V low-Iq LDO; DBV non-A/B pinout",
+    "body": [
+      1.6,
+      2.9,
+      1.45
+    ],
+    "source": "TI TPS709 Rev H; DBV0005A drawing 4214839/K 08/2024",
+    "pins": [
+      [
+        "1",
+        "IN",
+        "Power"
+      ],
+      [
+        "2",
+        "GND",
+        "Power"
+      ],
+      [
+        "3",
+        "EN",
+        "Input"
+      ],
+      [
+        "4",
+        "NC",
+        "Passive"
+      ],
+      [
+        "5",
+        "OUT",
+        "Power"
+      ]
+    ],
+    "pads": [
+      [
+        "1",
+        -1.3,
+        0.95,
+        1.1,
+        0.6,
+        0
+      ],
+      [
+        "2",
+        -1.3,
+        0,
+        1.1,
+        0.6,
+        0
+      ],
+      [
+        "3",
+        -1.3,
+        -0.95,
+        1.1,
+        0.6,
+        0
+      ],
+      [
+        "4",
+        1.3,
+        -0.95,
+        1.1,
+        0.6,
+        0
+      ],
+      [
+        "5",
+        1.3,
+        0.95,
+        1.1,
+        0.6,
+        0
+      ]
+    ],
+    "courtyard": [
+      -2.1,
+      -1.75,
+      2.1,
+      1.75
+    ],
+    "note": "EN may float for always-on; do not connect EN directly to 12V."
+  },
+  {
+    "symbol": "AO3400A",
+    "fp": "TB_AOS_SOT23_PO00001M",
+    "prefix": "Q",
+    "manufacturer": "Alpha & Omega Semiconductor",
+    "lcsc": "C20917",
+    "desc": "30V N-channel MOSFET; G=1 S=2 D=3",
+    "body": [
+      2.9,
+      1.6,
+      1.25
+    ],
+    "source": "AOS AO3400A Rev 3.1 July 2023; SOT23 PO-00001 version M",
+    "pins": [
+      [
+        "1",
+        "G",
+        "Input"
+      ],
+      [
+        "2",
+        "S",
+        "Passive"
+      ],
+      [
+        "3",
+        "D",
+        "Passive"
+      ]
+    ],
+    "pads": [
+      [
+        "1",
+        -0.95,
+        -1.2,
+        0.8,
+        0.8,
+        0
+      ],
+      [
+        "2",
+        0.95,
+        -1.2,
+        0.8,
+        0.8,
+        0
+      ],
+      [
+        "3",
+        0,
+        1.2,
+        0.8,
+        0.8,
+        0
+      ]
+    ],
+    "courtyard": [
+      -1.8,
+      -1.85,
+      1.8,
+      1.85
+    ],
+    "note": "48mOhm max at VGS=2.5V; verify motor stall current and PCB thermal design."
+  },
+  {
+    "symbol": "SS34-E3_57T",
+    "mpn": "SS34-E3/57T",
+    "fp": "TB_VISHAY_SMC_SS34",
+    "prefix": "D",
+    "manufacturer": "Vishay General Semiconductor",
+    "lcsc": "C13354",
+    "desc": "40V 3A Schottky flyback diode; SMC DO-214AB",
+    "body": [
+      7.11,
+      6.22,
+      2.62
+    ],
+    "source": "Vishay document 88751 Rev 23-Apr-2020 page 3",
+    "pins": [
+      [
+        "1",
+        "K",
+        "Passive"
+      ],
+      [
+        "2",
+        "A",
+        "Passive"
+      ]
+    ],
+    "pads": [
+      [
+        "1",
+        -3.205,
+        0,
+        1.72,
+        3.2,
+        0
+      ],
+      [
+        "2",
+        3.205,
+        0,
+        1.72,
+        3.2,
+        0
+      ]
+    ],
+    "courtyard": [
+      -4.32,
+      -3.36,
+      4.32,
+      3.36
+    ],
+    "note": "Pad 1 is cathode (band), connected to pump positive. Not an SMA footprint."
+  },
+  {
+    "symbol": "BA4AAPC_LAYOUT_CHECK",
+    "mpn": "BA4AAPC",
+    "fp": "TB_MPD_BA4AAPC_REVH",
+    "prefix": "BT",
+    "manufacturer": "Memory Protection Devices, Inc.",
+    "lcsc": "C6748055",
+    "desc": "4xAA PCB holder; layout model; terminal polarity requires sample check",
+    "body": [
+      57.48,
+      63.09,
+      15.88
+    ],
+    "source": "MPD BA4AAPC drawing Rev H 03/06/19 PCB LAYOUT",
+    "pins": [
+      [
+        "1",
+        "LOWER_CONTACT",
+        "Passive"
+      ],
+      [
+        "2",
+        "UPPER_CONTACT",
+        "Passive"
+      ]
+    ],
+    "pads": [
+      [
+        "1",
+        26.82,
+        -21.135,
+        2.2,
+        2.2,
+        1.02
+      ],
+      [
+        "2",
+        26.82,
+        -8.435,
+        2.2,
+        2.2,
+        1.02
+      ]
+    ],
+    "holes": [
+      [
+        0,
+        -27.305,
+        2.03
+      ],
+      [
+        0,
+        27.305,
+        2.03
+      ]
+    ],
+    "courtyard": [
+      -29.24,
+      -32.045,
+      29.24,
+      32.045
+    ],
+    "note": "PCB layout orientation and physical terminal polarity must be confirmed against a sample before fabrication. Pins deliberately NOT named +/-."
+  },
+  {
+    "symbol": "C_RADIAL_D10_P5",
+    "mpn": "",
+    "fp": "TB_CAP_RADIAL_D10_P5",
+    "prefix": "C",
+    "manufacturer": "",
+    "lcsc": "",
+    "desc": "Generic polarized radial capacitor; D<=10mm P=5mm H<=20mm; 220uF >=25V target",
+    "body": [
+      10,
+      10,
+      20
+    ],
+    "source": "User-selected lab sourcing envelope; custom radial land pattern, not manufacturer-specific",
+    "pins": [
+      [
+        "1",
+        "+",
+        "Passive"
+      ],
+      [
+        "2",
+        "-",
+        "Passive"
+      ]
+    ],
+    "pads": [
+      [
+        "1",
+        -2.5,
+        0,
+        1.8,
+        1.8,
+        0.9
+      ],
+      [
+        "2",
+        2.5,
+        0,
+        1.8,
+        1.8,
+        0.9
+      ]
+    ],
+    "courtyard": [
+      -5.5,
+      -5.5,
+      5.5,
+      5.5
+    ],
+    "note": "Source 220uF >=25V, 5mm lead spacing, <=10mm diameter, <=20mm height, leads <=0.6mm. Check leakage for battery life."
+  }
+]

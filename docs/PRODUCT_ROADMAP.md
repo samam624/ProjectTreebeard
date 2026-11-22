@@ -1,9 +1,9 @@
-# MSV2 Product Roadmap
+# Project Treebeard Product Roadmap
 
 The goal is a plant monitor that a friend or family member can set up without Arduino tools:
 
 1. Plug in the ESP32 display receiver.
-2. Open the MSV2 phone app.
+2. Open the Display Center phone app.
 3. Put the receiver on home WiFi.
 4. Add probes to plants.
 5. Monitor plants locally and remotely.
@@ -81,11 +81,11 @@ Possible later expansion of those same screens:
 ## Setup Flow For Friends
 
 1. Receiver boots.
-2. If it has no valid WiFi settings, the TFT shows first-time setup instructions and the receiver starts the open `MSV2-Display` setup WiFi.
-3. Phone joins the open `MSV2-Display` setup network; captive-portal DNS/redirects try to open the receiver setup app automatically.
+2. If it has no valid WiFi settings, the TFT shows first-time setup instructions and the receiver starts the open `Display-Center` setup WiFi.
+3. Phone joins the open `Display-Center` setup network; captive-portal DNS/redirects try to open the receiver setup app automatically.
 4. If the phone does not open the page, the TFT tells the user to open `192.168.4.1`.
 5. User either enters home WiFi in the `Setup > Receiver WiFi` panel or checks `Use without home WiFi` for local-only mode.
-6. Receiver saves that choice and reboots to either the home network or the local `MSV2-Display` dashboard.
+6. Receiver saves that choice and reboots to either the home network or the local `Display-Center` dashboard.
 7. If home WiFi is enabled, the receiver bootstraps to the hosted backend using its built-in receiver ID and private receiver secret.
 8. If home WiFi is enabled, the receiver saves the returned cloud upload URL/token and starts uploading snapshots.
 9. The receiver shows a QR code containing its receiver ID and one-time claim code.

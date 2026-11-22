@@ -1,4 +1,4 @@
-// MSV2 Antenna Test
+// Treebeard Antenna Test
 //
 // Standalone RF bring-up test for a new ESP32-S3-WROOM-1U-N16R8 PCB (not the
 // devkit breadboard build). The "U" module has no onboard PCB antenna - it
@@ -95,7 +95,7 @@ class AntennaTestBleCallbacks : public BLEAdvertisedDeviceCallbacks
 void printHardwareInfo()
 {
   Serial.println();
-  Serial.println("=== MSV2 Antenna Test ===");
+  Serial.println("=== Treebeard Antenna Test ===");
   Serial.printf("Chip: %s rev%d, %d cores @ %dMHz\n", ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), ESP.getCpuFreqMHz());
   Serial.printf("Flash: %uMB\n", (unsigned)(ESP.getFlashChipSize() / (1024 * 1024)));
   Serial.printf("WiFi MAC: %s\n", WiFi.macAddress().c_str());
@@ -231,7 +231,7 @@ void setup()
   runWifiScan();
   beginWifiConnect();
 
-  BLEDevice::init("MSV2-ANTTEST");
+  BLEDevice::init("TB-ANTTEST");
   bleScan = BLEDevice::getScan();
   bleScan->setAdvertisedDeviceCallbacks(new AntennaTestBleCallbacks(), true);
   bleScan->setActiveScan(true);

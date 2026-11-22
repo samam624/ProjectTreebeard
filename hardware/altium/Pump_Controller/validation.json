@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-11",
+  "components": [
+    {
+      "symbol": "TPS70933DBVR",
+      "pin_pad_geometry_model_bom": "PASS",
+      "physical_release": "datasheet geometry checked"
+    },
+    {
+      "symbol": "AO3400A",
+      "pin_pad_geometry_model_bom": "PASS",
+      "physical_release": "datasheet geometry checked"
+    },
+    {
+      "symbol": "SS34-E3_57T",
+      "pin_pad_geometry_model_bom": "PASS",
+      "physical_release": "datasheet geometry checked"
+    },
+    {
+      "symbol": "BA4AAPC_LAYOUT_CHECK",
+      "pin_pad_geometry_model_bom": "PASS",
+      "physical_release": "sample orientation/polarity check required"
+    },
+    {
+      "symbol": "C_RADIAL_D10_P5",
+      "pin_pad_geometry_model_bom": "PASS",
+      "physical_release": "source to envelope"
+    }
+  ],
+  "compiled_connectivity_pass": false,
+  "compile_report": {
+    "compile_ok": false,
+    "logical_documents": 1,
+    "documents": [
+      {
+        "name": "Library_Test.SchDoc",
+        "components": 0,
+        "nets": 0
+      }
+    ],
+    "pin_rows": 0,
+    "violations": []
+  },
+  "sha256": {
+    "Pump_Controller.IntLib": "fe56a2332180007bdc6f3211c9e2d75a14f7ad75bb51799b57d771ee9665477b",
+    "Pump_Controller.LibPkg": "54a5b01e5e74524bb1e6d0c17cd80927d8b1c98db16f5707add63bdc353bba14",
+    "Pump_Controller.PcbLib": "24a6c152ddeef619e425baae926225349abb389cadba1b72ca4172a44ad03f9e",
+    "Pump_Controller.SchLib": "364628d29a35c80ef3a066e1d1365411632825bd4709e6aab1ffc1a43b99dadd"
+  },
+  "release_status": "PLANNING ONLY; compiled connectivity check incomplete; holder sample check required"
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Measure MSV2 probe packet loss using the ESP32 display hub /data endpoint.
+"""Measure probe packet loss using the ESP32 display hub /data endpoint.
 
 Examples:
   python scripts/esp32_packet_loss_test.py --url http://10.0.0.236 --sensors 1 2 --duration 300
@@ -62,7 +62,7 @@ def sensor_by_id(payload: dict) -> dict[int, dict]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run an ESP32 /data packet-loss test for MSV2 BLE probes.")
+    parser = argparse.ArgumentParser(description="Run an ESP32 /data packet-loss test for Treebeard BLE probes.")
     parser.add_argument("--url", default="http://192.168.4.1", help="ESP32 display hub base URL.")
     parser.add_argument("--sensors", type=int, nargs="+", default=[1, 2], help="Sensor IDs to track.")
     parser.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds.")

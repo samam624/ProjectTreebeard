@@ -1,0 +1,219 @@
+
+===PAGE 1===
+ 
+ 
+Bivar reserves the right to make changes at any time without notice. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Revision A   03/09 
+Page 1 of 5 
+Part Number 
+Material 
+Emitted Color 
+Peak  
+Wavelength  
+λp(nm) TYP. 
+Luminous  
+Intensity 
+(mcd) TYP. 
+Viewing Angle 
+SM0805UBWC 
+InGaN 
+BLUE 
+468 
+115 
+130° 
+Lens               
+Appearance 
+Water Clear 
+ATTENTION 
+OBSERVE PRECAUTIONS 
+FOR HANDLING 
+ELECTROSTATIC 
+SENSITIVE DEVICES 
+ 
+RoHS Compliant 
+ 
+Moisture 
+Sensitivity 
+Level 4 
+Outline Dimensions 
+SM0805UBWC  
+ 
+ 
+♦ 
+Industry Standard 0805 Package                              
+♦ 
+RoHS Compliant 
+♦ 
+Small Package and Footprint 
+♦ 
+Water Clear Lens 
+♦ 
+Wide Viewing Angle 
+♦ 
+Ideal for Status Indication, Display, and Backlighting 
+Outline Drawings Notes: 
+1. All dimensions are in inches [millimeters].  
+2. Standard tolerance: ±0.010" unless otherwise noted.  
+ 
+SURFACE MOUNT LED 
+BLUE, 0805 PACKAGE 
+Bivar Surface Mount 0805 package LED may be used in nearly any lighting or indication application.  
+The miniature package is ideal for small scale applications such as general indication and backlighting.  
+Low power consumption and excellent long life reliability are suitable for battery powered equipment.  
+Bivar offers water clear LED lens for maximum luminous intensity.  Wide variety of wavelength and in-
+tensity combinations are available to meet any illumination need.  The SM0805 LED is packaged in 
+standard tape and reels for pick and place assemblies.   
+
+===PAGE 2===
+ 
+ Bivar reserves the right to make changes at any time in order to improve design and to supply the best product possible. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Revision A   03/09 
+Page 2 of 5 
+3mm (T1) Package Discrete LEDs 
+AMBER 
+Bivar reserves the right to make changes at any time without notice. 
+Absolute Maximum Ratings 
+TA = 25°C unless otherwise noted 
+Power Dissipation 
+             100 mW  
+Forward Current ( DC ) 
+30 mA 
+Peak Forward Current 1 
+100 mA 
+Reverse Voltage 
+5 V 
+Operating Temperature Range 
+-30 ~ +80°C 
+Storage Temperature Range 
+-40 ~ +85°C 
+Lead Soldering Temperature ( 3 mm from the base of the epoxy bulb ) 2 
+260°C 
+Notes: 1. 10% Duty Cycle, Pulse Width ≤ 0.1 msec.       2. Solder time less than 5 seconds at temperature extreme. 
+Electrical / Optical Characteristics 
+TA = 25°C & IF = 20 mA unless otherwise noted 
+Notes: 1. Tolerance of forward voltage : ±0.05V.       2. Tolerance of dominant wavelength : ±1.0nm.        
+Part Number 
+Forward 
+Voltage (V)1
+ 
+Recommend 
+Forward 
+Current (mA)  
+Reverse 
+Current 
+(μA) 
+Dominant 
+Wavelength (nm)2
+ 
+Luminous 
+Intensity Iv (mcd) 
+Viewing 
+Angle 
+2 Ө ½ 
+(deg) 
+MIN TYP MAX MIN TYP MAX 
+MAX 
+MIN 
+TYP MAX 
+MIN 
+TYP MAX 
+TYP 
+SM0805UBWC 
+/  
+3.3 
+4.2 
+/   
+20   
+/   
+10   
+/ 
+470 
+/ 
+72 
+115 
+/ 
+130 
+SURFACE MOUNT LED 
+BLUE, 0805 PACKAGE 
+
+===PAGE 3===
+ 
+ 
+3mm (T1) Package Discrete LEDs 
+AMBER 
+Bivar reserves the right to make changes at any time in order to improve design and to supply the best product possible. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Revision A   03/09 
+Page 3 of 5 
+Bivar reserves the right to make changes at any time without notice. 
+Typical Electrical / Optical Characteristics 
+TA = 25°C unless otherwise noted 
+SURFACE MOUNT LED 
+BLUE, 0805 PACKAGE 
+
+===PAGE 4===
+ 
+ 
+3mm (T1) Package Discrete LEDs 
+AMBER 
+Bivar reserves the right to make changes at any time in order to improve design and to supply the best product possible. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Revision A   03/09 
+Page 4 of 5 
+Bivar reserves the right to make changes at any time without notice. 
+Recommended Soldering Conditions 
+Tape and Reel Dimensions 
+Outline Drawings Notes: 
+1. All dimensions are in inches [millimeters].  
+2. Standard tolerance: ±0.010" unless otherwise noted.  
+ 
+Note: 3000 pcs/Reel 
+ 
+SURFACE MOUNT LED 
+BLUE, 0805 PACKAGE 
+
+===PAGE 5===
+ 
+ 
+3mm (T1) Package Discrete LEDs 
+AMBER 
+Bivar reserves the right to make changes at any time in order to improve design and to supply the best product possible. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Rev. A  01/16/08 
+Page 4 of 4 
+Bivar reserves the right to make changes at any time in order to improve design and to supply the best product possible. 
+Bivar, Inc. — 4 Thomas, Irvine, California 92618, U.S.A. 
+Phone: (949) 951-8808   Fax: (949) 951-3974   E-mail: bivar@bivar.com   Web: www.bivar.com 
+Revision A   03/09 
+Page 5 of 5 
+Bivar reserves the right to make changes at any time without notice. 
+ 
+Packaging and Labeling Plan 
+Desiccant 
+Internal Quality Control 
+Bivar Standard Packaging Label 
+Humidity Indicator 
+Card 
+Note: 1 Reel / Bag 
+Vacuum and Heat Sealed  
+Clear AntiStatic Poly Bag 
+X.XXX 
+X.XXX 
+Outline Drawings Notes: 
+1. All dimensions are in inches [millimeters].  
+2. Standard tolerance unless otherwise noted:   X.XXX ± 0.010"  
+ 
+   
+ 
+ 
+   X.X ± 0.1” 
+  
+SURFACE MOUNT LED 
+BLUE, 0805 PACKAGE 

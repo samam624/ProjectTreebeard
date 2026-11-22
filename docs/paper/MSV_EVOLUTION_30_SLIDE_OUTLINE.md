@@ -465,7 +465,7 @@ Use the exact table in [`MSV_BUILD_MILESTONE_FACT_CHECK.md`](MSV_BUILD_MILESTONE
 - MSV3 PCB: [`hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/pcb_isometric.png)
 - MSV3 assembled solar enclosure: [`hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/assembly_solar_isometric.png)
 - MSV3 exploded view: [`hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png`](../../MSV3/hardware/MSV3_Probe_PCB_Enclosure/renders/exploded_solar_isometric.png)
-- Receiver enclosure: [`hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`](../../DisplayCenter/hardware/MSV2_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png)
+- Receiver enclosure: [`hardware/Treebeard_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png`](../../DisplayCenter/hardware/Treebeard_ESP32_DisplayCenter/V2/renders/desktop_deployed_v5_isometric.png)
 
 ## IEEE-Style References
 

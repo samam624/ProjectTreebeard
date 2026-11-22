@@ -48,8 +48,8 @@ def main() -> None:
     for phrase, reason in forbidden.items():
         require(phrase not in readme, reason)
 
-    require('src="assets/app.v18.js"' in dashboard_html, "HTML must load dashboard app v18")
-    require('"msv2-cloud-app-v18"' in service_worker, "service-worker cache must match dashboard app v18")
+    require('src="assets/app.v20.js"' in dashboard_html, "HTML must load dashboard app v20")
+    require('"msv2-cloud-app-v20"' in service_worker, "service-worker cache must match dashboard app v20")
     require("representative synthetic data, not live measurements" in dashboard_html, "demo must disclose synthetic data")
 
     print("PASS portfolio claims, evidence paths and dashboard asset versions are consistent")

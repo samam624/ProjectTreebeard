@@ -89,7 +89,7 @@ Deno.serve(async (request) => {
 
     return jsonResponse({
       ok: true,
-      role: "MSV2 plant-dashboard API",
+      role: "Treebeard plant-dashboard API",
       note: "Supabase Edge Functions serve browser HTML as text/plain in this project. Host web/plant-dashboard/index.html as the static app and keep this function for APIs.",
       endpoints: {
         shareClaim: "/functions/v1/plant-dashboard/api/share-claim",
@@ -106,7 +106,7 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: error.message }, 400);
     }
     const message = error instanceof Error ? error.message : String(error);
-    return response(`<!doctype html><title>MSV2 Error</title><pre>${escapeHtml(message)}</pre>`, "text/html; charset=utf-8", 500);
+    return response(`<!doctype html><title>Treebeard Error</title><pre>${escapeHtml(message)}</pre>`, "text/html; charset=utf-8", 500);
   }
 });
 
@@ -471,8 +471,8 @@ function escapeHtml(value: unknown): string {
 
 function webManifest(): Record<string, unknown> {
   return {
-    name: "MSV2 Plants",
-    short_name: "MSV2",
+    name: "Display Center",
+    short_name: "Display Center",
     start_url: "/functions/v1/plant-dashboard",
     scope: "/functions/v1/plant-dashboard",
     display: "standalone",
