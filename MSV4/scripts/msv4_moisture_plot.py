@@ -33,8 +33,8 @@ COLORS = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#17
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("csv", type=Path, nargs="?", default=ROOT / "data" / "sensor_logs" / "cache" / "sensor10_raw.csv",
-                        help="history CSV (default: the sensor 10 cache; refresh it with fetch_supabase_history.py --sensor 10 --raw --cache)")
+    parser.add_argument("csv", type=Path, nargs="?", default=reading.history_csv(10),
+                        help="history CSV (default: the sensor 10 cache; refresh it with fetch_supabase_history.py --receiver MSV2088A3104A7AC --sensor 10 --raw --cache)")
     parser.add_argument("-o", "--out", type=Path)
     parser.add_argument("--with-saucer", action="store_true", help="fit through weighings with standing saucer water too")
     correction = parser.add_mutually_exclusive_group()

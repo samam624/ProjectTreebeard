@@ -40,6 +40,18 @@ import statistics
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# fetch_supabase_history.py --cache writes one folder per receiver (since 2026-11-21, when a
+# second receiver joined). Every MSV4 sensor reports to the maintainer's receiver.
+HISTORY_CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "sensor_logs" / "cache"
+HISTORY_RECEIVER = "MSV2088A3104A7AC"
+
+
+def history_csv(sensor: int, receiver: str = HISTORY_RECEIVER) -> Path:
+    """The raw-history cache for one sensor. Refresh it with
+    cloud/scripts/fetch_supabase_history.py --receiver <receiver> --sensor <N> --raw --cache."""
+    return HISTORY_CACHE_DIR / receiver / f"sensor{int(sensor)}_raw.csv"
+
+
 RSOIL_DECIOHM_OPEN = 4000000   # the probe's ceiling: nothing conducting
 
 # Cd with the blade in air, per probe AND PER BOOT. Cd is the node capacitance minus Cp, and Cp is

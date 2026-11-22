@@ -47,20 +47,20 @@ class ReviewRegressions(unittest.TestCase):
         self.assertIn('918 kohm', scan.describe_mask_check('A+20.0 B+0.0 mV', 5600))
         self.assertNotIn('DC path', scan.describe_mask_check('A+10.0 B+0.0 mV', 5600))
 
-    def test_two_receivers_can_observe_counter_one_after_a_reboot(self):
+    def isolation_check(self, rows):
+        """Run the verifier against an in-memory table shaped like production, unique index included."""
         spec = importlib.util.spec_from_file_location('isolation', ROOT / 'cloud/scripts/verify_multi_receiver_isolation.py')
         isolation = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(isolation)
         database = sqlite3.connect(':memory:')
         self.addCleanup(database.close)
         database.row_factory = sqlite3.Row
-        database.execute('create table msv2_sensor_history(receiver_id, sensor_id, wake, observation_id, moisture, raw_fdc_counts, raw_battery_mv, received_at)')
-        for receiver in ['A', 'B']:
-            for hour, raw in [('12', 101), ('13', 102)]:
-                database.execute('insert into msv2_sensor_history values(?,?,?,?,?,?,?,?)',
-                                 (receiver, 12, 1, receiver + hour, 17, raw, 4000, '2026-11-21 ' + hour + ':00:00'))
+        database.execute('create table msv2_sensor_history(id integer primary key, receiver_id, sensor_id, wake, observation_id, moisture, raw_fdc_counts, raw_battery_mv, received_at)')
+        database.execute('create unique index obs on msv2_sensor_history(receiver_id, observation_id) where observation_id is not null')
+        database.executemany('insert into msv2_sensor_history(receiver_id, sensor_id, wake, observation_id, moisture, raw_fdc_counts, raw_battery_mv, received_at) values(?,?,?,?,?,?,?,?)', rows)
 
         def query(sql):
+            sql = ' '.join(sql.split())  # as run_query() sends it: one line, so "--" would eat the rest
             if 'with w as' in sql:
                 sql = re.sub(r"now\(\) - interval '[^']+'", "'2026-11-21 08:00:00'", sql)
                 sql = sql.replace('extract(epoch from (a.received_at - b.received_at))',
@@ -71,7 +71,17 @@ class ReviewRegressions(unittest.TestCase):
             return [{'receiver_id': r, 'household_id': r, 'last_seen_at': 't'} for r in ['A', 'B']]
 
         with patch.object(isolation, 'run_query', side_effect=query), patch.object(sys, 'argv', ['verify']):
-            self.assertEqual(isolation.main(), 0)
+            return isolation.main()
+
+    def test_two_receivers_can_observe_counter_one_after_a_reboot(self):
+        rows = [(receiver, 12, 1, receiver + hour, 17, raw, 4000, '2026-11-21 ' + hour + ':00:00')
+                for receiver in ['A', 'B'] for hour, raw in [('12', 101), ('13', 102)]]
+        self.assertEqual(self.isolation_check(rows), 0)
+
+    def test_one_wake_stored_twice_by_a_receiver_fails(self):
+        rows = [('A', 12, 7, 'A-first', 17, 101, 4000, '2026-11-21 12:00:00'),
+                ('A', 12, 7, 'A-retry', 17, 101, 4000, '2026-11-21 12:00:04')]
+        self.assertNotEqual(self.isolation_check(rows), 0)
 
     def test_receiver_caches_include_late_observations(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(history, 'CACHE_DIR', Path(directory)):

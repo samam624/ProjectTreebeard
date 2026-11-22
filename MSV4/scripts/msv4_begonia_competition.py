@@ -4,7 +4,7 @@ The Alocasia scorer (msv4_moisture_competition.py) reads weighings from `pots`; 
 in `msv4_boards[].physical_state.mass`, so this adapts them (pot with its dish, no water standing
 in it, per the maintainer's weighing_convention) and reuses that scorer unchanged.
 
-    python MSV4/scripts/msv4_begonia_competition.py [data/sensor_logs/cache/sensor11_raw.csv]
+    python MSV4/scripts/msv4_begonia_competition.py [data/sensor_logs/cache/MSV2088A3104A7AC/sensor11_raw.csv]
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def load_begonia() -> tuple[list[dict], list[datetime]]:
 
 
 def main() -> None:
-    csv = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "sensor_logs" / "cache" / "sensor11_raw.csv"
+    csv = Path(sys.argv[1]) if len(sys.argv) > 1 else reading.history_csv(11)
     rows = [r for r in reading.load(csv, None) if r["coupled"] is not None]
     if not rows:
         raise SystemExit("no sensor 11 measurements with an air value in that file")

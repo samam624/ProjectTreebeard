@@ -10,7 +10,7 @@ each day divided by the step of the watering that started its cycle; days that h
 left out, as on the MSV3 side.
 
 MSV3 input: the six raw CSVs that script reads (fetch_supabase_history.py --raw, 1660 h back on
-2026-11-18). MSV4 input: data/sensor_logs/cache/sensor{10,11}_raw.csv via msv4_fit_snr_figure.load().
+2026-11-18). MSV4 input: data/sensor_logs/cache/MSV2088A3104A7AC/sensor{10,11}_raw.csv via msv4_fit_snr_figure.load().
 
     python MSV4/scripts/msv4_vs_msv3_daily_swing.py <msv3 csv dir> --out MSV4/docs/figures/MSV4_VS_MSV3_DAILY_SWING_2026-11-18.png
 """

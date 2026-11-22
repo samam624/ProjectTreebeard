@@ -24,7 +24,7 @@ FLEET = ROOT / "MSV3" / "fleet.json"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv", type=Path, nargs="?",
-                        default=ROOT / "data" / "sensor_logs" / "cache" / "sensor11_raw.csv",
+                        default=reading.history_csv(11),
                         help="history CSV (default: the sensor 11 cache)")
     parser.add_argument(
         "-o", "--out", type=Path,

@@ -11,7 +11,8 @@ Checks:
   2. no receiver's history shrank below a floor you pass (--floor RECEIVER=ROWS), e.g. the row
      count recorded in a backup manifest; this is the "nothing was deleted" check
   3. a probe packet heard by two receivers carries identical values under both, and no
-     receiver stored the same packet twice. Packets are matched on (sensor, wake) within 15 seconds, so once the
+     receiver stored the same packet twice. Packets are matched on (sensor, wake) within 15 seconds of
+     BLE reception, so a probe reboot restarting its wake counter is not mistaken for a repeat. Once the
      receivers are in different houses a different probe that happens to reuse a sensor ID and
      wake number inside the window would show as a mismatch; check its rows before worrying.
   4. the bulk history-delete function is gone (migration 044), or, before 044 is applied, still
@@ -90,10 +91,16 @@ def main() -> int:
         check(count >= int(rows), f"{receiver_id} history not below floor", f"{count} rows, floor {rows}")
 
     hours = float(args.hours)
+    # dupes: (receiver_id, observation_id) is already unique (migration 030), so a real duplicate
+    # is the same wake stored again under a different identity. A probe's wake counter repeats
+    # only after a reboot, minutes later, so the same wake within 15 s is one packet. No SQL
+    # comments below: run_query() flattens the query to one line, and "--" would eat the rest.
     stats = run_query(f"""
         with w as (select * from msv2_sensor_history where received_at > now() - interval '{hours} hours')
         select
-          (select count(*) from (select receiver_id, sensor_id, wake from w group by 1,2,3, observation_id having observation_id is not null and count(*) > 1) d) as dupes,
+          (select count(*) from w a join w b on a.receiver_id = b.receiver_id
+             and a.sensor_id = b.sensor_id and a.wake = b.wake and a.id < b.id
+             and abs(extract(epoch from (a.received_at - b.received_at))) <= 15) as dupes,
           (select count(*) from w a join w b on a.sensor_id = b.sensor_id and a.wake = b.wake
              and a.receiver_id < b.receiver_id
              and abs(extract(epoch from (a.received_at - b.received_at))) <= 15) as shared_packets,
@@ -102,7 +109,7 @@ def main() -> int:
              and abs(extract(epoch from (a.received_at - b.received_at))) <= 15
              where a.raw_fdc_counts is distinct from b.raw_fdc_counts
                 or a.raw_battery_mv is distinct from b.raw_battery_mv) as mismatches""")[0]
-    check(stats["dupes"] == 0, "no receiver stored an observation twice", f"{stats['dupes']} duplicated observation identities")
+    check(stats["dupes"] == 0, "no receiver stored an observation twice", f"{stats['dupes']} wakes stored twice within 15 s")
     check(stats["mismatches"] == 0, "packets heard by two receivers agree",
           f"{stats['shared_packets']} shared packets, {stats['mismatches']} differ")
 

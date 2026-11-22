@@ -80,8 +80,8 @@ def paired(weighings: list[dict], rows: list[dict], fn, cycle_of_reading, cycle_
 def main() -> None:
     weighings, waterings = load_weighings()
     water0 = min(w["grams"] for w in weighings)
-    history = [r for r in reading.load(CACHE / "sensor11_raw.csv", None) if r["coupled"] is not None]
-    fits = record.join(CACHE / "sensor11_sweep_fits.csv", CACHE / "sensor11_raw.csv")
+    history = [r for r in reading.load(reading.history_csv(11), None) if r["coupled"] is not None]
+    fits = record.join(CACHE / "sensor11_sweep_fits.csv", reading.history_csv(11))
     # For readings, a cycle begins at the first sweep after the water went in.
     starts = [next((f["time"] for f in fits if f["time"] >= w), w) for w in waterings]
 

@@ -58,7 +58,7 @@ def load() -> list[dict]:
     for sensor, (weighings, waterings), name in (
             (10, both.sensor10_pot(), "Alocasia"),
             (11, both.sensor11_pot(), "Begonia")):
-        rows = [r for r in reading.load(both.CACHE / f"sensor{sensor}_raw.csv", None)
+        rows = [r for r in reading.load(reading.history_csv(sensor), None)
                 if r["stored"] is not None and r["time"] >= waterings[0] - timedelta(hours=48)]
         res = both.analyse(sensor, rows, weighings, waterings)
         res["name"] = name

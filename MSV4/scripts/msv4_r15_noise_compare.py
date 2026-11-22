@@ -10,7 +10,7 @@ left out):
   * how far the divider moves for a 1 % change in Rsoil with R15 = 1k and 3.3k at each pot's own
     median Rsoil / Cm / Cd, rms over the 8 sweep frequencies.
 
-    python MSV4/scripts/msv4_r15_noise_compare.py   (reads the two caches in data/sensor_logs/cache)
+    python MSV4/scripts/msv4_r15_noise_compare.py   (reads the two caches in data/sensor_logs/cache/MSV2088A3104A7AC)
 """
 import json
 import math
@@ -31,7 +31,7 @@ SKIP_AFTER_WATERING_H = 24
 
 
 def rows_for(sensor):
-    return [r for r in reading.load(ROOT / "data/sensor_logs/cache" / f"sensor{sensor}_raw.csv", None)
+    return [r for r in reading.load(reading.history_csv(sensor), None)
             if not r["open"] and r["rsoil"]]
 
 

@@ -35,7 +35,6 @@ import msv4_moisture_competition as comp
 
 ROOT = Path(__file__).resolve().parents[2]
 FLEET = ROOT / "MSV3" / "fleet.json"
-CACHE = ROOT / "data" / "sensor_logs" / "cache"
 FIT_SKIP_HOURS = 24
 PAIR_MINUTES = 30
 
@@ -140,7 +139,7 @@ def main() -> None:
     for sensor, (weighings, waterings), name in (
             (10, sensor10_pot(), "Alocasia (sensor 10, board 1, R15 1k)"),
             (11, sensor11_pot(), "Begonia (sensor 11, board 2, R15 3.3k)")):
-        rows = [r for r in reading.load(CACHE / f"sensor{sensor}_raw.csv", None)
+        rows = [r for r in reading.load(reading.history_csv(sensor), None)
                 if r["stored"] is not None and r["time"] >= waterings[0] - timedelta(hours=48)]
         res = analyse(sensor, rows, weighings, waterings)
         res["name"] = name
