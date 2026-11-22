@@ -2108,7 +2108,7 @@
     "epoxy_2026_11_20": {
       "verified": "2026-11-20",
       "source": "maintainer stated 2026-11-20 ~15:35 PST: 'Oh also all boards have epoxy on FR4 edges and on the NTC thermistor, just finished that today as well.'",
-      "applies_to": "'all boards' as stated; read as every MSV4 board in hand. Boards 1, 2 and 5 were in use today; boards 3 and 4 NOT CONFIRMED individually.",
+      "applies_to": "'all boards' as stated; read as every MSV4 board in hand. Boards 1, 2 and 5 were in use today. Board 3 CONFIRMED individually 2026-11-21 ~18:00 PST ('Got board 3 with me here after epoxy on edges and NTC'). Board 4 NOT CONFIRMED individually.",
       "where": "FR4 edges and the tip NTC thermistor. Whether any reached the sensing blade faces or the module/antenna end NOT STATED. Which epoxy NOT STATED. Board 1 already had epoxy on its bottom thermistor and side edge from 2026-10-08.",
       "curing": "applied 2026-11-20; board 5 is curing over the weekend (the others presumably likewise, NOT STATED). Air readings taken while it cures are not a stable baseline.",
       "measurement_note": "INFERRED, not tested: today's epoxy is a second candidate, alongside the R15 swap, for boards 1 and 2 reading Cd 16.3 pF in air at ~15:00 against 13.4-14.2 pF at 11:18-11:28; both changes happened between those readings. Board 5's Cd did not move (23.64 pF at 15:10 vs 23.65-23.72 before), but whether its epoxy was on by 15:10 is NOT STATED."
@@ -2123,7 +2123,7 @@
         "planned_r15_rework": {
           "boards": [3, 4],
           "target_ohms": 5600,
-          "status": "planned",
+          "status": "planned; board 3 DONE (maintainer stated 2026-11-21 ~18:05 PST, recorded in board 3's mods). Board 4 NOT CONFIRMED.",
           "source": "Maintainer, 2026-11-19: 'Ok i am going to solder boards 3-5 with 5.6ks'"
         },
         "verified": "2026-10-29",
@@ -2534,8 +2534,8 @@
         "ble_name": "MSV4-BU-5667",
         "application_address": "E7:5F:AD:54:56:67",
         "physical_state": {
-          "verified": "2026-10-29",
-          "source": "maintainer stated 2026-10-29: '2 probes are resoldered, do a test to see if the mux is working now'; in the immediate context this means boards 3 and 4 and the requested retest is their failed U3 mux check. Before that: maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'. Before that: maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon' (read as board 3 and one other batch board, which one NOT STATED). Before that: maintainer stated 2026-10-26 ~13:10 PDT: 'Ok i ran it its blinking now, lets do a bringup test' (after holding pogo pins for the SWD flash)",
+          "verified": "2026-11-21",
+          "source": "maintainer stated 2026-11-21 ~18:00-18:05 PST: 'Got board 3 with me here after epoxy on edges and NTC, want to do final test before electronics coating tomorrow', and that R15 is now 5.6 kohm (reworked). Location, pot, power, panel and housing were NOT restated. Before that: maintainer stated 2026-10-29: '2 probes are resoldered, do a test to see if the mux is working now'; in the immediate context this means boards 3 and 4 and the requested retest is their failed U3 mux check. Before that: maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'. Before that: maintainer stated 2026-10-26 ~13:20 PDT: 'I forgot the NTC thermistor on these 2 boards, will fix soon' (read as board 3 and one other batch board, which one NOT STATED). Before that: maintainer stated 2026-10-26 ~13:10 PDT: 'Ok i ran it its blinking now, lets do a bringup test' (after holding pogo pins for the SWD flash)",
           "location": "NOT STATED (at the maintainer's computer for the SWD flash, by inference from the hand-held pins)",
           "pot": "NOT STATED",
           "power": "NOT STATED (powered from something, since it flashed and is blinking; cell, bench supply on SP, or both, not said)",
@@ -2545,13 +2545,17 @@
           "mods": [
             {
               "part": "R15",
-              "value": "1 kohm, the netlist value (no mod; every MSV4 sketch's SPEC_RS = 1000.0 applies as built)",
-              "source": "maintainer stated 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k'; tolerance and exact measured value not stated. Agrees with the 2026-10-26 open-electrode response, which matches board 1."
+              "ohms": 5600,
+              "value": "5.6 kohm (reworked from the netlist 1 kohm)",
+              "source": "maintainer stated 2026-11-21 ~18:05 PST, answering whether board 3's R15 is now 5.6 kohm or still 1 kohm: '5.6 kOhm (reworked)'. Part of the 2026-11-19 plan to fit 5.6 kohm on boards 3-5. When it was swapped, tolerance and measured value NOT STATED. Previous value: 1 kohm (maintainer 2026-10-26 ~13:30 PDT: 'R15 is the typical 1k').",
+              "consequence": "the installed bring-up image v262152 was built with SPEC_RS = 1000, so its spectrum/moisture fits on this board read every fitted admittance about 5.6x too large; raw mV, mux, supply and temp readings are unaffected. Any moisture image from now on needs -RsOhms 5600."
             }
           ],
           "U2": "NOT STATED (batch boards had an AP2112K placed in error on the TPS7A0233 footprint; whether swapped on this board not said)",
           "maintainer_reported_at_flash": "LED blinking (2026-10-26 ~13:10 PDT)",
-          "ntc": "R17 tip NTC NOT POPULATED (maintainer 2026-10-26 ~13:20 PDT; to be fitted 'soon'). Consistent with the bring-up console: `temp` failed three times on 2026-10-26, the divider ratio outside 0.001-0.999. Until it is fitted, every temperature-corrected reading from this board is invalid."
+          "ntc": "R17 tip NTC FITTED and epoxied: maintainer stated 2026-11-21 ~18:00 PST 'Got board 3 with me here after epoxy on edges and NTC'. When it was fitted NOT STATED; the 2026-10-29 full bring-up already read temp 22.66 C / 10939 ohm, so it was on by then. (History: not populated 2026-10-26 ~13:20 PDT, when `temp` failed three times with the divider ratio outside 0.001-0.999.)",
+          "epoxy": "FR4 edges and the tip NTC, maintainer stated 2026-11-21 ~18:00 PST (part of the 2026-11-20 all-boards pass, see msv4_boards.epoxy_2026_11_20). Which epoxy, and whether it is fully cured, NOT STATED.",
+          "planned_coating": "maintainer plan 2026-11-21: electronics (conformal) coating on 2026-11-22, after a final test today. Not yet done."
         },
         "recovery_address": "E7:5F:AD:54:56:68",
         "recovery_address_source": "DERIVED, not observed: the pinned bootloader adds one to the lowest address byte when advertising openly (same rule as board 2's recovery_address_source).",
@@ -2584,6 +2588,17 @@
           "passed": "Build identity and LFCLK XTAL; initial and final safe pins; VDD 3317 mV; VBAT 4018 mV; temperature electrical path 22.66 C / 10939 ohm with die 23.00 C; SAADC calibration; 1 MHz drive and chopper; A/B/open mux; 16-phase sweep; spectrum open Cp 8.73 pF; dry-air-like A/B spectrum Cd 14.03 pF; final safe.",
           "caveat": "Blade condition was not stated. The first spectrum fit reported a nonsensical 2.3 ohm/zero-Cm local solution with enormous uncertainty, while the immediately following moisture fit returned open-circuit resistance. With rms about 0.023 and Cd 14.0 pF this is a dry/open model degeneracy, not evidence of a 2.3 ohm physical path.",
           "next": "MSV4 Lab hand-on/hand-off test; then assign sensor ID and install signed production firmware."
+        },
+        "final_test_2026_11_21": {
+          "measured": "OBSERVED 2026-11-21 18:02-18:12 PST in MSV4 Lab session 'Board 3 final test before conformal coat 2026-11-21' over the bring-up console v262152 (built Rs = 1000) with R15 = 5.6 kohm, after the epoxy on edges and NTC and before the planned conformal coating. Blade in air apart from the maintainer's hand test. Raw transcript: data/sensor_logs/msv4_board3_final_2026-11-21/board3_final.txt",
+          "result": "PASS on every check; in air it matches boards 1 and 2 at 5.6 kohm.",
+          "identity_and_supplies": "info MSV4-BUILD:bringup-live-2026-10-11 app_version=262152, uptime 165 s, boot_count 1; VDD 3312-3328 mV; VBAT 4006 mV (not meter-checked); pins safe before and after.",
+          "ntc": "22.46 C / 11022 ohm at start (die 23.00 C). Rose to 29.56 C while the maintainer warmed the tip by hand ('confirming the temp sensor was working, (which it is)') with the die at 21.5-23.25 C, then cooled back to 23.71 C. Works through the epoxy.",
+          "hand_test": "Maintainer-driven `live` on electrode A, 18:03:07-18:06:13 PST: 4 hand-on episodes. Raw |H| 0.60-0.73 in air vs 0.10-0.14 with a hand on, returning to the air band after each. (Printed G/C use Rs = 1000, so are 5.6x high: air G 30-38 uS / C 82-101 pF, hand 550-1100 uS / 1020-1480 pF.)",
+          "mux": "drive 16 + chop on, iq 16 sense amplitude open/A/B = 672.61/490.26/485.89 mV; A and B agree to 0.9 %, both 27 % below open (3 % below at 1 kohm on 2026-10-29; the larger drop is the 5.6 kohm source resistance). sweep 16 clean.",
+          "spectrum_in_air": "As printed (Rs 1000): spectrum open Cp 49.61 pF +/-2.6 %, rms 0.02055; spectrum ab Rsoil 21901.5 ohm, Cm 107.01 pF, Cd 91.90 pF +/-1.8 %; moisture x3 Rsoil 21891-22108 ohm, Cm 105.5-109.2 pF, Cd 91.87-91.91 pF, rms 0.0090-0.0092. Corrected to Rs 5600 (exact: the fit only determines Rs x Y): Cp 8.86 pF, Rsoil ~123 kohm, Cm ~19.1 pF, Cd 16.41 pF. Board 1 at 5.6 kohm on 2026-11-20: Cp 8.95 pF, Rsoil 125 kohm, Cm 17.6-20.2 pF, Cd 16.29 pF.",
+          "r15_cross_check": "MEASURED consistency with the maintainer's 5.6 kohm statement: open Cp 49.61 pF here vs 8.73 pF at 1 kohm on 2026-10-29, ratio 5.68.",
+          "next": "Conformal coating (maintainer plan 2026-11-22). Then assign a sensor ID and install a signed moisture image built with -RsOhms 5600 and this board's measured Cp (8.86 pF before coating, -CpCentiPf 886; re-measure after the coating, which may move it), as boards 1 and 2 got; the bring-up console here was never replaced, so the anti-rollback floor is still unseeded."
         }
       },
       {
