@@ -8,6 +8,21 @@ There are now two receivers. Identify them by chip MAC (`esptool read-mac`), not
 the main receiver is `28:84:85:46:70:D8` (historically `COM16`); the build-two board is
 `28:84:85:27:9a:d8`.
 
+**Status 2026-11-21 ~17:55 PST: working.** Its USB connector broke off the board while being
+plugged in (roughly the 50th insertion). The maintainer resoldered it with more reinforcement. Checked
+afterwards on `COM3`:
+
+- The display comes up.
+- It enumerates as `VID_303A&PID_1001` with serial `28:84:85:27:9A:D8`, as both the serial port and
+  the JTAG unit.
+- The boot log arrived clean at 115200.
+- A line sent from the PC (`ping`) got the firmware's unknown-command reply, so data moves both ways.
+
+Opening the port reset the board once (`rst:0x15 USB_UART_CHIP_RESET`), which is normal for the
+native USB. Firmware (`boot-repaint-v2`), flip (on) and touch calibration are unchanged. It is
+still in the first-time WiFi setup portal, so it is not yet scanning for probes. The connector's
+strength under cable strain was not tested.
+
 As of 2026-11-20 ~14:35 PST the build-two board runs `Treebeard runtime build 2026-11-20
 boot-repaint-v2`, flashed the same way. Hash verified. It is `screen-flip-v2` plus the single
 boot repaint described under the open issue below. Serial showed `boot repaint at 10001 ms` on
