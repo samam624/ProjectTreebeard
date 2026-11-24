@@ -68,6 +68,31 @@ const parameters = {
   frontFaceBackZ: 2.08,
   visibleFrontZ: 3.10,
 
+  // --- Prototype 10 (2026-11-23) --------------------------------------------
+  // 45-degree chamfer on every exterior edge of the closed body: the four
+  // corner edges (they run across the seam), the four front edges and the
+  // four back edges. The cavity's matching inside edges are chamfered too so
+  // no wall gets thinner than minimumChamferWall under a chamfer. 3.5 mm is
+  // the largest that clears the controller's top-left corner inside and the
+  // controller screw pockets on the back (both ~0.4 mm margin).
+  exteriorChamfer: 3.50,
+  footChamfer: 2.00,
+  minimumChamferWall: 1.60,
+  // Prototype 9 printed well, but its four screws leave the bottom corner on
+  // the controller/USB side (bottom-LEFT seen from the screen, bottom-RIGHT
+  // seen from the back) with no fastener, so the seam gaps there. Nothing in
+  // the PCB stack is below y = 0.14 in this corner. A fifth M2 screw from the
+  // back, through a rear-shell post, into a heat-set insert in a front-cover
+  // boss. It touches no PCB.
+  cornerStandoff: {
+    center: [-56.50, -5.00],
+    insertFaceZ: -6.15, // = shellFrontZ, the seam
+    postEndGap: 0.10, // the post stops short of the seam so the walls seat first
+    postRadius: 3.00,
+    bossRadius: 3.20,
+    webWidth: 4.00,
+  },
+
   // Display PCB right-hand holes (unchanged; both fitted on prototype 8).
   displayRightHoles: [[45.16, 3.5645], [45.16, 58.4630]],
   // closureHoleCenters = display right-hand pair + controller top pair (derived).
@@ -146,10 +171,24 @@ const parameters = {
     yMin: p.mainOuter.yMin - 8.20,
     yMax: usbMouthY + p.usbBayAboveMouth,
   };
+  // The feet's outer sides start where the corner chamfer meets the bottom face
+  // (prototype 9: -62 and 56, which would leave a ledge beside the chamfer).
   p.bottomFeet = {
     yMin: p.mainOuter.yMin - 8.00, yMax: p.mainOuter.yMin,
-    leftXMin: -62.00, leftXMax: p.usbCableBay.xMin,
-    rightXMin: 37.00, rightXMax: 56.00,
+    leftXMin: p.mainOuter.xMin + p.exteriorChamfer, leftXMax: p.usbCableBay.xMin,
+    rightXMin: 37.00, rightXMax: p.mainOuter.xMax - p.exteriorChamfer,
+  };
+  // Inside chamfers that keep minimumChamferWall under each outside chamfer.
+  // A wall pair (a, b) meeting at an edge chamfered c outside and ci inside is
+  // (a + b + ci - c) / sqrt(2) thick across the chamfer.
+  const c = p.exteriorChamfer;
+  const t = p.minimumChamferWall * Math.SQRT2;
+  const frontFace = p.visibleFrontZ - p.frontFaceBackZ;
+  const backWall = p.shellInnerBackZ - p.shellBackZ;
+  p.innerChamfer = {
+    corner: Math.max(0, c + t - 2 * p.wallThickness),
+    front: Math.max(0, c + t - p.wallThickness - frontFace),
+    back: Math.max(0, c + t - p.wallThickness - backWall),
   };
   p.kickstandPivot = { y: p.kickstandPivotPrevious.y + drop, z: p.kickstandPivotPrevious.z };
   p.kickstandFar = { y: p.kickstandFarPrevious.y + drop, z: p.kickstandFarPrevious.z };
@@ -179,6 +218,69 @@ function cutAll(base, cutters) {
   return cutters.reduce((shape, cutter) => shape.cut(cutter), base);
 }
 
+// A 45-degree chamfer cutter for one edge of an axis-aligned block. `axis` is
+// the edge direction (0 = X, 1 = Y, 2 = Z); `at` gives the edge position on
+// the other two axes, in X, Y, Z order; `outward` gives the outward sign of
+// each of those two faces; `range` is the extent along the edge. The cutter
+// is a large square prism turned 45 degrees with one face on the chamfer
+// plane. It also removes everything outside the block in that quadrant, so it
+// must only be applied to the block before anything is added outside it.
+function edgeChamferCutter(axis, at, outward, size, range) {
+  const side = 80;
+  const offset = (size - side / Math.SQRT2) / 2;
+  const others = [0, 1, 2].filter((index) => index !== axis);
+  const center = [0, 0, 0];
+  const min = [0, 0, 0];
+  const max = [0, 0, 0];
+  others.forEach((index, slot) => {
+    center[index] = at[slot] - outward[slot] * offset;
+    min[index] = center[index] - side / 2;
+    max[index] = center[index] + side / 2;
+  });
+  [min[axis], max[axis]] = range;
+  const direction = [0, 0, 0];
+  direction[axis] = 1;
+  return box(...min, ...max).rotate(45, center, direction);
+}
+
+// Chamfer selected edges of an axis-aligned block. `edges` lists any of the
+// twelve edges by name: corner edges along Z as 'z:-x-y', 'z:+x+y', ...; edges
+// along X as 'x:-y-z', ...; edges along Y as 'y:-x+z', ... `sizeFor(edge)`
+// returns the chamfer size for each; `rangeFor(edge)` may limit how far along
+// the edge the chamfer runs.
+function chamferedBlock(min, max, edges, sizeFor, rangeFor = () => null) {
+  let block = box(...min, ...max);
+  for (const edge of edges) {
+    const [axisName, signs] = edge.split(':');
+    const axis = 'xyz'.indexOf(axisName);
+    const others = [0, 1, 2].filter((index) => index !== axis);
+    const outward = [signs[0] === '+' ? 1 : -1, signs[2] === '+' ? 1 : -1];
+    const at = others.map((index, slot) => (outward[slot] > 0 ? max[index] : min[index]));
+    const range = rangeFor(edge) || [min[axis] - 1, max[axis] + 1];
+    const size = sizeFor(edge);
+    if (size > 0) block = block.cut(edgeChamferCutter(axis, at, outward, size, range));
+  }
+  return block;
+}
+
+const CORNER_EDGES = ['z:-x-y', 'z:+x-y', 'z:-x+y', 'z:+x+y'];
+const FRONT_EDGES = ['x:-y+z', 'x:+y+z', 'y:-x+z', 'y:+x+z'];
+const BACK_EDGES = ['x:-y-z', 'x:+y-z', 'y:-x-z', 'y:+x-z'];
+
+// The cavity both parts are hollowed by, with its inside edges chamfered so
+// each wall keeps minimumChamferWall under the outside chamfer.
+function chamferedCavity() {
+  const p = parameters;
+  const w = p.wallThickness;
+  return chamferedBlock(
+    [p.mainOuter.xMin + w, p.mainOuter.yMin + w, p.shellInnerBackZ],
+    [p.mainOuter.xMax - w, p.mainOuter.yMax - w, p.frontFaceBackZ],
+    [...CORNER_EDGES, ...FRONT_EDGES, ...BACK_EDGES],
+    (edge) => (edge.startsWith('z') ? p.innerChamfer.corner
+      : edge.endsWith('+z') ? p.innerChamfer.front : p.innerChamfer.back),
+  );
+}
+
 async function importStep(filename) {
   return replicad.importSTEP(new Blob([fs.readFileSync(filename)]));
 }
@@ -198,28 +300,42 @@ function buildFrontCover() {
   const innerYMin = p.mainOuter.yMin + p.wallThickness;
   const innerYMax = p.mainOuter.yMax - p.wallThickness;
 
-  // Build the cover from new primitives instead of modifying the old STEP.
-  // The full-width face slab produces one clean planar front surface with only
-  // the intended LCD opening. Four continuous perimeter walls close every side;
-  // in particular, there is no controller clearance slot in the left wall.
-  let cover = box(
-    p.mainOuter.xMin, p.mainOuter.yMin, p.frontFaceBackZ,
-    p.mainOuter.xMax, p.mainOuter.yMax, p.visibleFrontZ,
-  ).cut(box(
+  // Build the cover from new primitives instead of modifying the old STEP:
+  // the front half of the chamfered body, hollowed by the chamfered cavity.
+  // That leaves one clean planar front surface with only the intended LCD
+  // opening, and four continuous perimeter walls (in particular, no controller
+  // clearance slot in the left wall).
+  const outline = () => chamferedBlock(
+    [p.mainOuter.xMin, p.mainOuter.yMin, p.shellFrontZ],
+    [p.mainOuter.xMax, p.mainOuter.yMax, p.visibleFrontZ],
+    [...CORNER_EDGES, ...FRONT_EDGES],
+    () => p.exteriorChamfer,
+  );
+  let cover = outline().cut(chamferedCavity()).cut(box(
     p.bezelOpening.xMin, p.bezelOpening.yMin, p.frontFaceBackZ - 0.20,
     p.bezelOpening.xMax, p.bezelOpening.yMax, p.visibleFrontZ + 0.20,
-  ));
+  )).simplify();
 
-  cover = joinAll(cover, [
-    box(p.mainOuter.xMin, p.mainOuter.yMin, p.shellFrontZ,
-      innerXMin, p.mainOuter.yMax, p.frontFaceBackZ),
-    box(innerXMax, p.mainOuter.yMin, p.shellFrontZ,
-      p.mainOuter.xMax, p.mainOuter.yMax, p.frontFaceBackZ),
-    box(innerXMin, p.mainOuter.yMin, p.shellFrontZ,
-      innerXMax, innerYMin, p.frontFaceBackZ),
-    box(innerXMin, innerYMax, p.shellFrontZ,
-      innerXMax, p.mainOuter.yMax, p.frontFaceBackZ),
-  ]).simplify();
+  // Corner standoff boss, tied into the left and bottom walls. Its insert
+  // face is the seam; the screw-tip relief above the insert lets an M2x16
+  // (the controller-screw length) reach full engagement.
+  {
+    const s = p.cornerStandoff;
+    const [centerX, centerY] = s.center;
+    const halfWeb = s.webWidth / 2;
+    cover = joinAll(cover, [
+      cylinderZ(s.insertFaceZ, p.frontFaceBackZ - s.insertFaceZ + 0.20, centerX, centerY, s.bossRadius),
+      box(innerXMin - 0.10, centerY - halfWeb, s.insertFaceZ,
+        centerX, centerY + halfWeb, p.frontFaceBackZ + 0.10),
+      box(centerX - halfWeb, innerYMin - 0.10, s.insertFaceZ,
+        centerX + halfWeb, centerY, p.frontFaceBackZ + 0.10),
+    ]);
+    cover = cover.cut(cylinderZ(s.insertFaceZ - 0.10, p.enclosureInsertDepth,
+      centerX, centerY, p.enclosureInsertDiameter / 2));
+    cover = cover.cut(cylinderZ(s.insertFaceZ - 0.10 + p.enclosureInsertDepth - 0.05,
+      p.controllerScrewReliefDepth + 0.05, centerX, centerY,
+      p.enclosureScrewClearanceDiameter / 2));
+  }
 
   // Four back-facing heat-set-insert seats: the display PCB's two right-hand
   // holes and the controller PCB's two top holes. The display bosses stop just
@@ -263,7 +379,11 @@ function buildFrontCover() {
     p.usbCableBay.xMax, innerYMin + 0.20, p.usbOvermoldNotchTopZ,
   ));
 
-  return cover.simplify();
+  // The boss webs reach 0.1 mm into the walls to fuse with them. Under a
+  // chamfer that overlap pokes through the outside as a ~0.5 mm nub
+  // (prototype 10 first build, 2026-11-23), so trim everything back to the
+  // chamfered outline.
+  return cover.intersect(outline()).simplify();
 }
 
 // A 1 mm copy of the front face with guide tubes at the four screw positions.
@@ -294,25 +414,40 @@ function buildFitCheckPlate() {
 
 function buildRearShell() {
   const p = parameters;
-  let shell = box(
-    p.mainOuter.xMin, p.mainOuter.yMin, p.shellBackZ,
-    p.mainOuter.xMax, p.mainOuter.yMax, p.shellFrontZ,
+  // The back half of the chamfered body. Chamfers are cut before anything is
+  // added outside the block (see edgeChamferCutter). The bottom-back edge is
+  // chamfered only between the feet: above each foot the back face runs
+  // straight down into the foot's.
+  let shell = chamferedBlock(
+    [p.mainOuter.xMin, p.mainOuter.yMin, p.shellBackZ],
+    [p.mainOuter.xMax, p.mainOuter.yMax, p.shellFrontZ],
+    [...CORNER_EDGES, ...BACK_EDGES],
+    () => p.exteriorChamfer,
+    (edge) => (edge === 'x:-y-z' ? [p.bottomFeet.leftXMax, p.bottomFeet.rightXMin] : null),
   );
 
   // Two short feet lift the lower edge so a straight USB-C plug can enter the
-  // downward-facing connector without the desk blocking it.
+  // downward-facing connector without the desk blocking it. Their free edges
+  // get a smaller chamfer; the edges running up to the shell stop at its
+  // bottom face.
+  const footEdges = ['z:-x-y', 'z:+x-y', 'x:-y-z', 'x:-y+z',
+    'y:-x-z', 'y:+x-z', 'y:-x+z', 'y:+x+z'];
+  const footTopY = p.mainOuter.yMin + 0.10;
+  const foot = (xMin, xMax) => chamferedBlock(
+    [xMin, p.bottomFeet.yMin, p.shellBackZ],
+    [xMax, footTopY, p.shellFrontZ],
+    footEdges,
+    () => p.footChamfer,
+    (edge) => (edge.startsWith('y') ? [p.bottomFeet.yMin - 1, p.bottomFeet.yMax] : null),
+  );
   shell = joinAll(shell, [
-    box(p.bottomFeet.leftXMin, p.bottomFeet.yMin, p.shellBackZ,
-      p.bottomFeet.leftXMax, p.bottomFeet.yMax, p.shellFrontZ),
-    box(p.bottomFeet.rightXMin, p.bottomFeet.yMin, p.shellBackZ,
-      p.bottomFeet.rightXMax, p.bottomFeet.yMax, p.shellFrontZ),
+    foot(p.bottomFeet.leftXMin, p.bottomFeet.leftXMax),
+    foot(p.bottomFeet.rightXMin, p.bottomFeet.rightXMax),
   ]);
 
   shell = cutAll(shell, [
-    // One continuous rectangular cavity contains both soldered PCBs.
-    box(p.mainOuter.xMin + p.wallThickness, p.mainOuter.yMin + p.wallThickness,
-      p.shellInnerBackZ, p.mainOuter.xMax - p.wallThickness,
-      p.mainOuter.yMax - p.wallThickness, p.shellFrontZ + 0.50),
+    // One continuous cavity contains both soldered PCBs.
+    chamferedCavity(),
     // USB-C tunnel to the controller connector on the lower edge.
     box(p.usbOpening.xMin, p.mainOuter.yMin - 0.50, p.usbOpening.zMin,
       p.usbOpening.xMax, p.usbOpening.yMax, p.usbOpening.zMax),
@@ -337,6 +472,29 @@ function buildRearShell() {
       p.enclosureScrewHeadDepth + 0.30,
       centerX, centerY, p.enclosureScrewHeadDiameter / 2));
   });
+
+  // Corner standoff post, tied into the left and bottom walls. It stops
+  // postEndGap short of the seam so the perimeter walls, not the post, seat.
+  {
+    const s = p.cornerStandoff;
+    const [centerX, centerY] = s.center;
+    const halfWeb = s.webWidth / 2;
+    const postEndZ = s.insertFaceZ - s.postEndGap;
+    const innerXMin = p.mainOuter.xMin + p.wallThickness;
+    const innerYMin = p.mainOuter.yMin + p.wallThickness;
+    shell = joinAll(shell, [
+      cylinderZ(p.shellInnerBackZ - 0.10, postEndZ - p.shellInnerBackZ + 0.10,
+        centerX, centerY, s.postRadius),
+      box(innerXMin - 0.10, centerY - halfWeb, p.shellInnerBackZ - 0.10,
+        centerX, centerY + halfWeb, postEndZ),
+      box(centerX - halfWeb, innerYMin - 0.10, p.shellInnerBackZ - 0.10,
+        centerX + halfWeb, centerY, postEndZ),
+    ]);
+    shell = shell.cut(cylinderZ(p.shellBackZ - 0.30, postEndZ - p.shellBackZ + 0.60,
+      centerX, centerY, p.enclosureScrewClearanceDiameter / 2));
+    shell = shell.cut(cylinderZ(p.shellBackZ - 0.30, p.enclosureScrewHeadDepth + 0.30,
+      centerX, centerY, p.enclosureScrewHeadDiameter / 2));
+  }
 
   // Shallow exterior pockets let the folded prop sit flush without thinning
   // the 2.6 mm rear wall below 1.6 mm.
@@ -619,8 +777,12 @@ const borders = {
 // stop 0.10 mm short of the blind end (insert pocket, plus the relief on the
 // controller bosses).
 const headSeatZ = p.shellBackZ + p.enclosureScrewHeadDepth;
-const screwPlan = p.closureHoleCenters.map((center, index) => {
-  const insertFaceZ = p.closureInsertFaceZ[index];
+// Index 4 is the corner standoff: its insert face is the seam and, like the
+// controller bosses, it has a screw-tip relief.
+const screwCenters = [...p.closureHoleCenters, p.cornerStandoff.center];
+const insertFaces = [...p.closureInsertFaceZ, p.cornerStandoff.insertFaceZ];
+const screwPlan = screwCenters.map((center, index) => {
+  const insertFaceZ = insertFaces[index];
   const pocketEndZ = insertFaceZ - 0.10 + p.enclosureInsertDepth;
   const blindEndZ = index >= 2 ? pocketEndZ + p.controllerScrewReliefDepth : pocketEndZ;
   const options = [];
@@ -636,7 +798,8 @@ const screwPlan = p.closureHoleCenters.map((center, index) => {
   options.sort((a, b) => b.engagement - a.engagement || a.washerMm - b.washerMm);
   return {
     hole: ['display PCB lower-right', 'display PCB upper-right',
-      'controller PCB upper-left', 'controller PCB upper-right'][index],
+      'controller PCB upper-left', 'controller PCB upper-right',
+      'corner standoff (no PCB)'][index],
     center,
     blindEndZ,
     best: options[0],
@@ -644,7 +807,7 @@ const screwPlan = p.closureHoleCenters.map((center, index) => {
   };
 });
 const designReport = {
-  version: 'prototype-9-asbuilt-fit',
+  version: 'prototype-10-corner-standoff-chamfer',
   units: 'mm',
   parameters,
   outputCoordinates,
@@ -661,7 +824,7 @@ const designReport = {
   frontCoverConstruction: {
     part: 'single-piece planar frame with one LCD opening',
     modifiedLegacyBody: false,
-    construction: 'one face slab, one LCD opening, four continuous perimeter walls, four blind internal insert bosses, and a USB overmold notch in the rear edge of the bottom wall',
+    construction: 'one face slab, one LCD opening, four continuous perimeter walls with 3.5 mm exterior chamfers, five blind internal insert bosses (four PCB + one corner standoff), and a USB overmold notch in the rear edge of the bottom wall',
     originalBounds: frontBezelReference.boundingBox.bounds,
     finishedBounds: frontCover.boundingBox.bounds,
     openingCenter: activeCenter,
@@ -721,9 +884,27 @@ const designReport = {
     adjustment: 'set the lean angle, then tighten both screws against the captive nuts',
     foldedIntersectionVolume: foldedStandOverlap,
   },
+  changesFromPrototype9: {
+    cornerStandoff: 'fifth M2 screw at the bottom corner on the controller/USB side (bottom-left from the screen, bottom-right from the back), which had no fastener; rear-shell post + front-cover insert boss, touching no PCB',
+    chamfer: `${p.exteriorChamfer} mm 45-degree chamfer on all twelve exterior body edges; ${p.footChamfer} mm on the feet; cavity edges chamfered to keep >= ${p.minimumChamferWall} mm walls`,
+    feet: 'outer sides moved in to where the corner chamfer meets the bottom face',
+  },
+  chamfer: {
+    exterior: p.exteriorChamfer,
+    feet: p.footChamfer,
+    inner: p.innerChamfer,
+    minimumWallUnderChamfer: {
+      corner: (2 * p.wallThickness + p.innerChamfer.corner - p.exteriorChamfer) / Math.SQRT2,
+      front: (p.wallThickness + p.visibleFrontZ - p.frontFaceBackZ + p.innerChamfer.front - p.exteriorChamfer) / Math.SQRT2,
+      back: (p.wallThickness + p.shellInnerBackZ - p.shellBackZ + p.innerChamfer.back - p.exteriorChamfer) / Math.SQRT2,
+    },
+  },
   closure: {
-    type: 'four M2 screws from the rear: two through the display PCB right-hand holes, two through the controller PCB top holes, into front-cover heat-set inserts',
-    screwCount: p.closureHoleCenters.length,
+    type: 'five M2 screws from the rear into front-cover heat-set inserts: two through the display PCB right-hand holes, two through the controller PCB top holes, one corner standoff',
+    screwCount: screwCenters.length,
+    pcbScrewCount: p.closureHoleCenters.length,
+    cornerScrewCenter: [p.cornerStandoff.center[0] + outputTranslation[0],
+      p.cornerStandoff.center[1] + outputTranslation[1]],
     clearanceHoleDiameter: p.enclosureScrewClearanceDiameter,
     insertPocket: { diameter: p.enclosureInsertDiameter, depth: p.enclosureInsertDepth },
     minimumInsertBlindWall: p.visibleFrontZ

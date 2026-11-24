@@ -1,5 +1,8 @@
 # MSV2 DisplayCenter enclosure v2 - P1S / 0.4 mm / PLA
 
+> **Superseded on 2026-11-23 by [`../p1s_0p4_pla_v3/`](../p1s_0p4_pla_v3/)**
+> (prototype 10: fifth corner screw, 3.5 mm exterior chamfers). Kept for history.
+
 Prototype 9 (2026-11-17), re-sliced on 2026-11-19. Every file here is a
 sliced `.gcode.3mf` for a Bambu Lab P1S with a 0.4 mm nozzle, a Textured PEI
 Plate and PLA. Send one to the printer and print it. Nothing needs re-slicing.

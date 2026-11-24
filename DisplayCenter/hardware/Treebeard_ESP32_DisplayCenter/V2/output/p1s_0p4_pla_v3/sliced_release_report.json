@@ -1,0 +1,243 @@
+{
+  "release": "MSV2_DisplayCenter_P1S_0p4_PLA_v3",
+  "design_version": "prototype-10-corner-standoff-chamfer",
+  "generated": "2026-11-23",
+  "slicer": "Bambu Studio command line (C:\\Program Files\\Bambu Studio\\bambu-studio.exe), BBL profiles 02.07.00.08",
+  "printer": "Bambu Lab P1S",
+  "printer_model_id": "C12",
+  "nozzle_diameter_mm": 0.4,
+  "material": "Generic PLA",
+  "plate": "Textured PEI Plate",
+  "preset_chains": {
+    "machine": [
+      "Bambu Lab P1S 0.4 nozzle (Bambu Lab P1S 0.4 nozzle.json)",
+      "fdm_bbl_3dp_001_common (fdm_bbl_3dp_001_common.json)",
+      "fdm_machine_common (fdm_machine_common.json)",
+      "Bambu Lab P1S 0.4 nozzle template machine_start_gcode (Bambu Lab P1S 0.4 nozzle template machine_start_gcode.json)",
+      "Bambu Lab P1S 0.4 nozzle template machine_end_gcode (Bambu Lab P1S 0.4 nozzle template machine_end_gcode.json)",
+      "Bambu Lab P1S 0.4 nozzle template time_lapse_gcode (Bambu Lab P1S 0.4 nozzle template time_lapse_gcode.json)",
+      "Bambu Lab P1S 0.4 nozzle template change_filament_gcode (Bambu Lab P1S 0.4 nozzle template change_filament_gcode.json)",
+      "Bambu Lab P1S 0.4 nozzle template layer_change_gcode (Bambu Lab P1S 0.4 nozzle template layer_change_gcode.json)"
+    ],
+    "filament": [
+      "MSV2 DisplayCenter Generic PLA @ P1S 0.4 (profiles/MSV2_DisplayCenter_P1S_0p4_PLA_filament.json)",
+      "Generic PLA (Generic PLA.json)",
+      "Generic PLA @base (Generic PLA @base.json)",
+      "fdm_filament_pla (fdm_filament_pla.json)",
+      "fdm_filament_common (fdm_filament_common.json)"
+    ],
+    "MSV2_DisplayCenter_P1S_0p4_PLA_process.json": [
+      "MSV2 DisplayCenter P1S 0.4 PLA (profiles/MSV2_DisplayCenter_P1S_0p4_PLA_process.json)",
+      "0.20mm Standard @BBL X1C (0.20mm Standard @BBL X1C.json)",
+      "fdm_process_single_0.20 (fdm_process_single_0.20.json)",
+      "fdm_process_single_common (fdm_process_single_common.json)",
+      "fdm_process_common (fdm_process_common.json)"
+    ],
+    "MSV2_DisplayCenter_P1S_0p4_PLA_rear_support_process.json": [
+      "MSV2 DisplayCenter P1S 0.4 PLA rear shell (profiles/MSV2_DisplayCenter_P1S_0p4_PLA_rear_support_process.json)",
+      "MSV2 DisplayCenter P1S 0.4 PLA (profiles/MSV2_DisplayCenter_P1S_0p4_PLA_process.json)",
+      "0.20mm Standard @BBL X1C (0.20mm Standard @BBL X1C.json)",
+      "fdm_process_single_0.20 (fdm_process_single_0.20.json)",
+      "fdm_process_single_common (fdm_process_single_common.json)",
+      "fdm_process_common (fdm_process_common.json)"
+    ]
+  },
+  "flattened_profiles": {
+    "machine": "profiles/p1s_flattened/machine_Bambu_Lab_P1S_0p4.json",
+    "filament": "profiles/p1s_flattened/filament_MSV2_Generic_PLA_P1S_0p4.json",
+    "MSV2_DisplayCenter_P1S_0p4_PLA_process.json": "profiles/p1s_flattened/process_MSV2_P1S_0p4_PLA.json",
+    "MSV2_DisplayCenter_P1S_0p4_PLA_rear_support_process.json": "profiles/p1s_flattened/process_MSV2_P1S_0p4_PLA_rear_shell.json"
+  },
+  "projects": {
+    "fit_check_plate": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_fit_check_plate_v3.gcode.3mf",
+      "inputs": [
+        "MSV3_display_fit_check_plate_print.stl"
+      ],
+      "process": "MSV2 DisplayCenter P1S 0.4 PLA",
+      "return_code": 0,
+      "estimated_seconds": 1631.0,
+      "estimated_filament_g": 8.31,
+      "supports": false,
+      "support_feature_blocks_by_object": {},
+      "objects": 1,
+      "gcode_md5": "98C1B4472B08F930186F9CE1155AC0CF",
+      "start_gcode": ";===== machine: P1S-0.4 ========================",
+      "extrusion_extents_mm": {
+        "min": [
+          62.56,
+          77.77,
+          0.2
+        ],
+        "max": [
+          193.44,
+          174.23,
+          8.6
+        ]
+      },
+      "settings_compared": 397,
+      "setting_mismatches": [],
+      "resolved_to_standard_nozzle_variant": [
+        "filament_dev_ams_drying_ams_limitations",
+        "inner_wall_speed",
+        "internal_solid_infill_speed",
+        "overhang_totally_speed",
+        "print_extruder_variant",
+        "printer_extruder_variant",
+        "sparse_infill_speed",
+        "top_surface_speed"
+      ],
+      "accepted_differences": [],
+      "slice_info_patched": [
+        "printer_model_id=''->C12",
+        "first_layer_time=0.000000...->851s (from M73)"
+      ]
+    },
+    "front_and_stand": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_front_and_stand_v3.gcode.3mf",
+      "inputs": [
+        "MSV3_display_front_cover_print.stl",
+        "MSV3_display_kickstand_print.stl"
+      ],
+      "process": "MSV2 DisplayCenter P1S 0.4 PLA",
+      "return_code": 0,
+      "estimated_seconds": 3781.0,
+      "estimated_filament_g": 19.11,
+      "supports": false,
+      "support_feature_blocks_by_object": {},
+      "objects": 2,
+      "gcode_md5": "4988291534F37E748F9BFE6E31297F05",
+      "start_gcode": ";===== machine: P1S-0.4 ========================",
+      "extrusion_extents_mm": {
+        "min": [
+          65.96,
+          76.67,
+          0.2
+        ],
+        "max": [
+          193.44,
+          177.23,
+          55.4
+        ]
+      },
+      "settings_compared": 397,
+      "setting_mismatches": [],
+      "resolved_to_standard_nozzle_variant": [
+        "filament_dev_ams_drying_ams_limitations",
+        "inner_wall_speed",
+        "internal_solid_infill_speed",
+        "overhang_totally_speed",
+        "print_extruder_variant",
+        "printer_extruder_variant",
+        "sparse_infill_speed",
+        "top_surface_speed"
+      ],
+      "accepted_differences": [],
+      "slice_info_patched": [
+        "printer_model_id=''->C12",
+        "first_layer_time=0.000000...->781s (from M73)"
+      ]
+    },
+    "rear_shell": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_rear_shell_v3.gcode.3mf",
+      "inputs": [
+        "MSV3_display_rear_shell_print.stl"
+      ],
+      "process": "MSV2 DisplayCenter P1S 0.4 PLA rear shell",
+      "return_code": 0,
+      "estimated_seconds": 8801.0,
+      "estimated_filament_g": 64.42,
+      "supports": "tree(auto), build plate only",
+      "support_feature_blocks_by_object": {
+        "unlabelled": 671
+      },
+      "objects": 1,
+      "gcode_md5": "B3D563E65BD332D8A4182A5584DCCC93",
+      "start_gcode": ";===== machine: P1S-0.4 ========================",
+      "extrusion_extents_mm": {
+        "min": [
+          92.45,
+          75.98,
+          0.2
+        ],
+        "max": [
+          155.42,
+          174.83,
+          122.0
+        ]
+      },
+      "settings_compared": 397,
+      "setting_mismatches": [],
+      "resolved_to_standard_nozzle_variant": [
+        "filament_dev_ams_drying_ams_limitations",
+        "inner_wall_speed",
+        "internal_solid_infill_speed",
+        "overhang_totally_speed",
+        "print_extruder_variant",
+        "printer_extruder_variant",
+        "sparse_infill_speed",
+        "top_surface_speed"
+      ],
+      "accepted_differences": [],
+      "slice_info_patched": [
+        "printer_model_id=''->C12",
+        "first_layer_time=0.000000...->641s (from M73)"
+      ]
+    },
+    "full_enclosure": {
+      "file": "MSV2_DisplayCenter_P1S_0p4_PLA_full_enclosure_v3.gcode.3mf",
+      "inputs": [
+        "MSV3_display_front_cover_print.stl",
+        "MSV3_display_rear_shell_print.stl",
+        "MSV3_display_kickstand_print.stl"
+      ],
+      "process": "MSV2 DisplayCenter P1S 0.4 PLA rear shell",
+      "return_code": 0,
+      "estimated_seconds": 11472.0,
+      "estimated_filament_g": 82.95,
+      "supports": "tree(auto), build plate only; switched off per object for ['MSV3_display_front_cover_print.stl', 'MSV3_display_kickstand_print.stl']",
+      "support_feature_blocks_by_object": {
+        "MSV3_display_rear_shell_print.stl": 671
+      },
+      "objects": 3,
+      "gcode_md5": "03644F62D9DF51F7EF5FA7FC9FFCCEFA",
+      "start_gcode": ";===== machine: P1S-0.4 ========================",
+      "extrusion_extents_mm": {
+        "min": [
+          59.27,
+          40.21,
+          0.2
+        ],
+        "max": [
+          211.21,
+          215.19,
+          122.0
+        ]
+      },
+      "settings_compared": 397,
+      "setting_mismatches": [],
+      "resolved_to_standard_nozzle_variant": [
+        "filament_dev_ams_drying_ams_limitations",
+        "inner_wall_speed",
+        "internal_solid_infill_speed",
+        "overhang_totally_speed",
+        "print_extruder_variant",
+        "printer_extruder_variant",
+        "sparse_infill_speed",
+        "top_surface_speed"
+      ],
+      "accepted_differences": [
+        "enable_prime_tower: 1 -> 0 (single filament, no prime tower in the G-code)"
+      ],
+      "slice_info_patched": [
+        "printer_model_id=''->C12",
+        "first_layer_time=0.000000...->1092s (from M73)"
+      ]
+    }
+  },
+  "totals_enclosure_split_plates": {
+    "estimated_seconds": 12582.0,
+    "estimated_filament_g": 83.53
+  },
+  "failures": []
+}

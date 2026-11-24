@@ -18,7 +18,7 @@
     },
     "frontCover": {
       "meshCount": 1,
-      "triangles": 2012,
+      "triangles": 2640,
       "min": [
         -70.39,
         -26.68,
@@ -32,7 +32,7 @@
     },
     "rearShell": {
       "meshCount": 1,
-      "triangles": 3372,
+      "triangles": 4076,
       "min": [
         -70.39,
         -34.68,
@@ -60,7 +60,7 @@
     },
     "foldedAssembly": {
       "meshCount": 3,
-      "triangles": 6688,
+      "triangles": 8020,
       "min": [
         -70.39,
         -34.68,
@@ -74,7 +74,7 @@
     },
     "deployedAssembly": {
       "meshCount": 3,
-      "triangles": 6688,
+      "triangles": 8020,
       "min": [
         -70.39,
         -34.68,
@@ -88,7 +88,7 @@
     },
     "fitCheckAssembly": {
       "meshCount": 342,
-      "triangles": 96379,
+      "triangles": 97711,
       "min": [
         -70.39,
         -34.68,
@@ -102,7 +102,7 @@
     },
     "pcbAlignmentCheck": {
       "meshCount": 340,
-      "triangles": 91703,
+      "triangles": 92331,
       "min": [
         -70.39,
         -26.68,
@@ -145,38 +145,38 @@
   },
   "stlReports": {
     "frontCover": {
-      "triangleCount": 2012,
-      "byteLength": 100684,
+      "triangleCount": 2646,
+      "byteLength": 132384,
       "min": [
-        1.500000053056283e-7,
-        1.500000053056283e-7,
-        1.500000053056283e-7
+        1.5000003372733772e-7,
+        1.5000003372733772e-7,
+        1.5000004793819244e-7
       ],
       "max": [
         122,
         87.58000183105469,
         9.25
       ],
-      "bedContactVertexCount": 50,
+      "bedContactVertexCount": 56,
       "degenerateTriangleCount": 0,
       "boundaryEdgeCount": 0,
       "nonManifoldEdgeCount": 0,
       "watertight": true
     },
     "rearShell": {
-      "triangleCount": 3372,
-      "byteLength": 168684,
+      "triangleCount": 4076,
+      "byteLength": 203884,
       "min": [
-        1.500000053056283e-7,
-        1.500000053056283e-7,
-        1.500000053056283e-7
+        1.50000019516483e-7,
+        1.50000019516483e-7,
+        1.5000003372733772e-7
       ],
       "max": [
         23.799999237060547,
         95.58000183105469,
         122
       ],
-      "bedContactVertexCount": 52,
+      "bedContactVertexCount": 24,
       "degenerateTriangleCount": 0,
       "boundaryEdgeCount": 0,
       "nonManifoldEdgeCount": 0,
@@ -317,7 +317,7 @@
       "diameter": 2.9,
       "depth": 3.2
     },
-    "screwCount": 4,
+    "screwCount": 5,
     "screwPlan": [
       {
         "hole": "display PCB lower-right",
@@ -397,6 +397,26 @@
           "washerMm": 0,
           "tipZ": -3,
           "engagement": 3.0999999999999996
+        }
+      },
+      {
+        "hole": "corner standoff (no PCB)",
+        "center": [
+          -56.5,
+          -5
+        ],
+        "blindEndZ": -1.5499999999999998,
+        "best": {
+          "length": 16,
+          "washerMm": 0,
+          "tipZ": -3,
+          "engagement": 3.1500000000000004
+        },
+        "noWasher": {
+          "length": 16,
+          "washerMm": 0,
+          "tipZ": -3,
+          "engagement": 3.1500000000000004
         }
       }
     ],
@@ -512,6 +532,22 @@
       ],
       "screenOpening": []
     },
+    "cornerChecks": {
+      "coverAxis": [
+        1.45,
+        6.1
+      ],
+      "coverBossWall": [
+        -3.15,
+        6.1
+      ],
+      "shellAxis": [],
+      "shellPostWall": [
+        -18,
+        -3.25
+      ]
+    },
+    "cornerStandoffOk": true,
     "frontRearIntersectionVolume": 0
   },
   "stand": {
@@ -561,7 +597,7 @@
         ]
       },
       {
-        "x": 48.91,
+        "x": 46.11,
         "y": 56.097,
         "z": [
           -18,
@@ -578,7 +614,7 @@
       },
       {
         "x": 44.11,
-        "y": 58.097,
+        "y": 57.097,
         "z": [
           -18,
           -15.4
@@ -612,7 +648,7 @@
       },
       {
         "y": -14,
-        "z": 3,
+        "z": 2,
         "x": [
           -70.39,
           -68.19,
@@ -642,7 +678,7 @@
       },
       {
         "y": 0,
-        "z": 3,
+        "z": 2,
         "x": [
           -70.39,
           -68.19,
@@ -672,7 +708,7 @@
       },
       {
         "y": 30,
-        "z": 3,
+        "z": 2,
         "x": [
           -70.39,
           -68.19,
@@ -687,11 +723,11 @@
           -70.39,
           -64.5361,
           -63.2584,
-          -60.9798,
-          -21.821,
+          -60.9789,
+          -21.8219,
           -19.5361,
           -18.2584,
-          -15.979,
+          -15.9781,
           49.41,
           51.61
         ]
@@ -703,52 +739,56 @@
           -70.39,
           -64.5361,
           -63.2584,
-          -60.9798,
-          -21.821,
+          -60.9786,
+          -21.8215,
           -19.5361,
           -18.2584,
-          -15.979,
+          -15.9785,
           49.41,
           51.61
         ]
       },
       {
         "y": 56,
-        "z": 3,
+        "z": 2,
         "x": [
           -70.39,
-          -60.9798,
-          -21.821,
-          -15.979,
+          -60.9802,
+          -21.8199,
+          -15.9801,
           49.41,
-          51.61
-        ]
-      },
-      {
-        "y": 60,
-        "z": -2,
-        "x": [
-          -70.39,
-          51.61
-        ]
-      },
-      {
-        "y": 60,
-        "z": 0,
-        "x": [
-          -70.39,
-          51.61
-        ]
-      },
-      {
-        "y": 60,
-        "z": 3,
-        "x": [
-          -70.39,
           51.61
         ]
       }
     ],
+    "exteriorChamfer": 3.5,
+    "chamferChecks": {
+      "frontLeftEdgeX": [
+        -67.89,
+        -51.15,
+        32.37,
+        49.11
+      ],
+      "cornerCover": [],
+      "cornerShell": [],
+      "backLeftEdgeZ": [
+        -15.5,
+        -3.15
+      ],
+      "webUnderFrontChamferX": [
+        -67.86,
+        49.08
+      ],
+      "cornerWebUnderFrontChamferX": [
+        -67.86,
+        49.08
+      ],
+      "wallUnderChamfer": {
+        "corner": 1.6000000000000005,
+        "front": 1.6000000000000005,
+        "back": 1.5999999999999999
+      }
+    },
     "bodyEnvelope": {
       "xMin": -70.39,
       "xMax": 51.61,

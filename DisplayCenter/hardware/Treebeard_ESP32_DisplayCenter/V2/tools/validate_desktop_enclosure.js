@@ -28,6 +28,10 @@ const OUT = { xMin: -70.39, xMax: 51.61, yMin: -26.680, yMax: 60.900 };
 const FEET_BOTTOM_Y = OUT.yMin - 8.00;
 const WALL = 2.20;
 const PIVOT = { y: 18.320, z: -20.80 };
+// Prototype 10: 3.5 mm exterior chamfer on every body edge, and a fifth M2
+// screw at the corner standoff (design (-56.50, -5.00)), output frame below.
+const CHAMFER = 3.50;
+const CORNER_SCREW = [-62.89, -18.903];
 
 function boundsForMeshes(meshes) {
   const min = [Infinity, Infinity, Infinity];
@@ -360,8 +364,10 @@ occtimportjs.then((occt) => {
   const rearShellMesh = stepResults.rearShell.meshes[0];
   const formerAntennaBoreChecks = [
     // Prototype 9's top wall starts 2.6 mm above the former bore centre, so
-    // the +Y sample stays inside the cavity footprint.
-    [0, 0], [-4.80, 0], [4.80, 0], [0, -4.80], [0, 2.00],
+    // the +Y sample stays inside the cavity footprint. Prototype 10's back
+    // chamfer reaches 3.5 mm in from the right and top edges, so the +X and +Y
+    // samples stay inside that.
+    [0, 0], [-4.80, 0], [2.00, 0], [0, -4.80], [0, 1.00],
   ].map(([dx, dy]) => ({
     x: formerAntennaBoreCenter[0] + dx,
     y: formerAntennaBoreCenter[1] + dy,
@@ -449,7 +455,12 @@ occtimportjs.then((occt) => {
         && approx(center[1], expectedClosureCenters[index][1], 0.01)
     ));
   if (!closureCentersMatch) errors.push('Enclosure screw centers do not match the selected PCB mounting holes.');
-  if (reportData.closure.screwCount !== 4) errors.push('The enclosure must use exactly four clamping screws.');
+  if (reportData.closure.pcbScrewCount !== 4) errors.push('The enclosure must clamp the PCB stack with exactly four screws.');
+  if (reportData.closure.screwCount !== 5) errors.push('The enclosure must close with five screws (four PCB + the corner standoff).');
+  const reportCorner = reportData.closure.cornerScrewCenter || [];
+  if (!approx(reportCorner[0], CORNER_SCREW[0], 0.01) || !approx(reportCorner[1], CORNER_SCREW[1], 0.01)) {
+    errors.push('Corner standoff screw is not where the validator expects it.');
+  }
   if (reportData.closure.minimumInsertBlindWall < 1.80) {
     errors.push('A front-cover insert pocket is too close to the visible face.');
   }
@@ -486,8 +497,10 @@ occtimportjs.then((occt) => {
     errors.push('The new front face is not one continuous frame around only the LCD opening.');
   }
 
-  const leftWallContinuityChecks = [-14.00, 0.00, 30.00, 56.00, 60.00]
-    .flatMap((y) => [-2.00, 0.00, 3.00].map((z) => ({
+  // Samples stay clear of the 3.5 mm exterior chamfers (front face at 6.10,
+  // top edge at 60.90).
+  const leftWallContinuityChecks = [-14.00, 0.00, 30.00, 56.00]
+    .flatMap((y) => [-2.00, 0.00, 2.00].map((z) => ({
       y,
       z,
       x: xIntersectionsAt(frontCoverMesh, y, z),
@@ -531,6 +544,55 @@ occtimportjs.then((occt) => {
   const nutTrapsPresent = nutTrapHits.length === 4
     && [-21.14, -18.94, 0.16, 2.36].every((x, index) => approx(nutTrapHits[index], x, 0.05));
   if (!nutTrapsPresent) errors.push('Kickstand arms are missing their inner-face M2 nut traps.');
+
+  // Prototype 10: exterior chamfers. A point 1 mm in from the outer corner is
+  // inside every corner chamfer, so neither part has material there; 1 mm in
+  // from a front or back edge, the face is set back by CHAMFER - 1.
+  const chamferChecks = {
+    frontLeftEdgeX: xIntersectionsAt(frontCoverMesh, 17.11, 6.10 - 1.00),
+    cornerCover: zIntersectionsAt(frontCoverMesh, OUT.xMin + 1.00, OUT.yMin + 1.00),
+    cornerShell: zIntersectionsAt(rearShellMesh, OUT.xMin + 1.00, OUT.yMax - 1.00),
+    backLeftEdgeZ: zIntersectionsAt(rearShellMesh, OUT.xMin + 1.00, 17.11),
+    // Through the top-left controller boss's web to the left wall, 0.97 mm
+    // behind the face: the web must not poke through the chamfer.
+    webUnderFrontChamferX: xIntersectionsAt(frontCoverMesh, 54.697, 5.13),
+    // Same for the corner standoff's web to the left wall.
+    cornerWebUnderFrontChamferX: xIntersectionsAt(frontCoverMesh, CORNER_SCREW[1], 5.13),
+    wallUnderChamfer: reportData.chamfer?.minimumWallUnderChamfer,
+  };
+  if (!approx(chamferChecks.frontLeftEdgeX[0], OUT.xMin + CHAMFER - 1.00, 0.05)) {
+    errors.push('The front perimeter edge is not chamfered 3.5 mm.');
+  }
+  if (chamferChecks.cornerCover.length !== 0 || chamferChecks.cornerShell.length !== 0) {
+    errors.push('A corner edge is not chamfered.');
+  }
+  if (!approx(chamferChecks.webUnderFrontChamferX[0], OUT.xMin + CHAMFER - 0.97, 0.05)
+      || !approx(chamferChecks.cornerWebUnderFrontChamferX[0], OUT.xMin + CHAMFER - 0.97, 0.05)) {
+    errors.push('A boss web protrudes through the front chamfer.');
+  }
+  if (!approx(chamferChecks.backLeftEdgeZ[0], -18.00 + CHAMFER - 1.00, 0.05)) {
+    errors.push('The back perimeter edge is not chamfered 3.5 mm.');
+  }
+  if (!chamferChecks.wallUnderChamfer
+      || Object.values(chamferChecks.wallUnderChamfer).some((value) => value < 1.59)) {
+    errors.push('A wall is thinner than 1.6 mm under a chamfer.');
+  }
+
+  // Corner standoff: blind insert pocket + tip relief in the cover (insert
+  // face on the seam at -3.15, blind end at 1.45); a bored post in the shell
+  // with a 2 mm head pocket, stopping 0.10 mm short of the seam.
+  const cornerChecks = {
+    coverAxis: zIntersectionsAt(frontCoverMesh, ...CORNER_SCREW),
+    coverBossWall: zIntersectionsAt(frontCoverMesh, CORNER_SCREW[0] + 2.00, CORNER_SCREW[1]),
+    shellAxis: zIntersectionsAt(rearShellMesh, ...CORNER_SCREW),
+    shellPostWall: zIntersectionsAt(rearShellMesh, CORNER_SCREW[0] + 2.60, CORNER_SCREW[1]),
+  };
+  const cornerStandoffOk = approx(cornerChecks.coverAxis[0], 1.45, 0.03)
+    && approx(cornerChecks.coverBossWall[0], -3.15, 0.03)
+    && cornerChecks.shellAxis.length === 0
+    && approx(cornerChecks.shellPostWall[0], -18.00, 0.03)
+    && approx(cornerChecks.shellPostWall[cornerChecks.shellPostWall.length - 1], -3.25, 0.03);
+  if (!cornerStandoffOk) errors.push('The corner standoff boss, insert pocket or post is not as designed.');
 
   // Fit-check plate: tubes open at all four screw positions.
   const plateMesh = stepResults.fitCheckPlate.meshes[0];
@@ -582,6 +644,8 @@ occtimportjs.then((occt) => {
       removedBossCheck,
       formerFastenerAreaChecks,
       cleanFrontFaceChecks,
+      cornerChecks,
+      cornerStandoffOk,
       frontRearIntersectionVolume: reportData.closure.closedBezelIntersectionVolume,
     },
     stand: {
@@ -609,6 +673,8 @@ occtimportjs.then((occt) => {
       unifiedRectangle,
       leftWallIsContinuous,
       leftWallContinuityChecks,
+      exteriorChamfer: CHAMFER,
+      chamferChecks,
       bodyEnvelope: OUT,
       bottomFeetYMin: FEET_BOTTOM_Y,
     },

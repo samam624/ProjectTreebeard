@@ -1,5 +1,5 @@
 {
-  "version": "prototype-9-asbuilt-fit",
+  "version": "prototype-10-corner-standoff-chamfer",
   "units": "mm",
   "parameters": {
     "pcbTranslation": [
@@ -69,6 +69,20 @@
     "wallThickness": 2.2,
     "frontFaceBackZ": 2.08,
     "visibleFrontZ": 3.1,
+    "exteriorChamfer": 3.5,
+    "footChamfer": 2,
+    "minimumChamferWall": 1.6,
+    "cornerStandoff": {
+      "center": [
+        -56.5,
+        -5
+      ],
+      "insertFaceZ": -6.15,
+      "postEndGap": 0.1,
+      "postRadius": 3,
+      "bossRadius": 3.2,
+      "webWidth": 4
+    },
     "displayRightHoles": [
       [
         45.16,
@@ -148,10 +162,10 @@
     "bottomFeet": {
       "yMin": -20.777000000000008,
       "yMax": -12.77700000000001,
-      "leftXMin": -62,
+      "leftXMin": -60.5,
       "leftXMax": -42.76,
       "rightXMin": 37,
-      "rightXMax": 56
+      "rightXMax": 54.5
     },
     "kickstandPivotPrevious": {
       "y": 41,
@@ -209,6 +223,11 @@
       "centerZ": -9.48,
       "mouthY": 1
     },
+    "innerChamfer": {
+      "corner": 1.3627416997969526,
+      "front": 2.5427416997969527,
+      "back": 0.9627416997969513
+    },
     "kickstandPocketY": [
       -20.37700000000001,
       35.922999999999995
@@ -262,7 +281,7 @@
   "frontCoverConstruction": {
     "part": "single-piece planar frame with one LCD opening",
     "modifiedLegacyBody": false,
-    "construction": "one face slab, one LCD opening, four continuous perimeter walls, four blind internal insert bosses, and a USB overmold notch in the rear edge of the bottom wall",
+    "construction": "one face slab, one LCD opening, four continuous perimeter walls with 3.5 mm exterior chamfers, five blind internal insert bosses (four PCB + one corner standoff), and a USB overmold notch in the rear edge of the bottom wall",
     "originalBounds": [
       [
         -70.3900001000002,
@@ -277,14 +296,14 @@
     ],
     "finishedBounds": [
       [
-        -70.39000015,
-        -26.680000150000023,
-        -3.1500001500000003
+        -70.39000015000003,
+        -26.680000150000044,
+        -3.1500001500000216
       ],
       [
-        51.61000015,
-        60.90000015000002,
-        6.10000015
+        51.61000015000003,
+        60.90000015000004,
+        6.100000150000053
       ]
     ],
     "openingCenter": [
@@ -298,14 +317,14 @@
       {
         "bounds": [
           [
-            -70.39000015,
-            -26.680000150000012,
-            6.09999985
+            -66.89000015,
+            -23.180000150000023,
+            6.099999849999999
           ],
           [
-            51.61000015,
-            60.90000015000002,
-            6.10000015
+            48.11000015,
+            57.40000015000003,
+            6.1000001500000005
           ]
         ],
         "innerWireCount": 1
@@ -400,9 +419,33 @@
     "adjustment": "set the lean angle, then tighten both screws against the captive nuts",
     "foldedIntersectionVolume": 0
   },
+  "changesFromPrototype9": {
+    "cornerStandoff": "fifth M2 screw at the bottom corner on the controller/USB side (bottom-left from the screen, bottom-right from the back), which had no fastener; rear-shell post + front-cover insert boss, touching no PCB",
+    "chamfer": "3.5 mm 45-degree chamfer on all twelve exterior body edges; 2 mm on the feet; cavity edges chamfered to keep >= 1.6 mm walls",
+    "feet": "outer sides moved in to where the corner chamfer meets the bottom face"
+  },
+  "chamfer": {
+    "exterior": 3.5,
+    "feet": 2,
+    "inner": {
+      "corner": 1.3627416997969526,
+      "front": 2.5427416997969527,
+      "back": 0.9627416997969513
+    },
+    "minimumWallUnderChamfer": {
+      "corner": 1.6000000000000005,
+      "front": 1.6000000000000005,
+      "back": 1.5999999999999999
+    }
+  },
   "closure": {
-    "type": "four M2 screws from the rear: two through the display PCB right-hand holes, two through the controller PCB top holes, into front-cover heat-set inserts",
-    "screwCount": 4,
+    "type": "five M2 screws from the rear into front-cover heat-set inserts: two through the display PCB right-hand holes, two through the controller PCB top holes, one corner standoff",
+    "screwCount": 5,
+    "pcbScrewCount": 4,
+    "cornerScrewCenter": [
+      -62.89,
+      -18.903
+    ],
     "clearanceHoleDiameter": 2.4,
     "insertPocket": {
       "diameter": 2.9,
@@ -493,6 +536,26 @@
           "washerMm": 0,
           "tipZ": -3,
           "engagement": 3.0999999999999996
+        }
+      },
+      {
+        "hole": "corner standoff (no PCB)",
+        "center": [
+          -56.5,
+          -5
+        ],
+        "blindEndZ": -1.5499999999999998,
+        "best": {
+          "length": 16,
+          "washerMm": 0,
+          "tipZ": -3,
+          "engagement": 3.1500000000000004
+        },
+        "noWasher": {
+          "length": 16,
+          "washerMm": 0,
+          "tipZ": -3,
+          "engagement": 3.1500000000000004
         }
       }
     ],

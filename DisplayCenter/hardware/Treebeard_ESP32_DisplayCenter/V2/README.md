@@ -4,12 +4,50 @@ A rectangular two-part enclosure (front cover + rear shell) with a folding
 kickstand, built around the display module and the DisplayCenter controller
 PCB soldered together through the display's 14-pin header.
 
-**Current design: prototype 9 (2026-11-17).** Print packs:
-[`output/p1s_0p4_pla_v2/`](output/p1s_0p4_pla_v2/) (Bambu P1S, sliced
-`.gcode.3mf`, including a one-plate build of the whole enclosure; re-sliced
-2026-11-19, see its `PRINT_IN_BAMBU_STUDIO.md`) and
-[`output/mk4s_0p4_pla_v2/`](output/mk4s_0p4_pla_v2/) (Prusa MK4S). The v1
-pack (prototype 8, 2026-09-24) is kept for history and should not be printed.
+**Current design: prototype 10 (2026-11-23).** Print pack:
+[`output/p1s_0p4_pla_v3/`](output/p1s_0p4_pla_v3/) (Bambu P1S, sliced
+`.gcode.3mf`, including a one-plate build of the whole enclosure; see its
+`PRINT_IN_BAMBU_STUDIO.md`). There is no prototype-10 MK4S pack yet:
+OrcaSlicer is not installed on the machine that built v3, so load the v3 STLs
+into a slicer by hand. The v2 packs (prototype 9:
+[`output/p1s_0p4_pla_v2/`](output/p1s_0p4_pla_v2/),
+[`output/mk4s_0p4_pla_v2/`](output/mk4s_0p4_pla_v2/)) and the v1 pack
+(prototype 8, 2026-09-24) are kept for history and should not be printed.
+
+## What prototype 10 changes
+
+Prototype 9 printed and fitted well. The maintainer asked for two changes on
+2026-11-23:
+
+1. **Fifth screw at the loose corner.** Prototype 9's four screws sit at the
+   top-left, two near the top-right and right edge, and the lower right (seen
+   from the screen). The bottom corner on the controller/USB side
+   (**bottom-left seen from the screen, bottom-right seen from the back**) had
+   no fastener, so the seam gapped there. Prototype 10 adds a structural
+   standoff there: a rear-shell post (6.0 mm dia.) and a front-cover insert
+   boss (6.4 mm dia.), both webbed into the left and bottom walls, at design
+   (-56.50, -5.00) / output (-62.89, -18.90). It touches no PCB: nothing in
+   the board stack is below design y = 0.14, and the boss edge is 1.9 mm
+   below the display PCB. It takes an **M2x16** (the controller-screw length)
+   and a fifth heat-set insert. The insert face is the seam, and the post
+   stops 0.10 mm short of it so the perimeter walls, not the post, seat.
+2. **3.5 mm 45-degree chamfer on every exterior body edge**: the four corner
+   edges (they run across the seam), the four front edges and the four back
+   edges. The feet get 2.0 mm, and their outer sides moved in 1.5 mm to where
+   the corner chamfer meets the bottom face. The bottom-back edge is chamfered
+   only between the feet, so the back face runs straight into each foot. The
+   cavity's matching inside edges are chamfered too, so no wall is thinner
+   than 1.6 mm under a chamfer. The finished cover is trimmed back to the
+   chamfered outline. Without that trim, the boss webs' 0.1 mm overlap into
+   the walls poked ~0.4 mm nubs through the front chamfer near the corners
+   (caught in the first v3 slice, 2026-11-23). 3.5 mm is about the limit. Inside, the
+   top-left corner fill clears the controller board's corner by ~0.6 mm. On
+   the back, the chamfer clears the controller screw pockets by ~0.4 mm.
+
+Everything else (window, screw positions, USB bay, kickstand, fit-check plate)
+is unchanged from prototype 9. Against the as-built PCB reference the overlap
+volumes are the same as prototype 9's (front cover 0.05 mm^3 at the display
+clamp bosses, rear shell and plate zero).
 
 ## Why prototype 9 exists
 
@@ -72,7 +110,8 @@ full print.
 
 Screws: M2x16 for the controller holes. For the display holes, M2x20 with a
 thin washer, or M2x18 with about 1.2 mm of engagement. M2x10 + nut for each
-pivot. All four heat-set inserts go in the front cover.
+pivot. All four heat-set inserts go in the front cover. (Prototype 10 adds a
+fifth insert and a fifth M2x16 at the corner standoff.)
 
 ## Coordinate frame
 
@@ -121,10 +160,12 @@ generator disagrees. If the fit-check plate shows a different offset, change
 `controllerAsBuiltOffset` in the generator and `AS_BUILT_OFFSET` in the
 validator together.
 
-P1S slicing (Bambu Studio 02.09 installed):
+P1S slicing (Bambu Studio 02.09 installed). Copy the four `*_print.stl` files
+into the pack folder first. `--tag` names the pack (`v3` = prototype 10, the
+default):
 
 ```powershell
-python DisplayCenter\hardware\MSV2_ESP32_DisplayCenter\V2\tools\slice_p1s_pack.py
+python DisplayCenter\hardware\Treebeard_ESP32_DisplayCenter\V2\tools\slice_p1s_pack.py --tag v3
 ```
 
 Do not point the Bambu Studio command line at the stock presets directly. It

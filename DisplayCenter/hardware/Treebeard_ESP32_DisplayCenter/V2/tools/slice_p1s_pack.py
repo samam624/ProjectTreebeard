@@ -17,7 +17,8 @@ preset itself (``inherits`` chain + ``include`` list + the repo overlay in
 the G-code it got back against the flattened presets, key by key. The pack is
 refused if the start G-code, or any other setting, is not what was asked for.
 
-Output (default ``output/p1s_0p4_pla_v2/``):
+Output (default ``output/p1s_0p4_pla_<tag>/``, tag ``v3`` = prototype 10;
+the pack folder must already hold the four ``*_print.stl`` files):
   * one ``.gcode.3mf`` per plate, ready to send from Bambu Studio / copy to
     the printer's microSD card
   * ``sliced_release_report.json``
@@ -38,6 +39,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -262,11 +264,17 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--bambu", type=Path, default=DEFAULT_BAMBU,
                     help="Bambu Studio install dir (default: %(default)s)")
-    ap.add_argument("--out", type=Path, default=V2 / "output" / "p1s_0p4_pla_v2")
-    ap.add_argument("--release", default=f"{STEM}_v2")
-    ap.add_argument("--design-version", default="prototype-9-asbuilt-fit")
+    ap.add_argument("--tag", default="v3",
+                    help="pack tag in the folder and file names (v2 = prototype 9)")
+    ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--release", default=None)
+    ap.add_argument("--design-version", default="prototype-10-corner-standoff-chamfer")
     ap.add_argument("--keep-work", action="store_true")
     args = ap.parse_args()
+    if args.out is None:
+        args.out = V2 / "output" / f"p1s_0p4_pla_{args.tag}"
+    if args.release is None:
+        args.release = f"{STEM}_{args.tag}"
 
     exe = args.bambu / "bambu-studio.exe"
     vendor = args.bambu / "resources" / "profiles" / "BBL"
@@ -335,13 +343,37 @@ def main() -> int:
                "--load-settings", f"{flat_paths['machine']};{flat_paths[pf]}",
                "--load-filaments", str(flat_paths["filament"]),
                "--outputdir", str(pdir), "--export-3mf", out_name, *map(str, inputs)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+        # On 2026-11-23 bambu-studio.exe wrote a complete project and a
+        # "Success." result.json, then never exited, and Windows could not
+        # kill it. So stop waiting once result.json reports success and the
+        # project file has stopped growing; every later check still runs on
+        # what it wrote.
         result_path = pdir / "result.json"
+        produced = pdir / out_name
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 1800
+        last_size, stable_since = -1, None
+        while proc.poll() is None:
+            if time.monotonic() > deadline:
+                proc.kill()
+                break
+            time.sleep(2)
+            try:
+                done = json.loads(result_path.read_text(encoding="utf-8")).get("return_code") == 0
+            except (OSError, ValueError):
+                done = False
+            size = produced.stat().st_size if produced.exists() else -1
+            if size != last_size:
+                last_size, stable_since = size, time.monotonic()
+            if done and size > 0 and time.monotonic() - stable_since >= 20:
+                print(f"  slicer reported success but did not exit; continuing", flush=True)
+                proc.kill()
+                break
         result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
-        return result.get("return_code", proc.returncode), pdir / out_name, result
+        return result.get("return_code", proc.returncode), produced, result
 
     for plate, stls, pf, supports, no_support in PLATES:
-        out_name = f"{STEM}_{plate}_v2.gcode.3mf"
+        out_name = f"{STEM}_{plate}_{args.tag}.gcode.3mf"
         print(f"[{plate}] slicing ...", flush=True)
         rc, produced, result = slice_once([args.out / s for s in stls], work / plate / "pass1",
                                           out_name, pf, arrange=True)
